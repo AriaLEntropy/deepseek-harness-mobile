@@ -49,10 +49,12 @@ kotlin {
         framework {
             baseName = "shared"
             freeCompilerArgs = freeCompilerArgs + getCommonCompilerArgs()
+            linkerOpts("-lsqlite3")
             isStatic = true
             license = "MIT"
         }
         extraSpecAttributes["resources"] = "['src/commonMain/assets/**']"
+        extraSpecAttributes["libraries"] = "'c++', 'sqlite3'"
     }
 
     sourceSets {
@@ -60,6 +62,8 @@ kotlin {
             dependencies {
                 implementation("com.tencent.kuikly-open:core:${Version.getKuiklyVersion()}")
                 implementation("com.tencent.kuikly-open:core-annotations:${Version.getKuiklyVersion()}")
+                implementation("com.tencent.kuiklybase:KuiklyMarkdown:1.0.6-2.1.21")
+                implementation("com.tencent.kuiklybase:KuiklyWebview:1.0.1-2.0.21")
 
             }
         }
@@ -71,6 +75,7 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 api("com.tencent.kuikly-open:core-render-android:${Version.getKuiklyVersion()}")
+                implementation("net.shantu.kuiklysqlite:kuiklySqlite:1.0.0")
             }
         }
 
@@ -79,6 +84,9 @@ kotlin {
         val iosSimulatorArm64Main by getting
         val iosMain by creating {
             dependsOn(commonMain)
+            dependencies {
+                implementation("net.shantu.kuiklysqlite:kuiklySqlite:1.0.0")
+            }
             iosX64Main.dependsOn(this)
             iosArm64Main.dependsOn(this)
             iosSimulatorArm64Main.dependsOn(this)
@@ -92,6 +100,7 @@ kotlin {
             iosArm64Test.dependsOn(this)
             iosSimulatorArm64Test.dependsOn(this)
         }
+        val jsMain by getting
     }
 }
 

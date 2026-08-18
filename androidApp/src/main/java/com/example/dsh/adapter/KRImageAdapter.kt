@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Base64
@@ -14,6 +15,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
+import com.caverock.androidsvg.SVG
 import com.tencent.kuikly.core.render.android.KuiklyRenderViewContext
 import com.tencent.kuikly.core.render.android.adapter.HRImageLoadOption
 import com.tencent.kuikly.core.render.android.adapter.IKRImageAdapter
@@ -52,10 +54,14 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
         callback: (drawable: Drawable?) -> Unit,
     ) {
         val src = if (imageLoadOption.isAssets()) {
-            val assetPath = imageLoadOption.src.substring(HRImageLoadOption.SCHEME_ASSETS.length)
+            val assetPath = commonAssetPath(imageLoadOption.src)
             "file:///android_asset/$assetPath"
         } else {
             imageLoadOption.src
+        }
+        if (imageLoadOption.isAssets() && src.endsWith(".svg", ignoreCase = true)) {
+            loadSvgAsset(imageLoadOption, callback)
+            return
         }
         val requestBuilder = if (src.endsWith(".gif")) {
             Glide.with(KRApplication.application)
@@ -95,6 +101,39 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
                 }
             })
     }
+
+    private fun loadSvgAsset(
+        imageLoadOption: HRImageLoadOption,
+        callback: (Drawable?) -> Unit,
+    ) {
+        try {
+            val assetPath = commonAssetPath(imageLoadOption.src)
+            val svg = SVG.getFromAsset(context.assets, assetPath)
+            val intrinsicWidth = svg.documentWidth.takeIf { it > 0f } ?: 24f
+            val intrinsicHeight = svg.documentHeight.takeIf { it > 0f } ?: 24f
+            val width = if (imageLoadOption.needResize && imageLoadOption.requestWidth > 0) {
+                imageLoadOption.requestWidth
+            } else {
+                intrinsicWidth.roundToInt()
+            }.coerceAtLeast(1)
+            val height = if (imageLoadOption.needResize && imageLoadOption.requestHeight > 0) {
+                imageLoadOption.requestHeight
+            } else {
+                intrinsicHeight.roundToInt()
+            }.coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            svg.setDocumentWidth(width.toFloat())
+            svg.setDocumentHeight(height.toFloat())
+            svg.renderToCanvas(Canvas(bitmap))
+            callback(BitmapDrawable(context.resources, bitmap))
+        } catch (error: Exception) {
+            Log.e("KRImageAdapter", "Failed to load SVG asset: ${imageLoadOption.src}", error)
+            callback(null)
+        }
+    }
+
+    private fun commonAssetPath(src: String): String =
+        src.substring(HRImageLoadOption.SCHEME_ASSETS.length).removePrefix("common/")
 
     private fun loadFromBase64(
         imageLoadOption: HRImageLoadOption,

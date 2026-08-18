@@ -7,6 +7,9 @@ pluginManagement {
         maven {
             url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/")
         }
+        maven {
+            url = uri("https://hd-l.github.io/KuiklyUISqlite")
+        }
     }
 }
 
@@ -18,6 +21,9 @@ dependencyResolutionManagement {
         mavenLocal()
         maven {
             url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/")
+        }
+        maven {
+            url = uri("https://hd-l.github.io/KuiklyUISqlite")
         }
     }
 }

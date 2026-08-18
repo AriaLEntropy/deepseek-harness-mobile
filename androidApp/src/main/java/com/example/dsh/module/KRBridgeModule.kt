@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
@@ -68,6 +69,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
             "dateFormatter" -> {
                 dateFormatter(params)
+            }
+
+            "closeKeyboard" -> {
+                closeKeyboard()
             }
 
             else -> callback?.invoke(
@@ -163,6 +168,16 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         val data = Date(paramJSONObject.optLong("timeStamp"))
         val format = SimpleDateFormat(paramJSONObject.optString("format"))
         return format.format(data)
+    }
+
+    private fun closeKeyboard(): String {
+        activity?.runOnUiThread {
+            val focusedView = activity?.currentFocus
+            focusedView?.clearFocus()
+            val inputMethodManager = context?.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            inputMethodManager?.hideSoftInputFromWindow(focusedView?.windowToken, 0)
+        }
+        return "true"
     }
 
     companion object {

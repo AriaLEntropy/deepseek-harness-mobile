@@ -47,6 +47,8 @@ kotlin {
             dependencies {
                 implementation("com.tencent.kuikly-open:core:${Version.getKuiklyOhosVersion()}")
                 implementation("com.tencent.kuikly-open:core-annotations:${Version.getKuiklyOhosVersion()}")
+                implementation("com.tencent.kuiklybase:KuiklyMarkdown:1.0.6-2.0.21-ohos")
+                implementation("com.tencent.kuiklybase:KuiklyWebview:1.0.2-2.0.21-KBA-010")
 
             }
         }
@@ -54,6 +56,14 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
             }
+        }
+        val ohosArm64Main by getting
+        val ohosMain by creating {
+            dependsOn(commonMain)
+            dependencies {
+                implementation("net.shantu.kuiklysqlite:kuiklySqlite:1.0.0")
+            }
+            ohosArm64Main.dependsOn(this)
         }
         val androidMain by getting {
             dependencies {

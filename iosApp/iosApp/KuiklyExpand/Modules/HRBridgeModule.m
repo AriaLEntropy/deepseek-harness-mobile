@@ -28,4 +28,17 @@
     NSLog(@"KuiklyRender:%@", content);
 }
 
+- (NSString *)closeKeyboard:(NSDictionary *)args {
+    void (^dismissKeyboard)(void) = ^{
+        [self.hr_rootView endEditing:YES];
+        [self.hr_rootView.window endEditing:YES];
+    };
+    if ([NSThread isMainThread]) {
+        dismissKeyboard();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), dismissKeyboard);
+    }
+    return @"true";
+}
+
 @end

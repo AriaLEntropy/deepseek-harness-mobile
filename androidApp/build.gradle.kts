@@ -6,10 +6,13 @@ plugins {
 android {
     namespace = "com.example.dsh"
     compileSdk = 34
+    buildFeatures {
+        buildConfig = true
+    }
     defaultConfig {
         applicationId = "com.example.dsh"
-        minSdk = 23
-        targetSdk = 30
+        minSdk = 24
+        targetSdk = 28
         versionCode = 1
         versionName = "1.0"
     }
@@ -40,4 +43,6 @@ dependencies {
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
     implementation("com.github.bumptech.glide:glide:4.12.0")
     annotationProcessor("com.github.bumptech.glide:compiler:4.12.0")
+    implementation("com.caverock:androidsvg-aar:1.4")
+    implementation("com.tencent.kuiklybase:kuikly-webview-android:1.0.1-2.0.21")
 }
