@@ -254,8 +254,8 @@ internal class DshHomePage : BasePager() {
 
     private fun closeSessionDrawer() {
         if (!sessionDrawerVisible) return
-        // Closing removes the mask immediately; only the drawer and page slide back.
-        sessionDrawerMaskAnimation = Animation.linear(0f)
+        // Reverse the opening transition: fade the mask out while the drawer closes.
+        sessionDrawerMaskAnimation = Animation.easeInOut(ANIMATION_DURATION_S)
         sessionDrawerMaskAnimated = false
         sessionDrawerAnimated = false
         setTimeout(pagerId, ANIMATION_DURATION_MS) {
