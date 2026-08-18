@@ -21,8 +21,8 @@ struct Index {
 
   build() {
     Stack() {
-      Kuikly({
-        pagerName: this.pageName ?? 'router',
+        Kuikly({
+        pagerName: this.pageName ?? 'home',
         pagerData: this.pageData ?? {},
         delegate: this.kuiklyViewDelegate,
         nativeManager: globalNativeManager,

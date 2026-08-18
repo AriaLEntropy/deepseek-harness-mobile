@@ -21,7 +21,9 @@ import com.example.dsh.adapter.KRRouterAdapter
 import com.example.dsh.adapter.KRThreadAdapter
 import com.example.dsh.adapter.KRUncaughtExceptionHandlerAdapter
 import com.example.dsh.module.KRBridgeModule
+import com.example.dsh.module.KRDshEngineModule
 import com.example.dsh.module.KRShareModule
+import com.tencent.kuiklybase.android.KRWebView
 import org.json.JSONObject
 
 class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorDelegate {
@@ -38,7 +40,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             return if (pn.isNotEmpty()) {
                 return pn
             } else {
-                "router"
+                "home"
             }
         }
 
@@ -77,19 +79,26 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             moduleExport(KRShareModule.MODULE_NAME) {
                 KRShareModule()
             }
+            moduleExport(KRDshEngineModule.MODULE_NAME) {
+                KRDshEngineModule()
+            }
         }
     }
 
     override fun registerExternalRenderView(kuiklyRenderExport: IKuiklyRenderExport) {
         super.registerExternalRenderView(kuiklyRenderExport)
         with(kuiklyRenderExport) {
-
+            renderViewExport(KRWebView.VIEW_NAME, { context -> KRWebView(context) }, null)
         }
     }
 
     private fun createPageData(): Map<String, Any> {
         val param = argsToMap()
         param["appId"] = 1
+        param["embeddedEngine"] = true
+        param["databaseDir"] = java.io.File(KRApplication.application.filesDir.parentFile, "databases").apply {
+            if (!exists()) mkdirs()
+        }.absolutePath
         return param
     }
 

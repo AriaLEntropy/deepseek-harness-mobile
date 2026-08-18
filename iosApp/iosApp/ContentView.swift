@@ -4,7 +4,13 @@ import shared
 struct ContentView: View {
 
     var body: some View {
-        KuiklyRenderViewPage(pageName: "router", data: [:]).ignoresSafeArea()
+        let databaseDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Databases", isDirectory: true)
+        try? FileManager.default.createDirectory(at: databaseDir, withIntermediateDirectories: true)
+        return KuiklyRenderViewPage(
+            pageName: "home",
+            data: ["databaseDir": databaseDir.path]
+        ).ignoresSafeArea()
     }
 }
 

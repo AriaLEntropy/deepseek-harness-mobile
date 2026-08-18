@@ -1,5 +1,6 @@
 package com.example.dsh.base
 
+import com.example.dsh.dsh.DshEngineModule
 import com.tencent.kuikly.core.pager.Pager
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
@@ -11,6 +12,7 @@ internal abstract class BasePager : Pager() {
     override fun createExternalModules(): Map<String, Module>? {
         val externalModules = hashMapOf<String, Module>()
         externalModules[BridgeModule.MODULE_NAME] = BridgeModule()
+        externalModules[DshEngineModule.MODULE_NAME] = DshEngineModule()
         return externalModules
     }
 

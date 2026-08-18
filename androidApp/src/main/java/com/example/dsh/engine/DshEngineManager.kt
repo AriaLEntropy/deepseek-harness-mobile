@@ -1,0 +1,235 @@
+package com.example.dsh.engine
+
+import android.content.Context
+import android.util.Log
+import java.io.BufferedReader
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.zip.ZipInputStream
+
+internal enum class EnginePhase { IDLE, PREPARING, STARTING, READY, ERROR, STOPPED }
+
+internal data class EngineState(
+    val phase: EnginePhase,
+    val progress: Int = 0,
+    val message: String = "",
+)
+
+/** Process-wide owner of the Android Node.js + DeepSeek Harness runtime. */
+internal object DshEngineManager {
+    private const val TAG = "DshEngine"
+    private const val ENGINE_URL = "http://127.0.0.1:3080"
+    private const val BIN_JS = "dshroot/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
+    private const val MARKER = ".prepared-v1.3.3"
+
+    private val listeners = CopyOnWriteArrayList<(EngineState) -> Unit>()
+    @Volatile private var state = EngineState(EnginePhase.IDLE)
+    @Volatile private var process: Process? = null
+    @Volatile private var booting = false
+    @Volatile private var watchdogStarted = false
+    private lateinit var appContext: Context
+
+    fun start(context: Context, listener: (EngineState) -> Unit) {
+        appContext = context.applicationContext
+        listeners += listener
+        listener(state)
+        if (healthOk()) {
+            publish(EngineState(EnginePhase.READY, 100, "本地 Harness 已就绪"))
+            startWatchdog()
+            return
+        }
+        if (booting) return
+        booting = true
+        Thread({ boot() }, "dsh-engine-boot").start()
+    }
+
+    fun removeListener(listener: (EngineState) -> Unit) {
+        listeners -= listener
+    }
+
+    fun currentState(): EngineState = state
+
+    fun stop() {
+        process?.destroy()
+        process = null
+        booting = false
+        publish(EngineState(EnginePhase.STOPPED, message = "本地 Harness 已停止"))
+    }
+
+    private fun boot() {
+        try {
+            val root = File(appContext.filesDir, "dsh-engine")
+            prepare(root)
+            startProcess(root)
+            waitUntilReady()
+            startWatchdog()
+        } catch (error: Throwable) {
+            Log.e(TAG, "Engine boot failed", error)
+            publish(EngineState(EnginePhase.ERROR, message = error.message ?: "本地内核启动失败"))
+        } finally {
+            booting = false
+        }
+    }
+
+    private fun prepare(root: File) {
+        val marker = File(root, MARKER)
+        if (marker.exists() && File(root, BIN_JS).exists()) {
+            publish(EngineState(EnginePhase.PREPARING, 100, "运行时已准备"))
+            applyLinks(root)
+            setExecutables(root)
+            return
+        }
+        publish(EngineState(EnginePhase.PREPARING, 0, "首次启动，正在解压 Harness 内核"))
+        if (!root.exists() && !root.mkdirs()) error("无法创建运行目录")
+        val total = countPayloadEntries()
+        appContext.assets.open("payload.zip").use { input ->
+            ZipInputStream(input.buffered()).use { zip ->
+                var processed = 0
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (!entry.isDirectory && !name.startsWith("META-INF/") && !name.startsWith("__MACOSX/")) {
+                        val target = File(root, name)
+                        target.parentFile?.mkdirs()
+                        FileOutputStream(target).use { output -> zip.copyTo(output, 128 * 1024) }
+                        processed += 1
+                        if (processed == total || processed % 200 == 0) {
+                            val progress = if (total == 0) 0 else processed * 100 / total
+                            publish(EngineState(EnginePhase.PREPARING, progress, "正在解压内核 $processed/$total"))
+                        }
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+            }
+        }
+        applyLinks(root)
+        setExecutables(root)
+        marker.writeText("v1.3.3")
+    }
+
+    private fun countPayloadEntries(): Int {
+        var count = 0
+        appContext.assets.open("payload.zip").use { input ->
+            ZipInputStream(input.buffered()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && !entry.name.startsWith("META-INF/") && !entry.name.startsWith("__MACOSX/")) count++
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+            }
+        }
+        return count
+    }
+
+    private fun applyLinks(root: File) {
+        val libDir = File(root, "runtime/lib")
+        val links = File(libDir, "LINKS.txt")
+        if (!links.exists()) return
+        links.forEachLine { line ->
+            val parts = line.trim().split('\t')
+            if (parts.size < 2 || line.trim().startsWith("#")) return@forEachLine
+            val link = File(libDir, parts[0])
+            val target = File(libDir, parts[1])
+            if (!link.exists() && target.exists()) target.copyTo(link, overwrite = false)
+        }
+    }
+
+    private fun setExecutables(root: File) {
+        File(root, "runtime/bin/node").setExecutable(true, false)
+        File(root, "bin/bash").setExecutable(true, false)
+    }
+
+    private fun startProcess(root: File) {
+        if (healthOk()) return
+        val node = File(root, "runtime/bin/node")
+        val binJs = File(root, BIN_JS)
+        if (!node.exists()) error("Node.js runtime 缺失")
+        if (!binJs.exists()) error("DeepSeek Harness 内核缺失")
+        publish(EngineState(EnginePhase.STARTING, 100, "正在启动本地 Harness"))
+        val builder = ProcessBuilder(
+            node.absolutePath,
+            "--expose-internals",
+            binJs.absolutePath,
+            "web",
+            "--host", "127.0.0.1",
+            "--port", "3080",
+        )
+        builder.directory(root)
+        builder.redirectErrorStream(true)
+        builder.environment().apply {
+            put("LD_LIBRARY_PATH", File(root, "runtime/lib").absolutePath)
+            put("PATH", listOf(File(root, "bin"), File(root, "runtime/bin")).joinToString(":") { it.absolutePath } + ":/system/bin:/system/xbin")
+            put("HOME", appContext.filesDir.absolutePath)
+            put("DSH_HOME", File(root, "dshhome").absolutePath)
+            put("TMPDIR", File(appContext.cacheDir, "dsh-tmp").apply { mkdirs() }.absolutePath)
+            put("TERM", "xterm")
+        }
+        process = builder.start()
+        val log = File(appContext.filesDir, "dsh-engine.log")
+        Thread({
+            process?.inputStream?.bufferedReader()?.useLines { lines ->
+                FileOutputStream(log, true).bufferedWriter().use { writer ->
+                    lines.forEach { line ->
+                        writer.appendLine(line)
+                        writer.flush()
+                        Log.i(TAG, line)
+                    }
+                }
+            }
+        }, "dsh-engine-log").start()
+    }
+
+    private fun waitUntilReady() {
+        repeat(90) { second ->
+            if (healthOk()) {
+                publish(EngineState(EnginePhase.READY, 100, "本地 Harness 已就绪"))
+                return
+            }
+            if (process?.isAlive == false) error("Node.js 进程已退出")
+            publish(EngineState(EnginePhase.STARTING, 100, "正在启动本地 Harness（${second + 1}s）"))
+            Thread.sleep(1_000)
+        }
+        error("本地 Harness 启动超时")
+    }
+
+    private fun healthOk(): Boolean {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = URL(ENGINE_URL).openConnection() as HttpURLConnection
+            connection.connectTimeout = 800
+            connection.readTimeout = 800
+            connection.responseCode in 200..499
+        } catch (_: Throwable) {
+            false
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun startWatchdog() {
+        if (watchdogStarted) return
+        watchdogStarted = true
+        Thread({
+            while (true) {
+                Thread.sleep(5_000)
+                if (state.phase == EnginePhase.STOPPED) return@Thread
+                if (healthOk()) continue
+                if (booting) continue
+                booting = true
+                Thread({ boot() }, "dsh-engine-restart").start()
+            }
+        }, "dsh-engine-watchdog").start()
+    }
+
+    private fun publish(next: EngineState) {
+        state = next
+        listeners.forEach { listener -> runCatching { listener(next) } }
+    }
+}
