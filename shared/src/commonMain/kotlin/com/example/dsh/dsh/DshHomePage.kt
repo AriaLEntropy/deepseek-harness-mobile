@@ -644,7 +644,8 @@ internal class DshHomePage : BasePager() {
             return
         }
         prepareEagerSession(id)
-        hydrateSessionState(id)
+        val hydrated = hydrateSessionState(id)
+        perfLog("switch.$traceId.snapshot.hydrated:$id messages=$hydrated", startedAt)
         if (!conversationPanelIds.contains(id) || !messageScrollerRefs.containsKey(id)) {
             // Mount the target ListView first. Changing activeSessionId in the
             // same frame would make the new panel visible before its native
@@ -737,10 +738,12 @@ internal class DshHomePage : BasePager() {
         ensureConversationPanel(sessionId)
     }
 
-    private fun hydrateSessionState(sessionId: String) {
-        val snapshot = sessionMessageSnapshots.remove(sessionId) ?: return
-        val state = sessionMessageStates[sessionId] ?: return
+    private fun hydrateSessionState(sessionId: String): Int {
+        val snapshot = sessionMessageSnapshots.remove(sessionId) ?: return 0
+        val state = sessionMessageStates[sessionId] ?: return 0
         if (state.isEmpty() && snapshot.isNotEmpty()) state.addAll(snapshot)
+        sessionMessageReady.add(sessionId)
+        return snapshot.size
     }
 
     /**
@@ -800,6 +803,11 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadMessagesFromDisk(sessionId: String) {
+        if (sessionMessageSnapshots.containsKey(sessionId)) {
+            hydrateSessionState(sessionId)
+            completePendingSessionSelection(sessionId)
+            return
+        }
         if (localStore == null || !pendingLocalMessageReads.add(sessionId)) return
         localReadScope.launch {
             val readStartedAt = TimeSource.Monotonic.markNow()
