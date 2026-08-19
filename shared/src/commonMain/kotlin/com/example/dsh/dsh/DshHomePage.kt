@@ -38,6 +38,7 @@ internal class DshHomePage : BasePager() {
     private var draft by observable("")
     private var streaming by observable(false)
     private var stopButtonVisible by observable(false)
+    private var streamingAssistantContent by observable("")
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var connectionLabel by observable("本地内核启动中")
@@ -61,7 +62,7 @@ internal class DshHomePage : BasePager() {
     private var inputView: InputView? = null
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
-    private var pendingAssistantId = ""
+    private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
 
@@ -137,6 +138,7 @@ internal class DshHomePage : BasePager() {
                             DshConversation(
                                 messages = { ctx.messages },
                                 streaming = { ctx.streaming },
+                                streamingContent = { ctx.streamingAssistantContent },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
@@ -162,6 +164,7 @@ internal class DshHomePage : BasePager() {
                         DshConversation(
                             messages = { ctx.messages },
                             streaming = { ctx.streaming },
+                            streamingContent = { ctx.streamingAssistantContent },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
@@ -529,7 +532,9 @@ internal class DshHomePage : BasePager() {
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
         messages.add(user)
-        messages.add(DshMessage(assistantId, DshMessageRole.ASSISTANT, "", streaming = true))
+        streamingAssistantId = assistantId
+        streamingAssistantContent = ""
+        pendingAssistantDelta.setLength(0)
         draft = ""
         inputView?.setText("")
         streaming = true
@@ -542,9 +547,10 @@ internal class DshHomePage : BasePager() {
             onDelta = { delta -> queueAssistantDelta(assistantId, delta) },
             onComplete = { result ->
                 flushAssistantDelta()
+                val completedContent = result.ifEmpty { streamingAssistantContent }
                 streaming = false
                 stopButtonVisible = false
-                updateAssistant(assistantId, result, append = false)
+                settleStreamingMessage(DshMessageRole.ASSISTANT, completedContent)
                 persistMessages(sessionId)
                 connectionLabel = "已连接"
                 streamHandle = null
@@ -553,7 +559,7 @@ internal class DshHomePage : BasePager() {
                 flushAssistantDelta()
                 streaming = false
                 stopButtonVisible = false
-                updateAssistant(assistantId, error, append = false, role = DshMessageRole.ERROR)
+                settleStreamingMessage(DshMessageRole.ERROR, error)
                 persistMessages(sessionId)
                 connectionLabel = "已连接"
                 streamHandle = null
@@ -567,12 +573,10 @@ internal class DshHomePage : BasePager() {
         streamHandle = null
         if (!stopButtonVisible) return
         flushAssistantDelta()
+        val stoppedContent = streamingAssistantContent + "\n\n*已停止*"
         streaming = false
         stopButtonVisible = false
-        val last = messages.lastOrNull()
-        if (last?.role == DshMessageRole.ASSISTANT && last.streaming) {
-            updateAssistant(last.id, "\n\n*已停止*", append = true)
-        }
+        settleStreamingMessage(DshMessageRole.ASSISTANT, stoppedContent)
         persistMessages(activeSessionId)
         connectionLabel = "已连接"
     }
@@ -650,29 +654,9 @@ internal class DshHomePage : BasePager() {
         connectionLabel = if (voiceActive) "正在聆听" else "已连接"
     }
 
-    private fun updateAssistant(
-        id: String,
-        content: String,
-        append: Boolean,
-        role: DshMessageRole = DshMessageRole.ASSISTANT,
-    ) {
-        val current = messages.toList()
-        val index = current.indexOfFirst { it.id == id }
-        if (index < 0) return
-        val old = current[index]
-        messages[index] = old.copy(
-            role = role,
-            content = if (append) old.content + content else content,
-            streaming = streaming && role == DshMessageRole.ASSISTANT,
-        )
-    }
-
     private fun queueAssistantDelta(id: String, delta: String) {
         if (delta.isEmpty()) return
-        if (pendingAssistantId.isNotEmpty() && pendingAssistantId != id) {
-            flushAssistantDelta()
-        }
-        pendingAssistantId = id
+        if (streamingAssistantId != id) return
         pendingAssistantDelta.append(delta)
         if (assistantFlushScheduled) return
         assistantFlushScheduled = true
@@ -683,12 +667,18 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun flushAssistantDelta() {
-        if (pendingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
-        val id = pendingAssistantId
-        val delta = pendingAssistantDelta.toString()
-        pendingAssistantId = ""
+        if (streamingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
+        streamingAssistantContent += pendingAssistantDelta.toString()
         pendingAssistantDelta.setLength(0)
-        updateAssistant(id, delta, append = true)
+    }
+
+    private fun settleStreamingMessage(role: DshMessageRole, content: String) {
+        val id = streamingAssistantId
+        if (id.isNotEmpty()) {
+            messages.add(DshMessage(id, role, content, streaming = false))
+        }
+        streamingAssistantId = ""
+        pendingAssistantDelta.setLength(0)
     }
 
     private fun persistMessages(sessionId: String) {
@@ -1224,6 +1214,7 @@ private fun ViewContainer<*, *>.DshSessionButton(
 private fun ViewContainer<*, *>.DshConversation(
     messages: () -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
+    streamingContent: () -> String,
     draft: () -> String,
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
@@ -1311,6 +1302,14 @@ private fun ViewContainer<*, *>.DshConversation(
                         width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
                     }
                     DshMessageRow(message, streaming())
+                }
+            }
+            vif({ streaming() }) {
+                View {
+                    attr {
+                        width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                    }
+                    DshStreamingMessageRow(streamingContent)
                 }
             }
         }
@@ -1458,6 +1457,33 @@ private fun ViewContainer<*, *>.DshConversation(
                             }
                     }
                 }
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.DshStreamingMessageRow(content: () -> String) {
+    View {
+        attr {
+            width((pagerData.pageViewWidth - 36f).coerceAtMost(620f).coerceAtLeast(0f))
+            flexDirectionColumn()
+            alignItemsFlexStart()
+            marginBottom(18f)
+        }
+        Text {
+            attr {
+                text("DeepSeek")
+                fontSize(11f)
+                color(Color(0xFF84939D))
+                marginBottom(5f)
+            }
+        }
+        DshMarkdown {
+            attr {
+                contentWidth = (pagerData.pageViewWidth - 36f).coerceAtLeast(0f)
+                this.content = content().ifEmpty { "正在生成..." }
+                streaming = true
+                darkMode = false
             }
         }
     }
