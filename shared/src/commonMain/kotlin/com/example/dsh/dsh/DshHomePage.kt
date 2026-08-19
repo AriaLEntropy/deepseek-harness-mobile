@@ -576,15 +576,14 @@ internal class DshHomePage : BasePager() {
 
     private fun effectiveKeyboardHeight(rawHeight: Float): Float {
         if (rawHeight <= 0f) return 0f
-        val bottomSystemInset = if (pagerData.isAndroid) {
-            maxOf(
-                pagerData.safeAreaInsets.bottom,
-                pagerData.androidBottomBavBarHeight,
-            )
+        // Kuikly's Android watcher already reports IME height minus the
+        // navigation bar. Subtracting the safe area here would lift the
+        // composer a second time and leave a visible gap above the keyboard.
+        return if (pagerData.isAndroid) {
+            rawHeight
         } else {
-            pagerData.safeAreaInsets.bottom
+            (rawHeight - pagerData.safeAreaInsets.bottom).coerceAtLeast(0f)
         }
-        return (rawHeight - bottomSystemInset).coerceAtLeast(0f)
     }
 
     private fun loadModels(sessionId: String) {
@@ -1259,7 +1258,7 @@ private fun ViewContainer<*, *>.DshConversation(
             attr {
                 flex(1f)
                 width(pagerData.pageViewWidth)
-                padding(16f, 18f, 142f + keyboardHeight(), 18f)
+                padding(16f, 18f, 20f, 18f)
                 animation(keyboardAnimation(), keyboardHeight())
             }
             event {
@@ -1280,12 +1279,12 @@ private fun ViewContainer<*, *>.DshConversation(
             attr {
                 height(142f)
                 width(pagerData.pageViewWidth)
-                absolutePosition(left = 0f, right = 0f, bottom = keyboardHeight())
                 flexDirectionColumn()
                 padding(12f, 14f, 12f, 14f)
                 backgroundColor(Color.WHITE)
                 borderRadius(22f)
                 border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
+                transform(Translate(0f, 0f, 0f, -keyboardHeight()))
                 animation(keyboardAnimation(), keyboardHeight())
             }
             Input {
