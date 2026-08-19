@@ -642,7 +642,15 @@ internal class DshHomePage : BasePager() {
     private fun preloadAllSessionMessages() {
         val store = localStore ?: return
         val sessionIds = sessions.toList().map { it.id }
-        sessionIds.forEach { sessionMessageState(it, loadFromDisk = false) }
+        sessionIds.forEachIndexed { index, sessionId ->
+            sessionMessageState(sessionId, loadFromDisk = false)
+            // Keep the first group of conversation panels alive as well as
+            // their data. This removes the first-switch cost of constructing
+            // a new ListView and its Markdown tree on the click path.
+            if (index < CONVERSATION_PANEL_CACHE_LIMIT) {
+                ensureConversationPanel(sessionId)
+            }
+        }
         val pending = sessionIds.filter { pendingLocalMessageReads.add(it) }
         if (pending.isEmpty()) return
         localReadScope.launch {
