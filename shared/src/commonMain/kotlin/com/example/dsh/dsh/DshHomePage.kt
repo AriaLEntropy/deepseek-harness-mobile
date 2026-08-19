@@ -1657,6 +1657,7 @@ private fun ViewContainer<*, *>.DshConversation(
             }
             vfor({ conversationIds() }) { sessionId ->
                 List {
+                    val listView = this
                     ref { scrollerRef(sessionId, it) }
                     attr {
                         absolutePositionAllZero()
@@ -1677,15 +1678,31 @@ private fun ViewContainer<*, *>.DshConversation(
                         dragBegin { onDismissKeyboard() }
                         register("touchDown", { onDismissKeyboard() })
                     }
-                    vforLazy(
-                        { messagesForSession(sessionId) },
-                        maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
-                    ) { message, _, _ ->
-                        View {
-                            attr {
-                                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                    vif({ activeConversationId() == sessionId }) {
+                        // The active panel uses a normal vfor. LazyLoop does
+                        // not reliably realize children while its ListView is
+                        // transparent, which made the first switch appear
+                        // empty until the user dragged the list.
+                        vfor({ messagesForSession(sessionId) }) { message ->
+                            View {
+                                attr {
+                                    width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                                }
+                                DshMessageRow(message, streaming())
                             }
-                            DshMessageRow(message, streaming() && activeConversationId() == sessionId)
+                        }
+                    }
+                    velse {
+                        listView.vforLazy(
+                            { messagesForSession(sessionId) },
+                            maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
+                        ) { message, _, _ ->
+                            View {
+                                attr {
+                                    width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                                }
+                                DshMessageRow(message, false)
+                            }
                         }
                     }
                     vif({ streaming() && activeConversationId() == sessionId }) {
