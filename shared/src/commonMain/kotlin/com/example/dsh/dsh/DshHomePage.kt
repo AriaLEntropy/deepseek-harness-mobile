@@ -135,6 +135,7 @@ internal class DshHomePage : BasePager() {
                                 streaming = { ctx.streaming },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
+                                isAndroid = { ctx.pagerData.isAndroid },
                                 inputRef = { ctx.inputView = it.view },
                                 onDraftChange = { ctx.draft = it },
                                 keyboardAnimation = { ctx.keyboardAnimation },
@@ -159,6 +160,7 @@ internal class DshHomePage : BasePager() {
                             streaming = { ctx.streaming },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
+                            isAndroid = { ctx.pagerData.isAndroid },
                             inputRef = { ctx.inputView = it.view },
                             onDraftChange = { ctx.draft = it },
                             keyboardAnimation = { ctx.keyboardAnimation },
@@ -576,13 +578,15 @@ internal class DshHomePage : BasePager() {
 
     private fun effectiveKeyboardHeight(rawHeight: Float): Float {
         if (rawHeight <= 0f) return 0f
-        // Android's Kuikly keyboard watcher already reports IME height minus
-        // the navigation bar. iOS reports the overlap with the safe area.
-        return if (pagerData.isAndroid) {
-            rawHeight
+        val bottomSystemInset = if (pagerData.isAndroid) {
+            maxOf(
+                pagerData.safeAreaInsets.bottom,
+                pagerData.androidBottomBavBarHeight,
+            )
         } else {
-            (rawHeight - pagerData.safeAreaInsets.bottom).coerceAtLeast(0f)
+            pagerData.safeAreaInsets.bottom
         }
+        return (rawHeight - bottomSystemInset).coerceAtLeast(0f)
     }
 
     private fun loadModels(sessionId: String) {
@@ -1189,6 +1193,7 @@ private fun ViewContainer<*, *>.DshConversation(
     streaming: () -> Boolean,
     draft: () -> String,
     keyboardHeight: () -> Float,
+    isAndroid: () -> Boolean,
     keyboardAnimation: () -> Animation,
     inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
     onDraftChange: (String) -> Unit,
@@ -1414,11 +1419,13 @@ private fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-        View {
-            attr {
-                height(keyboardHeight())
-                backgroundColor(Color.WHITE)
-                animation(keyboardAnimation(), keyboardHeight())
+        if (!isAndroid()) {
+            View {
+                attr {
+                    height(keyboardHeight())
+                    backgroundColor(Color.WHITE)
+                    animation(keyboardAnimation(), keyboardHeight())
+                }
             }
         }
     }
