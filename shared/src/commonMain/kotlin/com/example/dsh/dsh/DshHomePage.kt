@@ -514,10 +514,17 @@ internal class DshHomePage : BasePager() {
         activeSessionId = id
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
+        historyRequestGeneration++
+        loadCachedHistory(id)
         loadModels(id)
-        loadHistory(id)
         draft = ""
         inputView?.setText("")
+    }
+
+    private fun loadCachedHistory(sessionId: String) {
+        val cached = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
+            .getOrDefault(emptyList())
+        replaceMessagesIfChanged(cached)
     }
 
     private fun sendDraft() {
