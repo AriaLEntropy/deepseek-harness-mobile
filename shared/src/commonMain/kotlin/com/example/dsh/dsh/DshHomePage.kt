@@ -106,7 +106,7 @@ internal class DshHomePage : BasePager() {
         }
         animateConnectionDots()
         sessionMessageStates[activeSessionId] = messages
-        prepareEagerSession(activeSessionId)
+        ensureConversationPanel(activeSessionId)
         restoreCachedSessions()
         perfLog("startup.restoreCachedSessions.done", startedAt)
         preloadAllSessionMessages()
@@ -352,7 +352,7 @@ internal class DshHomePage : BasePager() {
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接"
             if (loaded.isNotEmpty()) {
                 activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
-                prepareEagerSession(activeSessionId)
+                ensureConversationPanel(activeSessionId)
                 loadModels(activeSessionId)
                 loadHistory(activeSessionId)
             } else {
@@ -592,7 +592,7 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[firstSessionId] = state
         sessionMessageReady.add(firstSessionId)
         messages = state
-        prepareEagerSession(firstSessionId)
+        ensureConversationPanel(firstSessionId)
         scrollMessagesToEnd()
     }
 
@@ -708,7 +708,6 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun realizeSessionAfterData(sessionId: String) {
-        prepareEagerSession(sessionId)
         refreshSessionRenderTree(sessionId)
         addTaskWhenPagerUpdateLayoutFinish {
             refreshSessionRenderTree(sessionId)
@@ -817,7 +816,9 @@ internal class DshHomePage : BasePager() {
                             state.addAll(loaded)
                             perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                         }
-                        prepareEagerSession(sessionId)
+                        if (pendingSessionSelections.contains(sessionId)) {
+                            prepareEagerSession(sessionId)
+                        }
                         realizeSessionAfterData(sessionId)
                         perfLog("preload.$preloadId.ui.applied:$sessionId", queuedAt)
                     } else {
@@ -872,7 +873,11 @@ internal class DshHomePage : BasePager() {
                         state.addAll(loaded)
                         perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                     }
-                    ensureConversationPanel(sessionId)
+                    if (pendingSessionSelections.contains(sessionId)) {
+                        prepareEagerSession(sessionId)
+                    } else {
+                        ensureConversationPanel(sessionId)
+                    }
                     realizeSessionAfterData(sessionId)
                 } else {
                     sessionMessageSnapshots[sessionId] = loaded
