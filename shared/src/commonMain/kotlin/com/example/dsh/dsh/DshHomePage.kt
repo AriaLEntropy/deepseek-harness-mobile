@@ -571,7 +571,12 @@ internal class DshHomePage : BasePager() {
 
     private fun updateKeyboard(params: KeyboardParams) {
         keyboardAnimation = Animation.easeInOut(ANIMATION_DURATION_S)
-        keyboardHeight = params.height.coerceAtLeast(0f)
+        keyboardHeight = effectiveKeyboardHeight(params.height)
+    }
+
+    private fun effectiveKeyboardHeight(rawHeight: Float): Float {
+        if (rawHeight <= 0f) return 0f
+        return (rawHeight - pagerData.safeAreaInsets.bottom).coerceAtLeast(0f)
     }
 
     private fun loadModels(sessionId: String) {
@@ -1260,13 +1265,12 @@ private fun ViewContainer<*, *>.DshConversation(
         }
         View {
             attr {
-                height(142f + keyboardHeight())
+                height(142f)
                 flexDirectionColumn()
                 padding(12f, 14f, 12f, 14f)
                 backgroundColor(Color.WHITE)
                 borderRadius(22f)
                 border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
-                animation(keyboardAnimation(), keyboardHeight())
             }
             Input {
                 ref { inputRef(it) }
@@ -1397,6 +1401,13 @@ private fun ViewContainer<*, *>.DshConversation(
                             }
                     }
                 }
+            }
+        }
+        View {
+            attr {
+                height(keyboardHeight())
+                backgroundColor(Color.WHITE)
+                animation(keyboardAnimation(), keyboardHeight())
             }
         }
     }
