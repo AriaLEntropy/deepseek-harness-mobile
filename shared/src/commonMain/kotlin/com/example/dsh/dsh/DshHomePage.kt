@@ -99,6 +99,7 @@ internal class DshHomePage : BasePager() {
         restoreCachedSessions()
         sessionMessageStates[activeSessionId] = messages
         ensureConversationPanel(activeSessionId)
+        preloadAllSessionMessages()
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
             warmRecentSessionCache()
         }
@@ -340,6 +341,7 @@ internal class DshHomePage : BasePager() {
             sessions.clear()
             sessions.addAll(loaded)
             runCatching { localStore?.saveSessions(loaded) }
+            preloadAllSessionMessages()
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接"
             if (loaded.isNotEmpty()) {
                 activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
@@ -599,6 +601,33 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[sessionId] = state
         if (loadFromDisk) loadMessagesFromDisk(sessionId)
         return state
+    }
+
+    /**
+     * Warm every known conversation after the session index is available.
+     * Reads are serialized through one background coroutine because the local
+     * SQLite driver is shared by the page and should not be queried concurrently.
+     */
+    private fun preloadAllSessionMessages() {
+        val store = localStore ?: return
+        val sessionIds = sessions.toList().map { it.id }
+        sessionIds.forEach { sessionMessageState(it, loadFromDisk = false) }
+        val pending = sessionIds.filter { pendingLocalMessageReads.add(it) }
+        if (pending.isEmpty()) return
+        localReadScope.launch {
+            pending.forEach { sessionId ->
+                val loaded = runCatching { store.loadMessages(sessionId).orEmpty() }
+                    .getOrDefault(emptyList())
+                    .filterNot { it.isRuntimeContextSnapshot() }
+                setTimeout(pagerId, 0) {
+                    pendingLocalMessageReads.remove(sessionId)
+                    val state = sessionMessageStates[sessionId] ?: return@setTimeout
+                    if (state.isEmpty() && loaded.isNotEmpty()) {
+                        state.addAll(loaded)
+                    }
+                }
+            }
+        }
     }
 
     private fun loadMessagesFromDisk(sessionId: String) {
