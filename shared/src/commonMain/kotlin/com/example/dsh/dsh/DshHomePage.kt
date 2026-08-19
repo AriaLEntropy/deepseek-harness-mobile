@@ -95,9 +95,7 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[activeSessionId] = messages
         ensureConversationPanel(activeSessionId)
         restoreCachedSessions()
-        setTimeout(pagerId, 0) {
-            preloadAllSessionMessages()
-        }
+        preloadAllSessionMessages()
         loadApiKeyAsync()
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
             warmRecentSessionCache()
@@ -1633,7 +1631,11 @@ private fun ViewContainer<*, *>.DshConversation(
                         padding(16f, 18f, 20f, 18f)
                         firstContentLoadMaxIndex(CHAT_INITIAL_RENDER_COUNT)
                         preloadViewDistance(pagerData.pageViewHeight)
-                        visibility(activeConversationId() == sessionId)
+                        // Keep cached conversation lists mounted so the first
+                        // switch only changes opacity and z-order instead of
+                        // creating a native ListView/Markdown tree on demand.
+                        visibility(true)
+                        opacity(if (activeConversationId() == sessionId) 1f else 0f)
                         touchEnable(activeConversationId() == sessionId)
                         zIndex(if (activeConversationId() == sessionId) 1 else 0)
                     }
