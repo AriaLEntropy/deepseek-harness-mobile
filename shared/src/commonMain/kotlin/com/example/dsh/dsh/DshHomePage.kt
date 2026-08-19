@@ -77,6 +77,8 @@ internal class DshHomePage : BasePager() {
     private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
     private var historyRequestGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
+    private val sessionMessageReady = mutableSetOf<String>()
+    private val pendingSessionSelections = mutableSetOf<String>()
     private val localReadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val pendingLocalMessageReads = mutableSetOf<String>()
     private var inputFocused = false
@@ -509,6 +511,7 @@ internal class DshHomePage : BasePager() {
             activeSessionId = sessionId
             messages = ObservableList()
             sessionMessageStates[sessionId] = messages
+            sessionMessageReady.add(sessionId)
             ensureConversationPanel(sessionId)
             draft = ""
             inputView?.setText("")
@@ -533,8 +536,10 @@ internal class DshHomePage : BasePager() {
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
+            sessionMessageReady.add(sessionId)
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
+            completePendingSessionSelection(sessionId)
             realizeSessionAfterData(sessionId)
         }, { error ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
@@ -561,6 +566,7 @@ internal class DshHomePage : BasePager() {
         if (state.size == 1 && state.firstOrNull()?.id == "api-key-required") state.clear()
         if (state.isEmpty() && firstMessages.isNotEmpty()) state.addAll(firstMessages)
         sessionMessageStates[firstSessionId] = state
+        sessionMessageReady.add(firstSessionId)
         messages = state
         ensureConversationPanel(firstSessionId)
         scrollMessagesToEnd()
@@ -603,6 +609,10 @@ internal class DshHomePage : BasePager() {
     private fun selectSession(id: String) {
         dismissKeyboard()
         if (id == activeSessionId) return
+        if (!sessionMessageReady.contains(id)) {
+            pendingSessionSelections.add(id)
+            return
+        }
         if (!conversationPanelIds.contains(id) || !messageScrollerRefs.containsKey(id)) {
             // Mount the target ListView first. Changing activeSessionId in the
             // same frame would make the new panel visible before its native
@@ -685,16 +695,17 @@ internal class DshHomePage : BasePager() {
      * SQLite driver is shared by the page and should not be queried concurrently.
      */
     private fun preloadAllSessionMessages() {
-        val store = localStore ?: return
         val sessionIds = sessions.toList().map { it.id }
-        sessionIds.forEachIndexed { index, sessionId ->
-            sessionMessageState(sessionId, loadFromDisk = false)
-            // Keep the first group of conversation panels alive as well as
-            // their data. This removes the first-switch cost of constructing
-            // a new ListView and its Markdown tree on the click path.
-            if (index < CONVERSATION_PANEL_CACHE_LIMIT) {
-                ensureConversationPanel(sessionId)
+        // Load data first. Do not mount empty ListViews: LazyLoop initializes
+        // its visible range from the initial list and may not realize the
+        // first items when the list is populated later.
+        sessionIds.forEach { sessionMessageState(it, loadFromDisk = false) }
+        val store = localStore ?: run {
+            sessionIds.forEach {
+                sessionMessageReady.add(it)
+                completePendingSessionSelection(it)
             }
+            return
         }
         val pending = sessionIds.filter { pendingLocalMessageReads.add(it) }
         if (pending.isEmpty()) return
@@ -706,10 +717,15 @@ internal class DshHomePage : BasePager() {
                 setTimeout(pagerId, 0) {
                     pendingLocalMessageReads.remove(sessionId)
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
+                    sessionMessageReady.add(sessionId)
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
-                        realizeSessionAfterData(sessionId)
                     }
+                    if (conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) {
+                        ensureConversationPanel(sessionId)
+                    }
+                    realizeSessionAfterData(sessionId)
+                    completePendingSessionSelection(sessionId)
                 }
             }
         }
@@ -724,14 +740,24 @@ internal class DshHomePage : BasePager() {
             setTimeout(pagerId, 0) {
                 pendingLocalMessageReads.remove(sessionId)
                 val state = sessionMessageStates[sessionId] ?: return@setTimeout
+                sessionMessageReady.add(sessionId)
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
                 if (state.isEmpty() && loaded.isNotEmpty()) {
                     state.addAll(loaded)
-                    realizeSessionAfterData(sessionId)
                 }
+                ensureConversationPanel(sessionId)
+                realizeSessionAfterData(sessionId)
+                completePendingSessionSelection(sessionId)
             }
+        }
+    }
+
+    private fun completePendingSessionSelection(sessionId: String) {
+        if (!pendingSessionSelections.remove(sessionId)) return
+        setTimeout(pagerId, 0) {
+            if (activeSessionId != sessionId) selectSession(sessionId)
         }
     }
 
@@ -745,7 +771,9 @@ internal class DshHomePage : BasePager() {
     ) {
         if (index >= sessionIds.size) return
         sessionMessageState(sessionIds[index], loadFromDisk = true)
-        ensureConversationPanel(sessionIds[index])
+        if (sessionMessageReady.contains(sessionIds[index])) {
+            ensureConversationPanel(sessionIds[index])
+        }
         setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
             warmRecentSessionCache(sessionIds, index + 1)
         }
