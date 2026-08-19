@@ -91,28 +91,16 @@ internal class DshHomePage : BasePager() {
                 createDshLocalStore("$databaseDir/dsh.db")
             }.getOrNull()
         }
-        val apiKey = localStore?.let { store ->
-            runCatching { store.loadApiKey() }.getOrDefault("")
-        }.orEmpty()
-        pendingApiKey = apiKey
         animateConnectionDots()
-        restoreCachedSessions()
         sessionMessageStates[activeSessionId] = messages
         ensureConversationPanel(activeSessionId)
-        preloadAllSessionMessages()
+        restoreCachedSessions()
+        setTimeout(pagerId, 0) {
+            preloadAllSessionMessages()
+        }
+        loadApiKeyAsync()
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
             warmRecentSessionCache()
-        }
-        if (apiKey.isEmpty()) {
-            connectionLabel = "等待配置"
-            updateCredentialSetupVisibility(true)
-            messages.add(
-                DshMessage(
-                    id = "api-key-required",
-                    role = DshMessageRole.ASSISTANT,
-                    content = "输入 DeepSeek API Key 后即可开始使用本地 Agent。",
-                ),
-            )
         }
         startEmbeddedEngine()
     }
@@ -556,13 +544,56 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun restoreCachedSessions() {
-        val cached = runCatching { localStore?.loadSessions().orEmpty() }.getOrDefault(emptyList())
+        val store = localStore ?: return
+        val cached = runCatching { store.loadSessions() }.getOrDefault(emptyList())
         if (cached.isEmpty()) return
         sessions.clear()
         sessions.addAll(cached)
-        activeSessionId = cached.first().id
-        messages = sessionMessageState(activeSessionId)
-        ensureConversationPanel(activeSessionId)
+        val firstSessionId = cached.first().id
+        val firstMessages = runCatching { store.loadMessages(firstSessionId).orEmpty() }
+            .getOrDefault(emptyList())
+            .filterNot { it.isRuntimeContextSnapshot() }
+        activeSessionId = firstSessionId
+        val state = sessionMessageStates[firstSessionId] ?: ObservableList()
+        if (state.size == 1 && state.firstOrNull()?.id == "api-key-required") state.clear()
+        if (state.isEmpty() && firstMessages.isNotEmpty()) state.addAll(firstMessages)
+        sessionMessageStates[firstSessionId] = state
+        messages = state
+        ensureConversationPanel(firstSessionId)
+    }
+
+    private fun loadApiKeyAsync() {
+        val store = localStore
+        if (store == null) {
+            showCredentialSetupIfNeeded("")
+            return
+        }
+        localReadScope.launch {
+            val apiKey = runCatching { store.loadApiKey() }.getOrDefault("")
+            setTimeout(pagerId, 0) {
+                pendingApiKey = apiKey
+                if (apiKey.isEmpty()) {
+                    showCredentialSetupIfNeeded(apiKey)
+                } else if (engineReady && repository == null) {
+                    connectLocalEngine(apiKey)
+                }
+            }
+        }
+    }
+
+    private fun showCredentialSetupIfNeeded(apiKey: String) {
+        if (pendingApiKey.isNotEmpty() || apiKey.isNotEmpty()) return
+        connectionLabel = "等待配置"
+        updateCredentialSetupVisibility(true)
+        if (messages.none { it.id == "api-key-required" }) {
+            messages.add(
+                DshMessage(
+                    id = "api-key-required",
+                    role = DshMessageRole.ASSISTANT,
+                    content = "输入 DeepSeek API Key 后即可开始使用本地 Agent。",
+                ),
+            )
+        }
     }
 
     private fun selectSession(id: String) {
