@@ -460,8 +460,7 @@ internal class DshHomePage : BasePager() {
     private fun loadHistory(sessionId: String) {
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
-            messages.clear()
-            messages.addAll(loaded)
+            replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
         }, { error ->
             val cached = runCatching { localStore?.loadMessages(sessionId).orEmpty() }.getOrDefault(emptyList())
@@ -482,8 +481,7 @@ internal class DshHomePage : BasePager() {
         sessions.addAll(cached)
         activeSessionId = cached.first().id
         val cachedMessages = runCatching { localStore?.loadMessages(activeSessionId).orEmpty() }.getOrDefault(emptyList())
-        messages.clear()
-        messages.addAll(cachedMessages)
+        replaceMessagesIfChanged(cachedMessages)
     }
 
     private fun selectSession(id: String) {
@@ -684,6 +682,12 @@ internal class DshHomePage : BasePager() {
 
     private fun persistMessages(sessionId: String) {
         runCatching { localStore?.saveMessages(sessionId, messages.toList()) }
+    }
+
+    private fun replaceMessagesIfChanged(next: List<DshMessage>) {
+        if (messages.toList() == next) return
+        messages.clear()
+        messages.addAll(next)
     }
 
     companion object {

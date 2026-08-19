@@ -39,9 +39,10 @@ private class DshSqliteStore(path: String) : DshLocalStore {
     }
 
     override fun saveSessions(sessions: List<DshSession>) {
+        val orderBase = currentTimeMillis()
         driver.transaction {
             driver.execute("DELETE FROM dsh_sessions")
-            sessions.forEach { session ->
+            sessions.forEachIndexed { index, session ->
                 execute(
                     "INSERT OR REPLACE INTO dsh_sessions " +
                         "(id, title, workspace, updated_label, running, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -51,7 +52,7 @@ private class DshSqliteStore(path: String) : DshLocalStore {
                         session.workspace,
                         session.updatedLabel,
                         if (session.running) "1" else "0",
-                        currentTimeMillis().toString(),
+                        (orderBase - index).toString(),
                     ),
                 )
             }
@@ -132,7 +133,7 @@ private class DshSqliteStore(path: String) : DshLocalStore {
 }
 
 private object DshSchema : SqlSchema {
-    override val version: Int = 1
+    override val version: Int = 2
 
     override fun create(driver: SqlDriver) {
         driver.execute(
@@ -146,12 +147,32 @@ private object DshSchema : SqlSchema {
         )
         driver.execute(
             "CREATE TABLE IF NOT EXISTS dsh_messages (" +
-                "id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, " +
+                "id TEXT NOT NULL, session_id TEXT NOT NULL, role TEXT NOT NULL, " +
                 "content TEXT NOT NULL, streaming INTEGER NOT NULL, tool_name TEXT, " +
-                "hidden INTEGER NOT NULL, seq INTEGER NOT NULL)",
+                "hidden INTEGER NOT NULL, seq INTEGER NOT NULL, " +
+                "PRIMARY KEY (session_id, id))",
         )
         driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_messages_session ON dsh_messages(session_id, seq)")
     }
 
-    override fun migrate(driver: SqlDriver, oldVersion: Int, newVersion: Int) = Unit
+    override fun migrate(driver: SqlDriver, oldVersion: Int, newVersion: Int) {
+        if (oldVersion >= 2) return
+        driver.execute("DROP INDEX IF EXISTS idx_dsh_messages_session")
+        driver.execute("ALTER TABLE dsh_messages RENAME TO dsh_messages_v1")
+        driver.execute(
+            "CREATE TABLE dsh_messages (" +
+                "id TEXT NOT NULL, session_id TEXT NOT NULL, role TEXT NOT NULL, " +
+                "content TEXT NOT NULL, streaming INTEGER NOT NULL, tool_name TEXT, " +
+                "hidden INTEGER NOT NULL, seq INTEGER NOT NULL, " +
+                "PRIMARY KEY (session_id, id))",
+        )
+        driver.execute(
+            "INSERT OR REPLACE INTO dsh_messages " +
+                "(id, session_id, role, content, streaming, tool_name, hidden, seq) " +
+                "SELECT id, session_id, role, content, streaming, tool_name, hidden, seq " +
+                "FROM dsh_messages_v1",
+        )
+        driver.execute("DROP TABLE dsh_messages_v1")
+        driver.execute("CREATE INDEX idx_dsh_messages_session ON dsh_messages(session_id, seq)")
+    }
 }
