@@ -86,6 +86,7 @@ internal class DshHomePage : BasePager() {
     private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
+    private var scrollSettleGeneration = 0
 
     override fun created() {
         super.created()
@@ -1001,12 +1002,25 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun scrollMessagesToEnd() {
+        val generation = ++scrollSettleGeneration
         addTaskWhenPagerUpdateLayoutFinish {
-            scrollMessagesToEndAfterLayout()
-            // KuiklyMarkdown updates its block list on its own streaming
-            // cadence, so its final height can land after the parent layout.
-            setTimeout(pagerId, MARKDOWN_LAYOUT_SETTLE_DELAY_MS) {
-                scrollMessagesToEndAfterLayout()
+            settleScrollToEnd(generation, 0)
+        }
+    }
+
+    /**
+     * Markdown and LazyLoop can add/layout children over several frames.
+     * Re-apply the bottom offset while that burst settles, otherwise the first
+     * offset is calculated from a shorter content height and the user sees the
+     * list walk down a few screens after launch.
+     */
+    private fun settleScrollToEnd(generation: Int, attempt: Int) {
+        if (generation != scrollSettleGeneration) return
+        scrollMessagesToEndAfterLayout()
+        if (attempt >= SCROLL_SETTLE_ATTEMPTS) return
+        setTimeout(pagerId, SCROLL_SETTLE_DELAYS_MS[attempt]) {
+            addTaskWhenPagerUpdateLayoutFinish {
+                settleScrollToEnd(generation, attempt + 1)
             }
         }
     }
@@ -1050,7 +1064,6 @@ internal class DshHomePage : BasePager() {
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
         private const val STREAM_FLUSH_INTERVAL_MS = 100
-        private const val MARKDOWN_LAYOUT_SETTLE_DELAY_MS = 140
     }
 }
 
@@ -2030,3 +2043,5 @@ private const val SESSION_CACHE_WARM_LIMIT = 7
 private const val SESSION_CACHE_WARM_INTERVAL_MS = 16
 private const val SESSION_CACHE_WARM_START_DELAY_MS = 600
 private const val CONVERSATION_PANEL_CACHE_LIMIT = 8
+private const val SCROLL_SETTLE_ATTEMPTS = 6
+private val SCROLL_SETTLE_DELAYS_MS = intArrayOf(0, 16, 32, 64, 120, 200)
