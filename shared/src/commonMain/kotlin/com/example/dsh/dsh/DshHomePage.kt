@@ -45,6 +45,7 @@ internal class DshHomePage : BasePager() {
     private var sessions by observableList<DshSession>()
     private var messages by observableList<DshMessage>()
     private var conversationPanelIds by observableList<String>()
+    private var eagerSessionIds by observableList<String>()
     private var activeSessionId by observable("session-1")
     private var draft by observable("")
     private var streaming by observable(false)
@@ -156,6 +157,7 @@ internal class DshHomePage : BasePager() {
                             }
                             DshConversation(
                                 conversationIds = { ctx.conversationPanelIds },
+                                eagerConversationIds = { ctx.eagerSessionIds },
                                 activeConversationId = { ctx.activeSessionId },
                                 messagesForSession = { ctx.sessionMessageState(it) },
                                 streaming = { ctx.streaming },
@@ -186,6 +188,7 @@ internal class DshHomePage : BasePager() {
                     } else {
                         DshConversation(
                             conversationIds = { ctx.conversationPanelIds },
+                            eagerConversationIds = { ctx.eagerSessionIds },
                             activeConversationId = { ctx.activeSessionId },
                             messagesForSession = { ctx.sessionMessageState(it) },
                             streaming = { ctx.streaming },
@@ -613,6 +616,7 @@ internal class DshHomePage : BasePager() {
             pendingSessionSelections.add(id)
             return
         }
+        prepareEagerSession(id)
         if (!conversationPanelIds.contains(id) || !messageScrollerRefs.containsKey(id)) {
             // Mount the target ListView first. Changing activeSessionId in the
             // same frame would make the new panel visible before its native
@@ -661,6 +665,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun realizeSessionAfterData(sessionId: String) {
+        prepareEagerSession(sessionId)
         refreshSessionRenderTree(sessionId)
         addTaskWhenPagerUpdateLayoutFinish {
             refreshSessionRenderTree(sessionId)
@@ -687,6 +692,11 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[sessionId] = state
         if (loadFromDisk) loadMessagesFromDisk(sessionId)
         return state
+    }
+
+    private fun prepareEagerSession(sessionId: String) {
+        if (!eagerSessionIds.contains(sessionId)) eagerSessionIds.add(sessionId)
+        ensureConversationPanel(sessionId)
     }
 
     /**
@@ -721,9 +731,7 @@ internal class DshHomePage : BasePager() {
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
                     }
-                    if (conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) {
-                        ensureConversationPanel(sessionId)
-                    }
+                    if (conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) prepareEagerSession(sessionId)
                     realizeSessionAfterData(sessionId)
                     completePendingSessionSelection(sessionId)
                 }
@@ -1609,6 +1617,7 @@ private fun ViewContainer<*, *>.DshSessionButton(
 
 private fun ViewContainer<*, *>.DshConversation(
     conversationIds: () -> ObservableList<String>,
+    eagerConversationIds: () -> ObservableList<String>,
     activeConversationId: () -> String,
     messagesForSession: (String) -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
@@ -1697,6 +1706,7 @@ private fun ViewContainer<*, *>.DshConversation(
             }
             vfor({ conversationIds() }) { sessionId ->
                 List {
+                    val listView = this
                     ref { scrollerRef(sessionId, it) }
                     attr {
                         absolutePositionAllZero()
@@ -1717,15 +1727,27 @@ private fun ViewContainer<*, *>.DshConversation(
                         dragBegin { onDismissKeyboard() }
                         register("touchDown", { onDismissKeyboard() })
                     }
-                    vforLazy(
-                        { messagesForSession(sessionId) },
-                        maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
-                    ) { message, _, _ ->
-                        View {
-                            attr {
-                                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                    vif({ eagerConversationIds().contains(sessionId) }) {
+                        vfor({ messagesForSession(sessionId) }) { message ->
+                            View {
+                                attr {
+                                    width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                                }
+                                DshMessageRow(message, streaming() && activeConversationId() == sessionId)
                             }
-                            DshMessageRow(message, streaming() && activeConversationId() == sessionId)
+                        }
+                    }
+                    velse {
+                        listView.vforLazy(
+                            { messagesForSession(sessionId) },
+                            maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
+                        ) { message, _, _ ->
+                            View {
+                                attr {
+                                    width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                                }
+                                DshMessageRow(message, false)
+                            }
                         }
                     }
                     vif({ streaming() && activeConversationId() == sessionId }) {
