@@ -135,7 +135,6 @@ internal class DshHomePage : BasePager() {
                                 streaming = { ctx.streaming },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
-                                isAndroid = { ctx.pagerData.isAndroid },
                                 inputRef = { ctx.inputView = it.view },
                                 onDraftChange = { ctx.draft = it },
                                 keyboardAnimation = { ctx.keyboardAnimation },
@@ -160,7 +159,6 @@ internal class DshHomePage : BasePager() {
                             streaming = { ctx.streaming },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
-                            isAndroid = { ctx.pagerData.isAndroid },
                             inputRef = { ctx.inputView = it.view },
                             onDraftChange = { ctx.draft = it },
                             keyboardAnimation = { ctx.keyboardAnimation },
@@ -1193,7 +1191,6 @@ private fun ViewContainer<*, *>.DshConversation(
     streaming: () -> Boolean,
     draft: () -> String,
     keyboardHeight: () -> Float,
-    isAndroid: () -> Boolean,
     keyboardAnimation: () -> Animation,
     inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
     onDraftChange: (String) -> Unit,
@@ -1262,7 +1259,7 @@ private fun ViewContainer<*, *>.DshConversation(
             attr {
                 flex(1f)
                 width(pagerData.pageViewWidth)
-                padding(16f, 18f, 20f, 18f)
+                padding(16f, 18f, 142f + keyboardHeight(), 18f)
                 animation(keyboardAnimation(), keyboardHeight())
             }
             event {
@@ -1282,11 +1279,14 @@ private fun ViewContainer<*, *>.DshConversation(
         View {
             attr {
                 height(142f)
+                width(pagerData.pageViewWidth)
+                absolutePosition(left = 0f, right = 0f, bottom = keyboardHeight())
                 flexDirectionColumn()
                 padding(12f, 14f, 12f, 14f)
                 backgroundColor(Color.WHITE)
                 borderRadius(22f)
                 border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
+                animation(keyboardAnimation(), keyboardHeight())
             }
             Input {
                 ref { inputRef(it) }
@@ -1416,15 +1416,6 @@ private fun ViewContainer<*, *>.DshConversation(
                                 else -> onToggleVoice()
                             }
                     }
-                }
-            }
-        }
-        if (!isAndroid()) {
-            View {
-                attr {
-                    height(keyboardHeight())
-                    backgroundColor(Color.WHITE)
-                    animation(keyboardAnimation(), keyboardHeight())
                 }
             }
         }
