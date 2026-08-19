@@ -67,6 +67,8 @@ internal class DshHomePage : BasePager() {
     private var streamHandle: DshStreamHandle? = null
     private var messageScrollerRef: ViewRef<ScrollerView<*, *>>? = null
     private var historyRequestGeneration = 0
+    private val messageCache = mutableMapOf<String, List<DshMessage>>()
+    private var inputFocused = false
     private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
@@ -151,6 +153,7 @@ internal class DshHomePage : BasePager() {
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
                                 inputRef = { ctx.inputView = it.view },
+                                onInputFocusChange = { ctx.inputFocused = it },
                                 onDraftChange = { ctx.draft = it },
                                 keyboardAnimation = { ctx.keyboardAnimation },
                                 onKeyboardHeightChange = { ctx.updateKeyboard(it) },
@@ -178,6 +181,7 @@ internal class DshHomePage : BasePager() {
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
                             inputRef = { ctx.inputView = it.view },
+                            onInputFocusChange = { ctx.inputFocused = it },
                             onDraftChange = { ctx.draft = it },
                             keyboardAnimation = { ctx.keyboardAnimation },
                             onKeyboardHeightChange = { ctx.updateKeyboard(it) },
@@ -217,9 +221,11 @@ internal class DshHomePage : BasePager() {
                         onClose = { ctx.closeSessionDrawer() },
                         onOpenSettings = { ctx.openCredentialSettings() },
                         onNewSession = { ctx.createSession() },
-                        onSelect = {
+                        onSelect = { id ->
                             ctx.closeSessionDrawer()
-                            ctx.selectSession(it)
+                            setTimeout(ctx.pagerId, ANIMATION_DURATION_MS) {
+                                ctx.selectSession(id)
+                            }
                         },
                     )
                 }
@@ -279,7 +285,12 @@ internal class DshHomePage : BasePager() {
 
     private fun animateConnectionDots() {
         setTimeout(pagerId, CONNECTION_DOT_INTERVAL_MS) {
-            connectionDotPhase = (connectionDotPhase + 1) % CONNECTION_DOT_COUNT
+            // The phase lives on the page, so avoid invalidating the whole
+            // conversation and drawer tree while the drawer is animating or
+            // after the connection has already become stable.
+            if (!sessionDrawerVisible && !isConnectionReadyLabel(connectionLabel)) {
+                connectionDotPhase = (connectionDotPhase + 1) % CONNECTION_DOT_COUNT
+            }
             animateConnectionDots()
         }
     }
@@ -456,6 +467,7 @@ internal class DshHomePage : BasePager() {
             return
         }
         dismissKeyboard()
+        closeSessionDrawer()
         hostRepository.createSession({ sessionId ->
             val created = DshSession(
                 id = sessionId,
@@ -470,12 +482,13 @@ internal class DshHomePage : BasePager() {
             }
             runCatching { localStore?.saveSessions(sessions.toList()) }
             activeSessionId = sessionId
+            messageCache[sessionId] = emptyList()
             draft = ""
             inputView?.setText("")
             messages.clear()
-            loadModels(sessionId)
-            loadHistory(sessionId)
-            closeSessionDrawer()
+            setTimeout(pagerId, 0) {
+                if (activeSessionId == sessionId) loadModels(sessionId)
+            }
         }, { error ->
             connectionLabel = "新会话创建失败"
             messages.add(DshMessage("session-create-error-${messages.size}", DshMessageRole.ERROR, error))
@@ -488,13 +501,13 @@ internal class DshHomePage : BasePager() {
         // Show the selected session immediately. The Host history request is
         // remote and can take a moment, so keeping the previous list here
         // makes a session switch look stuck.
-        val cached = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
-            .getOrDefault(emptyList())
+        val cached = cachedMessages(sessionId)
         replaceMessagesIfChanged(cached)
 
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
+            messageCache[sessionId] = loaded
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
         }, { error ->
@@ -513,28 +526,47 @@ internal class DshHomePage : BasePager() {
         sessions.clear()
         sessions.addAll(cached)
         activeSessionId = cached.first().id
-        val cachedMessages = runCatching { localStore?.loadMessages(activeSessionId).orEmpty() }.getOrDefault(emptyList())
+        val cachedMessages = cachedMessages(activeSessionId)
         replaceMessagesIfChanged(cachedMessages)
     }
 
     private fun selectSession(id: String) {
         dismissKeyboard()
         if (id == activeSessionId) return
-        stopStream()
+        cancelStreamingForSessionSwitch()
+        messageCache[activeSessionId] = messages.toList()
         activeSessionId = id
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
         historyRequestGeneration++
         loadCachedHistory(id)
-        loadModels(id)
+        setTimeout(pagerId, 0) {
+            if (activeSessionId == id) loadModels(id)
+        }
         draft = ""
         inputView?.setText("")
     }
 
     private fun loadCachedHistory(sessionId: String) {
-        val cached = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
+        val cached = messageCache[sessionId]
+        replaceMessagesIfChanged(cached ?: emptyList())
+        if (cached != null) return
+
+        val requestGeneration = historyRequestGeneration
+        setTimeout(pagerId, 0) {
+            if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@setTimeout
+            val loaded = cachedMessages(sessionId)
+            if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@setTimeout
+            replaceMessagesIfChanged(loaded)
+        }
+    }
+
+    private fun cachedMessages(sessionId: String): List<DshMessage> {
+        messageCache[sessionId]?.let { return it }
+        val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
             .getOrDefault(emptyList())
-        replaceMessagesIfChanged(cached)
+        messageCache[sessionId] = loaded
+        return loaded
     }
 
     private fun sendDraft() {
@@ -573,6 +605,7 @@ internal class DshHomePage : BasePager() {
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
         messages.add(user)
+        messageCache[sessionId] = messages.toList()
         scrollMessagesToEnd()
         streamingAssistantId = assistantId
         streamingAssistantContent = ""
@@ -610,10 +643,10 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun stopStream() {
+        if (!stopButtonVisible) return
         dismissKeyboard()
         streamHandle?.cancel()
         streamHandle = null
-        if (!stopButtonVisible) return
         flushAssistantDelta()
         val stoppedContent = streamingAssistantContent + "\n\n*已停止*"
         streaming = false
@@ -623,7 +656,25 @@ internal class DshHomePage : BasePager() {
         connectionLabel = "已连接"
     }
 
+    private fun cancelStreamingForSessionSwitch() {
+        if (!streaming && !stopButtonVisible) return
+        streamHandle?.cancel()
+        streamHandle = null
+        val partial = streamingAssistantContent + pendingAssistantDelta.toString()
+        if (streamingAssistantId.isNotEmpty() && partial.isNotBlank()) {
+            messages.add(DshMessage(streamingAssistantId, DshMessageRole.ASSISTANT, partial))
+        }
+        streamingAssistantId = ""
+        pendingAssistantDelta.setLength(0)
+        streamingAssistantContent = ""
+        assistantFlushScheduled = false
+        streaming = false
+        stopButtonVisible = false
+    }
+
     private fun dismissKeyboard() {
+        if (!inputFocused && keyboardHeight <= 0f) return
+        inputFocused = false
         inputView?.blur()
         bridgeModule.closeKeyboard()
         keyboardHeight = 0f
@@ -744,7 +795,9 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun persistMessages(sessionId: String) {
-        runCatching { localStore?.saveMessages(sessionId, messages.toList()) }
+        val snapshot = messages.toList()
+        messageCache[sessionId] = snapshot
+        runCatching { localStore?.saveMessages(sessionId, snapshot) }
     }
 
     private fun replaceMessagesIfChanged(next: List<DshMessage>) {
@@ -1198,10 +1251,10 @@ private fun ViewContainer<*, *>.DshTopBar(
             attr {
                 size(36f, 36f)
                 borderRadius(18f)
-                backgroundColor(Color(if (connection().startsWith("已连接")) 0xFFEAF8F0 else 0xFFF1F4F8))
+                backgroundColor(Color(if (isConnectionReadyLabel(connection())) 0xFFEAF8F0 else 0xFFF1F4F8))
                 allCenter()
             }
-            if (connection().startsWith("已连接")) {
+            if (isConnectionReadyLabel(connection())) {
                 Text {
                     attr {
                         text("●")
@@ -1317,6 +1370,7 @@ private fun ViewContainer<*, *>.DshConversation(
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
     inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
+    onInputFocusChange: (Boolean) -> Unit,
     onDraftChange: (String) -> Unit,
     onKeyboardHeightChange: (KeyboardParams) -> Unit,
     onSend: () -> Unit,
@@ -1434,9 +1488,11 @@ private fun ViewContainer<*, *>.DshConversation(
                     editable(!voiceActive())
                 }
                 event {
+                    inputFocus { onInputFocusChange(true) }
                     textDidChange { onDraftChange(it.text) }
                     keyboardHeightChange { onKeyboardHeightChange(it) }
                     inputBlur {
+                        onInputFocusChange(false)
                         onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
                     }
                     inputReturn { onSend() }
@@ -1653,6 +1709,10 @@ private fun ViewContainer<*, *>.DshHitButton(onClick: () -> Unit) {
         }
         event { click { onClick() } }
     }
+}
+
+private fun isConnectionReadyLabel(label: String): Boolean {
+    return label.startsWith("已连接") || label == "正在生成" || label == "正在聆听"
 }
 
 private const val COMPOSER_HEIGHT = 142f
