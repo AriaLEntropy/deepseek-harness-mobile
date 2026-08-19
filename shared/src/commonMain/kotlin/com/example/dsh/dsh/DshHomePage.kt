@@ -1254,7 +1254,7 @@ private fun ViewContainer<*, *>.DshTopBar(
                 backgroundColor(Color(if (isConnectionReadyLabel(connection())) 0xFFEAF8F0 else 0xFFF1F4F8))
                 allCenter()
             }
-            if (isConnectionReadyLabel(connection())) {
+            vif({ isConnectionReadyLabel(connection()) }) {
                 View {
                     attr {
                         size(12f, 12f)
@@ -1262,7 +1262,8 @@ private fun ViewContainer<*, *>.DshTopBar(
                         backgroundColor(Color(0xFF2EAF67))
                     }
                 }
-            } else {
+            }
+            velse {
                 View {
                     attr {
                         width(22f)
