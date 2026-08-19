@@ -78,7 +78,7 @@ internal object DshEngineManager {
 
     private fun prepare(root: File) {
         val marker = File(root, MARKER)
-        if (marker.exists() && File(root, BIN_JS).exists()) {
+        if (marker.isFile && marker.readText().trim() == "v1.3.3" && File(root, BIN_JS).isFile) {
             publish(EngineState(EnginePhase.PREPARING, 100, "运行时已准备"))
             applyLinks(root)
             setExecutables(root)
