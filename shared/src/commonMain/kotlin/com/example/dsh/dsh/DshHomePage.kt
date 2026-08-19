@@ -97,7 +97,7 @@ internal class DshHomePage : BasePager() {
         }
         animateConnectionDots()
         sessionMessageStates[activeSessionId] = messages
-        ensureConversationPanel(activeSessionId)
+        prepareEagerSession(activeSessionId)
         restoreCachedSessions()
         preloadAllSessionMessages()
         loadApiKeyAsync()
@@ -340,6 +340,7 @@ internal class DshHomePage : BasePager() {
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接"
             if (loaded.isNotEmpty()) {
                 activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
+                prepareEagerSession(activeSessionId)
                 loadModels(activeSessionId)
                 loadHistory(activeSessionId)
             } else {
@@ -515,7 +516,7 @@ internal class DshHomePage : BasePager() {
             messages = ObservableList()
             sessionMessageStates[sessionId] = messages
             sessionMessageReady.add(sessionId)
-            ensureConversationPanel(sessionId)
+            prepareEagerSession(sessionId)
             draft = ""
             inputView?.setText("")
             setTimeout(pagerId, 0) {
@@ -571,7 +572,7 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[firstSessionId] = state
         sessionMessageReady.add(firstSessionId)
         messages = state
-        ensureConversationPanel(firstSessionId)
+        prepareEagerSession(firstSessionId)
         scrollMessagesToEnd()
     }
 
@@ -731,7 +732,9 @@ internal class DshHomePage : BasePager() {
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
                     }
-                    if (conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) prepareEagerSession(sessionId)
+                    if (sessionId == activeSessionId || pendingSessionSelections.contains(sessionId)) {
+                        prepareEagerSession(sessionId)
+                    }
                     realizeSessionAfterData(sessionId)
                     completePendingSessionSelection(sessionId)
                 }
@@ -779,7 +782,8 @@ internal class DshHomePage : BasePager() {
     ) {
         if (index >= sessionIds.size) return
         sessionMessageState(sessionIds[index], loadFromDisk = true)
-        if (sessionMessageReady.contains(sessionIds[index])) {
+        if (sessionMessageReady.contains(sessionIds[index]) &&
+            (sessionIds[index] == activeSessionId || pendingSessionSelections.contains(sessionIds[index]))) {
             ensureConversationPanel(sessionIds[index])
         }
         setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
