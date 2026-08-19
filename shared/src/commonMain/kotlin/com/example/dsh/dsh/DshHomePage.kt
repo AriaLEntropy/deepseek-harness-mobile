@@ -645,7 +645,10 @@ internal class DshHomePage : BasePager() {
         }
         prepareEagerSession(id)
         val hydrated = hydrateSessionState(id)
-        perfLog("switch.$traceId.snapshot.hydrated:$id messages=$hydrated", startedAt)
+        perfLog(
+            "switch.$traceId.snapshot.hydrated:$id messages=$hydrated state=${sessionMessageStates[id]?.size ?: 0} eager=${eagerSessionIds.contains(id)}",
+            startedAt,
+        )
         if (!conversationPanelIds.contains(id) || !messageScrollerRefs.containsKey(id)) {
             // Mount the target ListView first. Changing activeSessionId in the
             // same frame would make the new panel visible before its native
@@ -741,8 +744,12 @@ internal class DshHomePage : BasePager() {
     private fun hydrateSessionState(sessionId: String): Int {
         val snapshot = sessionMessageSnapshots.remove(sessionId) ?: return 0
         val state = sessionMessageStates[sessionId] ?: return 0
-        if (state.isEmpty() && snapshot.isNotEmpty()) state.addAll(snapshot)
+        if (state.toList() != snapshot) {
+            state.clear()
+            state.addAll(snapshot)
+        }
         sessionMessageReady.add(sessionId)
+        if (!eagerSessionIds.contains(sessionId)) eagerSessionIds.add(sessionId)
         return snapshot.size
     }
 
@@ -786,7 +793,8 @@ internal class DshHomePage : BasePager() {
                         readStartedAt,
                     )
                     if (sessionId == activeSessionId || pendingSessionSelections.contains(sessionId)) {
-                        if (state.isEmpty() && loaded.isNotEmpty()) {
+                        if (state.toList() != loaded) {
+                            state.clear()
                             state.addAll(loaded)
                             perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                         }
@@ -804,7 +812,10 @@ internal class DshHomePage : BasePager() {
 
     private fun loadMessagesFromDisk(sessionId: String) {
         if (sessionMessageSnapshots.containsKey(sessionId)) {
-            hydrateSessionState(sessionId)
+            val hydrated = hydrateSessionState(sessionId)
+            perfLog("sessionData.snapshot.hydrated:$sessionId messages=$hydrated")
+            prepareEagerSession(sessionId)
+            realizeSessionAfterData(sessionId)
             completePendingSessionSelection(sessionId)
             return
         }
@@ -829,7 +840,8 @@ internal class DshHomePage : BasePager() {
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
                 if (sessionId == activeSessionId || pendingSessionSelections.contains(sessionId)) {
-                    if (state.isEmpty() && loaded.isNotEmpty()) {
+                    if (state.toList() != loaded) {
+                        state.clear()
                         state.addAll(loaded)
                         perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                     }
