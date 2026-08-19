@@ -77,6 +77,7 @@ internal class DshHomePage : BasePager() {
     private var streamHandle: DshStreamHandle? = null
     private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
     private var historyRequestGeneration = 0
+    private var sessionCreationGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
     private val sessionMessageReady = mutableSetOf<String>()
     private val pendingSessionSelections = mutableSetOf<String>()
@@ -500,7 +501,18 @@ internal class DshHomePage : BasePager() {
         }
         dismissKeyboard()
         closeSessionDrawer()
+        cancelStreamingForSessionSwitch()
+        val creationGeneration = ++sessionCreationGeneration
+        val previousSessionId = activeSessionId
+        val previousMessages = messages
+        sessionMessageStates[previousSessionId] = previousMessages
+        historyRequestGeneration++
+        messages = ObservableList()
+        draft = ""
+        inputView?.setText("")
+        connectionLabel = "正在创建会话"
         hostRepository.createSession({ sessionId ->
+            if (creationGeneration != sessionCreationGeneration) return@createSession
             val created = DshSession(
                 id = sessionId,
                 title = "新会话",
@@ -518,12 +530,14 @@ internal class DshHomePage : BasePager() {
             sessionMessageStates[sessionId] = messages
             sessionMessageReady.add(sessionId)
             prepareEagerSession(sessionId)
-            draft = ""
-            inputView?.setText("")
             setTimeout(pagerId, 0) {
                 if (activeSessionId == sessionId) loadModels(sessionId)
             }
         }, { error ->
+            if (creationGeneration != sessionCreationGeneration) return@createSession
+            activeSessionId = previousSessionId
+            messages = previousMessages
+            scrollMessagesToEnd()
             connectionLabel = "新会话创建失败"
             messages.add(DshMessage("session-create-error-${messages.size}", DshMessageRole.ERROR, error))
         })
@@ -614,6 +628,7 @@ internal class DshHomePage : BasePager() {
     private fun selectSession(id: String) {
         dismissKeyboard()
         if (id == activeSessionId) return
+        sessionCreationGeneration++
         if (!sessionMessageReady.contains(id)) {
             pendingSessionSelections.add(id)
             return
