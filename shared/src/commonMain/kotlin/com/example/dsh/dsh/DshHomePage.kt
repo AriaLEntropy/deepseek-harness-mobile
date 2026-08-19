@@ -1258,7 +1258,7 @@ private fun ViewContainer<*, *>.DshConversation(
             attr {
                 flex(1f)
                 width(pagerData.pageViewWidth)
-                padding(16f, 18f, 20f, 18f)
+                padding(16f, 18f, COMPOSER_HEIGHT + 20f, 18f)
                 animation(keyboardAnimation(), keyboardHeight())
             }
             event {
@@ -1277,14 +1277,14 @@ private fun ViewContainer<*, *>.DshConversation(
         }
         View {
             attr {
-                height(142f)
+                height(COMPOSER_HEIGHT)
                 width(pagerData.pageViewWidth)
+                absolutePosition(left = 0f, right = 0f, bottom = keyboardHeight())
                 flexDirectionColumn()
                 padding(12f, 14f, 12f, 14f)
                 backgroundColor(Color.WHITE)
                 borderRadius(22f)
                 border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
-                transform(Translate(0f, 0f, 0f, -keyboardHeight()))
                 animation(keyboardAnimation(), keyboardHeight())
             }
             Input {
@@ -1492,3 +1492,5 @@ private fun ViewContainer<*, *>.DshHitButton(onClick: () -> Unit) {
         event { click { onClick() } }
     }
 }
+
+private const val COMPOSER_HEIGHT = 142f
