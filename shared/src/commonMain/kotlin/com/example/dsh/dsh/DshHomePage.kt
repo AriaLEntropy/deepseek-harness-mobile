@@ -533,6 +533,7 @@ internal class DshHomePage : BasePager() {
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
+            if (activeSessionId == sessionId) scrollMessagesToEnd()
         }, { error ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             if (messages.isNotEmpty()) {
@@ -560,6 +561,7 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[firstSessionId] = state
         messages = state
         ensureConversationPanel(firstSessionId)
+        scrollMessagesToEnd()
     }
 
     private fun loadApiKeyAsync() {
@@ -663,6 +665,7 @@ internal class DshHomePage : BasePager() {
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
+                        if (activeSessionId == sessionId) scrollMessagesToEnd()
                     }
                 }
             }
@@ -683,6 +686,7 @@ internal class DshHomePage : BasePager() {
                 // session ID, so an inactive session can be updated safely.
                 if (state.isEmpty() && loaded.isNotEmpty()) {
                     state.addAll(loaded)
+                    if (activeSessionId == sessionId) scrollMessagesToEnd()
                 }
             }
         }
