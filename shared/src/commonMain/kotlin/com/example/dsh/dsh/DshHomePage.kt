@@ -69,7 +69,7 @@ internal class DshHomePage : BasePager() {
     private var streamHandle: DshStreamHandle? = null
     private var messageScrollerRef: ViewRef<ListView<*, *>>? = null
     private var historyRequestGeneration = 0
-    private val messageCache = mutableMapOf<String, List<DshMessage>>()
+    private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
     private var inputFocused = false
     private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
@@ -490,10 +490,10 @@ internal class DshHomePage : BasePager() {
             }
             runCatching { localStore?.saveSessions(sessions.toList()) }
             activeSessionId = sessionId
-            messageCache[sessionId] = emptyList()
+            messages = ObservableList()
+            sessionMessageStates[sessionId] = messages
             draft = ""
             inputView?.setText("")
-            messages.clear()
             setTimeout(pagerId, 0) {
                 if (activeSessionId == sessionId) loadModels(sessionId)
             }
@@ -509,18 +509,16 @@ internal class DshHomePage : BasePager() {
         // Show the selected session immediately. The Host history request is
         // remote and can take a moment, so keeping the previous list here
         // makes a session switch look stuck.
-        val cached = cachedMessages(sessionId)
-        replaceMessagesIfChanged(cached)
+        messages = sessionMessageState(sessionId)
 
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
-            messageCache[sessionId] = loaded
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
         }, { error ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
-            if (cached.isNotEmpty()) {
+            if (messages.isNotEmpty()) {
                 connectionLabel = "内核连接失败 · 已显示缓存"
             } else {
                 messages.add(DshMessage("history-error", DshMessageRole.ERROR, error))
@@ -534,15 +532,14 @@ internal class DshHomePage : BasePager() {
         sessions.clear()
         sessions.addAll(cached)
         activeSessionId = cached.first().id
-        val cachedMessages = cachedMessages(activeSessionId)
-        replaceMessagesIfChanged(cachedMessages)
+        messages = sessionMessageState(activeSessionId)
     }
 
     private fun selectSession(id: String) {
         dismissKeyboard()
         if (id == activeSessionId) return
         cancelStreamingForSessionSwitch()
-        messageCache[activeSessionId] = messages.toList()
+        sessionMessageStates[activeSessionId] = messages
         activeSessionId = id
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
@@ -556,27 +553,28 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadCachedHistory(sessionId: String) {
-        replaceMessagesIfChanged(cachedMessages(sessionId))
+        messages = sessionMessageState(sessionId)
     }
 
-    private fun cachedMessages(sessionId: String): List<DshMessage> {
-        messageCache[sessionId]?.let { return it }
+    private fun sessionMessageState(sessionId: String): ObservableList<DshMessage> {
+        sessionMessageStates[sessionId]?.let { return it }
         val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
             .getOrDefault(emptyList())
-        messageCache[sessionId] = loaded
-        return loaded
+        return ObservableList(loaded.toMutableList()).also {
+            sessionMessageStates[sessionId] = it
+        }
     }
 
     private fun warmRecentSessionCache(
         sessionIds: kotlin.collections.List<String> = sessions.asSequence()
             .map { it.id }
-            .filter { it != activeSessionId && !messageCache.containsKey(it) }
+            .filter { it != activeSessionId && !sessionMessageStates.containsKey(it) }
             .take(SESSION_CACHE_WARM_LIMIT)
             .toList(),
         index: Int = 0,
     ) {
         if (index >= sessionIds.size) return
-        cachedMessages(sessionIds[index])
+        sessionMessageState(sessionIds[index])
         setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
             warmRecentSessionCache(sessionIds, index + 1)
         }
@@ -618,7 +616,7 @@ internal class DshHomePage : BasePager() {
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
         messages.add(user)
-        messageCache[sessionId] = messages.toList()
+        sessionMessageStates[sessionId] = messages
         scrollMessagesToEnd()
         streamingAssistantId = assistantId
         streamingAssistantContent = ""
@@ -809,14 +807,14 @@ internal class DshHomePage : BasePager() {
 
     private fun persistMessages(sessionId: String) {
         val snapshot = messages.toList()
-        messageCache[sessionId] = snapshot
+        sessionMessageStates[sessionId] = messages
         runCatching { localStore?.saveMessages(sessionId, snapshot) }
     }
 
     private fun replaceMessagesIfChanged(next: List<DshMessage>) {
         if (messages.toList() == next) return
-        messages.clear()
-        messages.addAll(next)
+        messages = ObservableList(next.toMutableList())
+        sessionMessageStates[activeSessionId] = messages
     }
 
     companion object {
