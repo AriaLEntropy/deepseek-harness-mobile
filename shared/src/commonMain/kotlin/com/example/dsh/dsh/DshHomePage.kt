@@ -579,7 +579,8 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[sessionId]?.let { return it }
         val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
             .getOrDefault(emptyList())
-        return ObservableList(loaded.toMutableList()).also {
+        val filtered = loaded.filterNot { it.isRuntimeContextSnapshot() }
+        return ObservableList(filtered.toMutableList()).also {
             sessionMessageStates[sessionId] = it
         }
     }
@@ -844,9 +845,10 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun replaceMessagesIfChanged(next: List<DshMessage>) {
-        if (messages.toList() == next) return
+        val filtered = next.filterNot { it.isRuntimeContextSnapshot() }
+        if (messages.toList() == filtered) return
         messages.clear()
-        messages.addAll(next)
+        messages.addAll(filtered)
         sessionMessageStates[activeSessionId] = messages
     }
 

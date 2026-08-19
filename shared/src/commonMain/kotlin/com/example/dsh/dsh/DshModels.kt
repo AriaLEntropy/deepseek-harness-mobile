@@ -25,6 +25,11 @@ internal data class DshMessage(
     val hidden: Boolean = false,
 )
 
+internal fun DshMessage.isRuntimeContextSnapshot(): Boolean {
+    return role == DshMessageRole.USER &&
+        content.startsWith("Current runtime context. This snapshot supersedes earlier runtime-context snapshots.")
+}
+
 internal data class DshCredentialSetup(
     val providerAvailable: Boolean,
     val configured: Boolean,

@@ -586,7 +586,7 @@ internal class DshHostRepository(
         partials.forEach { (key, text) ->
             if (text.isNotEmpty()) messages += DshMessage("partial-$key", DshMessageRole.ASSISTANT, text.toString(), streaming = true)
         }
-        return messages.filter { it.hidden || it.content.isNotEmpty() }
+        return messages.filter { it.hidden || (it.content.isNotEmpty() && !it.isRuntimeContextSnapshot()) }
     }
 
     private fun textFromBlocks(blocks: JSONArray?): String {
