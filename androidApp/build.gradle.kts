@@ -46,4 +46,8 @@ dependencies {
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("com.tencent.kuiklybase:kuikly-webview-android:1.0.1-2.0.21")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 }
