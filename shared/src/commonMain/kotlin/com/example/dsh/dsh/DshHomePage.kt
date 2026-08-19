@@ -26,6 +26,11 @@ import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /** First usable DSH surface: local sessions, streaming Markdown, and a composer. */
 @Page("home")
@@ -71,6 +76,8 @@ internal class DshHomePage : BasePager() {
     private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
     private var historyRequestGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
+    private val localReadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val pendingLocalMessageReads = mutableSetOf<String>()
     private var inputFocused = false
     private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
@@ -107,6 +114,11 @@ internal class DshHomePage : BasePager() {
             )
         }
         startEmbeddedEngine()
+    }
+
+    override fun pageWillDestroy() {
+        localReadScope.cancel()
+        super.pageWillDestroy()
     }
 
     override fun body(): ViewBuilder {
@@ -556,7 +568,7 @@ internal class DshHomePage : BasePager() {
         if (id == activeSessionId) return
         cancelStreamingForSessionSwitch()
         sessionMessageStates[activeSessionId] = messages
-        val nextMessages = sessionMessageState(id)
+        val nextMessages = sessionMessageState(id, loadFromDisk = false)
         ensureConversationPanel(id)
         messages = nextMessages
         activeSessionId = id
@@ -564,6 +576,7 @@ internal class DshHomePage : BasePager() {
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
         historyRequestGeneration++
+        loadMessagesFromDisk(id)
         setTimeout(pagerId, 0) {
             if (activeSessionId == id) loadModels(id)
         }
@@ -572,17 +585,38 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadCachedHistory(sessionId: String) {
-        messages = sessionMessageState(sessionId)
+        messages = sessionMessageState(sessionId, loadFromDisk = false)
         ensureConversationPanel(sessionId)
+        loadMessagesFromDisk(sessionId)
     }
 
-    private fun sessionMessageState(sessionId: String): ObservableList<DshMessage> {
+    private fun sessionMessageState(
+        sessionId: String,
+        loadFromDisk: Boolean = true,
+    ): ObservableList<DshMessage> {
         sessionMessageStates[sessionId]?.let { return it }
-        val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
-            .getOrDefault(emptyList())
-        val filtered = loaded.filterNot { it.isRuntimeContextSnapshot() }
-        return ObservableList(filtered.toMutableList()).also {
-            sessionMessageStates[sessionId] = it
+        val state = ObservableList<DshMessage>()
+        sessionMessageStates[sessionId] = state
+        if (loadFromDisk) loadMessagesFromDisk(sessionId)
+        return state
+    }
+
+    private fun loadMessagesFromDisk(sessionId: String) {
+        if (localStore == null || !pendingLocalMessageReads.add(sessionId)) return
+        localReadScope.launch {
+            val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
+                .getOrDefault(emptyList())
+                .filterNot { it.isRuntimeContextSnapshot() }
+            setTimeout(pagerId, 0) {
+                pendingLocalMessageReads.remove(sessionId)
+                val state = sessionMessageStates[sessionId] ?: return@setTimeout
+                // A remote history response or a new local prompt wins over
+                // a disk snapshot that finishes later. The state is keyed by
+                // session ID, so an inactive session can be updated safely.
+                if (state.isEmpty() && loaded.isNotEmpty()) {
+                    state.addAll(loaded)
+                }
+            }
         }
     }
 
@@ -595,7 +629,7 @@ internal class DshHomePage : BasePager() {
         index: Int = 0,
     ) {
         if (index >= sessionIds.size) return
-        sessionMessageState(sessionIds[index])
+        sessionMessageState(sessionIds[index], loadFromDisk = true)
         ensureConversationPanel(sessionIds[index])
         setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
             warmRecentSessionCache(sessionIds, index + 1)
