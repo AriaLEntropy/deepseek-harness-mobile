@@ -82,6 +82,11 @@ internal interface DshRepository {
         onError: (String) -> Unit,
     )
 
+    fun createSession(
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit,
+    )
+
     fun loadHistory(
         sessionId: String,
         onSuccess: (List<DshMessage>) -> Unit,

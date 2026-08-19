@@ -44,6 +44,7 @@ internal class DshHomePage : BasePager() {
     private var credentialSetupVisible by observable(false)
     private var credentialSetupBusy by observable(false)
     private var credentialSetupError by observable("")
+    private var credentialSetupTitle by observable("添加一个 API Key 开始使用")
     private var sessionDrawerVisible by observable(false)
     private var sessionDrawerAnimated by observable(false)
     private var sessionDrawerMaskAnimated by observable(false)
@@ -196,6 +197,8 @@ internal class DshHomePage : BasePager() {
                         activeId = { ctx.activeSessionId },
                         animated = { ctx.sessionDrawerAnimated },
                         onClose = { ctx.closeSessionDrawer() },
+                        onOpenSettings = { ctx.openCredentialSettings() },
+                        onNewSession = { ctx.createSession() },
                         onSelect = {
                             ctx.closeSessionDrawer()
                             ctx.selectSession(it)
@@ -215,9 +218,13 @@ internal class DshHomePage : BasePager() {
 
                 vif({ ctx.credentialSetupVisible }) {
                     DshCredentialSetupModal(
+                        title = { ctx.credentialSetupTitle },
                         busy = { ctx.credentialSetupBusy },
                         error = { ctx.credentialSetupError },
-                        inputRef = { ctx.apiKeyInputView = it.view },
+                        inputRef = {
+                            ctx.apiKeyInputView = it.view
+                            ctx.apiKeyInputView?.setText(ctx.apiKeyDraft)
+                        },
                         onApiKeyChange = {
                             ctx.apiKeyDraft = it
                             ctx.credentialSetupError = ""
@@ -263,7 +270,7 @@ internal class DshHomePage : BasePager() {
         }
     }
 
-    private fun loadRepository() {
+    private fun loadRepository(preferredSessionId: String? = null) {
         val hostRepository = repository ?: return
         hostRepository.loadSessions({ loaded ->
             sessions.clear()
@@ -271,7 +278,7 @@ internal class DshHomePage : BasePager() {
             runCatching { localStore?.saveSessions(loaded) }
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接"
             if (loaded.isNotEmpty()) {
-                activeSessionId = loaded.first().id
+                activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
                 loadModels(activeSessionId)
                 loadHistory(activeSessionId)
             } else {
@@ -280,7 +287,7 @@ internal class DshHomePage : BasePager() {
                     DshMessage(
                         id = "no-session",
                         role = DshMessageRole.ERROR,
-                        content = "Host 中没有可用会话，请创建工作区和新会话。",
+                        content = "当前还没有会话，打开左上角菜单后点击“新会话”即可开始。",
                     ),
                 )
             }
@@ -399,6 +406,46 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    private fun openCredentialSettings() {
+        dismissKeyboard()
+        attachmentMenuVisible = false
+        closeSessionDrawer()
+        credentialSetupTitle = "设置 DeepSeek API Key"
+        credentialSetupError = ""
+        apiKeyDraft = pendingApiKey
+        credentialSetupVisible = true
+    }
+
+    private fun createSession() {
+        val hostRepository = repository ?: run {
+            connectionLabel = "请先配置 API Key"
+            openCredentialSettings()
+            return
+        }
+        dismissKeyboard()
+        hostRepository.createSession({ sessionId ->
+            val created = DshSession(
+                id = sessionId,
+                title = "新会话",
+                workspace = "Host",
+                updatedLabel = "",
+            )
+            sessions.clear()
+            sessions.add(created)
+            runCatching { localStore?.saveSessions(sessions.toList()) }
+            activeSessionId = sessionId
+            draft = ""
+            inputView?.setText("")
+            messages.clear()
+            loadModels(sessionId)
+            loadHistory(sessionId)
+            closeSessionDrawer()
+        }, { error ->
+            connectionLabel = "新会话创建失败"
+            messages.add(DshMessage("session-create-error-${messages.size}", DshMessageRole.ERROR, error))
+        })
+    }
+
     private fun loadHistory(sessionId: String) {
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
@@ -442,7 +489,35 @@ internal class DshHomePage : BasePager() {
     private fun sendDraft() {
         dismissKeyboard()
         val prompt = draft.trim()
-        if (prompt.isEmpty() || streaming || repository == null || sessions.isEmpty()) return
+        if (prompt.isEmpty() || streaming) return
+        val hostRepository = repository
+        if (hostRepository == null) {
+            connectionLabel = "本地内核尚未连接"
+            messages.add(DshMessage(
+                "send-engine-error-${messages.size}",
+                DshMessageRole.ERROR,
+                "本地 Harness 尚未连接，请稍候再试。",
+            ))
+            return
+        }
+        if (sessions.isEmpty()) {
+            connectionLabel = "正在创建会话"
+            hostRepository.createSession({ sessionId ->
+                sessions.add(DshSession(sessionId, "新会话", "Host", ""))
+                runCatching { localStore?.saveSessions(sessions.toList()) }
+                activeSessionId = sessionId
+                loadModels(sessionId)
+                sendDraft()
+            }, { error ->
+                connectionLabel = "会话创建失败"
+                messages.add(DshMessage(
+                    "send-session-error-${messages.size}",
+                    DshMessageRole.ERROR,
+                    "无法创建会话：$error",
+                ))
+            })
+            return
+        }
         val sessionId = activeSessionId
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
@@ -452,7 +527,7 @@ internal class DshHomePage : BasePager() {
         inputView?.setText("")
         streaming = true
         connectionLabel = "正在生成"
-        streamHandle = repository?.streamReply(
+        streamHandle = hostRepository.streamReply(
             pagerId = pagerId,
             sessionId = sessionId,
             prompt = prompt,
@@ -584,6 +659,7 @@ internal class DshHomePage : BasePager() {
 }
 
 private fun ViewContainer<*, *>.DshCredentialSetupModal(
+    title: () -> String,
     busy: () -> Boolean,
     error: () -> String,
     inputRef: (ViewRef<InputView>) -> Unit,
@@ -609,7 +685,7 @@ private fun ViewContainer<*, *>.DshCredentialSetupModal(
             }
             Text {
                 attr {
-                    text("添加一个 API Key 开始使用")
+                    text(title())
                     fontSize(20f)
                     fontWeightBold()
                     color(Color(0xFF1F2933))
@@ -706,6 +782,8 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
     activeId: () -> String,
     animated: () -> Boolean,
     onClose: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onNewSession: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
     Modal(inWindow = true) {
@@ -768,6 +846,30 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
                         color(Color(0xFF32373C))
                     }
                 }
+                event { click { onNewSession() } }
+            }
+            View {
+                attr {
+                    height(42f)
+                    marginTop(8f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    paddingLeft(12f)
+                    paddingRight(12f)
+                    borderRadius(9f)
+                    backgroundColor(Color(0x00000000))
+                }
+                Image { attr { src(ImageUri.commonAssets("sliders.svg")); size(20f, 20f) } }
+                Text {
+                    attr {
+                        text("设置")
+                        marginLeft(10f)
+                        fontSize(14f)
+                        fontWeightMedium()
+                        color(Color(0xFF555D64))
+                    }
+                }
+                event { click { onOpenSettings() } }
             }
             Text {
                 attr {

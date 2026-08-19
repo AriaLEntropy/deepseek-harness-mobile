@@ -231,6 +231,21 @@ internal class DshHostRepository(
         }
     }
 
+    override fun createSession(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.SESSION_CREATE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error ?: "session.create returned an empty result")
+                return@request
+            }
+            val sessionId = value.optString("sessionId")
+            if (sessionId.isEmpty()) {
+                onError("session.create returned no sessionId")
+            } else {
+                onSuccess(sessionId)
+            }
+        }
+    }
+
     override fun loadHistory(sessionId: String, onSuccess: (List<DshMessage>) -> Unit, onError: (String) -> Unit) {
         history(sessionId, onSuccess, onError)
     }
@@ -287,7 +302,14 @@ internal class DshHostRepository(
                 it.id.startsWith("turn-end-")
                     && (it.id.substringAfter("turn-end-").toIntOrNull() ?: -1) > lastUserSeq
             }
-            if (completed) onComplete(latest)
+            val failure = snapshot.lastOrNull {
+                it.role == DshMessageRole.ERROR
+                    && it.id.startsWith("turn-error-")
+                    && (it.id.substringAfter("turn-error-").toIntOrNull() ?: -1) > lastUserSeq
+            }?.content
+            if (completed) {
+                if (failure.isNullOrEmpty()) onComplete(latest) else onError(failure)
+            }
             else setTimeout(pagerId, POLL_INTERVAL_MS) {
                 pollReply(sessionId, handle, latest, onDelta, onComplete, onError)
             }
@@ -362,6 +384,15 @@ internal class DshHostRepository(
                     val chunk = data.optJSONObject("chunk")
                     val text = chunk?.optString("text").orEmpty()
                     if (text.isNotEmpty()) partials.getOrPut(key) { StringBuilder() }.append(text)
+                    val reason = chunk?.optJSONObject("reason")
+                    if (chunk?.optString("type") == "finish" && reason?.optString("kind") == "error") {
+                        val failure = reason.optJSONObject("failure")?.optString("message").orEmpty()
+                        if (failure.isNotEmpty()) messages += DshMessage(
+                            "turn-error-$seq",
+                            DshMessageRole.ERROR,
+                            failure,
+                        )
+                    }
                 }
                 "assistant/message" -> {
                     val message = data.optJSONObject("message") ?: data
@@ -375,12 +406,21 @@ internal class DshHostRepository(
                     val name = data.optString("name")
                     messages += DshMessage("tool-$seq", DshMessageRole.TOOL, "正在执行 $name", toolName = name)
                 }
-                "turn/end" -> messages += DshMessage(
-                    "turn-end-$seq",
-                    DshMessageRole.TOOL,
-                    "",
-                    hidden = true,
-                )
+                "turn/end" -> {
+                    val reason = data.optJSONObject("reason")
+                    val error = reason?.optJSONObject("error")?.optString("message").orEmpty()
+                    if (error.isNotEmpty() && messages.none {
+                            it.role == DshMessageRole.ERROR && it.content == error
+                        }) {
+                        messages += DshMessage("turn-error-$seq", DshMessageRole.ERROR, error)
+                    }
+                    messages += DshMessage(
+                        "turn-end-$seq",
+                        DshMessageRole.TOOL,
+                        "",
+                        hidden = true,
+                    )
+                }
             }
         }
         partials.forEach { (key, text) ->
