@@ -560,6 +560,7 @@ internal class DshHomePage : BasePager() {
         ensureConversationPanel(id)
         messages = nextMessages
         activeSessionId = id
+        scrollMessagesToEnd()
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
         historyRequestGeneration++
