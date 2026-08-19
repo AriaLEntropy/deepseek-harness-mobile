@@ -5,6 +5,7 @@ import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.vif
+import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.reactive.handler.observable
@@ -1434,14 +1435,15 @@ private fun ViewContainer<*, *>.DshConversation(
                             if (voiceActive()) 0xFF679EFE else 0xFF4176E6,
                         ))
                     }
-                    if (stopButtonVisible()) {
+                    vif({ stopButtonVisible() }) {
                         Image {
                             attr {
                                 src(ImageUri.commonAssets("square.svg"))
                                 size(23f, 23f)
                             }
                         }
-                    } else {
+                    }
+                    velse {
                         Image {
                             attr {
                                 src(ImageUri.commonAssets(if (draft().isEmpty()) "mic.svg" else "send.svg"))
