@@ -15,6 +15,7 @@ import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Scroller
+import com.tencent.kuikly.core.views.ScrollerView
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.compose.Button
@@ -63,6 +64,7 @@ internal class DshHomePage : BasePager() {
     private var inputView: InputView? = null
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
+    private var messageScrollerRef: ViewRef<ScrollerView<*, *>>? = null
     private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
@@ -140,6 +142,7 @@ internal class DshHomePage : BasePager() {
                                 messages = { ctx.messages },
                                 streaming = { ctx.streaming },
                                 streamingContent = { ctx.streamingAssistantContent },
+                                scrollerRef = { ctx.messageScrollerRef = it },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
@@ -166,6 +169,7 @@ internal class DshHomePage : BasePager() {
                             messages = { ctx.messages },
                             streaming = { ctx.streaming },
                             streamingContent = { ctx.streamingAssistantContent },
+                            scrollerRef = { ctx.messageScrollerRef = it },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
@@ -538,6 +542,7 @@ internal class DshHomePage : BasePager() {
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
         messages.add(user)
+        scrollMessagesToEnd()
         streamingAssistantId = assistantId
         streamingAssistantContent = ""
         pendingAssistantDelta.setLength(0)
@@ -676,12 +681,32 @@ internal class DshHomePage : BasePager() {
         if (streamingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
         streamingAssistantContent += pendingAssistantDelta.toString()
         pendingAssistantDelta.setLength(0)
+        scrollMessagesToEnd()
+    }
+
+    private fun scrollMessagesToEnd() {
+        addTaskWhenPagerUpdateLayoutFinish {
+            scrollMessagesToEndAfterLayout()
+            // KuiklyMarkdown updates its block list on its own streaming
+            // cadence, so its final height can land after the parent layout.
+            setTimeout(pagerId, MARKDOWN_LAYOUT_SETTLE_DELAY_MS) {
+                scrollMessagesToEndAfterLayout()
+            }
+        }
+    }
+
+    private fun scrollMessagesToEndAfterLayout() {
+        val scroller = messageScrollerRef?.view ?: return
+        val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
+        val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
+        scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
     }
 
     private fun settleStreamingMessage(role: DshMessageRole, content: String) {
         val id = streamingAssistantId
         if (id.isNotEmpty()) {
             messages.add(DshMessage(id, role, content, streaming = false))
+            scrollMessagesToEnd()
         }
         streamingAssistantId = ""
         pendingAssistantDelta.setLength(0)
@@ -705,6 +730,7 @@ internal class DshHomePage : BasePager() {
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
         private const val STREAM_FLUSH_INTERVAL_MS = 100
+        private const val MARKDOWN_LAYOUT_SETTLE_DELAY_MS = 140
     }
 }
 
@@ -1227,6 +1253,7 @@ private fun ViewContainer<*, *>.DshConversation(
     messages: () -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
     streamingContent: () -> String,
+    scrollerRef: (ViewRef<ScrollerView<*, *>>) -> Unit,
     draft: () -> String,
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
@@ -1297,6 +1324,7 @@ private fun ViewContainer<*, *>.DshConversation(
             event { click { onDismissKeyboard() } }
         }
         Scroller {
+            ref { scrollerRef(it) }
             attr {
                 flex(1f)
                 width(pagerData.pageViewWidth)
