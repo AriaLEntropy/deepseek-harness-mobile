@@ -65,6 +65,7 @@ internal class DshHomePage : BasePager() {
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
     private var messageScrollerRef: ViewRef<ScrollerView<*, *>>? = null
+    private var historyRequestGeneration = 0
     private var streamingAssistantId = ""
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
@@ -472,15 +473,23 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadHistory(sessionId: String) {
+        val requestGeneration = ++historyRequestGeneration
+
+        // Show the selected session immediately. The Host history request is
+        // remote and can take a moment, so keeping the previous list here
+        // makes a session switch look stuck.
+        val cached = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
+            .getOrDefault(emptyList())
+        replaceMessagesIfChanged(cached)
+
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
+            if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
         }, { error ->
-            val cached = runCatching { localStore?.loadMessages(sessionId).orEmpty() }.getOrDefault(emptyList())
-            messages.clear()
+            if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             if (cached.isNotEmpty()) {
-                messages.addAll(cached)
                 connectionLabel = "内核连接失败 · 已显示缓存"
             } else {
                 messages.add(DshMessage("history-error", DshMessageRole.ERROR, error))
@@ -503,6 +512,8 @@ internal class DshHomePage : BasePager() {
         if (id == activeSessionId) return
         stopStream()
         activeSessionId = id
+        // Invalidate any in-flight request for the previous session before
+        // starting the new one, so an old response cannot repaint this view.
         loadModels(id)
         loadHistory(id)
         draft = ""
