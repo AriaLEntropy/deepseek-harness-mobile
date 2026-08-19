@@ -1481,11 +1481,6 @@ private fun ViewContainer<*, *>.DshConversation(
                     Image { attr { src(ImageUri.commonAssets("sliders.svg")); size(22f, 22f) } }
                 }
                 View {
-                    attr { size(40f, 40f); marginLeft(4f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("plus.svg")); size(25f, 25f) } }
-                    DshHitButton(onToggleAttachments)
-                }
-                View {
                     attr {
                         size(48f, 48f)
                         marginLeft(6f)
