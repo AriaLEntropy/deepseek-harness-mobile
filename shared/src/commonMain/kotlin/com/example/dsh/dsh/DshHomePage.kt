@@ -1580,7 +1580,11 @@ private fun ViewContainer<*, *>.DshConversation(
                         borderRadius(24f)
                         allCenter()
                         backgroundColor(Color(
-                            if (voiceActive()) 0xFF679EFE else 0xFF4176E6,
+                            when {
+                                stopButtonVisible() -> 0xFFE05252
+                                voiceActive() -> 0xFF679EFE
+                                else -> 0xFF4176E6
+                            },
                         ))
                     }
                     vif({ stopButtonVisible() }) {
