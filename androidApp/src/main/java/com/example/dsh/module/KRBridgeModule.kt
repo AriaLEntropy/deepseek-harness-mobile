@@ -3,6 +3,8 @@ package com.example.dsh.module
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Color
+import android.os.Build
 import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
@@ -16,6 +18,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 class KRBridgeModule : KuiklyRenderBaseModule() {
+    private var navigationBarColorBeforeDim: Int? = null
+    private var navigationBarContrastBeforeDim: Boolean? = null
 
     override fun call(method: String, params: String?, callback: KuiklyRenderCallback?): Any? {
         return when (method) {
@@ -73,6 +77,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
             "closeKeyboard" -> {
                 closeKeyboard()
+            }
+
+            "setSystemBarsDimmed" -> {
+                setSystemBarsDimmed(params)
             }
 
             else -> callback?.invoke(
@@ -178,6 +186,42 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             inputMethodManager?.hideSoftInputFromWindow(focusedView?.windowToken, 0)
         }
         return "true"
+    }
+
+    private fun setSystemBarsDimmed(params: String?) {
+        val dimmed = JSONObject(params ?: "{}").optBoolean("dimmed")
+        activity?.runOnUiThread {
+            val window = activity?.window ?: return@runOnUiThread
+            if (dimmed) {
+                if (navigationBarColorBeforeDim == null) {
+                    navigationBarColorBeforeDim = window.navigationBarColor
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        navigationBarContrastBeforeDim = window.isNavigationBarContrastEnforced
+                    }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isNavigationBarContrastEnforced = false
+                }
+                window.navigationBarColor = Color.rgb(153, 153, 153)
+            } else {
+                restoreNavigationBar()
+            }
+        }
+    }
+
+    private fun restoreNavigationBar() {
+        val window = activity?.window ?: return
+        navigationBarColorBeforeDim?.let { window.navigationBarColor = it }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            navigationBarContrastBeforeDim?.let { window.isNavigationBarContrastEnforced = it }
+        }
+        navigationBarColorBeforeDim = null
+        navigationBarContrastBeforeDim = null
+    }
+
+    override fun onDestroy() {
+        restoreNavigationBar()
+        super.onDestroy()
     }
 
     companion object {

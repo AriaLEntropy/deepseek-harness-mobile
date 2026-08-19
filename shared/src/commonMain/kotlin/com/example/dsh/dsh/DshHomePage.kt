@@ -82,7 +82,7 @@ internal class DshHomePage : BasePager() {
         restoreCachedSessions()
         if (apiKey.isEmpty()) {
             connectionLabel = "等待配置"
-            credentialSetupVisible = true
+            updateCredentialSetupVisibility(true)
             messages.add(
                 DshMessage(
                     id = "api-key-required",
@@ -407,7 +407,7 @@ internal class DshHomePage : BasePager() {
         apiKeyInputView?.setText("")
         credentialSetupBusy = false
         credentialSetupError = ""
-        credentialSetupVisible = false
+        updateCredentialSetupVisibility(false)
         dismissKeyboard()
         pendingApiKey = key
         if (engineReady) {
@@ -424,7 +424,14 @@ internal class DshHomePage : BasePager() {
         credentialSetupTitle = "设置 DeepSeek API Key"
         credentialSetupError = ""
         apiKeyDraft = pendingApiKey
-        credentialSetupVisible = true
+        updateCredentialSetupVisibility(true)
+    }
+
+    private fun updateCredentialSetupVisibility(visible: Boolean) {
+        credentialSetupVisible = visible
+        if (pageData.isAndroid) {
+            bridgeModule.setSystemBarsDimmed(visible)
+        }
     }
 
     private fun createSession() {

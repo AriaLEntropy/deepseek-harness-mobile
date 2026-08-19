@@ -289,6 +289,14 @@ internal class BridgeModule : Module() {
         return syncCallNativeMethod(CLOSE_KEYBOARD, data, callbackFn)
     }
 
+    fun setSystemBarsDimmed(dimmed: Boolean) {
+        callNativeMethod(
+            SET_SYSTEM_BARS_DIMMED,
+            JSONObject().apply { put("dimmed", dimmed) },
+            null,
+        )
+    }
+
     fun humanVerification(params: JSONObject, callbackFn: CallbackFn? = null): String {
         return syncCallNativeMethod(HUMAN_VERIFICATION, params, callbackFn)
     }
@@ -348,6 +356,7 @@ internal class BridgeModule : Module() {
         const val REMOTE_CONFIG = "loadRemoteConfig"
         const val SIGN_ALERT = "signAlert"
         const val CLOSE_KEYBOARD = "closeKeyboard"
+        const val SET_SYSTEM_BARS_DIMMED = "setSystemBarsDimmed"
         const val URL_ENCODE = "urlEncode"
         const val URL_DECODE = "urlDecode"
         const val SHOW_PHOTO_BROWSER = "showPhotoBrowser"
