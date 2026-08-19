@@ -1459,9 +1459,7 @@ private fun ViewContainer<*, *>.DshConversation(
             flex(1f)
             width(pagerData.pageViewWidth)
             flexDirectionColumn()
-            paddingBottom(keyboardHeight())
             backgroundColor(Color.WHITE)
-            animation(keyboardAnimation(), keyboardHeight())
         }
         View {
             attr {
@@ -1509,6 +1507,13 @@ private fun ViewContainer<*, *>.DshConversation(
         View {
             attr {
                 flex(1f)
+                flexDirectionColumn()
+                transform(Translate(0f, offsetY = -keyboardHeight()))
+                animation(keyboardAnimation(), keyboardHeight())
+            }
+            View {
+                attr {
+                flex(1f)
                 width(pagerData.pageViewWidth)
                 backgroundColor(Color.WHITE)
             }
@@ -1524,7 +1529,6 @@ private fun ViewContainer<*, *>.DshConversation(
                         visibility(activeConversationId() == sessionId)
                         touchEnable(activeConversationId() == sessionId)
                         zIndex(if (activeConversationId() == sessionId) 1 else 0)
-                        animation(keyboardAnimation(), keyboardHeight())
                     }
                     event {
                         click { onDismissKeyboard() }
@@ -1553,16 +1557,16 @@ private fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-        View {
-            attr {
-                height(COMPOSER_HEIGHT)
-                width(pagerData.pageViewWidth)
-                flexDirectionColumn()
-                padding(12f, 14f, 12f, 14f)
-                backgroundColor(Color.WHITE)
-                borderRadius(22f)
-                border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
-            }
+            View {
+                attr {
+                    height(COMPOSER_HEIGHT)
+                    width(pagerData.pageViewWidth)
+                    flexDirectionColumn()
+                    padding(12f, 14f, 12f, 14f)
+                    backgroundColor(Color.WHITE)
+                    borderRadius(22f)
+                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
+                }
             Input {
                 ref { inputRef(it) }
                 attr {
@@ -1699,6 +1703,7 @@ private fun ViewContainer<*, *>.DshConversation(
                             }
                     }
                 }
+            }
             }
         }
     }
