@@ -81,6 +81,7 @@ internal class DshHomePage : BasePager() {
     private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
     private var historyRequestGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
+    private val sessionMessageSnapshots = mutableMapOf<String, List<DshMessage>>()
     private val sessionMessageReady = mutableSetOf<String>()
     private val pendingSessionSelections = mutableSetOf<String>()
     private val localReadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -643,6 +644,7 @@ internal class DshHomePage : BasePager() {
             return
         }
         prepareEagerSession(id)
+        hydrateSessionState(id)
         if (!conversationPanelIds.contains(id) || !messageScrollerRefs.containsKey(id)) {
             // Mount the target ListView first. Changing activeSessionId in the
             // same frame would make the new panel visible before its native
@@ -735,6 +737,12 @@ internal class DshHomePage : BasePager() {
         ensureConversationPanel(sessionId)
     }
 
+    private fun hydrateSessionState(sessionId: String) {
+        val snapshot = sessionMessageSnapshots.remove(sessionId) ?: return
+        val state = sessionMessageStates[sessionId] ?: return
+        if (state.isEmpty() && snapshot.isNotEmpty()) state.addAll(snapshot)
+    }
+
     /**
      * Warm every known conversation after the session index is available.
      * Reads are serialized through one background coroutine because the local
@@ -774,14 +782,17 @@ internal class DshHomePage : BasePager() {
                         "sessionData.disk.done:$sessionId messages=${loaded.size} query=${queryMs}ms uiWait=${uiWaitMs}ms",
                         readStartedAt,
                     )
-                    if (state.isEmpty() && loaded.isNotEmpty()) {
-                        state.addAll(loaded)
-                        perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
-                    }
                     if (sessionId == activeSessionId || pendingSessionSelections.contains(sessionId)) {
+                        if (state.isEmpty() && loaded.isNotEmpty()) {
+                            state.addAll(loaded)
+                            perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
+                        }
                         prepareEagerSession(sessionId)
+                        realizeSessionAfterData(sessionId)
+                    } else {
+                        sessionMessageSnapshots[sessionId] = loaded
+                        perfLog("sessionData.memory.cached:$sessionId messages=${loaded.size}")
                     }
-                    realizeSessionAfterData(sessionId)
                     completePendingSessionSelection(sessionId)
                 }
             }
@@ -809,12 +820,17 @@ internal class DshHomePage : BasePager() {
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
-                if (state.isEmpty() && loaded.isNotEmpty()) {
-                    state.addAll(loaded)
-                    perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
+                if (sessionId == activeSessionId || pendingSessionSelections.contains(sessionId)) {
+                    if (state.isEmpty() && loaded.isNotEmpty()) {
+                        state.addAll(loaded)
+                        perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
+                    }
+                    ensureConversationPanel(sessionId)
+                    realizeSessionAfterData(sessionId)
+                } else {
+                    sessionMessageSnapshots[sessionId] = loaded
+                    perfLog("sessionData.memory.cached:$sessionId messages=${loaded.size}")
                 }
-                ensureConversationPanel(sessionId)
-                realizeSessionAfterData(sessionId)
                 completePendingSessionSelection(sessionId)
             }
         }
