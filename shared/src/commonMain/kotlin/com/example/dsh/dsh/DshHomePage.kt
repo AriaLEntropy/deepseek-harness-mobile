@@ -25,6 +25,7 @@ import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
+import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.views.ListView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -279,6 +280,9 @@ internal class DshHomePage : BasePager() {
                 this@DshHomePage.dismissKeyboard()
                 this@DshHomePage.openSessionDrawer()
             }
+        }
+        addTaskWhenPagerUpdateLayoutFinish {
+            refreshMountedSessionRenderTrees()
         }
     }
 
@@ -614,6 +618,7 @@ internal class DshHomePage : BasePager() {
 
     private fun selectMountedSession(id: String) {
         if (id == activeSessionId) return
+        refreshSessionRenderTree(id)
         cancelStreamingForSessionSwitch()
         sessionMessageStates[activeSessionId] = messages
         val nextMessages = sessionMessageState(id, loadFromDisk = false)
@@ -621,6 +626,10 @@ internal class DshHomePage : BasePager() {
         messages = nextMessages
         activeSessionId = id
         scrollMessagesToEnd()
+        addTaskWhenPagerUpdateLayoutFinish {
+            refreshSessionRenderTree(id)
+            if (activeSessionId == id) scrollMessagesToEnd()
+        }
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
         historyRequestGeneration++
@@ -630,6 +639,15 @@ internal class DshHomePage : BasePager() {
         }
         draft = ""
         inputView?.setText("")
+    }
+
+    private fun refreshMountedSessionRenderTrees() {
+        conversationPanelIds.toList().forEach { refreshSessionRenderTree(it) }
+    }
+
+    private fun refreshSessionRenderTree(sessionId: String) {
+        val list = messageScrollerRefs[sessionId]?.view ?: return
+        (list.contentView as? ListContentView)?.createRenderViewsOnVisibleRect()
     }
 
     private fun loadCachedHistory(sessionId: String) {
