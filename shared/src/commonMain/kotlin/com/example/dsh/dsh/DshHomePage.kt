@@ -128,6 +128,7 @@ internal class DshHomePage : BasePager() {
         val ctx = this
         val wide = pagerData.pageViewWidth >= 720f
         return {
+            ctx.perfLog("body.builder.begin")
             View {
                 attr {
                     flex(1f)
@@ -162,6 +163,7 @@ internal class DshHomePage : BasePager() {
                     }
 
                     if (wide) {
+                        ctx.perfLog("body.conversation.begin wide=true panels=${ctx.conversationPanelIds.size} eager=${ctx.eagerSessionIds.size}")
                         View {
                             attr {
                                 flex(1f)
@@ -197,7 +199,9 @@ internal class DshHomePage : BasePager() {
                                 onToggleVoice = { ctx.toggleVoice() },
                             )
                         }
+                        ctx.perfLog("body.conversation.end wide=true")
                     } else {
+                        ctx.perfLog("body.conversation.begin wide=false panels=${ctx.conversationPanelIds.size} eager=${ctx.eagerSessionIds.size}")
                         DshConversation(
                             conversationIds = { ctx.conversationPanelIds },
                             eagerConversationIds = { ctx.eagerSessionIds },
@@ -227,6 +231,7 @@ internal class DshHomePage : BasePager() {
                             },
                             onToggleVoice = { ctx.toggleVoice() },
                         )
+                        ctx.perfLog("body.conversation.end wide=false")
                     }
 
                     vif({ ctx.sessionDrawerVisible }) {
