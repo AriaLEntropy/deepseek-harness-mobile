@@ -1428,7 +1428,12 @@ private fun ViewContainer<*, *>.DshConversation(
                         ))
                     }
                     if (streaming()) {
-                        Text { attr { text("■"); fontSize(17f); color(Color.WHITE) } }
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("square.svg"))
+                                size(23f, 23f)
+                            }
+                        }
                     } else {
                         Image {
                             attr {
