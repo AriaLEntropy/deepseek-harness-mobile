@@ -763,11 +763,17 @@ internal class DshHomePage : BasePager() {
                 val loaded = runCatching { store.loadMessages(sessionId).orEmpty() }
                     .getOrDefault(emptyList())
                     .filterNot { it.isRuntimeContextSnapshot() }
+                val queryFinishedAt = TimeSource.Monotonic.markNow()
+                val queryMs = readStartedAt.elapsedNow().inWholeMilliseconds
                 setTimeout(pagerId, 0) {
                     pendingLocalMessageReads.remove(sessionId)
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
                     sessionMessageReady.add(sessionId)
-                    perfLog("sessionData.disk.done:$sessionId messages=${loaded.size}", readStartedAt)
+                    val uiWaitMs = queryFinishedAt.elapsedNow().inWholeMilliseconds
+                    perfLog(
+                        "sessionData.disk.done:$sessionId messages=${loaded.size} query=${queryMs}ms uiWait=${uiWaitMs}ms",
+                        readStartedAt,
+                    )
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
                         perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
@@ -786,14 +792,20 @@ internal class DshHomePage : BasePager() {
         if (localStore == null || !pendingLocalMessageReads.add(sessionId)) return
         localReadScope.launch {
             val readStartedAt = TimeSource.Monotonic.markNow()
-            val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
-                .getOrDefault(emptyList())
-                .filterNot { it.isRuntimeContextSnapshot() }
-            setTimeout(pagerId, 0) {
+                val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
+                    .getOrDefault(emptyList())
+                    .filterNot { it.isRuntimeContextSnapshot() }
+                val queryFinishedAt = TimeSource.Monotonic.markNow()
+                val queryMs = readStartedAt.elapsedNow().inWholeMilliseconds
+                setTimeout(pagerId, 0) {
                 pendingLocalMessageReads.remove(sessionId)
                 val state = sessionMessageStates[sessionId] ?: return@setTimeout
                 sessionMessageReady.add(sessionId)
-                perfLog("sessionData.disk.done:$sessionId messages=${loaded.size}", readStartedAt)
+                val uiWaitMs = queryFinishedAt.elapsedNow().inWholeMilliseconds
+                perfLog(
+                    "sessionData.disk.done:$sessionId messages=${loaded.size} query=${queryMs}ms uiWait=${uiWaitMs}ms",
+                    readStartedAt,
+                )
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
