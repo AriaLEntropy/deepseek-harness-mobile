@@ -1200,6 +1200,7 @@ private fun ViewContainer<*, *>.DshConversation(
     View {
         attr {
             flex(1f)
+            width(pagerData.pageViewWidth)
             flexDirectionColumn()
             backgroundColor(Color.WHITE)
         }
@@ -1249,6 +1250,7 @@ private fun ViewContainer<*, *>.DshConversation(
         Scroller {
             attr {
                 flex(1f)
+                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
                 padding(16f, 18f, 20f, 18f)
                 animation(keyboardAnimation(), keyboardHeight())
             }
@@ -1259,6 +1261,9 @@ private fun ViewContainer<*, *>.DshConversation(
             }
             vfor({ messages() }) { message ->
                 View {
+                    attr {
+                        width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                    }
                     DshMessageRow(message, streaming())
                 }
             }
@@ -1438,6 +1443,9 @@ private fun ViewContainer<*, *>.DshMessageRow(message: DshMessage, pageStreaming
         }
         View {
             attr {
+                if (!isUser && !isError) {
+                    width((pagerData.pageViewWidth - 36f).coerceAtMost(620f).coerceAtLeast(0f))
+                }
                 maxWidth(620f)
                 padding(if (isUser) 10f else 0f, if (isUser) 14f else 0f, if (isUser) 10f else 0f, if (isUser) 14f else 0f)
                 borderRadius(if (isUser) 18f else 0f)
