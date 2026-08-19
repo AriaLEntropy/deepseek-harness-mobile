@@ -92,6 +92,7 @@ internal class DshHomePage : BasePager() {
     private var assistantFlushScheduled = false
     private var scrollSettleGeneration = 0
     private var perfTraceSequence = 0
+    private var preloadTraceSequence = 0
 
     override fun created() {
         super.created()
@@ -759,7 +760,10 @@ internal class DshHomePage : BasePager() {
      * SQLite driver is shared by the page and should not be queried concurrently.
      */
     private fun preloadAllSessionMessages() {
+        val preloadId = ++preloadTraceSequence
+        val queuedAt = TimeSource.Monotonic.markNow()
         val sessionIds = sessions.toList().map { it.id }
+        perfLog("preload.$preloadId.queued sessions=${sessionIds.size}", queuedAt)
         // Load data first. Do not mount empty ListViews: LazyLoop initializes
         // its visible range from the initial list and may not realize the
         // first items when the list is populated later.
@@ -774,20 +778,35 @@ internal class DshHomePage : BasePager() {
         val pending = sessionIds
             .filterNot { sessionMessageReady.contains(it) }
             .filter { pendingLocalMessageReads.add(it) }
-        if (pending.isEmpty()) return
+        if (pending.isEmpty()) {
+            perfLog("preload.$preloadId.nothing-pending", queuedAt)
+            return
+        }
+        perfLog("preload.$preloadId.pending count=${pending.size}", queuedAt)
         localReadScope.launch {
+            perfLog("preload.$preloadId.coroutine.started", queuedAt)
             pending.forEach { sessionId ->
                 val readStartedAt = TimeSource.Monotonic.markNow()
+                perfLog("preload.$preloadId.sqlite.begin:$sessionId", queuedAt)
                 val loaded = runCatching { store.loadMessages(sessionId).orEmpty() }
                     .getOrDefault(emptyList())
                     .filterNot { it.isRuntimeContextSnapshot() }
                 val queryFinishedAt = TimeSource.Monotonic.markNow()
                 val queryMs = readStartedAt.elapsedNow().inWholeMilliseconds
+                perfLog(
+                    "preload.$preloadId.sqlite.end:$sessionId messages=${loaded.size} query=${queryMs}ms",
+                    queuedAt,
+                )
                 setTimeout(pagerId, 0) {
+                    val uiCallbackAt = TimeSource.Monotonic.markNow()
                     pendingLocalMessageReads.remove(sessionId)
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
                     sessionMessageReady.add(sessionId)
                     val uiWaitMs = queryFinishedAt.elapsedNow().inWholeMilliseconds
+                    perfLog(
+                        "preload.$preloadId.ui.callback:$sessionId uiWait=${uiWaitMs}ms callbackDelay=${uiCallbackAt.elapsedNow().inWholeMilliseconds}ms",
+                        queuedAt,
+                    )
                     perfLog(
                         "sessionData.disk.done:$sessionId messages=${loaded.size} query=${queryMs}ms uiWait=${uiWaitMs}ms",
                         readStartedAt,
@@ -800,6 +819,7 @@ internal class DshHomePage : BasePager() {
                         }
                         prepareEagerSession(sessionId)
                         realizeSessionAfterData(sessionId)
+                        perfLog("preload.$preloadId.ui.applied:$sessionId", queuedAt)
                     } else {
                         sessionMessageSnapshots[sessionId] = loaded
                         perfLog("sessionData.memory.cached:$sessionId messages=${loaded.size}")
@@ -807,6 +827,7 @@ internal class DshHomePage : BasePager() {
                     completePendingSessionSelection(sessionId)
                 }
             }
+            perfLog("preload.$preloadId.coroutine.finished", queuedAt)
         }
     }
 
@@ -820,18 +841,24 @@ internal class DshHomePage : BasePager() {
             return
         }
         if (localStore == null || !pendingLocalMessageReads.add(sessionId)) return
+        val readQueuedAt = TimeSource.Monotonic.markNow()
+        perfLog("sessionRead.queued:$sessionId", readQueuedAt)
         localReadScope.launch {
             val readStartedAt = TimeSource.Monotonic.markNow()
-                val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
+            perfLog("sessionRead.coroutine.started:$sessionId", readQueuedAt)
+            perfLog("sessionRead.sqlite.begin:$sessionId", readQueuedAt)
+            val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
                     .getOrDefault(emptyList())
                     .filterNot { it.isRuntimeContextSnapshot() }
                 val queryFinishedAt = TimeSource.Monotonic.markNow()
-                val queryMs = readStartedAt.elapsedNow().inWholeMilliseconds
-                setTimeout(pagerId, 0) {
+            val queryMs = readStartedAt.elapsedNow().inWholeMilliseconds
+            perfLog("sessionRead.sqlite.end:$sessionId messages=${loaded.size} query=${queryMs}ms", readQueuedAt)
+            setTimeout(pagerId, 0) {
                 pendingLocalMessageReads.remove(sessionId)
                 val state = sessionMessageStates[sessionId] ?: return@setTimeout
                 sessionMessageReady.add(sessionId)
                 val uiWaitMs = queryFinishedAt.elapsedNow().inWholeMilliseconds
+                perfLog("sessionRead.ui.callback:$sessionId uiWait=${uiWaitMs}ms", readQueuedAt)
                 perfLog(
                     "sessionData.disk.done:$sessionId messages=${loaded.size} query=${queryMs}ms uiWait=${uiWaitMs}ms",
                     readStartedAt,
