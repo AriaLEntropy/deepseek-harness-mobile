@@ -599,6 +599,21 @@ internal class DshHomePage : BasePager() {
     private fun selectSession(id: String) {
         dismissKeyboard()
         if (id == activeSessionId) return
+        if (!conversationPanelIds.contains(id) || !messageScrollerRefs.containsKey(id)) {
+            // Mount the target ListView first. Changing activeSessionId in the
+            // same frame would make the new panel visible before its native
+            // render tree and Markdown children exist.
+            ensureConversationPanel(id)
+            addTaskWhenPagerUpdateLayoutFinish {
+                if (activeSessionId != id) selectSession(id)
+            }
+            return
+        }
+        selectMountedSession(id)
+    }
+
+    private fun selectMountedSession(id: String) {
+        if (id == activeSessionId) return
         cancelStreamingForSessionSwitch()
         sessionMessageStates[activeSessionId] = messages
         val nextMessages = sessionMessageState(id, loadFromDisk = false)
@@ -693,7 +708,7 @@ internal class DshHomePage : BasePager() {
     private fun warmRecentSessionCache(
         sessionIds: kotlin.collections.List<String> = sessions.asSequence()
             .map { it.id }
-            .filter { it != activeSessionId && !sessionMessageStates.containsKey(it) }
+            .filter { it != activeSessionId && !conversationPanelIds.contains(it) }
             .take(SESSION_CACHE_WARM_LIMIT)
             .toList(),
         index: Int = 0,
