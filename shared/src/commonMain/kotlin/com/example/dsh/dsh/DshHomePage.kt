@@ -109,6 +109,9 @@ internal class DshHomePage : BasePager() {
         ensureConversationPanel(activeSessionId)
         restoreCachedSessions()
         perfLog("startup.restoreCachedSessions.done", startedAt)
+        // The active conversation is the critical first-frame path. Render
+        // only this session eagerly; inactive sessions stay data-only/lazy.
+        prepareEagerSession(activeSessionId)
         preloadAllSessionMessages()
         perfLog("startup.preloadAllSessionMessages.scheduled", startedAt)
         loadApiKeyAsync()
@@ -358,6 +361,7 @@ internal class DshHomePage : BasePager() {
             if (loaded.isNotEmpty()) {
                 activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
                 ensureConversationPanel(activeSessionId)
+                prepareEagerSession(activeSessionId)
                 loadModels(activeSessionId)
                 loadHistory(activeSessionId)
             } else {
