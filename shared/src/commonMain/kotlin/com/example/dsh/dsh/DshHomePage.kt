@@ -452,8 +452,11 @@ internal class DshHomePage : BasePager() {
                 workspace = "Host",
                 updatedLabel = "",
             )
-            sessions.clear()
-            sessions.add(created)
+            // Keep the existing sessions when creating a new one. Clearing
+            // this list also rewrites SQLite with only the newly created row.
+            if (sessions.none { it.id == created.id }) {
+                sessions.add(0, created)
+            }
             runCatching { localStore?.saveSessions(sessions.toList()) }
             activeSessionId = sessionId
             draft = ""
