@@ -105,9 +105,11 @@ internal class DshHomePage : BasePager() {
             }.getOrNull()
         }
         animateConnectionDots()
-        sessionMessageStates[activeSessionId] = messages
-        ensureConversationPanel(activeSessionId)
         restoreCachedSessions()
+        if (sessions.isEmpty()) {
+            sessionMessageStates[activeSessionId] = messages
+            prepareEagerSession(activeSessionId)
+        }
         perfLog("startup.restoreCachedSessions.done", startedAt)
         // The active conversation is the critical first-frame path. Render
         // only this session eagerly; inactive sessions stay data-only/lazy.
