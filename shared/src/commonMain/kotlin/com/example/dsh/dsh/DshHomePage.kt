@@ -60,6 +60,9 @@ internal class DshHomePage : BasePager() {
     private var inputView: InputView? = null
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
+    private var pendingAssistantId = ""
+    private val pendingAssistantDelta = StringBuilder()
+    private var assistantFlushScheduled = false
 
     override fun created() {
         super.created()
@@ -532,8 +535,9 @@ internal class DshHomePage : BasePager() {
             pagerId = pagerId,
             sessionId = sessionId,
             prompt = prompt,
-            onDelta = { delta -> updateAssistant(assistantId, delta, append = true) },
+            onDelta = { delta -> queueAssistantDelta(assistantId, delta) },
             onComplete = { result ->
+                flushAssistantDelta()
                 streaming = false
                 updateAssistant(assistantId, result, append = false)
                 persistMessages(sessionId)
@@ -541,6 +545,7 @@ internal class DshHomePage : BasePager() {
                 streamHandle = null
             },
             onError = { error ->
+                flushAssistantDelta()
                 streaming = false
                 updateAssistant(assistantId, error, append = false, role = DshMessageRole.ERROR)
                 persistMessages(sessionId)
@@ -555,6 +560,7 @@ internal class DshHomePage : BasePager() {
         streamHandle?.cancel()
         streamHandle = null
         if (!streaming) return
+        flushAssistantDelta()
         streaming = false
         val last = messages.lastOrNull()
         if (last?.role == DshMessageRole.ASSISTANT && last.streaming) {
@@ -647,14 +653,35 @@ internal class DshHomePage : BasePager() {
         val index = current.indexOfFirst { it.id == id }
         if (index < 0) return
         val old = current[index]
-        val updated = current.toMutableList()
-        updated[index] = old.copy(
+        messages[index] = old.copy(
             role = role,
             content = if (append) old.content + content else content,
             streaming = streaming && role == DshMessageRole.ASSISTANT,
         )
-        messages.clear()
-        messages.addAll(updated)
+    }
+
+    private fun queueAssistantDelta(id: String, delta: String) {
+        if (delta.isEmpty()) return
+        if (pendingAssistantId.isNotEmpty() && pendingAssistantId != id) {
+            flushAssistantDelta()
+        }
+        pendingAssistantId = id
+        pendingAssistantDelta.append(delta)
+        if (assistantFlushScheduled) return
+        assistantFlushScheduled = true
+        setTimeout(pagerId, STREAM_FLUSH_INTERVAL_MS) {
+            assistantFlushScheduled = false
+            flushAssistantDelta()
+        }
+    }
+
+    private fun flushAssistantDelta() {
+        if (pendingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
+        val id = pendingAssistantId
+        val delta = pendingAssistantDelta.toString()
+        pendingAssistantId = ""
+        pendingAssistantDelta.setLength(0)
+        updateAssistant(id, delta, append = true)
     }
 
     private fun persistMessages(sessionId: String) {
@@ -668,6 +695,7 @@ internal class DshHomePage : BasePager() {
         private const val ENGINE_RETRY_DELAY_MS = 1_000
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
+        private const val STREAM_FLUSH_INTERVAL_MS = 32
     }
 }
 

@@ -266,7 +266,7 @@ internal class DshHostRepository(
         var fallbackStarted = false
         var completed = false
         var promptObserved = false
-        var accumulated = ""
+        val accumulated = StringBuilder()
         var finalMessage = ""
         var streamFailure = ""
         lateinit var handle: HostStreamHandle
@@ -297,9 +297,9 @@ internal class DshHostRepository(
             pollReply(
                 sessionId = sessionId,
                 handle = handle,
-                previous = accumulated,
+                previous = accumulated.toString(),
                 onDelta = { delta ->
-                    accumulated += delta
+                    accumulated.append(delta)
                     onDelta(delta)
                 },
                 onComplete = { result -> finishSuccessfully(result) },
@@ -374,7 +374,7 @@ internal class DshHostRepository(
                                 val delta = chunk.optString("text")
                                 if (delta.isNotEmpty()) {
                                     streamFailure = ""
-                                    accumulated += delta
+                                    accumulated.append(delta)
                                     onDelta(delta)
                                 }
                             } else if (chunk.optString("type") == "finish") {
@@ -405,7 +405,7 @@ internal class DshHostRepository(
                             if (error != null) {
                                 finishWithError(error)
                             } else {
-                                finishSuccessfully(accumulated.ifEmpty { finalMessage })
+                                finishSuccessfully(accumulated.toString().ifEmpty { finalMessage })
                             }
                         }
                     }

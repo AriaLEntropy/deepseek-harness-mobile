@@ -20,6 +20,7 @@ import com.tencent.kuiklybase.config.TextStyleConfig
 import com.tencent.kuiklybase.streaming.MarkdownBlock
 import com.tencent.kuiklybase.streaming.MarkdownStreamingState
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.timer.setTimeout
 
 /** DSH theme wrapper around KuiklyMarkdown's DSL renderer. */
 internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
@@ -27,6 +28,9 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
     private var blockList by observableList<MarkdownBlock>()
     private var lastContent = ""
     private var lastStreaming = false
+    private var pendingContent = ""
+    private var pendingStreaming = false
+    private var flushScheduled = false
 
     override fun createAttr(): DshMarkdownAttr = DshMarkdownAttr()
 
@@ -65,7 +69,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             val content = attr.content
             val streaming = attr.streaming
             ReactiveObserver.addLazyTaskUtilEndCollectDependency {
-                updateBlocks(content, streaming)
+                scheduleBlocksUpdate(content, streaming)
             }
         }
     }
@@ -75,14 +79,39 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         super.viewWillUnload()
     }
 
-    private fun updateBlocks(content: String, streaming: Boolean) {
+    private fun scheduleBlocksUpdate(content: String, streaming: Boolean) {
+        pendingContent = content
+        pendingStreaming = streaming
+        if (!streaming) {
+            flushBlocksUpdate()
+            return
+        }
+        if (flushScheduled) return
+        flushScheduled = true
+        setTimeout(pagerId, STREAM_FLUSH_INTERVAL_MS) {
+            flushScheduled = false
+            flushBlocksUpdate()
+        }
+    }
+
+    private fun flushBlocksUpdate() {
+        val content = pendingContent
+        val streaming = pendingStreaming
         if (content == lastContent && streaming == lastStreaming) return
         if (streaming && !lastStreaming) streamingState.reset()
         lastContent = content
         lastStreaming = streaming
         val next = streamingState.update(content, force = !streaming) ?: return
-        blockList.clear()
-        blockList.addAll(next)
+        while (blockList.size > next.size) {
+            blockList.removeAt(blockList.lastIndex)
+        }
+        next.forEachIndexed { index, block ->
+            if (index < blockList.size) {
+                if (blockList[index].id != block.id) blockList[index] = block
+            } else {
+                blockList.add(block)
+            }
+        }
     }
 
     private fun markdownConfig(): MarkdownConfig {
@@ -142,6 +171,8 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         )
     }
 }
+
+private const val STREAM_FLUSH_INTERVAL_MS = 32
 
 internal class DshMarkdownAttr : ComposeAttr() {
     var contentWidth: Float by observable(0f)
