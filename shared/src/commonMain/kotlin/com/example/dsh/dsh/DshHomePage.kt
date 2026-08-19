@@ -1,6 +1,7 @@
 package com.example.dsh.dsh
 
 import com.example.dsh.base.BasePager
+import com.example.dsh.base.Utils
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
@@ -32,6 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /** First usable DSH surface: local sessions, streaming Markdown, and a composer. */
 @Page("home")
@@ -77,7 +80,6 @@ internal class DshHomePage : BasePager() {
     private var streamHandle: DshStreamHandle? = null
     private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
     private var historyRequestGeneration = 0
-    private var sessionCreationGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
     private val sessionMessageReady = mutableSetOf<String>()
     private val pendingSessionSelections = mutableSetOf<String>()
@@ -88,9 +90,12 @@ internal class DshHomePage : BasePager() {
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
     private var scrollSettleGeneration = 0
+    private var perfTraceSequence = 0
 
     override fun created() {
         super.created()
+        val startedAt = TimeSource.Monotonic.markNow()
+        perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
         if (databaseDir.isNotEmpty()) {
             localStore = runCatching {
@@ -101,12 +106,15 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[activeSessionId] = messages
         prepareEagerSession(activeSessionId)
         restoreCachedSessions()
+        perfLog("startup.restoreCachedSessions.done", startedAt)
         preloadAllSessionMessages()
+        perfLog("startup.preloadAllSessionMessages.scheduled", startedAt)
         loadApiKeyAsync()
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
             warmRecentSessionCache()
         }
         startEmbeddedEngine()
+        perfLog("startup.created.end", startedAt)
     }
 
     override fun pageWillDestroy() {
@@ -494,6 +502,9 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun createSession() {
+        val traceId = ++perfTraceSequence
+        val startedAt = TimeSource.Monotonic.markNow()
+        perfLog("newSession.$traceId.click", startedAt)
         val hostRepository = repository ?: run {
             connectionLabel = "请先配置 API Key"
             openCredentialSettings()
@@ -501,18 +512,10 @@ internal class DshHomePage : BasePager() {
         }
         dismissKeyboard()
         closeSessionDrawer()
-        cancelStreamingForSessionSwitch()
-        val creationGeneration = ++sessionCreationGeneration
-        val previousSessionId = activeSessionId
-        val previousMessages = messages
-        sessionMessageStates[previousSessionId] = previousMessages
-        historyRequestGeneration++
-        messages = ObservableList()
-        draft = ""
-        inputView?.setText("")
-        connectionLabel = "正在创建会话"
+        perfLog("newSession.$traceId.ui.cleared", startedAt)
+        perfLog("newSession.$traceId.host.create.request", startedAt)
         hostRepository.createSession({ sessionId ->
-            if (creationGeneration != sessionCreationGeneration) return@createSession
+            perfLog("newSession.$traceId.host.create.response:$sessionId", startedAt)
             val created = DshSession(
                 id = sessionId,
                 title = "新会话",
@@ -530,14 +533,14 @@ internal class DshHomePage : BasePager() {
             sessionMessageStates[sessionId] = messages
             sessionMessageReady.add(sessionId)
             prepareEagerSession(sessionId)
+            perfLog("newSession.$traceId.ui.ready", startedAt)
+            draft = ""
+            inputView?.setText("")
             setTimeout(pagerId, 0) {
                 if (activeSessionId == sessionId) loadModels(sessionId)
             }
         }, { error ->
-            if (creationGeneration != sessionCreationGeneration) return@createSession
-            activeSessionId = previousSessionId
-            messages = previousMessages
-            scrollMessagesToEnd()
+            perfLog("newSession.$traceId.host.create.error:$error", startedAt)
             connectionLabel = "新会话创建失败"
             messages.add(DshMessage("session-create-error-${messages.size}", DshMessageRole.ERROR, error))
         })
@@ -626,11 +629,17 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun selectSession(id: String) {
+        val traceId = ++perfTraceSequence
+        val startedAt = TimeSource.Monotonic.markNow()
+        perfLog("switch.$traceId.request:$id", startedAt)
         dismissKeyboard()
-        if (id == activeSessionId) return
-        sessionCreationGeneration++
+        if (id == activeSessionId) {
+            perfLog("switch.$traceId.same-session", startedAt)
+            return
+        }
         if (!sessionMessageReady.contains(id)) {
             pendingSessionSelections.add(id)
+            perfLog("switch.$traceId.wait-data", startedAt)
             return
         }
         prepareEagerSession(id)
@@ -640,15 +649,17 @@ internal class DshHomePage : BasePager() {
             // render tree and Markdown children exist.
             ensureConversationPanel(id)
             addTaskWhenPagerUpdateLayoutFinish {
+                perfLog("switch.$traceId.panel.layout-finished", startedAt)
                 if (activeSessionId != id) selectSession(id)
             }
             return
         }
-        selectMountedSession(id)
+        selectMountedSession(id, traceId, startedAt)
     }
 
-    private fun selectMountedSession(id: String) {
+    private fun selectMountedSession(id: String, traceId: Int = 0, startedAt: TimeMark? = null) {
         if (id == activeSessionId) return
+        perfLog("switch.$traceId.mounted.begin", startedAt)
         refreshSessionRenderTree(id)
         cancelStreamingForSessionSwitch()
         sessionMessageStates[activeSessionId] = messages
@@ -656,9 +667,11 @@ internal class DshHomePage : BasePager() {
         ensureConversationPanel(id)
         messages = nextMessages
         activeSessionId = id
+        perfLog("switch.$traceId.active-state-swapped", startedAt)
         scrollMessagesToEnd()
         addTaskWhenPagerUpdateLayoutFinish {
             refreshSessionRenderTree(id)
+            perfLog("switch.$traceId.layout.realized", startedAt)
             if (activeSessionId == id) scrollMessagesToEnd()
         }
         // Invalidate any in-flight request for the previous session before
@@ -670,6 +683,7 @@ internal class DshHomePage : BasePager() {
         }
         draft = ""
         inputView?.setText("")
+        perfLog("switch.$traceId.end", startedAt)
     }
 
     private fun refreshMountedSessionRenderTrees() {
@@ -679,6 +693,11 @@ internal class DshHomePage : BasePager() {
     private fun refreshSessionRenderTree(sessionId: String) {
         val list = messageScrollerRefs[sessionId]?.view ?: return
         (list.contentView as? ListContentView)?.createRenderViewsOnVisibleRect()
+    }
+
+    private fun perfLog(stage: String, startedAt: TimeMark? = null) {
+        val elapsed = startedAt?.elapsedNow()?.inWholeMilliseconds?.let { " +${it}ms" } ?: ""
+        Utils.logToNative(pagerId, "[DshPerf] $stage$elapsed")
     }
 
     private fun realizeSessionAfterData(sessionId: String) {
@@ -745,6 +764,7 @@ internal class DshHomePage : BasePager() {
                     pendingLocalMessageReads.remove(sessionId)
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
                     sessionMessageReady.add(sessionId)
+                    perfLog("sessionData.ready:$sessionId messages=${loaded.size}")
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
                     }
@@ -768,6 +788,7 @@ internal class DshHomePage : BasePager() {
                 pendingLocalMessageReads.remove(sessionId)
                 val state = sessionMessageStates[sessionId] ?: return@setTimeout
                 sessionMessageReady.add(sessionId)
+                perfLog("sessionData.disk.ready:$sessionId messages=${loaded.size}")
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
