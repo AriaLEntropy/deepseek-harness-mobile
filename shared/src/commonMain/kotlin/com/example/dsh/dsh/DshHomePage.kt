@@ -40,6 +40,7 @@ internal class DshHomePage : BasePager() {
     private var draft by observable("")
     private var streaming by observable(false)
     private var stopButtonVisible by observable(false)
+    private var connectionDotPhase by observable(0)
     private var streamingAssistantContent by observable("")
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
@@ -82,6 +83,7 @@ internal class DshHomePage : BasePager() {
             runCatching { store.loadApiKey() }.getOrDefault("")
         }.orEmpty()
         pendingApiKey = apiKey
+        animateConnectionDots()
         restoreCachedSessions()
         if (apiKey.isEmpty()) {
             connectionLabel = "等待配置"
@@ -130,6 +132,7 @@ internal class DshHomePage : BasePager() {
                         DshTopBar(
                             title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "DeepSeek Harness" },
                             connection = { ctx.connectionLabel },
+                            dotPhase = { ctx.connectionDotPhase },
                         )
                     }
 
@@ -271,6 +274,13 @@ internal class DshHomePage : BasePager() {
         setTimeout(pagerId, 16) {
             sessionDrawerAnimated = true
             sessionDrawerMaskAnimated = true
+        }
+    }
+
+    private fun animateConnectionDots() {
+        setTimeout(pagerId, CONNECTION_DOT_INTERVAL_MS) {
+            connectionDotPhase = (connectionDotPhase + 1) % CONNECTION_DOT_COUNT
+            animateConnectionDots()
         }
     }
 
@@ -1151,6 +1161,7 @@ private fun ViewContainer<*, *>.DshModelPicker(
 private fun ViewContainer<*, *>.DshTopBar(
     title: () -> String,
     connection: () -> String,
+    dotPhase: () -> Int,
 ) {
     View {
         attr {
@@ -1187,14 +1198,40 @@ private fun ViewContainer<*, *>.DshTopBar(
             attr {
                 size(36f, 36f)
                 borderRadius(18f)
-                backgroundColor(Color(0xFFEDF3FE))
+                backgroundColor(Color(if (connection().startsWith("已连接")) 0xFFEAF8F0 else 0xFFF1F4F8))
                 allCenter()
             }
-            Text {
-                attr {
-                    text(if (connection().contains("正在")) "..." else "●")
-                    fontSize(13f)
-                    color(Color(0xFF4176E6))
+            if (connection().startsWith("已连接")) {
+                Text {
+                    attr {
+                        text("●")
+                        fontSize(13f)
+                        color(Color(0xFF2EAF67))
+                    }
+                }
+            } else {
+                View {
+                    attr {
+                        width(22f)
+                        height(18f)
+                        flexDirectionRow()
+                        alignItemsCenter()
+                        justifyContentCenter()
+                    }
+                    repeat(CONNECTION_DOT_COUNT) { index ->
+                        Text {
+                            attr {
+                                width(7f)
+                                text("•")
+                                fontSize(14f)
+                                lineHeight(18f)
+                                color(Color(0xFF64748B))
+                                opacity(if (dotPhase() == index) 1f else 0.3f)
+                                transform(Translate(0f, if (dotPhase() == index) -3f else 0f))
+                                animation(Animation.easeInOut(CONNECTION_DOT_ANIMATION_S), dotPhase() == index)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1619,3 +1656,6 @@ private fun ViewContainer<*, *>.DshHitButton(onClick: () -> Unit) {
 }
 
 private const val COMPOSER_HEIGHT = 142f
+private const val CONNECTION_DOT_COUNT = 3
+private const val CONNECTION_DOT_INTERVAL_MS = 260
+private const val CONNECTION_DOT_ANIMATION_S = 0.18f
