@@ -1255,11 +1255,11 @@ private fun ViewContainer<*, *>.DshTopBar(
                 allCenter()
             }
             if (isConnectionReadyLabel(connection())) {
-                Text {
+                View {
                     attr {
-                        text("●")
-                        fontSize(13f)
-                        color(Color(0xFF2EAF67))
+                        size(12f, 12f)
+                        borderRadius(6f)
+                        backgroundColor(Color(0xFF2EAF67))
                     }
                 }
             } else {
