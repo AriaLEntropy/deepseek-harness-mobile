@@ -22,6 +22,7 @@ import com.example.dsh.adapter.KRThreadAdapter
 import com.example.dsh.adapter.KRUncaughtExceptionHandlerAdapter
 import com.example.dsh.module.KRBridgeModule
 import com.example.dsh.module.KRDshEngineModule
+import com.example.dsh.module.KRDshSseModule
 import com.example.dsh.module.KRShareModule
 import com.tencent.kuiklybase.android.KRWebView
 import org.json.JSONObject
@@ -83,6 +84,9 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             }
             moduleExport(KRDshEngineModule.MODULE_NAME) {
                 KRDshEngineModule()
+            }
+            moduleExport(KRDshSseModule.MODULE_NAME) {
+                KRDshSseModule()
             }
         }
     }
