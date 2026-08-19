@@ -7,6 +7,7 @@ import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
@@ -15,7 +16,6 @@ import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Scroller
-import com.tencent.kuikly.core.views.ScrollerView
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.compose.Button
@@ -24,6 +24,8 @@ import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
+import com.tencent.kuikly.core.views.List
+import com.tencent.kuikly.core.views.ListView
 
 /** First usable DSH surface: local sessions, streaming Markdown, and a composer. */
 @Page("home")
@@ -65,7 +67,7 @@ internal class DshHomePage : BasePager() {
     private var inputView: InputView? = null
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
-    private var messageScrollerRef: ViewRef<ScrollerView<*, *>>? = null
+    private var messageScrollerRef: ViewRef<ListView<*, *>>? = null
     private var historyRequestGeneration = 0
     private val messageCache = mutableMapOf<String, List<DshMessage>>()
     private var inputFocused = false
@@ -87,6 +89,9 @@ internal class DshHomePage : BasePager() {
         pendingApiKey = apiKey
         animateConnectionDots()
         restoreCachedSessions()
+        setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
+            warmRecentSessionCache()
+        }
         if (apiKey.isEmpty()) {
             connectionLabel = "等待配置"
             updateCredentialSetupVisibility(true)
@@ -223,7 +228,7 @@ internal class DshHomePage : BasePager() {
                         onNewSession = { ctx.createSession() },
                         onSelect = { id ->
                             ctx.closeSessionDrawer()
-                            setTimeout(ctx.pagerId, ANIMATION_DURATION_MS) {
+                            setTimeout(ctx.pagerId, 0) {
                                 ctx.selectSession(id)
                             }
                         },
@@ -280,6 +285,9 @@ internal class DshHomePage : BasePager() {
         setTimeout(pagerId, 16) {
             sessionDrawerAnimated = true
             sessionDrawerMaskAnimated = true
+        }
+        setTimeout(pagerId, ANIMATION_DURATION_MS) {
+            warmRecentSessionCache()
         }
     }
 
@@ -548,17 +556,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadCachedHistory(sessionId: String) {
-        val cached = messageCache[sessionId]
-        replaceMessagesIfChanged(cached ?: emptyList())
-        if (cached != null) return
-
-        val requestGeneration = historyRequestGeneration
-        setTimeout(pagerId, 0) {
-            if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@setTimeout
-            val loaded = cachedMessages(sessionId)
-            if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@setTimeout
-            replaceMessagesIfChanged(loaded)
-        }
+        replaceMessagesIfChanged(cachedMessages(sessionId))
     }
 
     private fun cachedMessages(sessionId: String): List<DshMessage> {
@@ -567,6 +565,21 @@ internal class DshHomePage : BasePager() {
             .getOrDefault(emptyList())
         messageCache[sessionId] = loaded
         return loaded
+    }
+
+    private fun warmRecentSessionCache(
+        sessionIds: kotlin.collections.List<String> = sessions.asSequence()
+            .map { it.id }
+            .filter { it != activeSessionId && !messageCache.containsKey(it) }
+            .take(SESSION_CACHE_WARM_LIMIT)
+            .toList(),
+        index: Int = 0,
+    ) {
+        if (index >= sessionIds.size) return
+        cachedMessages(sessionIds[index])
+        setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
+            warmRecentSessionCache(sessionIds, index + 1)
+        }
     }
 
     private fun sendDraft() {
@@ -1365,7 +1378,7 @@ private fun ViewContainer<*, *>.DshConversation(
     messages: () -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
     streamingContent: () -> String,
-    scrollerRef: (ViewRef<ScrollerView<*, *>>) -> Unit,
+    scrollerRef: (ViewRef<ListView<*, *>>) -> Unit,
     draft: () -> String,
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
@@ -1436,12 +1449,14 @@ private fun ViewContainer<*, *>.DshConversation(
             }
             event { click { onDismissKeyboard() } }
         }
-        Scroller {
+        List {
             ref { scrollerRef(it) }
             attr {
                 flex(1f)
                 width(pagerData.pageViewWidth)
                 padding(16f, 18f, 20f, 18f)
+                firstContentLoadMaxIndex(CHAT_INITIAL_RENDER_COUNT)
+                preloadViewDistance(pagerData.pageViewHeight)
                 animation(keyboardAnimation(), keyboardHeight())
             }
             event {
@@ -1449,7 +1464,7 @@ private fun ViewContainer<*, *>.DshConversation(
                 dragBegin { onDismissKeyboard() }
                 register("touchDown", { onDismissKeyboard() })
             }
-            vfor({ messages() }) { message ->
+            vforLazy(messages, maxLoadItem = CHAT_MAX_RENDERED_MESSAGES) { message, _, _ ->
                 View {
                     attr {
                         width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
@@ -1724,3 +1739,8 @@ private const val COMPOSER_HEIGHT = 142f
 private const val CONNECTION_DOT_COUNT = 3
 private const val CONNECTION_DOT_INTERVAL_MS = 260
 private const val CONNECTION_DOT_ANIMATION_S = 0.18f
+private const val CHAT_INITIAL_RENDER_COUNT = 6
+private const val CHAT_MAX_RENDERED_MESSAGES = 16
+private const val SESSION_CACHE_WARM_LIMIT = 8
+private const val SESSION_CACHE_WARM_INTERVAL_MS = 16
+private const val SESSION_CACHE_WARM_START_DELAY_MS = 600
