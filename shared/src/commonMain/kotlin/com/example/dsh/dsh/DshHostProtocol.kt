@@ -1,6 +1,7 @@
 package com.example.dsh.dsh
 
 import com.tencent.kuikly.core.module.NetworkModule
+import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.timer.setTimeout
@@ -35,12 +36,12 @@ internal data class DshHostConnection(
  * Real DSH Host client.
  *
  * The Host owns the DeepSeek key and the agent loop. This client only sends
- * `/api` RPCs. Until a native WebSocket carrier is added, the live tail is
- * repaired by polling `session.history`, which exposes the partial assistant
- * message on its tail page.
+ * `/api` RPCs. Live replies arrive over the Host's `events.mux` SSE stream;
+ * history polling is retained only as disconnect recovery.
  */
 internal class DshHostRepository(
     private val network: NetworkModule,
+    private val sse: DshSseModule,
     private val connection: DshHostConnection,
     private val pagerId: String,
 ) : DshRepository {
@@ -258,23 +259,182 @@ internal class DshHostRepository(
         onComplete: (String) -> Unit,
         onError: (String) -> Unit,
     ): DshStreamHandle {
-        val handle = HostStreamHandle { cancel(sessionId) }
-        request(DshHostProtocol.SESSION_PROMPT, JSONObject().apply {
-            put("sessionId", sessionId)
-            put("mode", "queue")
-            put("content", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("type", "text")
-                    put("text", prompt)
+        var eventHandle: DshSseHandle? = null
+        var promptSent = false
+        var promptAccepted = false
+        var fallbackRequested = false
+        var fallbackStarted = false
+        var completed = false
+        var promptObserved = false
+        var accumulated = ""
+        var finalMessage = ""
+        var streamFailure = ""
+        lateinit var handle: HostStreamHandle
+
+        fun closeEvents() {
+            eventHandle?.close()
+            eventHandle = null
+        }
+
+        fun finishWithError(message: String) {
+            if (completed || handle.cancelled) return
+            completed = true
+            closeEvents()
+            onError(message)
+        }
+
+        fun finishSuccessfully(content: String) {
+            if (completed || handle.cancelled) return
+            completed = true
+            closeEvents()
+            onComplete(content)
+        }
+
+        fun startPollingRecovery() {
+            if (!promptAccepted || fallbackStarted || completed || handle.cancelled) return
+            fallbackStarted = true
+            closeEvents()
+            pollReply(
+                sessionId = sessionId,
+                handle = handle,
+                previous = accumulated,
+                onDelta = { delta ->
+                    accumulated += delta
+                    onDelta(delta)
+                },
+                onComplete = { result -> finishSuccessfully(result) },
+                onError = { error -> finishWithError(error) },
+            )
+        }
+
+        fun sendPrompt() {
+            if (promptSent || completed || handle.cancelled) return
+            promptSent = true
+            request(DshHostProtocol.SESSION_PROMPT, JSONObject().apply {
+                put("sessionId", sessionId)
+                put("mode", "queue")
+                put("content", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("type", "text")
+                        put("text", prompt)
+                    })
                 })
-            })
-        }) { _, error ->
-            if (handle.cancelled) return@request
-            if (error != null) {
-                onError(error)
-                return@request
+            }) { value, error ->
+                if (handle.cancelled || completed) return@request
+                if (error != null) {
+                    finishWithError(error)
+                    return@request
+                }
+                promptAccepted = true
+                val command = value?.optJSONObject("command")
+                if (command?.optString("kind") == "success") {
+                    finishSuccessfully(command.optString("text"))
+                    return@request
+                }
+                if (fallbackRequested) startPollingRecovery()
             }
-            pollReply(sessionId, handle, "", onDelta, onComplete, onError)
+        }
+
+        fun requestFallback() {
+            if (completed || handle.cancelled) return
+            fallbackRequested = true
+            closeEvents()
+            if (!promptSent) sendPrompt()
+            if (promptAccepted) startPollingRecovery()
+        }
+
+        fun handleFrame(rawFrame: String) {
+            if (fallbackStarted || completed || handle.cancelled) return
+            val envelope = runCatching { JSONObject(rawFrame) }.getOrNull() ?: return
+            val payload = envelope.optJSONObject("payload") ?: return
+            when (payload.optString("type")) {
+                "stream/error" -> {
+                    val message = payload.optJSONObject("error")?.optString("message")
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: "Host event stream failed"
+                    streamFailure = message
+                    requestFallback()
+                }
+                "session/event" -> {
+                    if (payload.optString("sessionId") != sessionId) return
+                    val event = payload.optJSONObject("event") ?: return
+                    val data = event.optJSONObject("data") ?: JSONObject()
+                    when (event.optString("type")) {
+                        "user/message" -> {
+                            val source = data.optJSONObject("source")
+                            val text = textFromBlocks(data.optJSONArray("content"))
+                            if (source?.optString("kind") == "user" && text == prompt) {
+                                promptObserved = true
+                            }
+                        }
+                        "assistant/chunk" -> {
+                            if (!promptObserved) return
+                            val chunk = data.optJSONObject("chunk") ?: return
+                            if (chunk.optString("type") == "text-delta") {
+                                val delta = chunk.optString("text")
+                                if (delta.isNotEmpty()) {
+                                    streamFailure = ""
+                                    accumulated += delta
+                                    onDelta(delta)
+                                }
+                            } else if (chunk.optString("type") == "finish") {
+                                val reason = chunk.optJSONObject("reason")
+                                if (reason?.optString("kind") == "error") {
+                                    streamFailure = reason.optJSONObject("failure")
+                                        ?.optString("message")
+                                        .orEmpty()
+                                }
+                            }
+                        }
+                        "assistant/message" -> {
+                            if (!promptObserved) return
+                            val message = data.optJSONObject("message") ?: data
+                            textFromBlocks(message.optJSONArray("content"))
+                                .takeIf { it.isNotEmpty() }
+                                ?.let {
+                                    streamFailure = ""
+                                    finalMessage = it
+                                }
+                        }
+                        "turn/end" -> {
+                            if (!promptObserved) return
+                            val reason = data.optJSONObject("reason")
+                            val error = reason?.optJSONObject("error")?.optString("message")
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: streamFailure.takeIf { it.isNotEmpty() }
+                            if (error != null) {
+                                finishWithError(error)
+                            } else {
+                                finishSuccessfully(accumulated.ifEmpty { finalMessage })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        handle = HostStreamHandle {
+            closeEvents()
+            cancel(sessionId)
+        }
+        val eventsUrl = "${connection.baseUrl.trimEnd('/')}${DshHostProtocol.MUX_EVENTS_PATH}"
+        eventHandle = runCatching {
+            sse.connect(eventsUrl, connection.token) { event ->
+                when (event.kind) {
+                    DshSseEventKind.OPEN -> sendPrompt()
+                    DshSseEventKind.FRAME -> handleFrame(event.data)
+                    DshSseEventKind.ERROR,
+                    DshSseEventKind.CLOSED -> requestFallback()
+                }
+            }
+        }.getOrElse {
+            KLog.e("DshEventStream", "connect failed: ${it.message.orEmpty()}")
+            fallbackRequested = true
+            null
+        }
+        if (eventHandle == null) requestFallback()
+        setTimeout(pagerId, SSE_OPEN_TIMEOUT_MS) {
+            if (!promptSent && !completed && !handle.cancelled) requestFallback()
         }
         return handle
     }
@@ -454,6 +614,7 @@ internal class DshHostRepository(
         const val DEEPSEEK_SETTINGS_NS = "llm-deepseek"
         const val DEEPSEEK_CREDENTIAL_REF = "DEEPSEEK_API_KEY"
         const val POLL_INTERVAL_MS = 450
+        const val SSE_OPEN_TIMEOUT_MS = 3_000
         const val REQUEST_TIMEOUT_SECONDS = 30
     }
 }

@@ -343,6 +343,7 @@ internal class DshHomePage : BasePager() {
         connectionLabel = "本地内核启动中"
         repository = DshHostRepository(
             network = acquireModule<NetworkModule>(NetworkModule.MODULE_NAME),
+            sse = acquireModule<DshSseModule>(DshSseModule.MODULE_NAME),
             connection = DshHostConnection(LOCAL_ENGINE_URL),
             pagerId = pagerId,
         )

@@ -45,4 +45,5 @@ dependencies {
     annotationProcessor("com.github.bumptech.glide:compiler:4.12.0")
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("com.tencent.kuiklybase:kuikly-webview-android:1.0.1-2.0.21")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

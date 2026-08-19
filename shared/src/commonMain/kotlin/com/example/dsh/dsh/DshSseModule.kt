@@ -1,6 +1,7 @@
 package com.example.dsh.dsh
 
 import com.tencent.kuikly.core.module.Module
+import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 internal enum class DshSseEventKind {
@@ -37,10 +38,11 @@ internal class DshSseModule : Module() {
             put("url", url)
             put("token", token)
         }
+        KLog.i(TAG, "connect requested")
         toNative(
             keepCallbackAlive = true,
             methodName = "connect",
-            param = params,
+            param = params.toString(),
             callback = { value ->
                 val kind = runCatching {
                     DshSseEventKind.valueOf(value?.optString("kind").orEmpty())
@@ -62,7 +64,7 @@ internal class DshSseModule : Module() {
                 toNative(
                     keepCallbackAlive = false,
                     methodName = "disconnect",
-                    param = JSONObject().apply { put("connectionId", connectionId) },
+                    param = JSONObject().apply { put("connectionId", connectionId) }.toString(),
                     callback = null,
                     syncCall = false,
                 )
@@ -72,5 +74,6 @@ internal class DshSseModule : Module() {
 
     companion object {
         const val MODULE_NAME = "DshSseModule"
+        private const val TAG = "DshEventStream"
     }
 }
