@@ -1712,7 +1712,7 @@ private fun ViewContainer<*, *>.DshHitButton(onClick: () -> Unit) {
 }
 
 private fun isConnectionReadyLabel(label: String): Boolean {
-    return label.startsWith("已连接") || label == "正在生成" || label == "正在聆听"
+    return label.startsWith("已连接")
 }
 
 private const val COMPOSER_HEIGHT = 142f
