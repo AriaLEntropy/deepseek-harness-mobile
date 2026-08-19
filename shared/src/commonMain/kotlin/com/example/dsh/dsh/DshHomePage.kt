@@ -266,6 +266,7 @@ internal class DshHomePage : BasePager() {
                             ctx.credentialSetupError = ""
                         },
                         onSave = { ctx.saveDeepSeekApiKey() },
+                        onClose = { ctx.closeCredentialSettings() },
                     )
                 }
             }
@@ -461,11 +462,16 @@ internal class DshHomePage : BasePager() {
     private fun openCredentialSettings() {
         dismissKeyboard()
         attachmentMenuVisible = false
-        closeSessionDrawer()
+        //closeSessionDrawer()
         credentialSetupTitle = "设置 DeepSeek API Key"
         credentialSetupError = ""
         apiKeyDraft = pendingApiKey
         updateCredentialSetupVisibility(true)
+    }
+
+    private fun closeCredentialSettings() {
+        dismissKeyboard()
+        updateCredentialSetupVisibility(false)
     }
 
     private fun updateCredentialSetupVisibility(visible: Boolean) {
@@ -863,6 +869,7 @@ private fun ViewContainer<*, *>.DshCredentialSetupModal(
     inputRef: (ViewRef<InputView>) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onSave: () -> Unit,
+    onClose: () -> Unit,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -881,12 +888,33 @@ private fun ViewContainer<*, *>.DshCredentialSetupModal(
                 borderRadius(18f)
                 backgroundColor(Color.WHITE)
             }
-            Text {
+            View {
                 attr {
-                    text(title())
-                    fontSize(20f)
-                    fontWeightBold()
-                    color(Color(0xFF1F2933))
+                    height(32f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                }
+                Text {
+                    attr {
+                        text(title())
+                        flex(1f)
+                        fontSize(20f)
+                        fontWeightBold()
+                        color(Color(0xFF1F2933))
+                    }
+                }
+                View {
+                    attr {
+                        size(32f, 32f)
+                        allCenter()
+                    }
+                    Image {
+                        attr {
+                            src(ImageUri.commonAssets("x.svg"))
+                            size(20f, 20f)
+                        }
+                    }
+                    DshHitButton { if (!busy()) onClose() }
                 }
             }
             Text {
