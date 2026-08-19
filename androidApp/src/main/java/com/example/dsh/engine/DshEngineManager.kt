@@ -25,7 +25,7 @@ internal object DshEngineManager {
     private const val TAG = "DshEngine"
     private const val ENGINE_URL = "http://127.0.0.1:3080"
     private const val BIN_JS = "dshroot/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
-    private const val ENGINE_REVISION = "20260819083622"
+    private const val ENGINE_REVISION = "20260819170527"
     private const val MARKER = ".prepared-$ENGINE_REVISION"
 
     private val listeners = CopyOnWriteArrayList<(EngineState) -> Unit>()
