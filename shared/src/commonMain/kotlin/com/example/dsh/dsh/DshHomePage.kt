@@ -535,7 +535,7 @@ internal class DshHomePage : BasePager() {
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
-            if (activeSessionId == sessionId) scrollMessagesToEnd()
+            realizeSessionAfterData(sessionId)
         }, { error ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             if (messages.isNotEmpty()) {
@@ -650,6 +650,18 @@ internal class DshHomePage : BasePager() {
         (list.contentView as? ListContentView)?.createRenderViewsOnVisibleRect()
     }
 
+    private fun realizeSessionAfterData(sessionId: String) {
+        refreshSessionRenderTree(sessionId)
+        addTaskWhenPagerUpdateLayoutFinish {
+            refreshSessionRenderTree(sessionId)
+            if (activeSessionId == sessionId) scrollMessagesToEnd()
+        }
+        setTimeout(pagerId, 16) {
+            refreshSessionRenderTree(sessionId)
+            if (activeSessionId == sessionId) scrollMessagesToEnd()
+        }
+    }
+
     private fun loadCachedHistory(sessionId: String) {
         messages = sessionMessageState(sessionId, loadFromDisk = false)
         ensureConversationPanel(sessionId)
@@ -696,7 +708,7 @@ internal class DshHomePage : BasePager() {
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
-                        if (activeSessionId == sessionId) scrollMessagesToEnd()
+                        realizeSessionAfterData(sessionId)
                     }
                 }
             }
@@ -717,7 +729,7 @@ internal class DshHomePage : BasePager() {
                 // session ID, so an inactive session can be updated safely.
                 if (state.isEmpty() && loaded.isNotEmpty()) {
                     state.addAll(loaded)
-                    if (activeSessionId == sessionId) scrollMessagesToEnd()
+                    realizeSessionAfterData(sessionId)
                 }
             }
         }
