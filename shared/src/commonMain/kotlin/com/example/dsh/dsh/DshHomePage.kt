@@ -576,7 +576,13 @@ internal class DshHomePage : BasePager() {
 
     private fun effectiveKeyboardHeight(rawHeight: Float): Float {
         if (rawHeight <= 0f) return 0f
-        return (rawHeight - pagerData.safeAreaInsets.bottom).coerceAtLeast(0f)
+        // Android's Kuikly keyboard watcher already reports IME height minus
+        // the navigation bar. iOS reports the overlap with the safe area.
+        return if (pagerData.isAndroid) {
+            rawHeight
+        } else {
+            (rawHeight - pagerData.safeAreaInsets.bottom).coerceAtLeast(0f)
+        }
     }
 
     private fun loadModels(sessionId: String) {
@@ -1250,7 +1256,7 @@ private fun ViewContainer<*, *>.DshConversation(
         Scroller {
             attr {
                 flex(1f)
-                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                width(pagerData.pageViewWidth)
                 padding(16f, 18f, 20f, 18f)
                 animation(keyboardAnimation(), keyboardHeight())
             }
@@ -1467,9 +1473,10 @@ private fun ViewContainer<*, *>.DshMessageRow(message: DshMessage, pageStreaming
                     }
                 }
             } else {
-                DshMarkdown {
-                    attr {
-                        content = message.content.ifEmpty { "正在生成..." }
+                    DshMarkdown {
+                        attr {
+                            contentWidth = (pagerData.pageViewWidth - 36f).coerceAtLeast(0f)
+                            content = message.content.ifEmpty { "正在生成..." }
                         streaming = message.streaming && pageStreaming
                         darkMode = false
                     }

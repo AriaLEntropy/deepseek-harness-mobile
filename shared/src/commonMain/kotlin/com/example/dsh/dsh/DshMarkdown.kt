@@ -36,8 +36,18 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         val ctx = this
         return {
             View {
+                attr {
+                    if (ctx.attr.contentWidth > 0f) {
+                        width(ctx.attr.contentWidth)
+                    }
+                }
                 vfor({ ctx.blockList }) { block ->
                     View {
+                        attr {
+                            if (ctx.attr.contentWidth > 0f) {
+                                width(ctx.attr.contentWidth)
+                            }
+                        }
                         KuiklyStreamingMarkdown(
                             state = ctx.streamingState,
                             block = block,
@@ -134,6 +144,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
 }
 
 internal class DshMarkdownAttr : ComposeAttr() {
+    var contentWidth: Float by observable(0f)
     var content: String by observable("")
     var streaming: Boolean by observable(false)
     var darkMode: Boolean by observable(false)
