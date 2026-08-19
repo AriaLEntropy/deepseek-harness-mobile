@@ -38,6 +38,7 @@ internal class DshHomePage : BasePager() {
 
     private var sessions by observableList<DshSession>()
     private var messages by observableList<DshMessage>()
+    private var conversationPanelIds by observableList<String>()
     private var activeSessionId by observable("session-1")
     private var draft by observable("")
     private var streaming by observable(false)
@@ -67,7 +68,7 @@ internal class DshHomePage : BasePager() {
     private var inputView: InputView? = null
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
-    private var messageScrollerRef: ViewRef<ListView<*, *>>? = null
+    private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
     private var historyRequestGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
     private var inputFocused = false
@@ -89,6 +90,8 @@ internal class DshHomePage : BasePager() {
         pendingApiKey = apiKey
         animateConnectionDots()
         restoreCachedSessions()
+        sessionMessageStates[activeSessionId] = messages
+        ensureConversationPanel(activeSessionId)
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
             warmRecentSessionCache()
         }
@@ -150,10 +153,12 @@ internal class DshHomePage : BasePager() {
                                 flexDirectionRow()
                             }
                             DshConversation(
-                                messages = { ctx.messages },
+                                conversationIds = { ctx.conversationPanelIds },
+                                activeConversationId = { ctx.activeSessionId },
+                                messagesForSession = { ctx.sessionMessageState(it) },
                                 streaming = { ctx.streaming },
                                 streamingContent = { ctx.streamingAssistantContent },
-                                scrollerRef = { ctx.messageScrollerRef = it },
+                                scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
@@ -178,10 +183,12 @@ internal class DshHomePage : BasePager() {
                         }
                     } else {
                         DshConversation(
-                            messages = { ctx.messages },
+                            conversationIds = { ctx.conversationPanelIds },
+                            activeConversationId = { ctx.activeSessionId },
+                            messagesForSession = { ctx.sessionMessageState(it) },
                             streaming = { ctx.streaming },
                             streamingContent = { ctx.streamingAssistantContent },
-                            scrollerRef = { ctx.messageScrollerRef = it },
+                            scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
@@ -492,6 +499,7 @@ internal class DshHomePage : BasePager() {
             activeSessionId = sessionId
             messages = ObservableList()
             sessionMessageStates[sessionId] = messages
+            ensureConversationPanel(sessionId)
             draft = ""
             inputView?.setText("")
             setTimeout(pagerId, 0) {
@@ -510,6 +518,7 @@ internal class DshHomePage : BasePager() {
         // remote and can take a moment, so keeping the previous list here
         // makes a session switch look stuck.
         messages = sessionMessageState(sessionId)
+        ensureConversationPanel(sessionId)
 
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
@@ -533,6 +542,7 @@ internal class DshHomePage : BasePager() {
         sessions.addAll(cached)
         activeSessionId = cached.first().id
         messages = sessionMessageState(activeSessionId)
+        ensureConversationPanel(activeSessionId)
     }
 
     private fun selectSession(id: String) {
@@ -540,11 +550,13 @@ internal class DshHomePage : BasePager() {
         if (id == activeSessionId) return
         cancelStreamingForSessionSwitch()
         sessionMessageStates[activeSessionId] = messages
+        val nextMessages = sessionMessageState(id)
+        ensureConversationPanel(id)
+        messages = nextMessages
         activeSessionId = id
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
         historyRequestGeneration++
-        loadCachedHistory(id)
         setTimeout(pagerId, 0) {
             if (activeSessionId == id) loadModels(id)
         }
@@ -554,6 +566,7 @@ internal class DshHomePage : BasePager() {
 
     private fun loadCachedHistory(sessionId: String) {
         messages = sessionMessageState(sessionId)
+        ensureConversationPanel(sessionId)
     }
 
     private fun sessionMessageState(sessionId: String): ObservableList<DshMessage> {
@@ -575,9 +588,22 @@ internal class DshHomePage : BasePager() {
     ) {
         if (index >= sessionIds.size) return
         sessionMessageState(sessionIds[index])
+        ensureConversationPanel(sessionIds[index])
         setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
             warmRecentSessionCache(sessionIds, index + 1)
         }
+    }
+
+    private fun ensureConversationPanel(sessionId: String) {
+        if (conversationPanelIds.contains(sessionId)) return
+        if (conversationPanelIds.size >= CONVERSATION_PANEL_CACHE_LIMIT) {
+            val evictIndex = conversationPanelIds.indexOfFirst { it != activeSessionId }
+            if (evictIndex >= 0) {
+                val evictedId = conversationPanelIds.removeAt(evictIndex)
+                messageScrollerRefs.remove(evictedId)
+            }
+        }
+        conversationPanelIds.add(sessionId)
     }
 
     private fun sendDraft() {
@@ -789,7 +815,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun scrollMessagesToEndAfterLayout() {
-        val scroller = messageScrollerRef?.view ?: return
+        val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
         val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
         val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
         scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
@@ -813,7 +839,8 @@ internal class DshHomePage : BasePager() {
 
     private fun replaceMessagesIfChanged(next: List<DshMessage>) {
         if (messages.toList() == next) return
-        messages = ObservableList(next.toMutableList())
+        messages.clear()
+        messages.addAll(next)
         sessionMessageStates[activeSessionId] = messages
     }
 
@@ -1373,10 +1400,12 @@ private fun ViewContainer<*, *>.DshSessionButton(
 }
 
 private fun ViewContainer<*, *>.DshConversation(
-    messages: () -> ObservableList<DshMessage>,
+    conversationIds: () -> ObservableList<String>,
+    activeConversationId: () -> String,
+    messagesForSession: (String) -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
     streamingContent: () -> String,
-    scrollerRef: (ViewRef<ListView<*, *>>) -> Unit,
+    scrollerRef: (String, ViewRef<ListView<*, *>>) -> Unit,
     draft: () -> String,
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
@@ -1447,35 +1476,50 @@ private fun ViewContainer<*, *>.DshConversation(
             }
             event { click { onDismissKeyboard() } }
         }
-        List {
-            ref { scrollerRef(it) }
+        View {
             attr {
                 flex(1f)
                 width(pagerData.pageViewWidth)
-                padding(16f, 18f, 20f, 18f)
-                firstContentLoadMaxIndex(CHAT_INITIAL_RENDER_COUNT)
-                preloadViewDistance(pagerData.pageViewHeight)
-                animation(keyboardAnimation(), keyboardHeight())
+                backgroundColor(Color.WHITE)
             }
-            event {
-                click { onDismissKeyboard() }
-                dragBegin { onDismissKeyboard() }
-                register("touchDown", { onDismissKeyboard() })
-            }
-            vforLazy(messages, maxLoadItem = CHAT_MAX_RENDERED_MESSAGES) { message, _, _ ->
-                View {
+            vfor({ conversationIds() }) { sessionId ->
+                List {
+                    ref { scrollerRef(sessionId, it) }
                     attr {
-                        width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                        absolutePositionAllZero()
+                        width(pagerData.pageViewWidth)
+                        padding(16f, 18f, 20f, 18f)
+                        firstContentLoadMaxIndex(CHAT_INITIAL_RENDER_COUNT)
+                        preloadViewDistance(pagerData.pageViewHeight)
+                        visibility(activeConversationId() == sessionId)
+                        touchEnable(activeConversationId() == sessionId)
+                        zIndex(if (activeConversationId() == sessionId) 1 else 0)
+                        animation(keyboardAnimation(), keyboardHeight())
                     }
-                    DshMessageRow(message, streaming())
-                }
-            }
-            vif({ streaming() }) {
-                View {
-                    attr {
-                        width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                    event {
+                        click { onDismissKeyboard() }
+                        dragBegin { onDismissKeyboard() }
+                        register("touchDown", { onDismissKeyboard() })
                     }
-                    DshStreamingMessageRow(streamingContent)
+                    vforLazy(
+                        { messagesForSession(sessionId) },
+                        maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
+                    ) { message, _, _ ->
+                        View {
+                            attr {
+                                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                            }
+                            DshMessageRow(message, streaming() && activeConversationId() == sessionId)
+                        }
+                    }
+                    vif({ streaming() && activeConversationId() == sessionId }) {
+                        View {
+                            attr {
+                                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                            }
+                            DshStreamingMessageRow(streamingContent)
+                        }
+                    }
                 }
             }
         }
@@ -1739,6 +1783,7 @@ private const val CONNECTION_DOT_INTERVAL_MS = 260
 private const val CONNECTION_DOT_ANIMATION_S = 0.18f
 private const val CHAT_INITIAL_RENDER_COUNT = 6
 private const val CHAT_MAX_RENDERED_MESSAGES = 16
-private const val SESSION_CACHE_WARM_LIMIT = 8
+private const val SESSION_CACHE_WARM_LIMIT = 7
 private const val SESSION_CACHE_WARM_INTERVAL_MS = 16
 private const val SESSION_CACHE_WARM_START_DELAY_MS = 600
+private const val CONVERSATION_PANEL_CACHE_LIMIT = 8
