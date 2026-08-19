@@ -157,6 +157,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                 tableCornerSize = 8f,
             ),
             codeHighlightDarkTheme = dark,
+            codeHighlightEnabled = !attr.streaming,
             padding = com.tencent.kuiklybase.config.MarkdownPadding(
                 block = 6f,
                 list = 6f,
@@ -172,7 +173,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
     }
 }
 
-private const val STREAM_FLUSH_INTERVAL_MS = 32
+private const val STREAM_FLUSH_INTERVAL_MS = 100
 
 internal class DshMarkdownAttr : ComposeAttr() {
     var contentWidth: Float by observable(0f)

@@ -37,6 +37,7 @@ internal class DshHomePage : BasePager() {
     private var activeSessionId by observable("session-1")
     private var draft by observable("")
     private var streaming by observable(false)
+    private var stopButtonVisible by observable(false)
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var connectionLabel by observable("本地内核启动中")
@@ -138,6 +139,7 @@ internal class DshHomePage : BasePager() {
                                 streaming = { ctx.streaming },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
+                                stopButtonVisible = { ctx.stopButtonVisible },
                                 inputRef = { ctx.inputView = it.view },
                                 onDraftChange = { ctx.draft = it },
                                 keyboardAnimation = { ctx.keyboardAnimation },
@@ -162,6 +164,7 @@ internal class DshHomePage : BasePager() {
                             streaming = { ctx.streaming },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
+                            stopButtonVisible = { ctx.stopButtonVisible },
                             inputRef = { ctx.inputView = it.view },
                             onDraftChange = { ctx.draft = it },
                             keyboardAnimation = { ctx.keyboardAnimation },
@@ -530,6 +533,7 @@ internal class DshHomePage : BasePager() {
         draft = ""
         inputView?.setText("")
         streaming = true
+        stopButtonVisible = true
         connectionLabel = "正在生成"
         streamHandle = hostRepository.streamReply(
             pagerId = pagerId,
@@ -539,6 +543,7 @@ internal class DshHomePage : BasePager() {
             onComplete = { result ->
                 flushAssistantDelta()
                 streaming = false
+                stopButtonVisible = false
                 updateAssistant(assistantId, result, append = false)
                 persistMessages(sessionId)
                 connectionLabel = "已连接"
@@ -547,6 +552,7 @@ internal class DshHomePage : BasePager() {
             onError = { error ->
                 flushAssistantDelta()
                 streaming = false
+                stopButtonVisible = false
                 updateAssistant(assistantId, error, append = false, role = DshMessageRole.ERROR)
                 persistMessages(sessionId)
                 connectionLabel = "已连接"
@@ -559,9 +565,10 @@ internal class DshHomePage : BasePager() {
         dismissKeyboard()
         streamHandle?.cancel()
         streamHandle = null
-        if (!streaming) return
+        if (!stopButtonVisible) return
         flushAssistantDelta()
         streaming = false
+        stopButtonVisible = false
         val last = messages.lastOrNull()
         if (last?.role == DshMessageRole.ASSISTANT && last.streaming) {
             updateAssistant(last.id, "\n\n*已停止*", append = true)
@@ -695,7 +702,7 @@ internal class DshHomePage : BasePager() {
         private const val ENGINE_RETRY_DELAY_MS = 1_000
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
-        private const val STREAM_FLUSH_INTERVAL_MS = 32
+        private const val STREAM_FLUSH_INTERVAL_MS = 100
     }
 }
 
@@ -1219,6 +1226,7 @@ private fun ViewContainer<*, *>.DshConversation(
     streaming: () -> Boolean,
     draft: () -> String,
     keyboardHeight: () -> Float,
+    stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
     inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
     onDraftChange: (String) -> Unit,
@@ -1427,7 +1435,7 @@ private fun ViewContainer<*, *>.DshConversation(
                             if (voiceActive()) 0xFF679EFE else 0xFF4176E6,
                         ))
                     }
-                    if (streaming()) {
+                    if (stopButtonVisible()) {
                         Image {
                             attr {
                                 src(ImageUri.commonAssets("square.svg"))
@@ -1444,7 +1452,7 @@ private fun ViewContainer<*, *>.DshConversation(
                     }
                     DshHitButton {
                             when {
-                                streaming() -> onStop()
+                                stopButtonVisible() -> onStop()
                                 draft().isNotEmpty() -> onSend()
                                 else -> onToggleVoice()
                             }
