@@ -1,7 +1,6 @@
 package com.example.dsh.dsh
 
 import com.example.dsh.base.BasePager
-import com.example.dsh.base.Utils
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
@@ -10,6 +9,7 @@ import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
+import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.views.Input
@@ -713,7 +713,10 @@ internal class DshHomePage : BasePager() {
 
     private fun perfLog(stage: String, startedAt: TimeMark? = null) {
         val elapsed = startedAt?.elapsedNow()?.inWholeMilliseconds?.let { " +${it}ms" } ?: ""
-        Utils.logToNative(pagerId, "[DshPerf] $stage$elapsed")
+        // BridgeModule.log is asynchronous on Android and can be printed
+        // seconds after the event. KLog keeps the timing trace on Kuikly's
+        // logging path so Logcat timestamps remain meaningful.
+        KLog.i("DshPerf", "[DshPerf] $stage$elapsed")
     }
 
     private fun realizeSessionAfterData(sessionId: String) {
