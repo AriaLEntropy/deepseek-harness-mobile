@@ -25,7 +25,8 @@ internal object DshEngineManager {
     private const val TAG = "DshEngine"
     private const val ENGINE_URL = "http://127.0.0.1:3080"
     private const val BIN_JS = "dshroot/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
-    private const val MARKER = ".prepared-v1.3.3"
+    private const val ENGINE_REVISION = "20260819083622"
+    private const val MARKER = ".prepared-$ENGINE_REVISION"
 
     private val listeners = CopyOnWriteArrayList<(EngineState) -> Unit>()
     @Volatile private var state = EngineState(EnginePhase.IDLE)
@@ -78,7 +79,7 @@ internal object DshEngineManager {
 
     private fun prepare(root: File) {
         val marker = File(root, MARKER)
-        if (marker.isFile && marker.readText().trim() == "v1.3.3" && File(root, BIN_JS).isFile) {
+        if (marker.isFile && marker.readText().trim() == ENGINE_REVISION && File(root, BIN_JS).isFile) {
             publish(EngineState(EnginePhase.PREPARING, 100, "运行时已准备"))
             applyLinks(root)
             setExecutables(root)
@@ -110,7 +111,7 @@ internal object DshEngineManager {
         }
         applyLinks(root)
         setExecutables(root)
-        marker.writeText("v1.3.3")
+        marker.writeText(ENGINE_REVISION)
     }
 
     private fun countPayloadEntries(): Int {
