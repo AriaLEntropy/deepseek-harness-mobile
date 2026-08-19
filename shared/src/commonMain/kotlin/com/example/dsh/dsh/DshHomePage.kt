@@ -753,10 +753,13 @@ internal class DshHomePage : BasePager() {
             }
             return
         }
-        val pending = sessionIds.filter { pendingLocalMessageReads.add(it) }
+        val pending = sessionIds
+            .filterNot { sessionMessageReady.contains(it) }
+            .filter { pendingLocalMessageReads.add(it) }
         if (pending.isEmpty()) return
         localReadScope.launch {
             pending.forEach { sessionId ->
+                val readStartedAt = TimeSource.Monotonic.markNow()
                 val loaded = runCatching { store.loadMessages(sessionId).orEmpty() }
                     .getOrDefault(emptyList())
                     .filterNot { it.isRuntimeContextSnapshot() }
@@ -764,9 +767,10 @@ internal class DshHomePage : BasePager() {
                     pendingLocalMessageReads.remove(sessionId)
                     val state = sessionMessageStates[sessionId] ?: return@setTimeout
                     sessionMessageReady.add(sessionId)
-                    perfLog("sessionData.ready:$sessionId messages=${loaded.size}")
+                    perfLog("sessionData.disk.done:$sessionId messages=${loaded.size}", readStartedAt)
                     if (state.isEmpty() && loaded.isNotEmpty()) {
                         state.addAll(loaded)
+                        perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                     }
                     if (sessionId == activeSessionId || pendingSessionSelections.contains(sessionId)) {
                         prepareEagerSession(sessionId)
@@ -781,6 +785,7 @@ internal class DshHomePage : BasePager() {
     private fun loadMessagesFromDisk(sessionId: String) {
         if (localStore == null || !pendingLocalMessageReads.add(sessionId)) return
         localReadScope.launch {
+            val readStartedAt = TimeSource.Monotonic.markNow()
             val loaded = runCatching { localStore?.loadMessages(sessionId).orEmpty() }
                 .getOrDefault(emptyList())
                 .filterNot { it.isRuntimeContextSnapshot() }
@@ -788,12 +793,13 @@ internal class DshHomePage : BasePager() {
                 pendingLocalMessageReads.remove(sessionId)
                 val state = sessionMessageStates[sessionId] ?: return@setTimeout
                 sessionMessageReady.add(sessionId)
-                perfLog("sessionData.disk.ready:$sessionId messages=${loaded.size}")
+                perfLog("sessionData.disk.done:$sessionId messages=${loaded.size}", readStartedAt)
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
                 if (state.isEmpty() && loaded.isNotEmpty()) {
                     state.addAll(loaded)
+                    perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                 }
                 ensureConversationPanel(sessionId)
                 realizeSessionAfterData(sessionId)
