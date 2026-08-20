@@ -323,7 +323,7 @@ internal class DshHomePage : BasePager() {
             sessionDrawerMaskAnimated = true
         }
         setTimeout(pagerId, ANIMATION_DURATION_MS) {
-            warmRecentSessionCache()
+            warmRecentSessionCache(scrollToEndAfterLoad = false)
         }
     }
 
@@ -715,15 +715,18 @@ internal class DshHomePage : BasePager() {
         KLog.i("DshSessionRender", "[DshSessionRender] $message")
     }
 
-    private fun realizeSessionAfterData(sessionId: String) {
+    private fun realizeSessionAfterData(
+        sessionId: String,
+        scrollToEndAfterLoad: Boolean = true,
+    ) {
         refreshSessionRenderTree(sessionId)
         addTaskWhenPagerUpdateLayoutFinish {
             refreshSessionRenderTree(sessionId)
-            if (activeSessionId == sessionId) scrollMessagesToEnd()
+            if (scrollToEndAfterLoad && activeSessionId == sessionId) scrollMessagesToEnd()
         }
         setTimeout(pagerId, 16) {
             refreshSessionRenderTree(sessionId)
-            if (activeSessionId == sessionId) scrollMessagesToEnd()
+            if (scrollToEndAfterLoad && activeSessionId == sessionId) scrollMessagesToEnd()
         }
     }
 
@@ -736,11 +739,12 @@ internal class DshHomePage : BasePager() {
     private fun sessionMessageState(
         sessionId: String,
         loadFromDisk: Boolean = true,
+        scrollToEndAfterLoad: Boolean = true,
     ): ObservableList<DshMessage> {
         sessionMessageStates[sessionId]?.let { return it }
         val state = ObservableList<DshMessage>()
         sessionMessageStates[sessionId] = state
-        if (loadFromDisk) loadMessagesFromDisk(sessionId)
+        if (loadFromDisk) loadMessagesFromDisk(sessionId, scrollToEndAfterLoad)
         return state
     }
 
@@ -817,7 +821,10 @@ internal class DshHomePage : BasePager() {
         }
     }
 
-    private fun loadMessagesFromDisk(sessionId: String) {
+    private fun loadMessagesFromDisk(
+        sessionId: String,
+        scrollToEndAfterLoad: Boolean = true,
+    ) {
         if (localStore == null || !pendingLocalMessageReads.add(sessionId)) return
         val readQueuedAt = TimeSource.Monotonic.markNow()
         perfLog("sessionRead.queued:$sessionId", readQueuedAt)
@@ -849,7 +856,7 @@ internal class DshHomePage : BasePager() {
                     perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                 }
                 ensureConversationPanel(sessionId)
-                realizeSessionAfterData(sessionId)
+                realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
                 completePendingSessionSelection(sessionId)
             }
         }
@@ -869,14 +876,19 @@ internal class DshHomePage : BasePager() {
             .take(SESSION_CACHE_WARM_LIMIT)
             .toList(),
         index: Int = 0,
+        scrollToEndAfterLoad: Boolean = true,
     ) {
         if (index >= sessionIds.size) return
-        sessionMessageState(sessionIds[index], loadFromDisk = true)
+        sessionMessageState(
+            sessionIds[index],
+            loadFromDisk = true,
+            scrollToEndAfterLoad = scrollToEndAfterLoad,
+        )
         if (sessionMessageReady.contains(sessionIds[index])) {
             ensureConversationPanel(sessionIds[index])
         }
         setTimeout(pagerId, SESSION_CACHE_WARM_INTERVAL_MS) {
-            warmRecentSessionCache(sessionIds, index + 1)
+            warmRecentSessionCache(sessionIds, index + 1, scrollToEndAfterLoad)
         }
     }
 
