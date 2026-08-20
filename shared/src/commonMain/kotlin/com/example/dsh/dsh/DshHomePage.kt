@@ -114,7 +114,7 @@ internal class DshHomePage : BasePager() {
         perfLog("startup.preloadAllSessionMessages.scheduled", startedAt)
         loadApiKeyAsync()
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
-            warmRecentSessionCache()
+            warmRecentSessionCache(scrollToEndAfterLoad = false)
         }
         startEmbeddedEngine()
         perfLog("startup.created.end", startedAt)
@@ -361,7 +361,7 @@ internal class DshHomePage : BasePager() {
             if (loaded.isNotEmpty()) {
                 activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
                 loadModels(activeSessionId)
-                loadHistory(activeSessionId)
+                loadHistory(activeSessionId, scrollToEndAfterLoad = false)
             } else {
                 messages.clear()
                 messages.add(
@@ -555,13 +555,19 @@ internal class DshHomePage : BasePager() {
         })
     }
 
-    private fun loadHistory(sessionId: String) {
+    private fun loadHistory(
+        sessionId: String,
+        scrollToEndAfterLoad: Boolean = true,
+    ) {
         val requestGeneration = ++historyRequestGeneration
 
         // Show the selected session immediately. The Host history request is
         // remote and can take a moment, so keeping the previous list here
         // makes a session switch look stuck.
-        messages = sessionMessageState(sessionId)
+        messages = sessionMessageState(
+            sessionId,
+            scrollToEndAfterLoad = scrollToEndAfterLoad,
+        )
         ensureConversationPanel(sessionId)
 
         val hostRepository = repository ?: return
@@ -571,7 +577,7 @@ internal class DshHomePage : BasePager() {
             replaceMessagesIfChanged(loaded)
             runCatching { localStore?.saveMessages(sessionId, loaded) }
             completePendingSessionSelection(sessionId)
-            realizeSessionAfterData(sessionId)
+            realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
         }, { error ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             if (messages.isNotEmpty()) {
@@ -600,7 +606,6 @@ internal class DshHomePage : BasePager() {
         sessionMessageReady.add(firstSessionId)
         messages = state
         ensureConversationPanel(firstSessionId)
-        scrollMessagesToEnd()
     }
 
     private fun loadApiKeyAsync() {
@@ -812,7 +817,7 @@ internal class DshHomePage : BasePager() {
                     if (conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) {
                         ensureConversationPanel(sessionId)
                     }
-                    realizeSessionAfterData(sessionId)
+                    realizeSessionAfterData(sessionId, scrollToEndAfterLoad = false)
                     perfLog("preload.$preloadId.ui.applied:$sessionId", queuedAt)
                     completePendingSessionSelection(sessionId)
                 }
