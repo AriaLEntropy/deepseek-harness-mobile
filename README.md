@@ -98,6 +98,28 @@ Shizuku 的启动方式取决于手机系统版本和设备条件，通常可以
 - 一台 Android 7.0（API 24）或更高版本的设备；
 - 已开启开发者选项和 USB 调试，或已配置无线调试。
 
+### 4. Git LFS
+
+`androidApp/src/main/assets/payload.zip` 约 115 MB，使用 Git LFS 存储。获取源码前请先安装并初始化 Git LFS：
+
+```bash
+brew install git-lfs        # macOS
+git lfs install
+```
+
+Linux 和 Windows 用户请参考 [Git LFS 安装说明](https://git-lfs.com/)。克隆完成后可以检查运行时是否已下载：
+
+```bash
+git lfs ls-files
+ls -lh androidApp/src/main/assets/payload.zip
+```
+
+如果 `payload.zip` 只有一百多字节，说明当前文件仍是 LFS 指针，可以执行：
+
+```bash
+git lfs pull
+```
+
 项目当前 Android 配置为：
 
 ```text
@@ -107,6 +129,12 @@ targetSdk  = 28
 ```
 
 ## 获取源码
+
+建议先初始化 Git LFS，再克隆仓库：
+
+```bash
+git lfs install
+```
 
 ```bash
 git clone git@github.com:yukiykchen/deepseek-harness-mobile.git
