@@ -25,6 +25,7 @@ internal object DshEngineManager {
     private const val TAG = "DshEngine"
     private const val ENGINE_URL = "http://127.0.0.1:3080"
     private const val BIN_JS = "dshroot/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
+    private const val SHIZUKU_DEX = "rish/rish_shizuku.dex"
     private const val ENGINE_REVISION = "20260819170527"
     private const val MARKER = ".prepared-$ENGINE_REVISION"
 
@@ -79,7 +80,12 @@ internal object DshEngineManager {
 
     private fun prepare(root: File) {
         val marker = File(root, MARKER)
-        if (marker.isFile && marker.readText().trim() == ENGINE_REVISION && File(root, BIN_JS).isFile) {
+        if (
+            marker.isFile &&
+            marker.readText().trim() == ENGINE_REVISION &&
+            File(root, BIN_JS).isFile &&
+            File(root, SHIZUKU_DEX).isFile
+        ) {
             publish(EngineState(EnginePhase.PREPARING, 100, "运行时已准备"))
             applyLinks(root)
             setExecutables(root)
@@ -169,6 +175,11 @@ internal object DshEngineManager {
             put("PATH", listOf(File(root, "bin"), File(root, "runtime/bin")).joinToString(":") { it.absolutePath } + ":/system/bin:/system/xbin")
             put("HOME", appContext.filesDir.absolutePath)
             put("DSH_HOME", File(root, "dshhome").absolutePath)
+            // The DSH Android tools launch app_process with this dex to enter
+            // the Shizuku shell. Keep the path inside the prepared runtime so
+            // the Node process can resolve it after every app start.
+            put("SHIZUKU_DEX", File(root, SHIZUKU_DEX).absolutePath)
+            put("SHIZUKU_APP_ID", appContext.packageName)
             put("TMPDIR", File(appContext.cacheDir, "dsh-tmp").apply { mkdirs() }.absolutePath)
             put("TERM", "xterm")
         }

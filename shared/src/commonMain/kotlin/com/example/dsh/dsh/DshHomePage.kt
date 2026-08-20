@@ -52,7 +52,6 @@ internal class DshHomePage : BasePager() {
     private var draft by observable("")
     private var streaming by observable(false)
     private var stopButtonVisible by observable(false)
-    private var connectionDotPhase by observable(0)
     private var streamingAssistantContent by observable("")
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
@@ -78,6 +77,7 @@ internal class DshHomePage : BasePager() {
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
     private val messageScrollerRefs = mutableMapOf<String, ViewRef<ListView<*, *>>>()
+    private val messageRowRefs = mutableMapOf<String, ViewRef<com.tencent.kuikly.core.views.DivView>>()
     private var historyRequestGeneration = 0
     private val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
     private val sessionMessageReady = mutableSetOf<String>()
@@ -102,7 +102,6 @@ internal class DshHomePage : BasePager() {
                 createDshLocalStore("$databaseDir/dsh.db")
             }.getOrNull()
         }
-        animateConnectionDots()
         restoreCachedSessions()
         if (sessions.isEmpty()) {
             sessionMessageStates[activeSessionId] = messages
@@ -147,7 +146,6 @@ internal class DshHomePage : BasePager() {
                     DshTopBar(
                         title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "DeepSeek Harness" },
                         connection = { ctx.connectionLabel },
-                        dotPhase = { ctx.connectionDotPhase },
                     )
                 }
 
@@ -179,8 +177,10 @@ internal class DshHomePage : BasePager() {
                                 activeConversationId = { ctx.activeSessionId },
                                 messagesForSession = { ctx.sessionMessageState(it) },
                                 streaming = { ctx.streaming },
-                                streamingContent = { ctx.streamingAssistantContent },
                                 scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
+                                messageRef = { sessionId, messageId, ref ->
+                                    ctx.messageRowRefs[ctx.messageRowKey(sessionId, messageId)] = ref
+                                },
                                 draft = { ctx.draft },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
@@ -211,8 +211,10 @@ internal class DshHomePage : BasePager() {
                             activeConversationId = { ctx.activeSessionId },
                             messagesForSession = { ctx.sessionMessageState(it) },
                             streaming = { ctx.streaming },
-                            streamingContent = { ctx.streamingAssistantContent },
                             scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
+                            messageRef = { sessionId, messageId, ref ->
+                                ctx.messageRowRefs[ctx.messageRowKey(sessionId, messageId)] = ref
+                            },
                             draft = { ctx.draft },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
@@ -324,18 +326,6 @@ internal class DshHomePage : BasePager() {
         }
         setTimeout(pagerId, ANIMATION_DURATION_MS) {
             warmRecentSessionCache(scrollToEndAfterLoad = false)
-        }
-    }
-
-    private fun animateConnectionDots() {
-        setTimeout(pagerId, CONNECTION_DOT_INTERVAL_MS) {
-            // The phase lives on the page, so avoid invalidating the whole
-            // conversation and drawer tree while the drawer is animating or
-            // after the connection has already become stable.
-            if (!sessionDrawerVisible && !isConnectionReadyLabel(connectionLabel)) {
-                connectionDotPhase = (connectionDotPhase + 1) % CONNECTION_DOT_COUNT
-            }
-            animateConnectionDots()
         }
     }
 
@@ -945,8 +935,12 @@ internal class DshHomePage : BasePager() {
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
         messages.add(user)
+        // Keep the assistant response in the same list row throughout the
+        // stream. Replacing a separate temporary row at completion can leave
+        // LazyLoop without a realized render view until the next drag.
+        messages.add(DshMessage(assistantId, DshMessageRole.ASSISTANT, "", streaming = true))
         sessionMessageStates[sessionId] = messages
-        scrollMessagesToEnd()
+        scrollMessagesToMessage(user.id)
         streamingAssistantId = assistantId
         streamingAssistantContent = ""
         pendingAssistantDelta.setLength(0)
@@ -997,8 +991,8 @@ internal class DshHomePage : BasePager() {
         streamHandle?.cancel()
         streamHandle = null
         val partial = streamingAssistantContent + pendingAssistantDelta.toString()
-        if (streamingAssistantId.isNotEmpty() && partial.isNotBlank()) {
-            messages.add(DshMessage(streamingAssistantId, DshMessageRole.ASSISTANT, partial))
+        if (streamingAssistantId.isNotEmpty()) {
+            updateStreamingMessage(partial, streaming = false)
         }
         streamingAssistantId = ""
         pendingAssistantDelta.setLength(0)
@@ -1019,7 +1013,10 @@ internal class DshHomePage : BasePager() {
     private fun updateKeyboard(params: KeyboardParams) {
         keyboardAnimation = Animation.easeInOut(ANIMATION_DURATION_S)
         keyboardHeight = effectiveKeyboardHeight(params.height)
-        scrollMessagesToEnd()
+        // Closing the keyboard after send must not undo the scroll to the
+        // newly sent user message. Scroll to the end only when the composer
+        // is opening while no response is being anchored.
+        if (keyboardHeight > 0f && !streaming) scrollMessagesToEnd()
     }
 
     private fun effectiveKeyboardHeight(rawHeight: Float): Float {
@@ -1100,13 +1097,29 @@ internal class DshHomePage : BasePager() {
         if (streamingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
         streamingAssistantContent += pendingAssistantDelta.toString()
         pendingAssistantDelta.setLength(0)
+        updateStreamingMessage(streamingAssistantContent, streaming = true)
+        // Follow the assistant while SSE produces new content. The initial
+        // send still anchors on the user's message until the first delta.
         scrollMessagesToEnd()
+    }
+
+    private fun updateStreamingMessage(content: String, streaming: Boolean) {
+        val index = messages.indexOfFirst { it.id == streamingAssistantId }
+        if (index < 0) return
+        messages[index] = messages[index].copy(content = content, streaming = streaming)
     }
 
     private fun scrollMessagesToEnd() {
         val generation = ++scrollSettleGeneration
         addTaskWhenPagerUpdateLayoutFinish {
             settleScrollToEnd(generation, 0)
+        }
+    }
+
+    private fun scrollMessagesToMessage(messageId: String) {
+        val generation = ++scrollSettleGeneration
+        addTaskWhenPagerUpdateLayoutFinish {
+            settleScrollToMessage(messageId, generation, 0)
         }
     }
 
@@ -1134,32 +1147,57 @@ internal class DshHomePage : BasePager() {
         scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
     }
 
+    private fun settleScrollToMessage(messageId: String, generation: Int, attempt: Int) {
+        if (generation != scrollSettleGeneration) return
+        val row = messageRowRefs[messageRowKey(activeSessionId, messageId)]?.view
+        val rowY = row?.flexNode?.layoutFrame?.y
+        if (rowY != null) {
+            messageScrollerRefs[activeSessionId]?.view?.setContentOffset(
+                0f,
+                rowY.coerceAtLeast(0f),
+                animated = false,
+            )
+        }
+        if (attempt >= SCROLL_SETTLE_ATTEMPTS) return
+        setTimeout(pagerId, SCROLL_SETTLE_DELAYS_MS[attempt]) {
+            addTaskWhenPagerUpdateLayoutFinish {
+                settleScrollToMessage(messageId, generation, attempt + 1)
+            }
+        }
+    }
+
+    private fun messageRowKey(sessionId: String, messageId: String): String = "$sessionId:$messageId"
+
     private fun settleStreamingMessage(role: DshMessageRole, content: String) {
         val id = streamingAssistantId
         if (id.isNotEmpty()) {
-            messages.add(DshMessage(id, role, content, streaming = false))
             val sessionId = activeSessionId
+            val finalContent = content.ifEmpty { streamingAssistantContent }
+            val index = messages.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                messages[index] = messages[index].copy(
+                    role = role,
+                    content = finalContent,
+                    streaming = false,
+                )
+            } else {
+                messages.add(DshMessage(id, role, finalContent, streaming = false))
+            }
             streamingAssistantId = ""
             pendingAssistantDelta.setLength(0)
             stopButtonVisible = false
+            streaming = false
+            streamingAssistantContent = ""
             addTaskWhenPagerUpdateLayoutFinish {
                 if (activeSessionId != sessionId) return@addTaskWhenPagerUpdateLayoutFinish
                 refreshSessionRenderTree(sessionId)
                 sessionRenderLog("stream.render.layout session=$sessionId messages=${messages.size}")
-                scrollMessagesToEnd()
-                // Keep the streaming row alive for this layout pass. The
-                // final message is appended to LazyLoop first; removing the
-                // separate streaming row in the same update can leave the
-                // list with no realized visible children until a drag occurs.
-                setTimeout(pagerId, 0) {
+                setTimeout(pagerId, 16) {
                     if (activeSessionId != sessionId) return@setTimeout
-                    streaming = false
-                    streamingAssistantContent = ""
                     addTaskWhenPagerUpdateLayoutFinish {
                         if (activeSessionId != sessionId) return@addTaskWhenPagerUpdateLayoutFinish
                         refreshSessionRenderTree(sessionId)
                         sessionRenderLog("stream.render.refresh session=$sessionId messages=${messages.size}")
-                        scrollMessagesToEnd()
                     }
                 }
             }
@@ -1615,7 +1653,6 @@ private fun ViewContainer<*, *>.DshModelPicker(
 private fun ViewContainer<*, *>.DshTopBar(
     title: () -> String,
     connection: () -> String,
-    dotPhase: () -> Int,
 ) {
     View {
         attr {
@@ -1640,7 +1677,7 @@ private fun ViewContainer<*, *>.DshTopBar(
             attr {
                 text(title())
                 marginLeft(10f)
-                maxWidth(pagerData.pageViewWidth - 142f)
+                maxWidth(pagerData.pageViewWidth - 238f)
                 fontSize(17f)
                 fontWeightMedium()
                 color(Color(0xFF0F1115))
@@ -1650,43 +1687,19 @@ private fun ViewContainer<*, *>.DshTopBar(
         View { attr { flex(1f) } }
         View {
             attr {
-                size(36f, 36f)
-                borderRadius(18f)
-                backgroundColor(Color(if (isConnectionReadyLabel(connection())) 0xFFEAF8F0 else 0xFFF1F4F8))
-                allCenter()
+                width(132f)
+                height(30f)
+                alignItemsFlexEnd()
+                justifyContentCenter()
             }
-            vif({ isConnectionReadyLabel(connection()) }) {
-                View {
-                    attr {
-                        size(12f, 12f)
-                        borderRadius(6f)
-                        backgroundColor(Color(0xFF2EAF67))
-                    }
-                }
-            }
-            velse {
-                View {
-                    attr {
-                        width(22f)
-                        height(18f)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        justifyContentCenter()
-                    }
-                    repeat(CONNECTION_DOT_COUNT) { index ->
-                        Text {
-                            attr {
-                                width(7f)
-                                text("•")
-                                fontSize(14f)
-                                lineHeight(18f)
-                                color(Color(0xFF64748B))
-                                opacity(if (dotPhase() == index) 1f else 0.3f)
-                                transform(Translate(0f, if (dotPhase() == index) -3f else 0f))
-                                animation(Animation.easeInOut(CONNECTION_DOT_ANIMATION_S), dotPhase() == index)
-                            }
-                        }
-                    }
+            Text {
+                attr {
+                    text(if (isConnectionReadyLabel(connection())) "连接成功" else "dsh engine 初始化中")
+                    width(132f)
+                    fontSize(11f)
+                    lines(1)
+                    textAlignRight()
+                    color(Color(if (isConnectionReadyLabel(connection())) 0xFF2EAF67 else 0xFF89939D))
                 }
             }
         }
@@ -1767,8 +1780,8 @@ private fun ViewContainer<*, *>.DshConversation(
     activeConversationId: () -> String,
     messagesForSession: (String) -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
-    streamingContent: () -> String,
     scrollerRef: (String, ViewRef<ListView<*, *>>) -> Unit,
+    messageRef: (String, String, ViewRef<com.tencent.kuikly.core.views.DivView>) -> Unit,
     draft: () -> String,
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
@@ -1838,18 +1851,11 @@ private fun ViewContainer<*, *>.DshConversation(
                         maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
                     ) { message, _, _ ->
                         View {
+                            ref { messageRef(sessionId, message.id, it) }
                             attr {
                                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
                             }
                             DshMessageRow(message, streaming() && activeConversationId() == sessionId)
-                        }
-                    }
-                    vif({ streaming() && activeConversationId() == sessionId }) {
-                        View {
-                            attr {
-                                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
-                            }
-                            DshStreamingMessageRow(streamingContent)
                         }
                     }
                 }
@@ -2007,33 +2013,6 @@ private fun ViewContainer<*, *>.DshConversation(
     }
 }
 
-private fun ViewContainer<*, *>.DshStreamingMessageRow(content: () -> String) {
-    View {
-        attr {
-            width((pagerData.pageViewWidth - 36f).coerceAtMost(620f).coerceAtLeast(0f))
-            flexDirectionColumn()
-            alignItemsFlexStart()
-            marginBottom(18f)
-        }
-        Text {
-            attr {
-                text("DeepSeek")
-                fontSize(11f)
-                color(Color(0xFF84939D))
-                marginBottom(5f)
-            }
-        }
-        DshMarkdown {
-            attr {
-                contentWidth = (pagerData.pageViewWidth - 36f).coerceAtLeast(0f)
-                this.content = content().ifEmpty { "正在生成..." }
-                streaming = true
-                darkMode = false
-            }
-        }
-    }
-}
-
 private fun ViewContainer<*, *>.DshMessageRow(message: DshMessage, pageStreaming: Boolean) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
@@ -2111,9 +2090,6 @@ private fun isConnectionReadyLabel(label: String): Boolean {
 }
 
 private const val COMPOSER_HEIGHT = 142f
-private const val CONNECTION_DOT_COUNT = 3
-private const val CONNECTION_DOT_INTERVAL_MS = 260
-private const val CONNECTION_DOT_ANIMATION_S = 0.18f
 private const val CHAT_INITIAL_RENDER_COUNT = 6
 private const val CHAT_MAX_RENDERED_MESSAGES = 16
 private const val SESSION_CACHE_WARM_LIMIT = 7
