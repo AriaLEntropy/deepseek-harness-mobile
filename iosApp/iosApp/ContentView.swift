@@ -8,7 +8,7 @@ struct ContentView: View {
             .appendingPathComponent("Databases", isDirectory: true)
         try? FileManager.default.createDirectory(at: databaseDir, withIntermediateDirectories: true)
         return KuiklyRenderViewPage(
-            pageName: "home",
+            pageName: "connection_setup",
             data: ["databaseDir": databaseDir.path]
         ).ignoresSafeArea()
     }

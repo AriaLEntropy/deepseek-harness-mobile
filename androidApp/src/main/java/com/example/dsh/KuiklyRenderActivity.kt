@@ -41,7 +41,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             return if (pn.isNotEmpty()) {
                 return pn
             } else {
-                "home"
+                "connection_setup"
             }
         }
 
@@ -66,6 +66,12 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
     override fun onPause() {
         super.onPause()
         kuiklyRenderViewDelegator.onPause()
+    }
+
+    @Deprecated("Android dispatches legacy activity results to this host for the current app target")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        KRBridgeModule.dispatchActivityResult(requestCode, resultCode, data)
     }
 
     override fun onResume() {
@@ -101,7 +107,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
     private fun createPageData(): Map<String, Any> {
         val param = argsToMap()
         param["appId"] = 1
-        param["embeddedEngine"] = true
+        param["embeddedEngine"] = pageName == "home"
         param["databaseDir"] = java.io.File(KRApplication.application.filesDir.parentFile, "databases").apply {
             if (!exists()) mkdirs()
         }.absolutePath

@@ -1,0 +1,361 @@
+package com.example.dsh.dsh
+
+import com.example.dsh.base.BasePager
+import com.example.dsh.base.bridgeModule
+import com.tencent.kuikly.core.annotations.Page
+import com.tencent.kuikly.core.base.*
+import com.tencent.kuikly.core.directives.vif
+import com.tencent.kuikly.core.module.RouterModule
+import com.tencent.kuikly.core.module.SharedPreferencesModule
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
+import com.tencent.kuikly.core.reactive.handler.observable
+import com.tencent.kuikly.core.views.Input
+import com.tencent.kuikly.core.views.Modal
+import com.tencent.kuikly.core.views.Text
+import com.tencent.kuikly.core.views.View
+import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.compose.Button
+import com.tencent.kuikly.core.base.attr.ImageUri
+import com.tencent.kuikly.core.timer.setTimeout
+
+/** First page shown by the app. It only selects a host and never starts an engine. */
+@Page("connection_setup")
+internal class DshConnectionSetupPage : BasePager() {
+    private var sshMode by observable(false)
+    private var host by observable("")
+    private var user by observable("")
+    private var sshPort by observable("22")
+    private var dshPort by observable("3080")
+    private var sshFingerprint by observable("")
+    private var keyId by observable("")
+    private var keyLabel by observable("未导入 SSH 私钥")
+    private var busy by observable(false)
+    private var error by observable("")
+    private var fingerprintPending by observable("")
+    private var localStore: DshLocalStore? = null
+    private var engineModule: DshEngineModule? = null
+    private var probeRepository: DshRepository? = null
+
+    override fun created() {
+        super.created()
+        val databaseDir = pageData.params.optString("databaseDir")
+        val prefs = prefs()
+        val legacyMode = prefs.getItem(LEGACY_MODE_KEY)
+        val legacyHost = prefs.getItem(LEGACY_HOST_KEY)
+        val legacyUser = prefs.getItem(LEGACY_USER_KEY)
+        val legacyKey = prefs.getItem(LEGACY_KEY_ID_KEY)
+        val legacyProfile = if (legacyHost.isNotBlank() && legacyUser.isNotBlank() && legacyKey.isNotBlank()) {
+            DshLegacyRemoteProfile(
+                mode = DshConnectionMode.REMOTE,
+                host = legacyHost,
+                sshPort = prefs.getItem(LEGACY_SSH_PORT_KEY).toIntOrNull() ?: 22,
+                username = legacyUser,
+                remoteDshPort = prefs.getItem(LEGACY_DSH_PORT_KEY).toIntOrNull() ?: 3080,
+                keyId = legacyKey,
+                hostFingerprint = prefs.getItem(LEGACY_FINGERPRINT_KEY),
+            )
+        } else {
+            null
+        }
+        localStore = if (databaseDir.isEmpty()) null else runCatching {
+            createDshLocalStore("$databaseDir/dsh.db", legacyProfile)
+        }.getOrNull()
+        val store = localStore
+        sshMode = runCatching { store?.loadLastConnectionMode() == DshConnectionMode.REMOTE }.getOrDefault(false)
+        var profile = runCatching { store?.loadRemoteProfile() }.getOrNull()
+        if (profile == null && legacyProfile != null) {
+            runCatching { store?.migrateLegacyRemoteProfile(legacyProfile) }
+            profile = runCatching { store?.loadRemoteProfile() }.getOrNull()
+        }
+        if (profile != null && legacyMode == "ssh") {
+            sshMode = true
+            runCatching { store?.saveLastConnectionMode(DshConnectionMode.REMOTE) }
+        }
+        if (profile != null) clearLegacyPreferences()
+        host = profile?.host.orEmpty()
+        user = profile?.username.orEmpty()
+        sshPort = profile?.sshPort?.toString() ?: "22"
+        dshPort = profile?.remoteDshPort?.toString() ?: "3080"
+        keyId = profile?.keyId.orEmpty()
+        sshFingerprint = profile?.hostFingerprint.orEmpty()
+        keyLabel = if (keyId.isEmpty()) "未导入 SSH 私钥" else "已导入 SSH 私钥"
+    }
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        return {
+            View {
+                attr {
+                    flex(1f)
+                    flexDirectionColumn()
+                    paddingTop(pagerData.statusBarHeight)
+                    backgroundColor(Color(0xFFF7F9FA))
+                }
+                View {
+                    attr {
+                        height(58f)
+                        flexDirectionRow()
+                        alignItemsCenter()
+                        paddingLeft(20f)
+                        paddingRight(20f)
+                        backgroundColor(Color.WHITE)
+                        borderBottom(Border(1f, BorderStyle.SOLID, Color(0xFFE5E8EB)))
+                    }
+                    Image { attr { src(ImageUri.commonAssets("wordmark.svg")); width(118f); height(24f) } }
+                }
+                View {
+                    attr {
+                        flex(1f)
+                        paddingLeft(20f)
+                        paddingRight(20f)
+                        paddingTop(40f)
+                        flexDirectionColumn()
+                    }
+                    Text { attr { text("连接 DSH"); fontSize(28f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                    Text { attr { text("选择 Agent 运行位置"); marginTop(10f); fontSize(15f); color(Color(0xFF68737D)) } }
+                    View {
+                        attr { height(48f); marginTop(24f); flexDirectionRow(); padding(4f); borderRadius(10f); backgroundColor(Color(0xFFE9EDF1)) }
+                        DshSetupModeButton("手机本地", { !ctx.sshMode }, { ctx.sshMode = false; ctx.error = "" })
+                        DshSetupModeButton("SSH 连接电脑", { ctx.sshMode }, { ctx.sshMode = true; ctx.error = "" })
+                    }
+                    vif({ ctx.sshMode }) {
+                        DshSetupInput("SSH 主机", { ctx.host }, "例如 Tailscale IP 或域名") { ctx.host = it; ctx.error = "" }
+                        DshSetupInput("SSH 用户名", { ctx.user }, "例如 alex") { ctx.user = it; ctx.error = "" }
+                        View {
+                            attr { flexDirectionRow(); marginTop(4f) }
+                            DshSetupInput("SSH 端口", { ctx.sshPort }, "22", 0.5f) { ctx.sshPort = it; ctx.error = "" }
+                            DshSetupInput("远程 DSH 端口", { ctx.dshPort }, "3080", 0.5f, 12f) { ctx.dshPort = it; ctx.error = "" }
+                        }
+                        View {
+                            attr { height(46f); marginTop(12f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f); borderRadius(8f); backgroundColor(Color.WHITE); border(Border(1f, BorderStyle.SOLID, Color(0xFFD9DEE3))) }
+                            Text { attr { text(ctx.keyLabel); flex(1f); fontSize(14f); color(Color(0xFF4F565C)) } }
+                            Text { attr { text(if (ctx.busy) "导入中..." else "导入私钥"); fontSize(14f); color(Color(0xFF4176E6)) }; event { click { if (!ctx.busy) ctx.pickKey() } } }
+                        }
+                    }
+                    vif({ ctx.error.isNotEmpty() }) {
+                        Text { attr { text(ctx.error); marginTop(12f); fontSize(13f); lineHeight(19f); color(Color(0xFFBF3535)) } }
+                    }
+                    vif({ ctx.fingerprintPending.isNotEmpty() }) {
+                        Text {
+                            attr { text("确认并继续使用此 SSH 主机指纹"); marginTop(10f); fontSize(13f); color(Color(0xFF4176E6)) }
+                            event { click { if (!ctx.busy) ctx.trustFingerprint() } }
+                        }
+                    }
+                    View { attr { flex(1f) } }
+                    Button {
+                        attr {
+                            height(48f)
+                            marginBottom(24f)
+                            borderRadius(10f)
+                            backgroundColor(Color(if (ctx.busy) 0xFFB7C8FE else 0xFF4176E6))
+                            titleAttr { text(if (ctx.sshMode) "保存并连接电脑" else "进入本地 Agent"); fontSize(15f); color(Color.WHITE) }
+                        }
+                        event { click { if (!ctx.busy) ctx.continueToHost() } }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun pickKey() {
+        busy = true
+        bridgeModule.pickSshKey { uri ->
+            if (uri.isEmpty()) {
+                busy = false
+                return@pickSshKey
+            }
+            bridgeModule.importSshKey(uri) { imported ->
+                setTimeout(pagerId, 0) {
+                    busy = false
+                    if (imported.isEmpty()) error = "无法导入 SSH 私钥"
+                    else {
+                        keyId = imported
+                        keyLabel = "已导入 SSH 私钥"
+                        error = ""
+                    }
+                }
+            }
+        }
+    }
+
+    private fun continueToHost() {
+        fingerprintPending = ""
+        if (!sshMode) {
+            runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.LOCAL) }
+            openHome()
+            return
+        }
+        val ssh = sshPort.toIntOrNull()
+        val dsh = dshPort.toIntOrNull()
+        if (!pageData.isAndroid) {
+            error = "远程 SSH 模式目前仅支持 Android"
+            return
+        }
+        when {
+            host.isBlank() -> error = "请输入 SSH 主机地址"
+            user.isBlank() -> error = "请输入 SSH 用户名"
+            ssh == null || ssh !in 1..65535 -> error = "SSH 端口无效"
+            dsh == null || dsh !in 1..65535 -> error = "远程 DSH 端口无效"
+            keyId.isBlank() -> error = "请先导入 SSH 私钥"
+            else -> {
+                busy = true
+                bridgeModule.validateSshKey(keyId) { valid ->
+                    setTimeout(pagerId, 0) {
+                        if (!valid) {
+                            busy = false
+                            error = "SSH 私钥不存在或格式无法识别"
+                            return@setTimeout
+                        }
+                        val profile = DshRemoteProfile(
+                            host = host.trim(), sshPort = ssh, username = user.trim(),
+                            remoteDshPort = dsh, keyId = keyId, hostFingerprint = sshFingerprint,
+                        )
+                        runCatching { localStore?.saveRemoteProfile(profile) }
+                        runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.REMOTE) }
+                        probeRemote(profile)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun probeRemote(profile: DshRemoteProfile) {
+        val module = acquireModule<DshEngineModule>(DshEngineModule.MODULE_NAME)
+        engineModule = module
+        error = "正在连接 SSH 并检查远程 DSH"
+        module.startSsh(DshSshConfig(
+            host = profile.host,
+            port = profile.sshPort,
+            username = profile.username,
+            remoteDshPort = profile.remoteDshPort,
+            keyId = profile.keyId,
+            hostFingerprint = profile.hostFingerprint,
+        )) { state ->
+            when (state.phase) {
+                DshSshPhase.FINGERPRINT_REQUIRED -> {
+                    busy = false
+                    fingerprintPending = state.message
+                    error = "首次连接需要确认主机指纹：${state.message}"
+                    sshFingerprint = state.message
+                }
+                DshSshPhase.READY -> {
+                    val repository = DshHostRepository(
+                        network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
+                        sse = acquireModule(DshSseModule.MODULE_NAME),
+                        connection = DshHostConnection("http://127.0.0.1:${state.localPort}"),
+                        pagerId = pagerId,
+                    )
+                    probeRepository = repository
+                    repository.loadSessions({
+                        setTimeout(pagerId, 0) {
+                            busy = false
+                            error = ""
+                            module.stopSsh()
+                            openHome()
+                        }
+                    }, { message ->
+                        setTimeout(pagerId, 0) {
+                            busy = false
+                            error = "远程 DSH 不可用：$message"
+                            module.stopSsh()
+                        }
+                    })
+                }
+                DshSshPhase.ERROR -> {
+                    busy = false
+                    error = state.message.ifEmpty { "SSH 连接失败" }
+                    module.stopSsh()
+                }
+                else -> error = state.message.ifEmpty { "正在连接 SSH" }
+            }
+        }
+    }
+
+    private fun trustFingerprint() {
+        val fingerprint = fingerprintPending
+        if (fingerprint.isBlank()) return
+        sshFingerprint = fingerprint
+        engineModule?.trustSshFingerprint(fingerprint)
+        localStore?.saveRemoteProfile(DshRemoteProfile(
+            host = host.trim(),
+            sshPort = sshPort.toIntOrNull() ?: 22,
+            username = user.trim(),
+            remoteDshPort = dshPort.toIntOrNull() ?: 3080,
+            keyId = keyId,
+            hostFingerprint = fingerprint,
+        ))
+        fingerprintPending = ""
+        error = ""
+        probeRemote(DshRemoteProfile(
+            host = host.trim(),
+            sshPort = sshPort.toIntOrNull() ?: 22,
+            username = user.trim(),
+            remoteDshPort = dshPort.toIntOrNull() ?: 3080,
+            keyId = keyId,
+            hostFingerprint = fingerprint,
+        ))
+    }
+
+    private fun openHome() {
+        acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("home", JSONObject().apply {
+            put("pageName", "home")
+            put("connectionMode", if (sshMode) "remote" else "local")
+            put("profileId", DshSessionScope.DEFAULT_REMOTE_PROFILE_ID)
+        })
+    }
+
+    private fun prefs(): SharedPreferencesModule = acquireModule(SharedPreferencesModule.MODULE_NAME)
+
+    private fun clearLegacyPreferences() {
+        val prefs = prefs()
+        listOf(
+            LEGACY_MODE_KEY,
+            LEGACY_HOST_KEY,
+            LEGACY_USER_KEY,
+            LEGACY_SSH_PORT_KEY,
+            LEGACY_DSH_PORT_KEY,
+            LEGACY_KEY_ID_KEY,
+            LEGACY_FINGERPRINT_KEY,
+        ).forEach { prefs.setItem(it, "") }
+    }
+
+    companion object {
+        private const val LEGACY_HOST_KEY = "dsh_ssh_host"
+        private const val LEGACY_MODE_KEY = "dsh_connection_mode"
+        private const val LEGACY_USER_KEY = "dsh_ssh_user"
+        private const val LEGACY_SSH_PORT_KEY = "dsh_ssh_port"
+        private const val LEGACY_DSH_PORT_KEY = "dsh_ssh_dsh_port"
+        private const val LEGACY_KEY_ID_KEY = "dsh_ssh_key_id"
+        private const val LEGACY_FINGERPRINT_KEY = "dsh_ssh_fingerprint"
+    }
+}
+
+private fun ViewContainer<*, *>.DshSetupModeButton(label: String, selected: () -> Boolean, onClick: () -> Unit) {
+    View {
+        attr { flex(1f); height(40f); flexDirectionRow(); justifyContentCenter(); alignItemsCenter(); borderRadius(7f); backgroundColor(Color(if (selected()) 0xFFFFFFFF else 0x00FFFFFF)) }
+        Text { attr { text(label); fontSize(14f); color(Color(if (selected()) 0xFF4176E6 else 0xFF68737D)) } }
+        event { click { onClick() } }
+    }
+}
+
+private fun ViewContainer<*, *>.DshSetupInput(
+    label: String,
+    value: () -> String,
+    hint: String,
+    flexValue: Float = 1f,
+    marginLeft: Float = 0f,
+    onChange: (String) -> Unit,
+) {
+    View {
+        attr { flex(flexValue); marginLeft(marginLeft); flexDirectionColumn(); marginTop(12f) }
+        Text { attr { text(label); fontSize(12f); color(Color(0xFF68737D)) } }
+        View {
+            attr { height(42f); marginTop(5f); paddingLeft(10f); paddingRight(10f); borderRadius(8f); backgroundColor(Color.WHITE); border(Border(1f, BorderStyle.SOLID, Color(0xFFD9DEE3))) }
+            Input {
+                ref { it.view?.setText(value()) }
+                attr { flex(1f); fontSize(14f); color(Color(0xFF222C35)); placeholder(hint); placeholderColor(Color(0xFF98A1A9)); returnKeyTypeDone() }
+                event { textDidChange { onChange(it.text) } }
+            }
+        }
+    }
+}

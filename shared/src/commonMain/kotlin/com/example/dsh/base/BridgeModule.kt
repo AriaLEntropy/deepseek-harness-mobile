@@ -297,6 +297,24 @@ internal class BridgeModule : Module() {
         )
     }
 
+    fun pickSshKey(callback: (String) -> Unit) {
+        callNativeMethod("pickSshKey", null) { value ->
+            callback(value?.optString("uri").orEmpty())
+        }
+    }
+
+    fun importSshKey(uri: String, callback: (String) -> Unit) {
+        callNativeMethod("importSshKey", JSONObject().apply { put("uri", uri) }) { value ->
+            callback(value?.optString("keyId").orEmpty())
+        }
+    }
+
+    fun validateSshKey(keyId: String, callback: (Boolean) -> Unit) {
+        callNativeMethod("validateSshKey", JSONObject().apply { put("keyId", keyId) }) { value ->
+            callback(value?.optBoolean("valid") == true)
+        }
+    }
+
     fun humanVerification(params: JSONObject, callbackFn: CallbackFn? = null): String {
         return syncCallNativeMethod(HUMAN_VERIFICATION, params, callbackFn)
     }

@@ -23,6 +23,7 @@ DeepSeek Harness 本身是一个插件化 Agent 运行时，负责处理：
 - 通过 HTTP RPC 调用 Host，通过 SSE 接收流式 Agent 事件；
 - 使用 Kuikly/Kotlin Multiplatform 实现主要 UI 和跨平台协议层；
 - 在 Android 本地保存 API Key、会话列表和消息缓存。
+- 可选地通过 Android 内置 SSH 隧道连接电脑上的 DSH Host。
 
 ## 工作原理
 
@@ -159,6 +160,31 @@ cd deepseek-harness-mobile
 7. 在 App 中填写 DeepSeek API Key。
 8. 创建会话并发送第一条消息。
 
+## 通过 SSH 连接电脑上的 DSH Host
+
+App 支持手机本地 Agent，以及通过 SSH 连接电脑上的 DSH Host。SSH 模式只建立本地端口转发，不通过 SSH 执行远程命令，也不需要把 DSH 端口暴露到公网。
+
+电脑端先启动 DSH，并保持回环监听：
+
+```bash
+dsh web --port 3080
+```
+
+推荐为手机使用的 SSH 用户配置 Ed25519 公钥：
+
+```bash
+ssh-keygen -t ed25519
+ssh-copy-id your-user@your-computer
+```
+
+Windows OpenSSH 用户可以把 `.pub` 文件内容追加到 `%USERPROFILE%\\.ssh\\authorized_keys`。手机和电脑不在同一局域网时，可以让两台设备加入同一个 Tailscale 或 ZeroTier 网络，然后在 App 中填写虚拟地址，例如 `100.86.12.34`。
+
+在 App 左侧菜单打开“设置”，选择“SSH 连接电脑”，填写 SSH 主机、SSH 端口、用户名和远程 DSH 端口，然后导入私钥。首次连接会展示 SSH 主机指纹；确认后会用于后续校验，指纹变化时需要重新确认。
+
+SSH 模式下 API Key 应配置在电脑端 DSH Host 中。手机本地模式和 SSH 模式的会话缓存彼此隔离，远程 Host 是远程会话的最终数据来源。
+
+App 支持用户主动开启 Android 前台服务来保持后台 SSH 隧道，但 Android 可能限制长时间后台服务。网络切换或系统回收后，App 会尝试重连，并通过会话历史恢复已被远程 Host 接受的任务。
+
 ## 使用 Gradle 命令行构建和安装
 
 在仓库根目录执行：
@@ -266,6 +292,8 @@ http://127.0.0.1:3080
 - 如果 SSE 不可用，客户端保留历史轮询作为断线恢复机制。
 
 DeepSeek API 的请求由手机上的 Harness 进程发起，因此 App 需要网络权限和可用网络。`127.0.0.1` 只表示 App 与本地 Harness Host 之间的通信，不代表模型服务完全离线。
+
+SSH 模式下，`127.0.0.1` 表示手机上的 SSH 本地转发端点，实际请求会经过 SSH 到达电脑的 `127.0.0.1:3080`。业务层仍使用 HTTP RPC 和 SSE，远程连接不会改变 DSH API 协议。
 
 ## 故障排查
 

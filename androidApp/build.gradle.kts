@@ -9,6 +9,17 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+            )
+        }
+    }
     defaultConfig {
         applicationId = "com.example.dsh"
         minSdk = 24
@@ -21,6 +32,9 @@ android {
         getByName("release") {
             isMinifyEnabled = false
         }
+    }
+    lint {
+        disable += "ExpiredTargetSdkVersion"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -50,4 +64,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation(libs.apache.sshd.core)
+    implementation(libs.eddsa)
 }

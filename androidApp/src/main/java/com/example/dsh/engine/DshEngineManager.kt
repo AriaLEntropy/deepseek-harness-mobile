@@ -8,6 +8,8 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.zip.ZipInputStream
@@ -34,20 +36,25 @@ internal object DshEngineManager {
     @Volatile private var process: Process? = null
     @Volatile private var booting = false
     @Volatile private var watchdogStarted = false
+    private var engineGeneration = 0L
+    private var stopped = false
     private lateinit var appContext: Context
 
+    @Synchronized
     fun start(context: Context, listener: (EngineState) -> Unit) {
         appContext = context.applicationContext
+        stopped = false
+        val generation = ++engineGeneration
         listeners += listener
         listener(state)
-        if (healthOk()) {
+        if (healthOk() && process?.isAlive == true) {
             publish(EngineState(EnginePhase.READY, 100, "本地 Harness 已就绪"))
-            startWatchdog()
+            startWatchdog(generation)
             return
         }
         if (booting) return
         booting = true
-        Thread({ boot() }, "dsh-engine-boot").start()
+        Thread({ boot(generation) }, "dsh-engine-boot").start()
     }
 
     fun removeListener(listener: (EngineState) -> Unit) {
@@ -56,20 +63,26 @@ internal object DshEngineManager {
 
     fun currentState(): EngineState = state
 
+    @Synchronized
     fun stop() {
+        stopped = true
+        ++engineGeneration
+        watchdogStarted = false
         process?.destroy()
         process = null
         booting = false
         publish(EngineState(EnginePhase.STOPPED, message = "本地 Harness 已停止"))
     }
 
-    private fun boot() {
+    private fun boot(myGeneration: Long) {
         try {
+            waitForPortRelease(myGeneration)
             val root = File(appContext.filesDir, "dsh-engine")
             prepare(root)
+            if (stopped || myGeneration != engineGeneration) return
             startProcess(root)
-            waitUntilReady()
-            startWatchdog()
+            waitUntilReady(myGeneration)
+            if (!stopped && myGeneration == engineGeneration) startWatchdog(myGeneration)
         } catch (error: Throwable) {
             Log.e(TAG, "Engine boot failed", error)
             publish(EngineState(EnginePhase.ERROR, message = error.message ?: "本地内核启动失败"))
@@ -198,9 +211,10 @@ internal object DshEngineManager {
         }, "dsh-engine-log").start()
     }
 
-    private fun waitUntilReady() {
+    private fun waitUntilReady(myGeneration: Long) {
         repeat(90) { second ->
-            if (healthOk()) {
+            if (stopped || myGeneration != engineGeneration) return
+            if (process?.isAlive == true && healthOk()) {
                 publish(EngineState(EnginePhase.READY, 100, "本地 Harness 已就绪"))
                 return
             }
@@ -210,6 +224,22 @@ internal object DshEngineManager {
         }
         error("本地 Harness 启动超时")
     }
+
+    private fun waitForPortRelease(myGeneration: Long) {
+        repeat(PORT_RELEASE_RETRIES) { attempt ->
+            if (stopped || myGeneration != engineGeneration) return
+            if (!isPortOpen()) return
+            Thread.sleep(PORT_RELEASE_DELAYS_MS[attempt.coerceAtMost(PORT_RELEASE_DELAYS_MS.lastIndex)])
+        }
+        if (isPortOpen()) error("LOCAL_PORT_IN_USE")
+    }
+
+    private fun isPortOpen(): Boolean = runCatching {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress("127.0.0.1", 3080), 200)
+            true
+        }
+    }.getOrDefault(false)
 
     private fun healthOk(): Boolean {
         var connection: HttpURLConnection? = null
@@ -225,18 +255,19 @@ internal object DshEngineManager {
         }
     }
 
-    private fun startWatchdog() {
+    private fun startWatchdog(myGeneration: Long) {
         if (watchdogStarted) return
         watchdogStarted = true
         Thread({
-            while (true) {
+            while (!stopped && myGeneration == engineGeneration) {
                 Thread.sleep(5_000)
-                if (state.phase == EnginePhase.STOPPED) return@Thread
+                if (stopped || myGeneration != engineGeneration) return@Thread
                 if (healthOk()) continue
                 if (booting) continue
                 booting = true
-                Thread({ boot() }, "dsh-engine-restart").start()
+                Thread({ boot(myGeneration) }, "dsh-engine-restart").start()
             }
+            watchdogStarted = false
         }, "dsh-engine-watchdog").start()
     }
 
@@ -244,4 +275,7 @@ internal object DshEngineManager {
         state = next
         listeners.forEach { listener -> runCatching { listener(next) } }
     }
+
+    private const val PORT_RELEASE_RETRIES = 10
+    private val PORT_RELEASE_DELAYS_MS = longArrayOf(100, 200, 400, 800, 1_000)
 }

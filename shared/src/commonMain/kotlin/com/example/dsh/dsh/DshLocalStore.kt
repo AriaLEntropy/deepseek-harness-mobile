@@ -4,10 +4,22 @@ package com.example.dsh.dsh
 internal interface DshLocalStore {
     fun loadApiKey(): String
     fun saveApiKey(apiKey: String)
-    fun loadSessions(): List<DshSession>
-    fun saveSessions(sessions: List<DshSession>)
-    fun loadMessages(sessionId: String): List<DshMessage>
-    fun saveMessages(sessionId: String, messages: List<DshMessage>)
+    fun loadLastConnectionMode(): DshConnectionMode
+    fun saveLastConnectionMode(mode: DshConnectionMode)
+    fun loadRemoteProfile(): DshRemoteProfile?
+    fun saveRemoteProfile(profile: DshRemoteProfile)
+    fun migrateLegacyRemoteProfile(profile: DshLegacyRemoteProfile): Boolean
+    fun clearLegacyRemotePreferenceKeys() = Unit
+
+    fun loadSessions(scopeId: String): List<DshSession>
+    fun replaceSessions(scopeId: String, sessions: List<DshSession>)
+    fun loadMessages(scopeId: String, sessionId: String): List<DshMessage>
+    fun replaceMessages(scopeId: String, sessionId: String, messages: List<DshMessage>)
+
+    fun clearScope(scopeId: String)
 }
 
-internal expect fun createDshLocalStore(path: String): DshLocalStore
+internal expect fun createDshLocalStore(
+    path: String,
+    legacyProfile: DshLegacyRemoteProfile? = null,
+): DshLocalStore

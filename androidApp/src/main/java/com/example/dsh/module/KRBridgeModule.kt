@@ -3,6 +3,8 @@ package com.example.dsh.module
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.os.Build
 import android.util.Log
@@ -12,6 +14,8 @@ import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import com.example.dsh.KRApplication
 import com.example.dsh.KuiklyRenderActivity
+import com.example.dsh.ssh.DshSshForegroundService
+import com.example.dsh.ssh.DshSshKeyStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -20,6 +24,11 @@ import java.util.Date
 class KRBridgeModule : KuiklyRenderBaseModule() {
     private var navigationBarColorBeforeDim: Int? = null
     private var navigationBarContrastBeforeDim: Boolean? = null
+    private var sshKeyCallback: KuiklyRenderCallback? = null
+
+    init {
+        activeInstance = this
+    }
 
     override fun call(method: String, params: String?, callback: KuiklyRenderCallback?): Any? {
         return when (method) {
@@ -82,6 +91,13 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "setSystemBarsDimmed" -> {
                 setSystemBarsDimmed(params)
             }
+
+            "pickSshKey" -> pickSshKey(callback)
+            "importSshKey" -> importSshKey(params, callback)
+            "validateSshKey" -> validateSshKey(params, callback)
+            "deleteSshKey" -> deleteSshKey(params)
+            "startSshKeepAlive" -> startSshKeepAlive()
+            "stopSshKeepAlive" -> stopSshKeepAlive()
 
             else -> callback?.invoke(
                 mapOf(
@@ -209,6 +225,46 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
+    private fun pickSshKey(callback: KuiklyRenderCallback?) {
+        sshKeyCallback = callback
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/octet-stream"
+        }
+        activity?.startActivityForResult(intent, REQUEST_SSH_KEY)
+    }
+
+    private fun importSshKey(params: String?, callback: KuiklyRenderCallback?) {
+        val uri = Uri.parse(JSONObject(params ?: "{}").optString("uri"))
+        val bytes = context?.contentResolver?.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) {
+            callback?.invoke(mapOf("ok" to false, "message" to "无法读取 SSH 私钥"))
+            return
+        }
+        val keyId = DshSshKeyStore(requireNotNull(context)).importBytes("ssh-key", bytes)
+        bytes.fill(0)
+        callback?.invoke(mapOf("ok" to true, "keyId" to keyId))
+    }
+
+    private fun deleteSshKey(params: String?) {
+        DshSshKeyStore(requireNotNull(context)).delete(JSONObject(params ?: "{}").optString("keyId"))
+    }
+
+    private fun validateSshKey(params: String?, callback: KuiklyRenderCallback?) {
+        val keyId = JSONObject(params ?: "{}").optString("keyId")
+        val valid = runCatching { DshSshKeyStore(requireNotNull(context)).validateKey(keyId) }.getOrDefault(false)
+        callback?.invoke(mapOf("valid" to valid))
+    }
+
+    private fun startSshKeepAlive() {
+        val intent = Intent(context, DshSshForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= 26) context?.startForegroundService(intent) else context?.startService(intent)
+    }
+
+    private fun stopSshKeepAlive() {
+        context?.stopService(Intent(context, DshSshForegroundService::class.java))
+    }
+
     private fun restoreNavigationBar() {
         val window = activity?.window ?: return
         navigationBarColorBeforeDim?.let { window.navigationBarColor = it }
@@ -220,12 +276,26 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 
     override fun onDestroy() {
+        if (activeInstance === this) activeInstance = null
         restoreNavigationBar()
         super.onDestroy()
     }
 
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != REQUEST_SSH_KEY) return
+        val uri = if (resultCode == android.app.Activity.RESULT_OK) data?.data?.toString().orEmpty() else ""
+        sshKeyCallback?.invoke(mapOf("uri" to uri))
+        sshKeyCallback = null
+    }
+
     companion object {
         const val MODULE_NAME = "HRBridgeModule"
+        const val REQUEST_SSH_KEY = 4091
+        private var activeInstance: KRBridgeModule? = null
+
+        fun dispatchActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+            activeInstance?.onActivityResult(requestCode, resultCode, data)
+        }
     }
 }
 

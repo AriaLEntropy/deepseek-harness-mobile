@@ -1,5 +1,61 @@
 package com.example.dsh.dsh
 
+internal enum class DshConnectionMode {
+    LOCAL,
+    REMOTE,
+}
+
+internal data class DshSessionScope(
+    val mode: DshConnectionMode,
+    val profileId: String? = null,
+) {
+    val storageKey: String
+        get() = when (mode) {
+            DshConnectionMode.LOCAL -> LOCAL_STORAGE_KEY
+            DshConnectionMode.REMOTE -> "remote:${profileId ?: DEFAULT_REMOTE_PROFILE_ID}"
+        }
+
+    companion object {
+        const val DEFAULT_REMOTE_PROFILE_ID = "default"
+        const val LOCAL_STORAGE_KEY = "local"
+    }
+}
+
+internal data class DshRemoteProfile(
+    val profileId: String = DshSessionScope.DEFAULT_REMOTE_PROFILE_ID,
+    val host: String,
+    val sshPort: Int,
+    val username: String,
+    val remoteDshPort: Int,
+    val keyId: String,
+    val hostFingerprint: String = "",
+)
+
+internal enum class DshSessionCacheState {
+    SYNCED,
+    STALE,
+    SYNC_FAILED,
+}
+
+internal enum class DshRemoteFailure {
+    KEY_MISSING,
+    AUTH_FAILED,
+    HOST_FINGERPRINT_REQUIRED,
+    SSH_UNREACHABLE,
+    SSH_PORT_IN_USE,
+    DSH_UNAVAILABLE,
+}
+
+internal data class DshLegacyRemoteProfile(
+    val mode: DshConnectionMode,
+    val host: String,
+    val sshPort: Int,
+    val username: String,
+    val remoteDshPort: Int,
+    val keyId: String,
+    val hostFingerprint: String = "",
+)
+
 /** The small client-side model used by the first DSH surface. */
 internal data class DshSession(
     val id: String,
