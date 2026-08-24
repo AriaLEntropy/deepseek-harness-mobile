@@ -904,7 +904,7 @@ internal class DshHomePage : BasePager() {
             preloadAllSessionMessages()
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接 · 正在同步远程历史"
             if (loaded.isNotEmpty()) {
-                activeSessionId = loaded.firstOrNull { it.id == preferredSessionId && !it.blank }?.id
+                activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id
                     ?: loaded.firstOrNull { !it.blank }?.id
                     ?: loaded.first().id
                 sessionRunning = loaded.firstOrNull { it.id == activeSessionId }?.running == true
@@ -914,6 +914,9 @@ internal class DshHomePage : BasePager() {
                 refreshPendingInteractions()
                 loadModels(activeSessionId)
                 loadHistory(activeSessionId, scrollToEndAfterLoad = false)
+                if (streaming || stopButtonVisible || sessionRunning) {
+                    resyncStreamingWithHost(activeSessionId, "session-list")
+                }
             } else {
                 messages.clear()
                 messages.add(
@@ -1108,7 +1111,16 @@ internal class DshHomePage : BasePager() {
                 if (sessionId == activeSessionId) refreshJobsPanel()
             },
             onSessionStatus = { sessionId, running ->
-                if (sessionId == activeSessionId) sessionRunning = running
+                if (sessionId == activeSessionId) {
+                    val wasRunning = sessionRunning
+                    sessionRunning = running
+                    if (wasRunning != running) {
+                        resyncStreamingWithHost(
+                            sessionId,
+                            if (running) "host-session-running" else "host-session-idle",
+                        )
+                    }
+                }
             },
             onProjection = { sessionId, key, value, seq ->
                 if (sessionId == activeSessionId) {
@@ -1137,24 +1149,33 @@ internal class DshHomePage : BasePager() {
                     loadModels(activeSessionId)
                 }
             },
+            onPendingInteraction = { sessionId ->
+                DshStreamLog.question("ui.pending-frame session=$sessionId active=$activeSessionId")
+                if (sessionId == activeSessionId) {
+                    refreshPendingInteractions()
+                    loadWebTimeline(sessionId, scrollToEndAfterLoad = true)
+                }
+            },
         )
-        loadRepository()
+        loadRepository(preferredSessionId = activeSessionId)
     }
 
     private fun handleHostRuntimeState(state: DshHostRuntimeState) {
         if (!connectionCoordinator.isActive(connectionMode)) return
-        val wasReconnecting = connectionLabel == "远程连接重建中" || connectionLabel == "本地 DSH 连接重建中"
+        val wasReconnecting = isReconnectLabel(connectionLabel)
         connectionLabel = when (state.phase) {
             DshHostRuntimePhase.CONNECTING -> "正在打开远程事件流"
             DshHostRuntimePhase.HOST_HANDSHAKE -> "正在检查远程 DSH"
             DshHostRuntimePhase.SYNCING -> "正在同步远程会话"
             DshHostRuntimePhase.READY -> "远程 DSH 已就绪"
-            DshHostRuntimePhase.RECONNECTING -> if (sshMode) "远程连接重建中" else "本地 DSH 连接重建中"
+            DshHostRuntimePhase.RECONNECTING -> reconnectLabel()
             DshHostRuntimePhase.ERROR -> "远程 DSH 连接失败"
             DshHostRuntimePhase.STOPPED -> "远程 DSH 已停止"
             DshHostRuntimePhase.DISCONNECTED -> "等待远程连接"
         }
-        if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) loadRepository()
+        if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) {
+            loadRepository(preferredSessionId = activeSessionId)
+        }
     }
 
     private fun connectLocalEngine(apiKey: String) {
@@ -1442,8 +1463,11 @@ internal class DshHomePage : BasePager() {
             sessions.firstOrNull { it.blank }
         }
         if (blankSession != null) {
-            activeSessionId = blankSession.id
-            sessionMessageState(blankSession.id, loadFromDisk = true)
+            if (blankSession.id != activeSessionId) {
+                selectSession(blankSession.id)
+            } else {
+                applyActiveSessionChrome()
+            }
             loadSkills(blankSession.id)
             setTimeout(pagerId, 0) { loadModels(blankSession.id) }
             return
@@ -1473,6 +1497,7 @@ internal class DshHomePage : BasePager() {
             perfLog("newSession.$traceId.ui.ready", startedAt)
             draft = ""
             inputView?.setText("")
+            applyActiveSessionChrome()
             setTimeout(pagerId, 0) {
                 if (activeSessionId == sessionId) {
                     loadSkills(sessionId)
@@ -1531,9 +1556,14 @@ internal class DshHomePage : BasePager() {
         })
     }
 
-    private fun loadWebTimeline(sessionId: String, scrollToEndAfterLoad: Boolean = true) {
+    private fun loadWebTimeline(
+        sessionId: String,
+        scrollToEndAfterLoad: Boolean = true,
+        forceReplace: Boolean = false,
+        afterApply: () -> Unit = {},
+    ) {
         val hostRepository = repository as? DshRemoteRepository ?: return
-        hostRepository.loadWebTimeline(sessionId) { items ->
+        hostRepository.loadWebTimeline(sessionId, { items ->
             if (!isRemoteHost || activeSessionId != sessionId) return@loadWebTimeline
             val projected = items.map { item ->
                 when (item.kind) {
@@ -1585,11 +1615,135 @@ internal class DshHomePage : BasePager() {
                 }
             }
             sessionMessageReady.add(sessionId)
-            replaceMessagesIfChanged(projected)
+            replaceMessagesIfChanged(projected, forceReplace)
             projected.mapNotNull { it.attachmentId }.forEach { loadAttachment(sessionId, it) }
             completePendingSessionSelection(sessionId)
             realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
+            afterApply()
+        }, { error ->
+            DshStreamLog.i("ui.history-fail session=$sessionId error='${DshStreamLog.preview(error)}'")
+            if (forceReplace && !sessionRunning && (streaming || stopButtonVisible)) {
+                finishStreamingFromHistory(sessionId)
+            }
+            afterApply()
+        })
+    }
+
+    private fun resyncStreamingWithHost(sessionId: String, reason: String) {
+        if (!isRemoteHost || sessionId != activeSessionId) return
+        DshStreamLog.i(
+            "ui.resync.begin reason=$reason session=$sessionId running=$sessionRunning streaming=$streaming stop=$stopButtonVisible",
+        )
+        if (sessionRunning) {
+            loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = true) {
+                resumeStreamingFromHistory(sessionId, reason)
+            }
+        } else {
+            loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = true) {
+                finishStreamingFromHistory(sessionId)
+                connectionLabel = "已连接"
+                DshStreamLog.i("ui.resync.settled reason=$reason session=$sessionId messages=${messages.size}")
+            }
         }
+    }
+
+    private fun rebindStreamingToHistoryTail(): Boolean {
+        val live = messages.lastOrNull { it.role == DshMessageRole.ASSISTANT && !it.isReasoning } ?: return false
+        streamingAssistantId = live.id
+        streamingAssistantRootId = live.id
+        streamingAssistantSegment = 0
+        streamingAssistantContent = live.content
+        return true
+    }
+
+    private fun finishStreamingFromHistory(sessionId: String) {
+        if (!(streaming || stopButtonVisible)) return
+        flushAssistantDelta()
+        if (rebindStreamingToHistoryTail()) {
+            settleStreamingMessage(DshMessageRole.ASSISTANT, streamingAssistantContent)
+        } else {
+            releaseStreamingUi()
+        }
+        persistMessages(sessionId)
+        (repository as? DshRemoteRepository)?.detachLiveStreams(sessionId)
+        streamHandle = null
+    }
+
+    private fun resumeStreamingFromHistory(sessionId: String, reason: String) {
+        if (sessionId != activeSessionId) return
+        if (rebindStreamingToHistoryTail()) {
+            streaming = true
+            stopButtonVisible = true
+            connectionLabel = "正在生成"
+            val index = messages.indexOfFirst { it.id == streamingAssistantId }
+            if (index >= 0) {
+                messages[index] = messages[index].copy(streaming = true)
+            }
+        } else {
+            streamingAssistantRootId = "assistant-adopted-${messages.size}"
+            streamingAssistantId = ""
+            streamingAssistantSegment = 0
+            streamingAssistantContent = ""
+            streaming = true
+            stopButtonVisible = true
+            connectionLabel = "正在生成"
+        }
+        attachAdoptedLiveStream(sessionId)
+        DshStreamLog.i(
+            "ui.resync.resume reason=$reason id=${streamingAssistantId} chars=${streamingAssistantContent.length}",
+        )
+    }
+
+    private fun attachAdoptedLiveStream(sessionId: String) {
+        val hostRepository = repository as? DshRemoteRepository ?: return
+        streamHandle = hostRepository.adoptLiveStream(
+            sessionId = sessionId,
+            onDelta = { delta, isReasoning ->
+                if (!connectionCoordinator.isActive(connectionMode) || activeSessionId != sessionId) return@adoptLiveStream
+                if (isReasoning) {
+                    val reasoningId = streamingReasoningId.ifEmpty { "$streamingAssistantRootId-reasoning" }
+                    if (streamingReasoningId.isEmpty()) streamingReasoningId = reasoningId
+                    queueReasoningDelta(reasoningId, delta)
+                } else {
+                    if (streamingAssistantRootId.isEmpty()) {
+                        streamingAssistantRootId = "assistant-adopted-${messages.size}"
+                    }
+                    if (streamingAssistantId.isEmpty()) ensureStreamingAssistantSegment()
+                    queueAssistantDelta(streamingAssistantId, delta)
+                }
+            },
+            onComplete = { result ->
+                if (!connectionCoordinator.isActive(connectionMode)) return@adoptLiveStream
+                flushAssistantDelta()
+                if (streamingAssistantId.isEmpty() && result.isNotEmpty()) {
+                    ensureStreamingAssistantSegment()
+                }
+                val completedContent = streamingAssistantContent.ifEmpty { result }
+                DshStreamLog.i(
+                    "ui.complete session=$sessionId resultChars=${result.length} liveChars=${streamingAssistantContent.length} preview='${DshStreamLog.preview(completedContent)}'",
+                )
+                settleStreamingMessage(DshMessageRole.ASSISTANT, completedContent)
+                persistMessages(sessionId)
+                loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
+                connectionLabel = "已连接"
+                streamHandle = null
+            },
+            onError = { error ->
+                if (!connectionCoordinator.isActive(connectionMode)) return@adoptLiveStream
+                if (dshIsTransportInterrupt("", error)) {
+                    DshStreamLog.i("ui.adopt-interrupt session=$sessionId message='${DshStreamLog.preview(error)}'")
+                    return@adoptLiveStream
+                }
+                flushAssistantDelta()
+                ensureStreamingAssistantSegment()
+                DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
+                settleStreamingMessage(DshMessageRole.ERROR, error)
+                persistMessages(sessionId)
+                loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
+                connectionLabel = "已连接"
+                streamHandle = null
+            },
+        )
     }
 
     private fun loadSkills(sessionId: String) {
@@ -1800,6 +1954,7 @@ internal class DshHomePage : BasePager() {
             questionIndex = 0
             questionError = ""
             questionDrafts.clear()
+            DshStreamLog.question("ui.refresh skipped local-mode")
             return
         }
         val repository = repository as? DshRemoteRepository ?: return
@@ -1808,6 +1963,9 @@ internal class DshHomePage : BasePager() {
         pendingQuestion = question
         questionIndex = questionIndex.coerceIn(0, (question?.questions?.size ?: 1) - 1)
         loadQuestionDraft(questionIndex)
+        DshStreamLog.question(
+            "ui.refresh session=$activeSessionId approval=${approval?.rpcId.orEmpty()} question=${question?.rpcId.orEmpty()} qCount=${question?.questions?.size ?: 0} busy=$interactionBusy",
+        )
     }
 
     private fun answerApproval(outcome: String) {
@@ -1819,9 +1977,13 @@ internal class DshHomePage : BasePager() {
             sessionId = approval.sessionId,
             approvalId = approval.approvalId,
             outcome = outcome,
-        ) { _, _ ->
+        ) { accepted, reason ->
             setTimeout(pagerId, 0) {
                 interactionBusy = false
+                if (!accepted) {
+                    connectionLabel = interactionFailureLabel(reason)
+                    return@setTimeout
+                }
                 refreshPendingInteractions()
             }
         }
@@ -1879,8 +2041,16 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun submitQuestion() {
-        val repository = repository as? DshRemoteRepository ?: return
-        val question = pendingQuestion ?: return
+        val repository = repository as? DshRemoteRepository
+        if (repository == null) {
+            DshStreamLog.question("submit.abort not-remote-repo")
+            return
+        }
+        val question = pendingQuestion
+        if (question == null) {
+            DshStreamLog.question("submit.abort no-pending-question")
+            return
+        }
         questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
         val missing = question.questions.indexOfFirst { item ->
             val draft = questionDrafts[question.questions.indexOf(item)] ?: DshQuestionDraft()
@@ -1889,22 +2059,60 @@ internal class DshHomePage : BasePager() {
         if (missing >= 0) {
             questionIndex = missing
             loadQuestionDraft(missing)
-            questionError = "请回答此问题"
+            questionError = "请先选择一项，或自己写答案"
+            DshStreamLog.question("submit.abort unanswered index=$missing")
+            return
+        }
+        if (question.rpcId.isEmpty()) {
+            questionError = "这个问题已失效，请等 Agent 重新提问"
+            DshStreamLog.question("submit.abort empty-rpcId session=${question.sessionId}")
             return
         }
         questionError = ""
         interactionBusy = true
         val answer = buildQuestionAnswer(question, questionDrafts)
+        DshStreamLog.question(
+            "submit.start session=${question.sessionId} rpcId=${question.rpcId} index=$questionIndex selected=${selectedQuestionOptions.toList()} custom='${DshStreamLog.preview(questionCustom)}' answer='${DshStreamLog.preview(answer.toString(), 400)}'",
+        )
         repository.respondQuestion(
             rpcId = question.rpcId,
             sessionId = question.sessionId,
             answer = answer,
-        ) { _, _ ->
+        ) { accepted, reason ->
             setTimeout(pagerId, 0) {
+                val stillPending = repository.pendingInteractions(question.sessionId).second
+                DshStreamLog.question(
+                    "submit.callback accepted=$accepted reason='$reason' rpcId=${question.rpcId} stillPending=${stillPending?.rpcId.orEmpty()} active=$activeSessionId",
+                )
                 interactionBusy = false
+                if (!accepted) {
+                    questionError = interactionFailureLabel(reason)
+                    DshStreamLog.question("submit.rejected ui-kept error='$questionError'")
+                    return@setTimeout
+                }
+                repository.clearPending(question.rpcId)
+                if (pendingQuestion?.rpcId == question.rpcId) {
+                    pendingQuestion = null
+                    selectedQuestionOptions.clear()
+                    questionCustom = ""
+                    questionError = ""
+                    questionDrafts.clear()
+                }
+                DshStreamLog.question("submit.accepted ui-hide rpcId=${question.rpcId}")
                 refreshPendingInteractions()
+                if (activeSessionId == question.sessionId) {
+                    loadWebTimeline(question.sessionId, scrollToEndAfterLoad = true)
+                }
             }
         }
+    }
+
+    private fun interactionFailureLabel(reason: String): String = when (reason) {
+        "not-pending" -> "这个问题已经失效，请等 Agent 重新提问"
+        "bad-response" -> "提交未被接受，请再选一次后重试"
+        "缺少请求编号" -> "这个问题已失效，请等 Agent 重新提问"
+        "连接尚未就绪" -> "连接尚未就绪，请稍后再试"
+        else -> reason.ifEmpty { "提交失败，请重试" }
     }
 
     private fun editQueueItem(itemId: String) {
@@ -2271,7 +2479,39 @@ internal class DshHomePage : BasePager() {
         }
         draft = ""
         inputView?.setText("")
+        applyActiveSessionChrome()
         perfLog("switch.$traceId.end", startedAt)
+    }
+
+    private fun applyActiveSessionChrome() {
+        pendingApproval = null
+        pendingQuestion = null
+        selectedQuestionOptions.clear()
+        questionCustom = ""
+        questionIndex = 0
+        questionError = ""
+        questionDrafts.clear()
+        goalSnapshot = null
+        if (!isRemoteHost) {
+            queueItems.clear()
+            jobItems.clear()
+            return
+        }
+        refreshQueueDock()
+        refreshJobsPanel()
+        refreshPendingInteractions()
+    }
+
+    private fun reconnectLabel(): String = when (connectionMode) {
+        DshConnectionMode.SSH -> "远程连接重建中"
+        DshConnectionMode.RELAY -> "扫码连接重建中"
+        DshConnectionMode.LOCAL -> "本地 DSH 连接重建中"
+    }
+
+    private fun syncBusyLabel(): String = when (connectionMode) {
+        DshConnectionMode.SSH -> "远程 DSH 正在同步，暂不能发送"
+        DshConnectionMode.RELAY -> "扫码连接正在同步，暂不能发送"
+        DshConnectionMode.LOCAL -> "本地 DSH 正在同步，暂不能发送"
     }
 
     private fun refreshMountedSessionRenderTrees() {
@@ -2499,7 +2739,7 @@ internal class DshHomePage : BasePager() {
             return
         }
         if (!hostRepository.isProductReady()) {
-            connectionLabel = if (sshMode) "远程 DSH 正在同步，暂不能发送" else "本地 DSH 正在同步，暂不能发送"
+            connectionLabel = syncBusyLabel()
             return
         }
         if (sessions.isEmpty()) {
@@ -2573,6 +2813,10 @@ internal class DshHomePage : BasePager() {
             },
             onError = { error ->
                 if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
+                if (dshIsTransportInterrupt("", error)) {
+                    DshStreamLog.i("ui.prompt-interrupt session=$sessionId message='${DshStreamLog.preview(error)}'")
+                    return@streamReply
+                }
                 flushAssistantDelta()
                 ensureStreamingAssistantSegment()
                 DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
@@ -2912,6 +3156,10 @@ internal class DshHomePage : BasePager() {
             }
             return
         }
+        releaseStreamingUi()
+    }
+
+    private fun releaseStreamingUi() {
         streamingAssistantId = ""
         streamingAssistantRootId = ""
         streamingAssistantSegment = 0
@@ -2929,9 +3177,9 @@ internal class DshHomePage : BasePager() {
         runCatching { localStore?.replaceMessages(activeConnectionId, sessionId, snapshot) }
     }
 
-    private fun replaceMessagesIfChanged(next: List<DshMessage>) {
+    private fun replaceMessagesIfChanged(next: List<DshMessage>, force: Boolean = false) {
         val filtered = next.filterNot { it.isRuntimeContextSnapshot() }
-        if (streaming && isRemoteHost) {
+        if (streaming && isRemoteHost && !force) {
             // History is a snapshot that can arrive while the current turn is
             // still being projected. Replacing the observable list here drops
             // optimistic text segments and their in-order tool cards.
@@ -2942,7 +3190,7 @@ internal class DshHomePage : BasePager() {
         }
         if (messages.toList() == filtered) return
         DshStreamLog.i(
-            "ui.replace-messages from=${messages.size} to=${filtered.size} streaming=$streaming preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
+            "ui.replace-messages from=${messages.size} to=${filtered.size} streaming=$streaming force=$force preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
         )
         messages.clear()
         messages.addAll(filtered)
@@ -3624,30 +3872,32 @@ private fun ViewContainer<*, *>.DshTopBar(
             attr {
                 text(title())
                 marginLeft(10f)
-                maxWidth(pagerData.pageViewWidth - 238f)
+                flex(1f)
                 fontSize(17f)
                 fontWeightMedium()
                 color(Color(0xFF0F1115))
                 lines(1)
             }
         }
-        View { attr { flex(1f) } }
         View {
             attr {
-                width(132f)
-                height(30f)
-                alignItemsFlexEnd()
+                val ready = isConnectionReadyLabel(connection())
+                height(22f)
+                marginLeft(8f)
+                paddingLeft(8f)
+                paddingRight(8f)
+                borderRadius(11f)
+                backgroundColor(Color(if (ready) 0xFFE8F7EE else 0xFFF3F5F7))
                 justifyContentCenter()
+                alignItemsCenter()
             }
             Text {
                 attr {
                     val ready = isConnectionReadyLabel(connection())
-                    text(if (ready) "连接成功" else topBarConnectingText(connection()))
-                    width(132f)
+                    text(if (ready) "已连接" else topBarConnectingText(connection()))
                     fontSize(11f)
                     lines(1)
-                    textAlignRight()
-                    color(Color(if (ready) 0xFF2EAF67 else 0xFF89939D))
+                    color(Color(if (ready) 0xFF1F8A4C else 0xFF6B7785))
                 }
             }
         }
@@ -4182,7 +4432,7 @@ private fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-        vif({ isWebTimeline() && pendingApproval() != null }) {
+        vif({ isWebTimeline() && pendingApproval()?.sessionId == activeConversationId() }) {
             DshApprovalPanel {
                 attr {
                     approval = pendingApproval()
@@ -4191,7 +4441,11 @@ private fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-        vif({ isWebTimeline() && pendingApproval() == null && pendingQuestion() != null }) {
+        vif({
+            isWebTimeline() &&
+                pendingApproval() == null &&
+                pendingQuestion()?.sessionId == activeConversationId()
+        }) {
             DshQuestionFlow {
                 attr {
                     question = pendingQuestion()
@@ -4765,6 +5019,13 @@ private fun isConnectionReadyLabel(label: String): Boolean {
         label.endsWith("已连接") ||
         label.endsWith("已就绪") ||
         label == "连接成功"
+}
+
+private fun isReconnectLabel(label: String): Boolean {
+    return label == "远程连接重建中" ||
+        label == "扫码连接重建中" ||
+        label == "扫码连接重试中" ||
+        label == "本地 DSH 连接重建中"
 }
 
 private fun topBarConnectingText(label: String): String {

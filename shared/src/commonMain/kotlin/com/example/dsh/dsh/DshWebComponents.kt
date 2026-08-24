@@ -928,78 +928,106 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                 val approval = ctx.attr.approval ?: return@vif
                 View {
                     attr {
-                        marginBottom(8f)
+                        marginLeft(4f)
+                        marginRight(4f)
+                        marginBottom(10f)
                         flexDirectionColumn()
-                        borderRadius(12f)
-                        backgroundColor(Color(0xFFFFFCF2))
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE5D28B)))
+                        padding(14f, 14f, 14f, 14f)
+                        borderRadius(16f)
+                        backgroundColor(Color.WHITE)
+                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE8E1C8)))
                     }
                     View {
                         attr {
-                            height(30f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            paddingLeft(10f)
+                            alignSelfFlexStart()
+                            padding(3f, 8f, 3f, 8f)
+                            borderRadius(6f)
+                            backgroundColor(Color(0xFFFFF4D6))
                         }
-                        View { attr { size(7f, 7f); borderRadius(4f); backgroundColor(Color(0xFFD99A20)) } }
                         Text {
                             attr {
                                 text("等待审批")
-                                marginLeft(7f)
-                                fontSize(12f)
-                                color(Color(0xFF83610E))
+                                fontSize(11f)
+                                fontWeightMedium()
+                                color(Color(0xFF8A6A16))
                             }
                         }
                     }
                     Text {
                         attr {
                             text(approval.reason ?: "需要使用 ${approval.toolName}")
-                            margin(10f, 10f, 10f, 0f)
-                            fontSize(14f)
-                            lineHeight(21f)
-                            color(Color(0xFF4A4130))
+                            marginTop(10f)
+                            fontSize(16f)
+                            fontWeightMedium()
+                            lineHeight(23f)
+                            color(Color(0xFF1F2933))
                         }
                     }
                     vif({ approval.command != null }) {
-                        Text {
+                        View {
                             attr {
-                                text(approval.command ?: "")
-                                margin(10f, 6f, 10f, 0f)
-                                fontSize(12f)
-                                lineHeight(18f)
-                                fontFamily("monospace")
-                                color(Color(0xFF6D6353))
+                                marginTop(8f)
+                                padding(10f, 12f, 10f, 12f)
+                                borderRadius(10f)
+                                backgroundColor(Color(0xFFF7F9FB))
+                            }
+                            Text {
+                                attr {
+                                    text(approval.command ?: "")
+                                    fontSize(12f)
+                                    lineHeight(18f)
+                                    fontFamily("monospace")
+                                    color(Color(0xFF5C6570))
+                                }
                             }
                         }
                     }
                     View {
                         attr {
+                            height(40f)
+                            marginTop(12f)
                             flexDirectionRow()
                             justifyContentFlexEnd()
-                            padding(8f)
+                            alignItemsCenter()
                         }
-                        Text {
+                        View {
                             attr {
-                                text(if (ctx.attr.busy) "处理中" else "拒绝")
-                                width(78f)
-                                height(34f)
-                                textAlignCenter()
-                                fontSize(14f)
-                                color(Color(0xFFB14646))
+                                height(32f)
+                                paddingLeft(14f)
+                                paddingRight(14f)
+                                borderRadius(8f)
+                                justifyContentCenter()
+                                alignItemsCenter()
                             }
-                            event { click { if (!ctx.attr.busy) ctx.attr.onAnswer("rejected") } }
+                            Text {
+                                attr {
+                                    text(if (ctx.attr.busy) "处理中" else "拒绝")
+                                    fontSize(13f)
+                                    color(Color(0xFFB14646))
+                                }
+                            }
+                            DshTapTarget { if (!ctx.attr.busy) ctx.attr.onAnswer("rejected") }
                         }
-                        Text {
+                        View {
                             attr {
-                                text(if (ctx.attr.busy) "处理中" else "允许一次")
-                                width(96f)
-                                height(34f)
+                                height(32f)
                                 marginLeft(8f)
-                                textAlignCenter()
-                                fontSize(14f)
-                                color(Color(0xFF2F7D4F))
+                                paddingLeft(14f)
+                                paddingRight(14f)
+                                borderRadius(8f)
+                                backgroundColor(Color(if (ctx.attr.busy) 0xFFC8D7A8 else 0xFF2F7D4F))
+                                justifyContentCenter()
+                                alignItemsCenter()
                             }
-                            event { click { if (!ctx.attr.busy) ctx.attr.onAnswer("allowed-once") } }
+                            Text {
+                                attr {
+                                    text(if (ctx.attr.busy) "处理中" else "允许一次")
+                                    fontSize(13f)
+                                    fontWeightMedium()
+                                    color(Color.WHITE)
+                                }
+                            }
+                            DshTapTarget { if (!ctx.attr.busy) ctx.attr.onAnswer("allowed-once") }
                         }
                     }
                 }
@@ -1026,37 +1054,49 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                 val current = item ?: return@vif
                 View {
                     attr {
-                        marginBottom(8f)
+                        marginLeft(4f)
+                        marginRight(4f)
+                        marginBottom(10f)
                         flexDirectionColumn()
-                        padding(10f)
-                        borderRadius(12f)
-                        backgroundColor(Color(0xFFF6F9FF))
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFC7D9F2)))
+                        padding(14f, 14f, 14f, 14f)
+                        borderRadius(16f)
+                        backgroundColor(Color.WHITE)
+                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE6EAF0)))
                     }
-                    Text {
+                    View {
                         attr {
-                            text(current.header.ifEmpty { "需要你的回答" })
-                            fontSize(12f)
-                            color(Color(0xFF5D6F86))
+                            alignSelfFlexStart()
+                            padding(3f, 8f, 3f, 8f)
+                            borderRadius(6f)
+                            backgroundColor(Color(0xFFEEF3FA))
+                        }
+                        Text {
+                            attr {
+                                text(current.header.ifEmpty { "需要你选择" })
+                                fontSize(11f)
+                                fontWeightMedium()
+                                color(Color(0xFF5B6B82))
+                            }
                         }
                     }
                     Text {
                         attr {
                             text(current.question)
-                            marginTop(4f)
-                            fontSize(15f)
+                            marginTop(10f)
+                            fontSize(16f)
                             fontWeightMedium()
-                            color(Color(0xFF2A384A))
+                            lineHeight(23f)
+                            color(Color(0xFF1F2933))
                         }
                     }
                     vif({ current.detail.isNotEmpty() }) {
                         Text {
                             attr {
                                 text(current.detail)
-                                marginTop(4f)
-                                fontSize(12f)
-                                lineHeight(18f)
-                                color(Color(0xFF667687))
+                                marginTop(6f)
+                                fontSize(13f)
+                                lineHeight(19f)
+                                color(Color(0xFF6B7785))
                             }
                         }
                     }
@@ -1064,42 +1104,98 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         val selected = ctx.attr.selected.contains(option.label)
                         View {
                             attr {
-                                minHeight(38f)
-                                marginTop(6f)
-                                paddingLeft(8f)
-                                paddingRight(8f)
-                                borderRadius(8f)
-                                backgroundColor(Color(if (selected) 0xFFD8E8FB else 0xFFEDF3FB))
-                                justifyContentCenter()
+                                marginTop(8f)
+                                flexDirectionRow()
+                                alignItemsFlexStart()
+                                padding(10f, 12f, 10f, 12f)
+                                borderRadius(12f)
+                                backgroundColor(Color(if (selected) 0xFFEFF5FF else 0xFFF7F9FB))
+                                border(Border(
+                                    1f,
+                                    BorderStyle.SOLID,
+                                    Color(if (selected) 0xFFB7D0F5 else 0xFFE8EDF2),
+                                ))
                             }
-                            Text {
+                                View {
+                                    attr {
+                                        size(18f, 18f)
+                                        marginTop(2f)
+                                        borderRadius(9f)
+                                        border(Border(
+                                            1.5f,
+                                            BorderStyle.SOLID,
+                                            Color(if (selected) 0xFF4176E6 else 0xFFC5CDD6),
+                                        ))
+                                        backgroundColor(Color(if (selected) 0xFF4176E6 else 0x00FFFFFF))
+                                        justifyContentCenter()
+                                        alignItemsCenter()
+                                    }
+                                    View {
+                                        attr {
+                                            size(if (selected) 6f else 0f, if (selected) 6f else 0f)
+                                            borderRadius(3f)
+                                            backgroundColor(Color.WHITE)
+                                        }
+                                    }
+                                }
+                            View {
                                 attr {
-                                    text(option.label + if (option.description.isEmpty()) "" else " · ${option.description}")
-                                    fontSize(13f)
-                                    color(Color(0xFF324A66))
+                                    flex(1f)
+                                    marginLeft(10f)
+                                    flexDirectionColumn()
+                                }
+                                Text {
+                                    attr {
+                                        text(option.label)
+                                        fontSize(14f)
+                                        fontWeightMedium()
+                                        color(Color(0xFF243140))
+                                    }
+                                }
+                                vif({ option.description.isNotEmpty() }) {
+                                    Text {
+                                        attr {
+                                            text(option.description)
+                                            marginTop(3f)
+                                            fontSize(12f)
+                                            lineHeight(17f)
+                                            color(Color(0xFF6B7785))
+                                        }
+                                    }
                                 }
                             }
-                            event { click { ctx.attr.onToggleOption(option.label) } }
+                            DshTapTarget { ctx.attr.onToggleOption(option.label) }
                         }
                     }
-                    Input {
-                        ref { it.view?.setText(ctx.attr.custom) }
+                    View {
                         attr {
-                            height(36f)
-                            marginTop(8f)
-                            borderRadius(8f)
-                            placeholder("输入你的答案")
-                            placeholderColor(Color(0xFF91A0AA))
-                            fontSize(13f)
-                            text(ctx.attr.custom)
+                            height(40f)
+                            marginTop(10f)
+                            paddingLeft(12f)
+                            paddingRight(12f)
+                            borderRadius(10f)
+                            backgroundColor(Color(0xFFF7F9FB))
+                            border(Border(1f, BorderStyle.SOLID, Color(0xFFE8EDF2)))
+                            justifyContentCenter()
                         }
-                        event { textDidChange { ctx.attr.onCustomChange(it.text) } }
+                        Input {
+                            ref { it.view?.setText(ctx.attr.custom) }
+                            attr {
+                                height(36f)
+                                placeholder("也可以自己写答案")
+                                placeholderColor(Color(0xFF9AA6B2))
+                                fontSize(13f)
+                                color(Color(0xFF243140))
+                                text(ctx.attr.custom)
+                            }
+                            event { textDidChange { ctx.attr.onCustomChange(it.text) } }
+                        }
                     }
                     vif({ ctx.attr.error.isNotEmpty() }) {
                         Text {
                             attr {
                                 text(ctx.attr.error)
-                                marginTop(6f)
+                                marginTop(8f)
                                 fontSize(12f)
                                 color(Color(0xFFC23B3B))
                             }
@@ -1107,24 +1203,25 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                     }
                     View {
                         attr {
-                            height(34f)
-                            marginTop(8f)
+                            height(40f)
+                            marginTop(12f)
                             flexDirectionRow()
                             alignItemsCenter()
+                            zIndex(2)
                         }
                         Text {
                             attr {
                                 text("${ctx.attr.index + 1} / ${ctx.attr.question?.questions?.size ?: 1}")
                                 flex(1f)
                                 fontSize(12f)
-                                color(Color(0xFF667687))
+                                color(Color(0xFF8A96A3))
                             }
                         }
                         vif({ ctx.attr.index > 0 }) {
                             Text {
                                 attr {
                                     text("上一题")
-                                    marginRight(10f)
+                                    marginRight(12f)
                                     fontSize(13f)
                                     color(Color(0xFF4176E6))
                                 }
@@ -1135,29 +1232,51 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                             Text {
                                 attr {
                                     text("下一题")
-                                    marginRight(10f)
+                                    marginRight(12f)
                                     fontSize(13f)
                                     color(Color(0xFF4176E6))
                                 }
                                 event { click { ctx.attr.onNavigate(1) } }
                             }
                         }
-                        Text {
+                        View {
                             attr {
-                                text("跳过")
-                                marginRight(10f)
-                                fontSize(13f)
-                                color(Color(0xFF7A838A))
+                                height(32f)
+                                paddingLeft(12f)
+                                paddingRight(12f)
+                                marginRight(8f)
+                                borderRadius(8f)
+                                justifyContentCenter()
+                                alignItemsCenter()
                             }
-                            event { click { if (!ctx.attr.busy) ctx.attr.onSkip() } }
+                            Text {
+                                attr {
+                                    text("跳过")
+                                    fontSize(13f)
+                                    color(Color(0xFF7A838A))
+                                }
+                            }
+                            DshTapTarget { if (!ctx.attr.busy) ctx.attr.onSkip() }
                         }
-                        Text {
+                        View {
                             attr {
-                                text(if (ctx.attr.busy) "提交中" else "提交")
-                                fontSize(14f)
-                                color(Color(0xFF2F6F4F))
+                                height(32f)
+                                paddingLeft(16f)
+                                paddingRight(16f)
+                                borderRadius(8f)
+                                backgroundColor(Color(if (ctx.attr.busy) 0xFFB7C8FE else 0xFF4176E6))
+                                justifyContentCenter()
+                                alignItemsCenter()
                             }
-                            event { click { if (!ctx.attr.busy) ctx.attr.onSubmit() } }
+                            Text {
+                                attr {
+                                    text(if (ctx.attr.busy) "提交中" else "提交")
+                                    fontSize(13f)
+                                    fontWeightMedium()
+                                    color(Color.WHITE)
+                                }
+                            }
+                            DshTapTarget { if (!ctx.attr.busy) ctx.attr.onSubmit() }
                         }
                     }
                 }
@@ -1296,4 +1415,15 @@ internal class DshQuestionPanelAttr : ComposeAttr() {
 
 internal fun ViewContainer<*, *>.DshQuestionPanel(init: DshQuestionPanelView.() -> Unit) {
     addChild(DshQuestionPanelView(), init)
+}
+
+private fun ViewContainer<*, *>.DshTapTarget(onClick: () -> Unit) {
+    View {
+        attr {
+            absolutePositionAllZero()
+            zIndex(2)
+            backgroundColor(Color(0x00000000))
+        }
+        event { click { onClick() } }
+    }
 }

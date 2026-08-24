@@ -11,6 +11,11 @@ internal object DshStreamLog {
         KLog.i(TAG, message)
     }
 
+    fun question(message: String) {
+        KLog.i("DshQuestion", message)
+        i("question.$message")
+    }
+
     fun preview(text: String, max: Int = 96): String {
         val flat = text.replace("\r", "\\r").replace("\n", "\\n")
         return if (flat.length <= max) flat else "${flat.take(max)}…(+${flat.length - max})"

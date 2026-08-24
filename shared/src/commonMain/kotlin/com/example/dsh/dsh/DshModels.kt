@@ -83,6 +83,12 @@ internal data class DshRpcError(
     val details: String = "{}",
 )
 
+internal fun dshIsTransportInterrupt(code: String, message: String = ""): Boolean {
+    if (code == "generation-cancelled" || code == "cancelled") return true
+    if (code.startsWith("transport-")) return true
+    return message.contains("世代已失效") || message.contains("连接已停止")
+}
+
 internal data class DshImageLimits(
     val maxImageBytes: Long,
     val maxImagesPerMessage: Int,

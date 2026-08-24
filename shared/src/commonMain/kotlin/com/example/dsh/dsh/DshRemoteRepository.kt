@@ -20,6 +20,7 @@ internal class DshRemoteRepository(
     onProjection: (String, String, String, Int) -> Unit = { _, _, _, _ -> },
     onSessionEvent: (String, DshRawSessionEvent) -> Unit = { _, _ -> },
     onRemoteEvent: (String) -> Unit = {},
+    onPendingInteraction: (String) -> Unit = {},
 ) : DshRepository {
     private val delegate = DshRemoteHostRepository(
         network,
@@ -33,6 +34,7 @@ internal class DshRemoteRepository(
         onProjection = onProjection,
         onSessionEvent = onSessionEvent,
         onRemoteEvent = onRemoteEvent,
+        onPendingInteraction = onPendingInteraction,
     )
     internal val store get() = delegate.store
 
@@ -53,8 +55,22 @@ internal class DshRemoteRepository(
         callback: (Boolean, String) -> Unit,
     ) = delegate.respondQuestion(rpcId, sessionId, answer, callback)
 
-    fun loadWebTimeline(sessionId: String, onSuccess: (List<DshWebTimelineItem>) -> Unit) =
-        delegate.loadWebTimeline(sessionId, onSuccess)
+    fun clearPending(rpcId: String) = delegate.clearPending(rpcId)
+
+    fun loadWebTimeline(
+        sessionId: String,
+        onSuccess: (List<DshWebTimelineItem>) -> Unit,
+        onError: (String) -> Unit = {},
+    ) = delegate.loadWebTimeline(sessionId, onSuccess, onError)
+
+    fun adoptLiveStream(
+        sessionId: String,
+        onDelta: (String, Boolean) -> Unit,
+        onComplete: (String) -> Unit,
+        onError: (String) -> Unit,
+    ): DshStreamHandle = delegate.adoptLiveStream(sessionId, onDelta, onComplete, onError)
+
+    fun detachLiveStreams(sessionId: String) = delegate.detachLiveStreams(sessionId)
 
     fun loadSkills(sessionId: String, onSuccess: (List<DshSkill>) -> Unit, onError: (String) -> Unit = {}) =
         delegate.loadSkills(sessionId, onSuccess, onError)

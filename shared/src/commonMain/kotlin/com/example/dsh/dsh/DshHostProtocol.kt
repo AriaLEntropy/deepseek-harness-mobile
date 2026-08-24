@@ -51,6 +51,7 @@ internal object DshWebTimelineParser {
     fun parseWebTimeline(events: JSONArray): List<DshWebTimelineItem> {
         val result = mutableListOf<DshWebTimelineItem>()
         val toolModels = mutableMapOf<String, DshRemoteToolCallModel>()
+        val partials = linkedMapOf<String, StringBuilder>()
         for (index in 0 until events.length()) {
             val entry = events.optJSONObject(index) ?: continue
             val event = entry.optJSONObject("event") ?: entry
@@ -77,8 +78,20 @@ internal object DshWebTimelineParser {
                 }
                 "assistant/message" -> {
                     val message = data.optJSONObject("message") ?: data
+                    val key = "${data.optInt("turn")}:${data.optInt("step")}"
                     val blocks = message.optJSONArray("content") ?: JSONArray()
                     appendAssistantBlocks(result, seq, blocks)
+                    partials.remove(key)
+                }
+                "assistant/chunk" -> {
+                    val key = "${data.optInt("turn")}:${data.optInt("step")}"
+                    val chunk = data.optJSONObject("chunk") ?: JSONObject()
+                    val text = chunk.optString("text").ifEmpty { chunk.optString("delta") }
+                    if (text.isNotEmpty() &&
+                        chunk.optString("type") in setOf("", "text", "text-delta", "text_delta")
+                    ) {
+                        partials.getOrPut(key) { StringBuilder() }.append(text)
+                    }
                 }
                 "tool/call" -> {
                     val remoteTool = DshRemoteToolCallModels.fromHistoryCall(entry) ?: continue
@@ -147,6 +160,15 @@ internal object DshWebTimelineParser {
                         ?.takeIf { it.isNotEmpty() }
                         ?.let { result += DshWebTimelineItem("turn-error-$seq", DshWebTimelineItem.Kind.ERROR, it) }
                 }
+            }
+        }
+        partials.forEach { (key, text) ->
+            if (text.isNotEmpty()) {
+                result += DshWebTimelineItem(
+                    key = "partial-$key",
+                    kind = DshWebTimelineItem.Kind.ASSISTANT,
+                    text = text.toString(),
+                )
             }
         }
         return result.filterNot { it.kind == DshWebTimelineItem.Kind.USER && it.isRuntimeContextSnapshot() }
@@ -443,7 +465,13 @@ internal class DshHostConnectionRuntime(
 
     /** POST /api/respond has a ClientResponse body, not a unary RPC body. */
     fun respond(rpcId: String, value: JSONObject, callback: (Boolean, String) -> Unit) {
+        if (rpcId.isEmpty()) {
+            DshStreamLog.question("respond.http.skip empty-rpcId session=${value.optString("sessionId")}")
+            callback(false, "缺少请求编号")
+            return
+        }
         if (!productReady) {
+            DshStreamLog.question("respond.http.skip not-ready rpcId=$rpcId")
             callback(false, "连接尚未就绪")
             return
         }
@@ -460,20 +488,29 @@ internal class DshHostConnectionRuntime(
             put("Content-Type", "application/json")
             if (connection.token.isNotEmpty()) put("Authorization", "Bearer ${connection.token}")
         }
+        DshStreamLog.question(
+            "respond.http.start rpcId=$rpcId session=${value.optString("sessionId")} url=${connection.baseUrl.trimEnd('/')}${DshHostProtocol.RESPOND_PATH} body='${DshStreamLog.preview(body.toString(), 400)}'",
+        )
         network.httpRequest(
             "${connection.baseUrl.trimEnd('/')}${DshHostProtocol.RESPOND_PATH}", true, body, headers, null, REQUEST_TIMEOUT_SECONDS,
         ) { data, success, errorMsg, response ->
             if (stopped || myGeneration != generation) {
+                DshStreamLog.question("respond.http.cancel rpcId=$rpcId")
                 callback(false, "generation-cancelled")
                 return@httpRequest
             }
             if (!success) {
+                DshStreamLog.question(
+                    "respond.http.fail rpcId=$rpcId status=${response.statusCode ?: 0} error='$errorMsg' body='${DshStreamLog.preview(data.toString(), 400)}'",
+                )
                 callback(false, "respond failed (${response.statusCode ?: 0}): $errorMsg")
                 return@httpRequest
             }
-            callback(data.optBoolean("accepted"), data.optString("reason").ifEmpty {
-                if (data.optBoolean("accepted")) "" else "bad-response"
-            })
+            val (accepted, reason) = parseRespondReceipt(data)
+            DshStreamLog.question(
+                "respond.http.done rpcId=$rpcId accepted=$accepted reason='$reason' status=${response.statusCode ?: 0} body='${DshStreamLog.preview(data.toString(), 400)}'",
+            )
+            callback(accepted, reason)
         }
     }
 
@@ -653,6 +690,7 @@ internal class DshRemoteHostRepository(
     onProjection: (String, String, String, Int) -> Unit = { _, _, _, _ -> },
     onSessionEvent: (String, DshRawSessionEvent) -> Unit = { _, _ -> },
     onRemoteEvent: (String) -> Unit = {},
+    onPendingInteraction: (String) -> Unit = {},
 ) : DshRepository {
     internal val store = DshHostStore()
     private val onQueueSnapshotHandler = onQueueSnapshot
@@ -661,6 +699,7 @@ internal class DshRemoteHostRepository(
     private val onProjectionHandler = onProjection
     private val onSessionEventHandler = onSessionEvent
     private val onRemoteEventHandler = onRemoteEvent
+    private val onPendingInteractionHandler = onPendingInteraction
     private val runtime = DshHostConnectionRuntime(
         network = network,
         webSocket = webSocket,
@@ -727,10 +766,18 @@ internal class DshRemoteHostRepository(
         answer: JSONObject,
         callback: (Boolean, String) -> Unit,
     ) {
+        DshStreamLog.question(
+            "repo.respondQuestion rpcId=$rpcId session=$sessionId answer='${DshStreamLog.preview(answer.toString(), 400)}'",
+        )
         runtime.respond(rpcId, JSONObject().apply {
             put("sessionId", sessionId)
             put("answer", answer)
         }, callback)
+    }
+
+    fun clearPending(rpcId: String) {
+        DshStreamLog.question("repo.clearPending rpcId=$rpcId")
+        store.removePending(rpcId)
     }
 
     override fun loadCredentialSetup(onSuccess: (DshCredentialSetup) -> Unit, onError: (String) -> Unit) {
@@ -893,7 +940,10 @@ internal class DshRemoteHostRepository(
     }
 
     override fun loadHistory(sessionId: String, onSuccess: (List<DshMessage>) -> Unit, onError: (String) -> Unit) {
-        call(DshHostProtocol.SESSION_HISTORY, JSONObject().apply { put("sessionId", sessionId); put("maxMessages", 50) }) { value, error ->
+        call(DshHostProtocol.SESSION_HISTORY, JSONObject().apply {
+            put("sessionId", sessionId)
+            put("maxMessages", HISTORY_PAGE_MESSAGES)
+        }) { value, error ->
             if (error != null || value == null) {
                 onError(error?.message ?: "session.history 返回为空")
                 return@call
@@ -902,9 +952,20 @@ internal class DshRemoteHostRepository(
         }
     }
 
-    fun loadWebTimeline(sessionId: String, onSuccess: (List<DshWebTimelineItem>) -> Unit) {
-        call(DshHostProtocol.SESSION_HISTORY, JSONObject().apply { put("sessionId", sessionId); put("maxMessages", 50) }) { value, error ->
-            if (error != null || value == null) return@call
+    fun loadWebTimeline(
+        sessionId: String,
+        onSuccess: (List<DshWebTimelineItem>) -> Unit,
+        onError: (String) -> Unit = {},
+    ) {
+        call(DshHostProtocol.SESSION_HISTORY, JSONObject().apply {
+            put("sessionId", sessionId)
+            put("maxMessages", HISTORY_PAGE_MESSAGES)
+        }) { value, error ->
+            if (error != null || value == null) {
+                DshStreamLog.i("history.fail session=$sessionId error='${error?.message ?: "empty"}'")
+                onError(error?.message ?: "session.history 返回为空")
+                return@call
+            }
             onSuccess(DshWebTimelineParser.parseWebTimeline(value.optJSONArray("events") ?: JSONArray()))
         }
     }
@@ -1031,7 +1092,7 @@ internal class DshRemoteHostRepository(
                                         description = option.optString("description"),
                                     )
                                 },
-                                multiSelect = item.optBoolean("multiSelect"),
+                                multiSelect = item.optBoolean("multiSelect") || item.optBoolean("multi_select"),
                             )
                         },
                     )
@@ -1297,6 +1358,10 @@ internal class DshRemoteHostRepository(
             put("clientTimeZone", "UTC")
         }) { value, error, rpcId ->
             if (error != null) {
+                if (dshIsTransportInterrupt(error.code, error.message)) {
+                    DshStreamLog.i("prompt.hold-for-resync session=$sessionId rpcId=$rpcId code=${error.code}")
+                    return@call
+                }
                 activeStreams.remove(rpcId); onError(error.message); return@call
             }
             val command = value?.optJSONObject("command")
@@ -1331,6 +1396,10 @@ internal class DshRemoteHostRepository(
             put("clientTimeZone", "UTC")
         }) { value, error, rpcId ->
             if (error != null) {
+                if (dshIsTransportInterrupt(error.code, error.message)) {
+                    DshStreamLog.i("prompt.hold-for-resync session=$sessionId rpcId=$rpcId code=${error.code}")
+                    return@call
+                }
                 activeStreams.remove(rpcId); onError(error.message); return@call
             }
             val command = value?.optJSONObject("command")
@@ -1349,6 +1418,37 @@ internal class DshRemoteHostRepository(
                 call.cancel()
                 runtime.call(DshHostProtocol.SESSION_CANCEL, JSONObject().apply { put("sessionId", sessionId) }) { _, _, _ -> }
             }
+        }
+    }
+
+    fun adoptLiveStream(
+        sessionId: String,
+        onDelta: (String, Boolean) -> Unit,
+        onComplete: (String) -> Unit,
+        onError: (String) -> Unit,
+    ): DshStreamHandle {
+        detachLiveStreams(sessionId)
+        val rpcId = "adopted-$sessionId"
+        activeStreams[rpcId] = ActiveStream(sessionId, rpcId, onDelta, onComplete, onError)
+        DshStreamLog.i("prompt.adopt-live session=$sessionId rpcId=$rpcId")
+        return object : DshStreamHandle {
+            private var cancelled = false
+            override fun cancel() {
+                if (cancelled) return
+                cancelled = true
+                activeStreams.remove(rpcId)
+                runtime.call(DshHostProtocol.SESSION_CANCEL, JSONObject().apply { put("sessionId", sessionId) }) { _, _, _ -> }
+            }
+        }
+    }
+
+    fun detachLiveStreams(sessionId: String) {
+        val removed = activeStreams.entries
+            .filter { it.value.sessionId == sessionId }
+            .map { it.key }
+        removed.forEach(activeStreams::remove)
+        if (removed.isNotEmpty()) {
+            DshStreamLog.i("prompt.detach-live session=$sessionId count=${removed.size}")
         }
     }
 
@@ -1401,11 +1501,29 @@ internal class DshRemoteHostRepository(
                 return
             }
             "approval/requested", "question/requested" -> {
-                store.putPending(envelope.optString("rpcId"), payload.toString())
+                val rpcId = pendingInteractionRpcId(envelope, payload)
+                DshStreamLog.question(
+                    "mux.requested type=$frameType rpcId=$rpcId session=${payload.optString("sessionId")} envelopeRpc=${envelope.optString("rpcId")} payloadRpc=${payload.optString("rpcId")}",
+                )
+                if (rpcId.isEmpty()) {
+                    DshStreamLog.question(
+                        "mux.requested-drop empty-rpcId type=$frameType raw='${DshStreamLog.preview(frame.raw, 240)}'",
+                    )
+                    return
+                }
+                store.putPending(rpcId, payload.toString())
+                onPendingInteractionHandler(payload.optString("sessionId"))
                 return
             }
             "approval/resolved", "question/resolved" -> {
-                store.removePending(envelope.optString("rpcId"))
+                val rpcId = pendingInteractionRpcId(envelope, payload)
+                    .ifEmpty { payload.optString("questionRpcId") }
+                    .ifEmpty { payload.optString("approvalId") }
+                DshStreamLog.question(
+                    "mux.resolved type=$frameType rpcId=$rpcId session=${payload.optString("sessionId")} outcome=${payload.optString("outcome")}",
+                )
+                store.removePending(rpcId)
+                onPendingInteractionHandler(payload.optString("sessionId"))
                 return
             }
         }
@@ -1705,6 +1823,40 @@ internal class DshRemoteHostRepository(
         const val DEEPSEEK_PROVIDER = "deepseek-official"
         const val DEEPSEEK_SETTINGS_NS = "llm-deepseek"
         const val DEEPSEEK_CREDENTIAL_REF = "DEEPSEEK_API_KEY"
+        const val HISTORY_PAGE_MESSAGES = 80
+    }
+}
+
+internal fun pendingInteractionRpcId(envelope: JSONObject, payload: JSONObject): String {
+    val nested = payload.optJSONObject("payload")
+    return listOf(
+        envelope.optString("rpcId"),
+        payload.optString("rpcId"),
+        nested?.optString("rpcId").orEmpty(),
+    ).firstOrNull { it.isNotEmpty() }.orEmpty()
+}
+
+internal fun parseRespondReceipt(data: JSONObject): Pair<Boolean, String> {
+    val result = data.optJSONObject("result")
+    val value = result?.optJSONObject("value")
+    val accepted = jsonFlag(data, "accepted")
+        ?: jsonFlag(value, "accepted")
+        ?: false
+    val reason = data.optString("reason")
+        .ifEmpty { value?.optString("reason").orEmpty() }
+        .ifEmpty { result?.optJSONObject("error")?.optString("message").orEmpty() }
+        .ifEmpty { if (accepted) "" else "bad-response" }
+    return accepted to reason
+}
+
+private fun jsonFlag(obj: JSONObject?, key: String): Boolean? {
+    if (obj == null) return null
+    val raw = obj.opt(key) ?: return null
+    return when (raw) {
+        is Boolean -> raw
+        is Number -> raw.toInt() != 0
+        is String -> raw.equals("true", ignoreCase = true)
+        else -> obj.optBoolean(key)
     }
 }
 
