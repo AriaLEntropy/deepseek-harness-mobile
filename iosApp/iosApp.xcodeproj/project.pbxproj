@@ -16,7 +16,8 @@
 		7555FF83242A565900829871 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7555FF82242A565900829871 /* ContentView.swift */; };
 		FF6B714429A2A174009349F1 /* KuiklyRenderViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = FF6B713F29A2A173009349F1 /* KuiklyRenderViewController.m */; };
 		FF6B714529A2A174009349F1 /* HRBridgeModule.m in Sources */ = {isa = PBXBuildFile; fileRef = FF6B714129A2A173009349F1 /* HRBridgeModule.m */; };
-		D5A0000329A2A174009349F1 /* DshSseModule.m in Sources */ = {isa = PBXBuildFile; fileRef = D5A0000129A2A173009349F1 /* DshSseModule.m */; };
+	D5A0000329A2A174009349F1 /* DshWebSocketModule.m in Sources */ = {isa = PBXBuildFile; fileRef = D5A0000129A2A173009349F1 /* DshWebSocketModule.m */; };
+	D5A0000429A2A174009349F2 /* DshSseModule.m in Sources */ = {isa = PBXBuildFile; fileRef = D5A0000229A2A173009349F2 /* DshSseModule.m */; };
 		FF6B714729A2A315009349F1 /* KuiklyRenderViewPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6B714629A2A315009349F1 /* KuiklyRenderViewPage.swift */; };
 		FF6B715029A2A6FF009349F1 /* KuiklyRenderComponentExpandHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = FF6B714F29A2A6FF009349F1 /* KuiklyRenderComponentExpandHandler.m */; };
 /* End PBXBuildFile section */
@@ -38,8 +39,9 @@
 		FF6B713F29A2A173009349F1 /* KuiklyRenderViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = KuiklyRenderViewController.m; sourceTree = "<group>"; };
 		FF6B714129A2A173009349F1 /* HRBridgeModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HRBridgeModule.m; sourceTree = "<group>"; };
 		FF6B714229A2A173009349F1 /* HRBridgeModule.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HRBridgeModule.h; sourceTree = "<group>"; };
-		D5A0000129A2A173009349F1 /* DshSseModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DshSseModule.m; sourceTree = "<group>"; };
-		D5A0000229A2A173009349F1 /* DshSseModule.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DshSseModule.h; sourceTree = "<group>"; };
+	D5A0000129A2A173009349F1 /* DshWebSocketModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DshWebSocketModule.m; sourceTree = "<group>"; };
+	D5A0000229A2A173009349F1 /* DshWebSocketModule.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DshWebSocketModule.h; sourceTree = "<group>"; };
+	D5A0000229A2A173009349F2 /* DshSseModule.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DshSseModule.h; sourceTree = "<group>"; };
 		FF6B714329A2A174009349F1 /* KuiklyRenderViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = KuiklyRenderViewController.h; sourceTree = "<group>"; };
 		FF6B714629A2A315009349F1 /* KuiklyRenderViewPage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = KuiklyRenderViewPage.swift; sourceTree = "<group>"; };
 		FF6B714C29A2A45D009349F1 /* iosApp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "iosApp-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -151,8 +153,10 @@
 			children = (
 				FF6B714129A2A173009349F1 /* HRBridgeModule.m */,
 				FF6B714229A2A173009349F1 /* HRBridgeModule.h */,
-				D5A0000129A2A173009349F1 /* DshSseModule.m */,
-				D5A0000229A2A173009349F1 /* DshSseModule.h */,
+				D5A0000129A2A173009349F1 /* DshWebSocketModule.m */,
+				D5A0000229A2A173009349F1 /* DshWebSocketModule.h */,
+				D5A0000129A2A173009349F2 /* DshSseModule.m */,
+				D5A0000229A2A173009349F2 /* DshSseModule.h */,
 			);
 			path = Modules;
 			sourceTree = "<group>";
@@ -305,7 +309,8 @@
 				0474A3F329F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.m in Sources */,
 				2152FB042600AC8F00CF470E /* iOSApp.swift in Sources */,
 				FF6B714529A2A174009349F1 /* HRBridgeModule.m in Sources */,
-				D5A0000329A2A174009349F1 /* DshSseModule.m in Sources */,
+				D5A0000329A2A174009349F1 /* DshWebSocketModule.m in Sources */,
+				D5A0000429A2A174009349F2 /* DshSseModule.m in Sources */,
 				FF6B714729A2A315009349F1 /* KuiklyRenderViewPage.swift in Sources */,
 				7555FF83242A565900829871 /* ContentView.swift in Sources */,
 				FF6B715029A2A6FF009349F1 /* KuiklyRenderComponentExpandHandler.m in Sources */,
