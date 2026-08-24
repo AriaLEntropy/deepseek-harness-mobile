@@ -25,6 +25,7 @@ import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
+import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
@@ -38,6 +39,166 @@ import kotlinx.coroutines.launch
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
+private fun visibleSessionList(source: ObservableList<DshSession>): ObservableList<DshSession> =
+    ObservableList<DshSession>().also { result -> result.addAll(source.filterNot { it.blank }) }
+
+internal fun visibleSkillList(source: ObservableList<DshSkill>, query: String): ObservableList<DshSkill> =
+    ObservableList<DshSkill>().also { result -> result.addAll(source.filter { it.name.startsWith(query) }) }
+
+internal fun isRemoteCatalogInvalidationEvent(event: String): Boolean = event in setOf(
+    "commands/change",
+    "skills/change",
+    "agent-preset/selected",
+    "settings/document-updated",
+    "credentials/updated",
+    "llm/adapters-updated",
+)
+
+internal fun parseGoalProjection(raw: String): DshGoalSnapshot? {
+    val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    val goal = root.optJSONObject("goal") ?: return null
+    val id = goal.optString("id")
+    val revision = goal.optInt("revision")
+    val objective = goal.optString("objective")
+    val phase = goal.optString("phase")
+    if (id.isEmpty() || revision <= 0 || objective.isEmpty() || phase.isEmpty() || phase == "complete") return null
+    return DshGoalSnapshot(
+        id = id,
+        revision = revision,
+        objective = objective,
+        phase = phase,
+        blockedReason = goal.optJSONObject("blockedReason")?.optString("message").orEmpty(),
+    )
+}
+
+internal fun DshToolCardType.iconAsset(): String = when (this) {
+    DshToolCardType.TERMINAL -> "tool-terminal.svg"
+    DshToolCardType.READ -> "tool-read.svg"
+    DshToolCardType.DIFF -> "tool-diff.svg"
+    DshToolCardType.SEARCH -> "tool-search.svg"
+    DshToolCardType.WEB -> "tool-web.svg"
+    DshToolCardType.JSON -> "tool-json.svg"
+    DshToolCardType.GENERIC -> "tool-generic.svg"
+}
+
+/** Remote tool-name semantics choose the icon even before a result view exists. */
+internal fun DshRemoteToolCallModel.iconAsset(): String = when (kind) {
+    DshRemoteToolKind.BASH -> "tool-terminal.svg"
+    DshRemoteToolKind.READ -> "tool-read.svg"
+    DshRemoteToolKind.FILE_MUTATION -> "tool-diff.svg"
+    DshRemoteToolKind.SEARCH -> "tool-search.svg"
+    DshRemoteToolKind.WEB -> "tool-web.svg"
+    DshRemoteToolKind.SKILL -> "tool-skill.svg"
+    DshRemoteToolKind.ASK_QUESTION,
+    DshRemoteToolKind.TODO,
+    DshRemoteToolKind.GENERIC -> cardType.iconAsset()
+}
+
+internal fun String.dshReasoningSummary(running: Boolean): String {
+    val visible = trimEnd()
+    val newline = indexOf('\n')
+    if (running) {
+        val lastNewline = visible.lastIndexOf('\n')
+        return if (lastNewline < 0) visible else visible.substring(lastNewline + 1)
+    }
+    return if (newline < 0) visible else substring(0, newline)
+}
+
+internal fun contextCatalogEntries(source: JSONObject?): List<DshContextCatalogEntry> {
+    if (source?.optString("form") != "catalog") return emptyList()
+    val entries = source.optJSONArray("entries") ?: return emptyList()
+    val result = mutableListOf<DshContextCatalogEntry>()
+    for (index in 0 until entries.length()) {
+        val entry = entries.optJSONObject(index) ?: continue
+        val name = entry.optString("name")
+        if (name.isEmpty()) return emptyList()
+        result += DshContextCatalogEntry(name, entry.optString("description"))
+    }
+    return result.take(200)
+}
+
+internal fun contextSections(source: JSONObject?): List<DshContextSection> {
+    if (source?.optString("form") != "snapshot") return emptyList()
+    val sections = source.optJSONArray("sections") ?: return emptyList()
+    val result = mutableListOf<DshContextSection>()
+    for (index in 0 until sections.length()) {
+        val section = sections.optJSONObject(index) ?: continue
+        val name = section.optString("name")
+        if (name.isEmpty()) return emptyList()
+        result += DshContextSection(name, section.optString("text"))
+    }
+    return result
+}
+
+internal fun contextRecalls(source: JSONObject?): List<DshContextRecall> {
+    if (source?.optString("form") != "recall") return emptyList()
+    val references = source.optJSONArray("references") ?: return emptyList()
+    val result = mutableListOf<DshContextRecall>()
+    for (index in 0 until references.length()) {
+        val reference = references.optJSONObject(index) ?: continue
+        val label = reference.optString("label")
+        if (label.isEmpty()) return emptyList()
+        result += DshContextRecall(
+            label = label,
+            retainedMessages = reference.optInt("retainedMessages"),
+            omittedMessages = reference.optInt("omittedMessages"),
+            truncated = reference.optBoolean("truncated"),
+        )
+    }
+    return result
+}
+
+internal fun contextInstructions(source: JSONObject?): List<DshContextInstruction> {
+    if (source?.optString("form") != "instructions") return emptyList()
+    val changes = source.optJSONArray("changes") ?: return emptyList()
+    val result = mutableListOf<DshContextInstruction>()
+    for (index in 0 until changes.length()) {
+        val change = changes.optJSONObject(index) ?: continue
+        val path = change.optString("path")
+        val action = change.optString("action")
+        if (path.isEmpty() || (action != "set" && action != "replace" && action != "remove")) return emptyList()
+        result += DshContextInstruction(path, action)
+    }
+    return result
+}
+
+internal fun contextRelaySender(source: JSONObject?): String {
+    if (source?.optString("form") != "relay") return ""
+    return source.optString("senderSessionId").takeIf { it.isNotEmpty() } ?: ""
+}
+
+internal fun boundedContextText(text: String): String {
+    if (text.length <= 20_000) return text
+    return text.take(20_000) + "\n… 共 ${text.length} 字符"
+}
+
+internal fun buildQuestionAnswer(
+    question: DshPendingQuestion,
+    drafts: Map<Int, DshQuestionDraft>,
+): JSONObject {
+    return JSONObject().apply {
+        put("answers", JSONArray().apply {
+            question.questions.forEachIndexed { index, item ->
+                val draft = drafts[index] ?: DshQuestionDraft()
+                put(JSONObject().apply {
+                    put("id", item.id)
+                    put("selected", JSONArray().apply { draft.selected.forEach(::put) })
+                    if (!draft.skipped && draft.custom.isNotBlank()) put("custom", draft.custom.trim())
+                })
+            }
+        })
+    }
+}
+
+internal fun DshMessage.contextCanExpand(): Boolean {
+    return content.isNotEmpty() ||
+        contextCatalog.isNotEmpty() ||
+        contextSections.isNotEmpty() ||
+        contextRecalls.isNotEmpty() ||
+        contextInstructions.isNotEmpty() ||
+        contextRelaySender.isNotEmpty()
+}
+
 /** First usable DSH surface: local sessions, streaming Markdown, and a composer. */
 @Page("home")
 internal class DshHomePage : BasePager() {
@@ -45,8 +206,13 @@ internal class DshHomePage : BasePager() {
     private var localStore: DshLocalStore? = null
     private var engineModule: DshEngineModule? = null
     private var engineReady = false
+    private var relayEngineEndpoint = ""
     private var pendingApiKey = ""
-    private var sshMode by observable(false)
+    private var connectionMode by observable(DshConnectionMode.LOCAL)
+    private val sshMode: Boolean
+        get() = connectionMode == DshConnectionMode.SSH
+    private val isRemoteHost: Boolean
+        get() = connectionMode == DshConnectionMode.RELAY || connectionMode == DshConnectionMode.SSH
     private var remoteProfileId by observable(DshSessionScope.DEFAULT_REMOTE_PROFILE_ID)
     private var sshHost by observable("")
     private var sshUser by observable("")
@@ -59,8 +225,6 @@ internal class DshHomePage : BasePager() {
     private var sshSettingsVisible by observable(false)
     private var sshSettingsBusy by observable(false)
     private var sshSettingsError by observable("")
-    private val connectionMode: DshConnectionMode
-        get() = if (sshMode) DshConnectionMode.REMOTE else DshConnectionMode.LOCAL
     private val sessionScope: DshSessionScope
         get() = DshSessionScope(connectionMode, remoteProfileId)
     private val activeConnectionId: String
@@ -107,13 +271,60 @@ internal class DshHomePage : BasePager() {
     private val pendingLocalMessageReads = mutableSetOf<String>()
     private val sessionCacheStates = mutableMapOf<String, DshSessionCacheState>()
     private var inputFocused = false
-    private var streamingAssistantId = ""
+    private var streamingAssistantId by observable("")
+    // The root id guards callbacks from an old request; the visible id points
+    // at the current text segment between ordered tool cards.
+    private var streamingAssistantRootId = ""
+    private var streamingAssistantSegment = 0
+    private var streamingReasoningId = ""
+    private var streamingReasoningContent = ""
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
     private var scrollSettleGeneration = 0
     private var perfTraceSequence = 0
     private var preloadTraceSequence = 0
     private val connectionCoordinator = DshConnectionCoordinator()
+    private val webDisclosureStates = mutableMapOf<String, Boolean>()
+    private val webBodyDisclosureStates = mutableMapOf<String, Boolean>()
+    private val webJsonNodeStates = mutableMapOf<String, Boolean>()
+    private var attachmentRevision by observable(0)
+    private val cachedAttachmentDataUrls = mutableMapOf<String, String>()
+    private val pendingAttachmentReads = mutableSetOf<String>()
+    private var queueDockExpanded by observable(false)
+    private val queueItems by observableList<DshQueueItem>()
+    private var queueActionBusy by observable(false)
+    private val jobItems by observableList<DshJobItem>()
+    private var jobsPanelExpanded by observable(false)
+    private var jobsNow by observable(0L)
+    private var jobsClockScheduled by observable(false)
+    private val workspaceGroups by observableList<DshWorkspaceGroup>()
+    private val skills by observableList<DshSkill>()
+    private var goalSnapshot by observable<DshGoalSnapshot?>(null)
+    private var goalActionBusy by observable(false)
+    private var goalActionError by observable("")
+    private var queueEditingId by observable("")
+    private var queueEditingText by observable("")
+    private var sessionRunning by observable(false)
+    private var workspaceBrowserVisible by observable(false)
+    private var workspaceBrowserPath by observable("")
+    private var workspaceBrowserHome by observable("")
+    private var workspaceBrowserBusy by observable(false)
+    private var workspaceBrowserError by observable("")
+    private var workspaceBrowserNewName by observable("")
+    private val workspaceDirectoryEntries by observableList<DshDirectoryEntry>()
+    private var workspaceRenameTargetId by observable("")
+    private var workspaceRenameDraft by observable("")
+    private var workspaceDeleteTargetId by observable("")
+    private var workspaceActionBusy by observable(false)
+    private var workspaceActionError by observable("")
+    private var pendingApproval by observable<DshPendingApproval?>(null)
+    private var pendingQuestion by observable<DshPendingQuestion?>(null)
+    private var interactionBusy by observable(false)
+    private val selectedQuestionOptions by observableList<String>()
+    private var questionCustom by observable("")
+    private var questionIndex by observable(0)
+    private var questionError by observable("")
+    private val questionDrafts = mutableMapOf<Int, DshQuestionDraft>()
 
     override fun created() {
         super.created()
@@ -125,7 +336,11 @@ internal class DshHomePage : BasePager() {
                 createDshLocalStore("$databaseDir/dsh.db")
             }.getOrNull()
         }
-        sshMode = pageData.params.optString("connectionMode") == "remote"
+        connectionMode = when (pageData.params.optString("connectionMode")) {
+            "relay" -> DshConnectionMode.RELAY
+            "ssh", "remote" -> DshConnectionMode.SSH
+            else -> DshConnectionMode.LOCAL
+        }
         remoteProfileId = pageData.params.optString("profileId").ifEmpty { DshSessionScope.DEFAULT_REMOTE_PROFILE_ID }
         loadSshConfig()
         restoreCachedSessions()
@@ -198,17 +413,38 @@ internal class DshHomePage : BasePager() {
                             attr {
                                 flex(1f)
                                 flexDirectionRow()
+                                backgroundColor(Color(BG))
+                            }
+                            vif({ ctx.isRemoteHost }) {
+                                DshSessionRail(
+                                    sessions = { ctx.sessions },
+                                    activeId = { ctx.activeSessionId },
+                                    compact = false,
+                                    onSelect = { id ->
+                                        ctx.closeSessionDrawer()
+                                        setTimeout(ctx.pagerId, 0) { ctx.selectSession(id) }
+                                    },
+                                )
+                            }
+                            val centerWidth = if (ctx.isRemoteHost) {
+                                (ctx.pagerData.pageViewWidth - 236f - 280f).coerceAtLeast(360f)
+                            } else {
+                                ctx.pagerData.pageViewWidth
                             }
                             DshConversation(
                                 conversationIds = { ctx.conversationPanelIds },
                                 activeConversationId = { ctx.activeSessionId },
                                 messagesForSession = { ctx.sessionMessageState(it) },
                                 streaming = { ctx.streaming },
+                                streamingMessageId = { ctx.streamingAssistantId },
+                                streamingContent = { ctx.streamingAssistantContent },
                                 scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
                                 messageRef = { sessionId, messageId, ref ->
                                     ctx.messageRowRefs[ctx.messageRowKey(sessionId, messageId)] = ref
                                 },
                                 draft = { ctx.draft },
+                                skills = { ctx.skills },
+                                onPickSkill = { ctx.draft = "/$it " },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
                                 inputRef = { ctx.inputView = it.view },
@@ -228,7 +464,83 @@ internal class DshHomePage : BasePager() {
                                     ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
                                 },
                                 onToggleVoice = { ctx.toggleVoice() },
+                                isWebTimeline = { ctx.isRemoteHost },
+                                isDisclosureExpanded = { ctx.webDisclosureStates[it] == true },
+                                onToggleDisclosure = {
+                                    ctx.webDisclosureStates[it] = !(ctx.webDisclosureStates[it] == true)
+                                    ctx.webBodyDisclosureStates.remove(it)
+                                    ctx.webJsonNodeStates.clear()
+                                },
+                                isBodyDisclosureExpanded = { ctx.webBodyDisclosureStates[it] == true },
+                                onToggleBodyDisclosure = {
+                                    ctx.webBodyDisclosureStates[it] = !(ctx.webBodyDisclosureStates[it] == true)
+                                },
+                                isJsonNodeExpanded = { messageId, nodeId ->
+                                    ctx.webJsonNodeStates["$messageId:$nodeId"] == true
+                                },
+                                onToggleJsonNode = { messageId, nodeId ->
+                                    val key = "$messageId:$nodeId"
+                                    ctx.webJsonNodeStates[key] = !(ctx.webJsonNodeStates[key] == true)
+                                },
+                                onCopyToolContent = {
+                                    ctx.bridgeModule.copyToPasteboard(it)
+                                    ctx.bridgeModule.toast("已复制")
+                                },
+                                attachmentDataUrl = { ctx.attachmentDataUrl(it) },
+                                queueItems = { ctx.queueItems },
+                                jobItems = { ctx.jobItems },
+                                goal = { ctx.goalSnapshot },
+                                goalActionBusy = { ctx.goalActionBusy },
+                                goalActionError = { ctx.goalActionError },
+                                onPauseGoal = { ctx.pauseGoal() },
+                                onResumeGoal = { ctx.resumeGoal() },
+                                onEditGoal = { text, done -> ctx.editGoal(text, done) },
+                                onClearGoal = { ctx.clearGoal() },
+                                jobsPanelExpanded = { ctx.jobsPanelExpanded },
+                                jobsNow = { ctx.jobsNow },
+                                onToggleJobsPanel = { ctx.toggleJobsPanel() },
+                                queueExpanded = { ctx.queueDockExpanded },
+                                queueEditingId = { ctx.queueEditingId },
+                                queueActionBusy = { ctx.queueActionBusy },
+                                queueEditingText = { ctx.queueEditingText },
+                                sessionRunning = { ctx.sessionRunning },
+                                onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
+                                onEditQueueItem = { ctx.editQueueItem(it) },
+                                onQueueEditingTextChange = { ctx.queueEditingText = it },
+                                onSaveQueueItem = { ctx.saveQueueItem(it) },
+                                onCancelQueueItemEdit = { ctx.cancelQueueItemEdit() },
+                                onRemoveQueueItem = { ctx.removeQueueItem(it) },
+                                onSteerQueueItem = { ctx.steerQueueItem(it) },
+                                pendingApproval = { ctx.pendingApproval },
+                                pendingQuestion = { ctx.pendingQuestion },
+                                interactionBusy = { ctx.interactionBusy },
+                                selectedQuestionOptions = { ctx.selectedQuestionOptions },
+                                questionCustom = { ctx.questionCustom },
+                                questionIndex = { ctx.questionIndex },
+                                questionError = { ctx.questionError },
+                                onAnswerApproval = { ctx.answerApproval(it) },
+                                onToggleQuestionOption = { ctx.toggleQuestionOption(it) },
+                                onQuestionCustomChange = { ctx.updateQuestionCustom(it) },
+                                onQuestionNavigate = { ctx.navigateQuestion(it) },
+                                onQuestionSkip = { ctx.skipQuestion() },
+                                onSubmitQuestion = { ctx.submitQuestion() },
+                                availableWidth = centerWidth,
                             )
+                            vif({ ctx.isRemoteHost }) {
+                                DshSessionDetailsPanel(
+                                    title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "尚无标题" },
+                                    cwd = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.cwd ?: "" },
+                                    modelLabel = { ctx.selectedModelLabel },
+                                    agentPreset = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.agentPreset.orEmpty() },
+                                    running = { ctx.sessionRunning },
+                                    queueCount = { ctx.queueItems.size },
+                                    jobCount = { ctx.jobItems.size },
+                                    onRename = { ctx.renameActiveSession() },
+                                    onArchive = { ctx.archiveActiveSession() },
+                                    onFork = { ctx.forkActiveSession() },
+                                    onExport = { ctx.exportActiveSession() },
+                                )
+                            }
                         }
                         ctx.perfLog("body.conversation.end wide=true")
                     } else {
@@ -238,11 +550,15 @@ internal class DshHomePage : BasePager() {
                             activeConversationId = { ctx.activeSessionId },
                             messagesForSession = { ctx.sessionMessageState(it) },
                             streaming = { ctx.streaming },
+                            streamingMessageId = { ctx.streamingAssistantId },
+                            streamingContent = { ctx.streamingAssistantContent },
                             scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
                             messageRef = { sessionId, messageId, ref ->
                                 ctx.messageRowRefs[ctx.messageRowKey(sessionId, messageId)] = ref
                             },
                             draft = { ctx.draft },
+                            skills = { ctx.skills },
+                            onPickSkill = { ctx.draft = "/$it " },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
                             inputRef = { ctx.inputView = it.view },
@@ -262,6 +578,67 @@ internal class DshHomePage : BasePager() {
                                 ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
                             },
                             onToggleVoice = { ctx.toggleVoice() },
+                            isWebTimeline = { ctx.isRemoteHost },
+                            isDisclosureExpanded = { ctx.webDisclosureStates[it] == true },
+                            onToggleDisclosure = {
+                                ctx.webDisclosureStates[it] = !(ctx.webDisclosureStates[it] == true)
+                                ctx.webBodyDisclosureStates.remove(it)
+                                ctx.webJsonNodeStates.clear()
+                            },
+                            isBodyDisclosureExpanded = { ctx.webBodyDisclosureStates[it] == true },
+                            onToggleBodyDisclosure = {
+                                ctx.webBodyDisclosureStates[it] = !(ctx.webBodyDisclosureStates[it] == true)
+                            },
+                            isJsonNodeExpanded = { messageId, nodeId ->
+                                ctx.webJsonNodeStates["$messageId:$nodeId"] == true
+                            },
+                            onToggleJsonNode = { messageId, nodeId ->
+                                val key = "$messageId:$nodeId"
+                                ctx.webJsonNodeStates[key] = !(ctx.webJsonNodeStates[key] == true)
+                            },
+                            onCopyToolContent = {
+                                ctx.bridgeModule.copyToPasteboard(it)
+                                ctx.bridgeModule.toast("已复制")
+                            },
+                            attachmentDataUrl = { ctx.attachmentDataUrl(it) },
+                            queueItems = { ctx.queueItems },
+                            jobItems = { ctx.jobItems },
+                            goal = { ctx.goalSnapshot },
+                            goalActionBusy = { ctx.goalActionBusy },
+                            goalActionError = { ctx.goalActionError },
+                            onPauseGoal = { ctx.pauseGoal() },
+                            onResumeGoal = { ctx.resumeGoal() },
+                            onEditGoal = { text, done -> ctx.editGoal(text, done) },
+                            onClearGoal = { ctx.clearGoal() },
+                            jobsPanelExpanded = { ctx.jobsPanelExpanded },
+                            jobsNow = { ctx.jobsNow },
+                            onToggleJobsPanel = { ctx.toggleJobsPanel() },
+                            queueExpanded = { ctx.queueDockExpanded },
+                            queueEditingId = { ctx.queueEditingId },
+                            queueActionBusy = { ctx.queueActionBusy },
+                            queueEditingText = { ctx.queueEditingText },
+                            sessionRunning = { ctx.sessionRunning },
+                            onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
+                            onEditQueueItem = { ctx.editQueueItem(it) },
+                            onQueueEditingTextChange = { ctx.queueEditingText = it },
+                            onSaveQueueItem = { ctx.saveQueueItem(it) },
+                            onCancelQueueItemEdit = { ctx.cancelQueueItemEdit() },
+                            onRemoveQueueItem = { ctx.removeQueueItem(it) },
+                            onSteerQueueItem = { ctx.steerQueueItem(it) },
+                            pendingApproval = { ctx.pendingApproval },
+                            pendingQuestion = { ctx.pendingQuestion },
+                            interactionBusy = { ctx.interactionBusy },
+                            selectedQuestionOptions = { ctx.selectedQuestionOptions },
+                            questionCustom = { ctx.questionCustom },
+                            questionIndex = { ctx.questionIndex },
+                            questionError = { ctx.questionError },
+                            onAnswerApproval = { ctx.answerApproval(it) },
+                            onToggleQuestionOption = { ctx.toggleQuestionOption(it) },
+                            onQuestionCustomChange = { ctx.updateQuestionCustom(it) },
+                            onQuestionNavigate = { ctx.navigateQuestion(it) },
+                            onQuestionSkip = { ctx.skipQuestion() },
+                            onSubmitQuestion = { ctx.submitQuestion() },
+                            availableWidth = ctx.pagerData.pageViewWidth,
                         )
                         ctx.perfLog("body.conversation.end wide=false")
                     }
@@ -282,11 +659,17 @@ internal class DshHomePage : BasePager() {
                 vif({ ctx.sessionDrawerVisible }) {
                     DshSessionDrawer(
                         sessions = { ctx.sessions },
+                        workspaceGroups = { ctx.workspaceGroups },
+                        isWebTimeline = { ctx.isRemoteHost },
                         activeId = { ctx.activeSessionId },
                         animated = { ctx.sessionDrawerAnimated },
                         onClose = { ctx.closeSessionDrawer() },
                         onOpenSettings = { ctx.openConnectionSettings() },
                         onNewSession = { ctx.createSession() },
+                        onAddWorkspace = { ctx.openWorkspaceBrowser() },
+                        onRenameWorkspace = { id, title -> ctx.openWorkspaceRename(id, title) },
+                        onDeleteWorkspace = { id -> ctx.openWorkspaceDelete(id) },
+                        onMoveWorkspace = { id, delta -> ctx.moveWorkspace(id, delta) },
                         onSelect = { id ->
                             ctx.closeSessionDrawer()
                             setTimeout(ctx.pagerId, 0) {
@@ -350,6 +733,111 @@ internal class DshHomePage : BasePager() {
                         },
                     )
                 }
+                vif({ ctx.workspaceBrowserVisible && ctx.isRemoteHost }) {
+                    DshWorkspaceBrowserModal(
+                        path = { ctx.workspaceBrowserPath },
+                        home = { ctx.workspaceBrowserHome },
+                        entries = { ctx.workspaceDirectoryEntries },
+                        busy = { ctx.workspaceBrowserBusy },
+                        error = { ctx.workspaceBrowserError },
+                        newName = { ctx.workspaceBrowserNewName },
+                        onDirectorySelect = { ctx.loadDirectory(it) },
+                        onNewNameChange = { ctx.workspaceBrowserNewName = it },
+                        onCreateDirectory = { ctx.createRemoteDirectory() },
+                        onAdopt = { ctx.adoptCurrentDirectoryAsWorkspace() },
+                        onClose = { ctx.workspaceBrowserVisible = false },
+                    )
+                }
+                vif({ ctx.workspaceRenameTargetId.isNotEmpty() && ctx.isRemoteHost }) {
+                    Modal(inWindow = true) {
+                        attr {
+                            absolutePositionAllZero()
+                            allCenter()
+                            paddingLeft(20f)
+                            paddingRight(20f)
+                            backgroundColor(Color(0x66000000))
+                        }
+                        View {
+                            attr {
+                                width(pagerData.pageViewWidth - 40f)
+                                maxWidth(420f)
+                                padding(20f)
+                                borderRadius(16f)
+                                backgroundColor(Color.WHITE)
+                            }
+                            Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Input {
+                                attr {
+                                    height(38f)
+                                    marginTop(14f)
+                                    fontSize(14f)
+                                    placeholder("工作区名称")
+                                    placeholderColor(Color(0xFF98A1A9))
+                                    text(ctx.workspaceRenameDraft)
+                                }
+                                event { textDidChange { ctx.workspaceRenameDraft = it.text } }
+                            }
+                            vif({ ctx.workspaceActionError.isNotEmpty() }) {
+                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+                            }
+                            View {
+                                attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                                Text {
+                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(Color(0xFF7A838A)) }
+                                    event { click { ctx.workspaceRenameTargetId = ""; ctx.workspaceActionError = "" } }
+                                }
+                                Text {
+                                    attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(Color(0xFF4176E6)) }
+                                    event { click { if (!ctx.workspaceActionBusy) ctx.saveWorkspaceRename() } }
+                                }
+                            }
+                        }
+                    }
+                }
+                vif({ ctx.workspaceDeleteTargetId.isNotEmpty() && ctx.isRemoteHost }) {
+                    Modal(inWindow = true) {
+                        attr {
+                            absolutePositionAllZero()
+                            allCenter()
+                            paddingLeft(20f)
+                            paddingRight(20f)
+                            backgroundColor(Color(0x66000000))
+                        }
+                        View {
+                            attr {
+                                width(pagerData.pageViewWidth - 40f)
+                                maxWidth(420f)
+                                padding(20f)
+                                borderRadius(16f)
+                                backgroundColor(Color.WHITE)
+                            }
+                            Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Text {
+                                attr {
+                                    text("只会从列表移除注册，不会删除目录、会话或日志。")
+                                    marginTop(8f)
+                                    fontSize(13f)
+                                    lineHeight(20f)
+                                    color(Color(0xFF68737D))
+                                }
+                            }
+                            vif({ ctx.workspaceActionError.isNotEmpty() }) {
+                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+                            }
+                            View {
+                                attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                                Text {
+                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(Color(0xFF7A838A)) }
+                                    event { click { ctx.workspaceDeleteTargetId = ""; ctx.workspaceActionError = "" } }
+                                }
+                                Text {
+                                    attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(Color(0xFFD25A5A)) }
+                                    event { click { if (!ctx.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -407,7 +895,7 @@ internal class DshHomePage : BasePager() {
                     sessionMessageReady.remove(it)
                     conversationPanelIds.remove(it)
                 }
-            if (connectionMode == DshConnectionMode.REMOTE) {
+            if (isRemoteHost) {
                 loaded.forEach { sessionCacheStates[it.id] = DshSessionCacheState.STALE }
             }
             sessions.clear()
@@ -416,7 +904,14 @@ internal class DshHomePage : BasePager() {
             preloadAllSessionMessages()
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接 · 正在同步远程历史"
             if (loaded.isNotEmpty()) {
-                activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id ?: loaded.first().id
+                activeSessionId = loaded.firstOrNull { it.id == preferredSessionId && !it.blank }?.id
+                    ?: loaded.firstOrNull { !it.blank }?.id
+                    ?: loaded.first().id
+                sessionRunning = loaded.firstOrNull { it.id == activeSessionId }?.running == true
+                refreshWorkspaceGroups()
+                refreshQueueDock()
+                refreshJobsPanel()
+                refreshPendingInteractions()
                 loadModels(activeSessionId)
                 loadHistory(activeSessionId, scrollToEndAfterLoad = false)
             } else {
@@ -444,9 +939,16 @@ internal class DshHomePage : BasePager() {
 
     private fun startConnection() {
         val generation = connectionCoordinator.begin(connectionMode)
-        if (sshMode) {
-            startSshEngine(generation)
-            return
+        when (connectionMode) {
+            DshConnectionMode.SSH -> {
+                startSshEngine(generation)
+                return
+            }
+            DshConnectionMode.RELAY -> {
+                startRelayEngine(generation)
+                return
+            }
+            DshConnectionMode.LOCAL -> Unit
         }
         if (!pageData.params.optBoolean("embeddedEngine")) {
             connectionLabel = "当前平台不支持内置 Harness"
@@ -495,6 +997,52 @@ internal class DshHomePage : BasePager() {
         sshKeyLabel = if (sshKeyId.isEmpty()) "未导入私钥" else "已导入私钥"
     }
 
+
+    private fun startRelayEngine(generation: Long) {
+        if (!pageData.isAndroid) {
+            connectionLabel = "扫码连接目前仅支持 Android"
+            return
+        }
+        connectionLabel = "正在连接扫码电脑"
+        acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).connect { state ->
+            if (!isCurrent(generation, DshConnectionMode.RELAY)) return@connect
+            when (state.phase) {
+                DshRelayPhase.READY -> {
+                    if (state.localPort <= 0 || state.localToken.isEmpty()) return@connect
+                    val endpoint = "http://127.0.0.1:${state.localPort}"
+                    engineReady = true
+                    connectionLabel = state.message.ifEmpty { "扫码隧道已连接" }
+                    if (state.hostId.isNotEmpty()) remoteProfileId = state.hostId
+                    if (relayEngineEndpoint == endpoint && repository != null) return@connect
+                    relayEngineEndpoint = endpoint
+                    connectRemoteEngine(endpoint, state.localToken)
+                }
+                DshRelayPhase.ERROR -> {
+                    engineReady = false
+                    relayEngineEndpoint = ""
+                    connectionLabel = state.message.ifEmpty { "扫码连接失败" }
+                }
+                DshRelayPhase.RECONNECTING -> {
+                    relayEngineEndpoint = ""
+                    (repository as? DshRemoteRepository)?.stop()
+                    repository = null
+                    connectionLabel = "扫码连接重试中"
+                }
+                DshRelayPhase.STOPPED -> {
+                    engineReady = false
+                    relayEngineEndpoint = ""
+                    (repository as? DshRemoteRepository)?.stop()
+                    repository = null
+                    connectionLabel = "扫码连接已断开"
+                }
+                else -> {
+                    if (state.localPort <= 0) relayEngineEndpoint = ""
+                    connectionLabel = state.message.ifEmpty { "正在建立扫码隧道" }
+                }
+            }
+        }
+    }
+
     private fun startSshEngine(generation: Long) {
         if (sshHost.isBlank() || sshUser.isBlank() || sshKeyId.isBlank()) {
             connectionLabel = "请配置 SSH 连接"
@@ -513,7 +1061,7 @@ internal class DshHomePage : BasePager() {
             hostFingerprint = sshFingerprint,
             keyPassphrase = sshKeyPassphrase,
         )) { state ->
-            if (!isCurrent(generation, DshConnectionMode.REMOTE)) return@startSsh
+            if (!isCurrent(generation, DshConnectionMode.SSH)) return@startSsh
             when (state.phase) {
                 DshSshPhase.FINGERPRINT_REQUIRED -> {
                     sshFingerprint = state.message
@@ -542,14 +1090,71 @@ internal class DshHomePage : BasePager() {
         }
     }
 
-    private fun connectRemoteEngine(baseUrl: String) {
-        repository = DshHostRepository(
+    private fun connectRemoteEngine(baseUrl: String, token: String = "") {
+        (repository as? DshRemoteRepository)?.stop()
+        repository = DshRemoteRepository(
             network = acquireModule<NetworkModule>(NetworkModule.MODULE_NAME),
-            sse = acquireModule<DshSseModule>(DshSseModule.MODULE_NAME),
-            connection = DshHostConnection(baseUrl),
+            webSocket = acquireModule<DshWebSocketModule>(DshWebSocketModule.MODULE_NAME),
+            connection = DshHostConnection(baseUrl, token),
             pagerId = pagerId,
+            onState = { state -> handleHostRuntimeState(state) },
+            onQueueSnapshot = { sessionId ->
+                if (sessionId == activeSessionId) {
+                    refreshQueueDock()
+                    refreshPendingInteractions()
+                }
+            },
+            onJobsSnapshot = { sessionId ->
+                if (sessionId == activeSessionId) refreshJobsPanel()
+            },
+            onSessionStatus = { sessionId, running ->
+                if (sessionId == activeSessionId) sessionRunning = running
+            },
+            onProjection = { sessionId, key, value, seq ->
+                if (sessionId == activeSessionId) {
+                    when (key) {
+                        "title" -> {
+                            val title = value.trim().removeSurrounding("\"")
+                            if (title.isNotEmpty()) connectionLabel = title
+                        }
+                        "goal" -> goalSnapshot = parseGoalProjection(value)
+                    }
+                }
+            },
+            onSessionEvent = { sessionId, event ->
+                if (sessionId == activeSessionId) {
+                    when (event.type) {
+                        "tool/call" -> showRunningTool(event)
+                        "tool/result" -> settleRunningTool(event)
+                        "user/message" -> showContextInjection(event)
+                        "assistant/message" -> showAssistantBlocks(event)
+                    }
+                }
+            },
+            onRemoteEvent = { event ->
+                if (activeSessionId.isNotEmpty() && isRemoteCatalogInvalidationEvent(event)) {
+                    loadSkills(activeSessionId)
+                    loadModels(activeSessionId)
+                }
+            },
         )
         loadRepository()
+    }
+
+    private fun handleHostRuntimeState(state: DshHostRuntimeState) {
+        if (!connectionCoordinator.isActive(connectionMode)) return
+        val wasReconnecting = connectionLabel == "远程连接重建中" || connectionLabel == "本地 DSH 连接重建中"
+        connectionLabel = when (state.phase) {
+            DshHostRuntimePhase.CONNECTING -> "正在打开远程事件流"
+            DshHostRuntimePhase.HOST_HANDSHAKE -> "正在检查远程 DSH"
+            DshHostRuntimePhase.SYNCING -> "正在同步远程会话"
+            DshHostRuntimePhase.READY -> "远程 DSH 已就绪"
+            DshHostRuntimePhase.RECONNECTING -> if (sshMode) "远程连接重建中" else "本地 DSH 连接重建中"
+            DshHostRuntimePhase.ERROR -> "远程 DSH 连接失败"
+            DshHostRuntimePhase.STOPPED -> "远程 DSH 已停止"
+            DshHostRuntimePhase.DISCONNECTED -> "等待远程连接"
+        }
+        if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) loadRepository()
     }
 
     private fun connectLocalEngine(apiKey: String) {
@@ -600,6 +1205,31 @@ internal class DshHomePage : BasePager() {
         }
         credentialSetupBusy = true
         credentialSetupError = ""
+        if (sshMode) {
+            val hostRepository = repository
+            if (hostRepository == null) {
+                credentialSetupBusy = false
+                credentialSetupError = "远程 DSH 尚未就绪"
+                return
+            }
+            hostRepository.saveDeepSeekApiKey(key, {
+                setTimeout(pagerId, 0) {
+                    apiKeyDraft = ""
+                    apiKeyInputView?.setText("")
+                    credentialSetupBusy = false
+                    updateCredentialSetupVisibility(false)
+                    dismissKeyboard()
+                    connectionLabel = "远程 DSH 已更新"
+                    loadRepository()
+                }
+            }, { error ->
+                setTimeout(pagerId, 0) {
+                    credentialSetupBusy = false
+                    credentialSetupError = "无法修改电脑端 DSH：$error"
+                }
+            })
+            return
+        }
         val saved = runCatching { localStore?.saveApiKey(key) }
         if (saved.isFailure || localStore == null) {
             credentialSetupBusy = false
@@ -624,7 +1254,7 @@ internal class DshHomePage : BasePager() {
         dismissKeyboard()
         attachmentMenuVisible = false
         //closeSessionDrawer()
-        credentialSetupTitle = "设置 DeepSeek API Key"
+        credentialSetupTitle = if (sshMode) "修改电脑端 DSH 的 API Key" else "设置 DeepSeek API Key"
         credentialSetupError = ""
         apiKeyDraft = pendingApiKey
         updateCredentialSetupVisibility(true)
@@ -645,7 +1275,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun setConnectionMode(useSsh: Boolean) {
-        sshMode = useSsh
+        connectionMode = if (useSsh) DshConnectionMode.SSH else DshConnectionMode.LOCAL
         sshSettingsError = ""
     }
 
@@ -703,7 +1333,7 @@ internal class DshHomePage : BasePager() {
                         keyId = sshKeyId,
                         hostFingerprint = sshFingerprint,
                     )) }
-                    runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.REMOTE) }
+                    runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.SSH) }
                     updateSshSettingsVisibility(false)
                     stopCurrentEngine()
                     openConnectionSetup()
@@ -720,16 +1350,52 @@ internal class DshHomePage : BasePager() {
     private fun stopCurrentEngine() {
         val mode = connectionCoordinator.activeModeOr(connectionMode)
         connectionCoordinator.stop()
+        (repository as? DshRemoteRepository)?.stop()
         repository = null
+        goalSnapshot = null
+        goalActionBusy = false
+        goalActionError = ""
         streamHandle?.cancel()
         streamHandle = null
-        if (mode == DshConnectionMode.REMOTE) {
-            engineModule?.stopSsh()
-        } else {
-            engineModule?.stop()
+        when (mode) {
+            DshConnectionMode.RELAY -> acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).disconnect()
+            DshConnectionMode.SSH -> engineModule?.stopSsh()
+            DshConnectionMode.LOCAL -> engineModule?.stop()
         }
         engineReady = false
     }
+
+    private fun goalMutation(
+        action: (DshRemoteRepository, DshGoalSnapshot, (DshRpcError?) -> Unit) -> Unit,
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        val goal = goalSnapshot ?: return
+        val remote = repository as? DshRemoteRepository ?: return
+        if (goalActionBusy) return
+        goalActionBusy = true
+        goalActionError = ""
+        action(remote, goal) { error ->
+            setTimeout(pagerId, 0) {
+                goalActionBusy = false
+                if (error != null) goalActionError = "${error.message} (${error.code})"
+                else goalActionError = ""
+                onDone(error == null)
+            }
+        }
+    }
+
+    private fun pauseGoal() = goalMutation(action = { remote, goal, callback -> remote.goalPause(activeSessionId, goal, callback) })
+    private fun resumeGoal() = goalMutation(action = { remote, goal, callback -> remote.goalResume(activeSessionId, goal, callback) })
+    private fun editGoal(objective: String, onDone: (Boolean) -> Unit) = goalMutation(
+        action = { remote, goal, callback -> remote.goalEdit(activeSessionId, goal, objective, callback) },
+        onDone = onDone,
+    )
+    private fun clearGoal() = goalMutation(action = { remote, goal, callback ->
+        remote.goalClear(activeSessionId, goal) { error ->
+            if (error == null) goalSnapshot = null
+            callback(error)
+        }
+    })
 
     private fun isCurrent(generation: Long, mode: DshConnectionMode): Boolean =
         connectionCoordinator.accepts(generation, mode)
@@ -764,15 +1430,34 @@ internal class DshHomePage : BasePager() {
         }
         dismissKeyboard()
         closeSessionDrawer()
+        val remoteRepository = hostRepository as? DshRemoteRepository
+        val currentWorkspaceId = if (isRemoteHost) {
+            remoteRepository?.workspaceIdForSession(activeSessionId)
+        } else {
+            null
+        }
+        val blankSession = if (isRemoteHost) {
+            remoteRepository?.blankSessionInWorkspace(currentWorkspaceId)
+        } else {
+            sessions.firstOrNull { it.blank }
+        }
+        if (blankSession != null) {
+            activeSessionId = blankSession.id
+            sessionMessageState(blankSession.id, loadFromDisk = true)
+            loadSkills(blankSession.id)
+            setTimeout(pagerId, 0) { loadModels(blankSession.id) }
+            return
+        }
         perfLog("newSession.$traceId.ui.cleared", startedAt)
         perfLog("newSession.$traceId.host.create.request", startedAt)
-        hostRepository.createSession({ sessionId ->
+        hostRepository.createSession(currentWorkspaceId, { sessionId ->
             perfLog("newSession.$traceId.host.create.response:$sessionId", startedAt)
             val created = DshSession(
                 id = sessionId,
                 title = "新会话",
                 workspace = "Host",
                 updatedLabel = "",
+                blank = true,
             )
             // Keep the existing sessions when creating a new one. Clearing
             // this list also rewrites SQLite with only the newly created row.
@@ -789,7 +1474,10 @@ internal class DshHomePage : BasePager() {
             draft = ""
             inputView?.setText("")
             setTimeout(pagerId, 0) {
-                if (activeSessionId == sessionId) loadModels(sessionId)
+                if (activeSessionId == sessionId) {
+                    loadSkills(sessionId)
+                    loadModels(sessionId)
+                }
             }
         }, { error ->
             perfLog("newSession.$traceId.host.create.error:$error", startedAt)
@@ -813,6 +1501,12 @@ internal class DshHomePage : BasePager() {
         )
         ensureConversationPanel(sessionId)
 
+        if (isRemoteHost) {
+            loadSkills(sessionId)
+            loadWebTimeline(sessionId, scrollToEndAfterLoad)
+            return
+        }
+
         val hostRepository = repository ?: return
         hostRepository.loadHistory(sessionId, { loaded ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
@@ -825,7 +1519,7 @@ internal class DshHomePage : BasePager() {
         }, { error ->
             if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
             if (messages.isNotEmpty()) {
-                if (connectionMode == DshConnectionMode.REMOTE) {
+                if (isRemoteHost) {
                     sessionCacheStates[sessionId] = DshSessionCacheState.SYNC_FAILED
                     connectionLabel = "远程历史同步失败 · 已显示缓存"
                 } else {
@@ -835,6 +1529,633 @@ internal class DshHomePage : BasePager() {
                 messages.add(DshMessage("history-error", DshMessageRole.ERROR, error))
             }
         })
+    }
+
+    private fun loadWebTimeline(sessionId: String, scrollToEndAfterLoad: Boolean = true) {
+        val hostRepository = repository as? DshRemoteRepository ?: return
+        hostRepository.loadWebTimeline(sessionId) { items ->
+            if (!isRemoteHost || activeSessionId != sessionId) return@loadWebTimeline
+            val projected = items.map { item ->
+                when (item.kind) {
+                    DshWebTimelineItem.Kind.USER -> DshMessage(item.key, DshMessageRole.USER, item.text)
+                    DshWebTimelineItem.Kind.ASSISTANT -> DshMessage(item.key, DshMessageRole.ASSISTANT, item.text)
+                    DshWebTimelineItem.Kind.REASONING -> DshMessage(
+                        item.key,
+                        DshMessageRole.ASSISTANT,
+                        item.text,
+                        isReasoning = true,
+                    )
+                    DshWebTimelineItem.Kind.IMAGE -> DshMessage(
+                        item.key,
+                        DshMessageRole.ASSISTANT,
+                        "",
+                        attachmentId = item.attachmentId,
+                    )
+                    DshWebTimelineItem.Kind.UNKNOWN_BLOCK -> DshMessage(
+                        item.key,
+                        DshMessageRole.TOOL,
+                        item.text,
+                        toolName = "未知内容块",
+                        toolCardType = DshToolCardType.JSON,
+                    )
+                    DshWebTimelineItem.Kind.ERROR -> DshMessage(item.key, DshMessageRole.ERROR, item.text)
+                    DshWebTimelineItem.Kind.CONTEXT -> DshMessage(
+                        item.key,
+                        DshMessageRole.TOOL,
+                        item.text,
+                        toolName = item.sourceLabel,
+                        isContextInjection = true,
+                        contextBody = item.text,
+                        contextForm = item.source?.optString("form").orEmpty(),
+                        contextCatalog = item.source?.let(::contextCatalogEntries).orEmpty(),
+                        contextSections = item.source?.let(::contextSections).orEmpty(),
+                        contextRecalls = item.source?.let(::contextRecalls).orEmpty(),
+                        contextInstructions = item.source?.let(::contextInstructions).orEmpty(),
+                        contextRelaySender = item.source?.let(::contextRelaySender).orEmpty(),
+                    )
+                    DshWebTimelineItem.Kind.TOOL -> item.remoteTool?.toRemoteMessage(item.key) ?: DshMessage(
+                        item.key,
+                        DshMessageRole.TOOL,
+                        item.cardBody.ifEmpty { listOfNotNull(item.input, item.output).joinToString("\n\n") },
+                        toolName = item.cardTitle.ifEmpty { item.toolName ?: "工具" },
+                        toolCardType = item.cardType,
+                        toolRunning = item.running,
+                        toolError = item.error != null,
+                    )
+                }
+            }
+            sessionMessageReady.add(sessionId)
+            replaceMessagesIfChanged(projected)
+            projected.mapNotNull { it.attachmentId }.forEach { loadAttachment(sessionId, it) }
+            completePendingSessionSelection(sessionId)
+            realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
+        }
+    }
+
+    private fun loadSkills(sessionId: String) {
+        if (!isRemoteHost) {
+            skills.clear()
+            return
+        }
+        val remote = repository as? DshRemoteRepository ?: return
+        skills.clear()
+        remote.loadSkills(sessionId, onSuccess = { loaded ->
+            if (!isRemoteHost || activeSessionId != sessionId) return@loadSkills
+            skills.clear()
+            skills.addAll(loaded)
+        })
+    }
+
+    private fun loadAttachment(sessionId: String, attachmentId: String) {
+        if (attachmentDataUrl(attachmentId) != null || !pendingAttachmentReads.add(attachmentId)) return
+        val hostRepository = repository as? DshRemoteRepository ?: return
+        hostRepository.loadAttachment(sessionId, attachmentId) { dataUrl, error ->
+            if (error != null || dataUrl == null) {
+                pendingAttachmentReads.remove(attachmentId)
+                return@loadAttachment
+            }
+            cachedAttachmentDataUrls[attachmentId] = dataUrl
+            attachmentRevision += 1
+            val next = sessionMessageState(sessionId).toList()
+            if (activeSessionId == sessionId) replaceMessagesIfChanged(next)
+            else sessionMessageStates[sessionId] = ObservableList<DshMessage>().also { it.addAll(next) }
+        }
+    }
+
+    private fun showRunningTool(event: DshRawSessionEvent) {
+        val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
+        val model = DshRemoteToolCallModels.fromLiveCall(payload) ?: return
+        val id = "tool-${event.seq}"
+        if (messages.any { it.id == id }) return
+        // The Host emits tool/call after the assistant block that introduced
+        // it. Seal that block before appending its card so the list follows the
+        // actual event order instead of grouping all cards at the turn end.
+        splitStreamingAssistantBeforeTool()
+        messages.add(model.toRemoteMessage(id))
+        refreshSessionRenderTree(activeSessionId)
+        scrollMessagesToEnd()
+    }
+
+    private fun showContextInjection(event: DshRawSessionEvent) {
+        val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
+        val data = dshWireEvent(payload).optJSONObject("data") ?: return
+        val source = data.optJSONObject("source") ?: return
+        if (source.optString("kind") == "user") return
+        val id = "context-${event.seq}"
+        if (messages.any { it.id == id }) return
+        val content = data.optJSONArray("content") ?: return
+        val text = buildString {
+            for (index in 0 until content.length()) {
+                val block = content.optJSONObject(index) ?: continue
+                if (block.optString("type") == "text") append(block.optString("text"))
+            }
+        }.trim()
+        if (text.isEmpty()) return
+        messages.add(DshMessage(
+            id = id,
+            role = DshMessageRole.TOOL,
+            content = text,
+            toolName = contextSummary(source),
+            isContextInjection = true,
+            contextBody = text,
+            contextForm = source.optString("form"),
+            contextCatalog = contextCatalogEntries(source),
+            contextSections = contextSections(source),
+            contextRecalls = contextRecalls(source),
+            contextInstructions = contextInstructions(source),
+            contextRelaySender = contextRelaySender(source),
+        ))
+        scrollMessagesToEnd()
+    }
+
+    private fun showAssistantBlocks(event: DshRawSessionEvent) {
+        val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
+        val data = dshWireEvent(payload).optJSONObject("data") ?: return
+        val blocks = (data.optJSONObject("message") ?: data).optJSONArray("content") ?: return
+        for (index in 0 until blocks.length()) {
+            val block = blocks.optJSONObject(index) ?: continue
+            when (block.optString("type")) {
+                "image" -> {
+                    val attachmentId = block.optJSONObject("attachment")?.optString("attachmentId").orEmpty()
+                    if (attachmentId.isEmpty()) continue
+                    val id = "image-${event.seq}-$index"
+                    if (messages.none { it.id == id }) {
+                        messages.add(DshMessage(
+                            id = id,
+                            role = DshMessageRole.ASSISTANT,
+                            content = "",
+                            attachmentId = attachmentId,
+                        ))
+                    }
+                    loadAttachment(activeSessionId, attachmentId)
+                }
+                "text", "reasoning", "tool-call" -> Unit
+                else -> {
+                    val id = "block-${event.seq}-$index"
+                    if (messages.none { it.id == id }) {
+                        messages.add(DshMessage(
+                            id = id,
+                            role = DshMessageRole.TOOL,
+                            content = block.toString(),
+                            toolName = "未知内容块",
+                            toolCardType = DshToolCardType.JSON,
+                        ))
+                    }
+                }
+            }
+        }
+        scrollMessagesToEnd()
+    }
+
+    private fun settleRunningTool(event: DshRawSessionEvent) {
+        val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
+        val eventData = dshWireEvent(payload).optJSONObject("data") ?: return
+        val message = eventData.optJSONObject("message")
+        val resultBlock = message?.optJSONArray("content")?.optJSONObject(0)
+        val callId = resultBlock?.optString("toolCallId")
+            ?: message?.optJSONObject("source")?.optString("callId")
+            ?: eventData.optString("callId")
+        if (callId.isEmpty()) return
+        val index = messages.indexOfFirst { it.role == DshMessageRole.TOOL && it.toolCallId == callId }
+        if (index < 0) return
+        val previous = messages[index].remoteTool ?: return
+        val model = DshRemoteToolCallModels.settleLiveResult(previous, payload) ?: return
+        messages[index] = model.toRemoteMessage(messages[index].id)
+    }
+
+    private fun attachmentDataUrl(attachmentId: String): String? {
+        attachmentRevision // Read the reactive revision so image rows rerender after downloads.
+        return cachedAttachmentDataUrls[attachmentId]
+    }
+
+    private fun refreshQueueDock() {
+        if (!isRemoteHost) {
+            queueItems.clear()
+            return
+        }
+        val repository = repository as? DshRemoteRepository ?: return
+        val items = repository.queue(activeSessionId)
+        queueItems.clear()
+        queueItems.addAll(items)
+        if (items.isEmpty()) {
+            queueDockExpanded = false
+            cancelQueueItemEdit()
+        } else if (queueEditingId.isNotEmpty() && items.none { it.id == queueEditingId }) {
+            cancelQueueItemEdit()
+        }
+    }
+
+    private fun refreshJobsPanel() {
+        if (!isRemoteHost) {
+            jobItems.clear()
+            return
+        }
+        val repository = repository as? DshRemoteRepository ?: return
+        val items = repository.jobs(activeSessionId)
+        jobItems.clear()
+        jobItems.addAll(items)
+        if (items.isEmpty()) jobsPanelExpanded = false
+        if (jobsPanelExpanded) {
+            jobsNow = bridgeModule.currentTimeStamp()
+            scheduleJobsClock()
+        }
+    }
+
+    private fun toggleJobsPanel() {
+        jobsPanelExpanded = !jobsPanelExpanded
+        if (jobsPanelExpanded) {
+            jobsNow = bridgeModule.currentTimeStamp()
+            scheduleJobsClock()
+        }
+    }
+
+    private fun scheduleJobsClock() {
+        if (!jobsPanelExpanded || jobsClockScheduled || jobItems.none { it.status == "running" || it.status == "stopping" }) return
+        jobsClockScheduled = true
+        setTimeout(pagerId, 1_000) {
+            jobsClockScheduled = false
+            if (!jobsPanelExpanded) return@setTimeout
+            jobsNow = bridgeModule.currentTimeStamp()
+            scheduleJobsClock()
+        }
+    }
+
+    private fun refreshWorkspaceGroups() {
+        if (!isRemoteHost) {
+            workspaceGroups.clear()
+            return
+        }
+        val repository = repository as? DshRemoteRepository ?: return
+        val groups = repository.workspaceGroups()
+        workspaceGroups.clear()
+        workspaceGroups.addAll(groups)
+    }
+
+    private fun refreshPendingInteractions() {
+        if (!isRemoteHost) {
+            pendingApproval = null
+            pendingQuestion = null
+            selectedQuestionOptions.clear()
+            questionCustom = ""
+            questionIndex = 0
+            questionError = ""
+            questionDrafts.clear()
+            return
+        }
+        val repository = repository as? DshRemoteRepository ?: return
+        val (approval, question) = repository.pendingInteractions(activeSessionId)
+        pendingApproval = approval
+        pendingQuestion = question
+        questionIndex = questionIndex.coerceIn(0, (question?.questions?.size ?: 1) - 1)
+        loadQuestionDraft(questionIndex)
+    }
+
+    private fun answerApproval(outcome: String) {
+        val repository = repository as? DshRemoteRepository ?: return
+        val approval = pendingApproval ?: return
+        interactionBusy = true
+        repository.respondApproval(
+            rpcId = approval.rpcId,
+            sessionId = approval.sessionId,
+            approvalId = approval.approvalId,
+            outcome = outcome,
+        ) { _, _ ->
+            setTimeout(pagerId, 0) {
+                interactionBusy = false
+                refreshPendingInteractions()
+            }
+        }
+    }
+
+    private fun toggleQuestionOption(label: String) {
+        val item = pendingQuestion?.questions?.getOrNull(questionIndex) ?: return
+        if (!item.multiSelect) {
+            selectedQuestionOptions.clear()
+            questionCustom = ""
+        }
+        if (selectedQuestionOptions.contains(label)) selectedQuestionOptions.remove(label)
+        else selectedQuestionOptions.add(label)
+        questionError = ""
+        questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
+    }
+
+    private fun updateQuestionCustom(value: String) {
+        val item = pendingQuestion?.questions?.getOrNull(questionIndex) ?: return
+        if (!item.multiSelect) selectedQuestionOptions.clear()
+        questionCustom = value
+        questionError = ""
+        questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
+    }
+
+    private fun skipQuestion() {
+        val count = pendingQuestion?.questions?.size ?: return
+        questionDrafts[questionIndex] = DshQuestionDraft(skipped = true)
+        selectedQuestionOptions.clear()
+        questionCustom = ""
+        questionError = ""
+        if (questionIndex < count - 1) {
+            questionIndex += 1
+            loadQuestionDraft(questionIndex)
+        } else {
+            submitQuestion()
+        }
+    }
+
+    private fun navigateQuestion(delta: Int) {
+        val count = pendingQuestion?.questions?.size ?: return
+        val next = (questionIndex + delta).coerceIn(0, count - 1)
+        if (next == questionIndex) return
+        questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
+        questionIndex = next
+        questionError = ""
+        loadQuestionDraft(next)
+    }
+
+    private fun loadQuestionDraft(index: Int) {
+        val draft = questionDrafts[index] ?: DshQuestionDraft()
+        selectedQuestionOptions.clear()
+        selectedQuestionOptions.addAll(draft.selected)
+        questionCustom = draft.custom
+    }
+
+    private fun submitQuestion() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val question = pendingQuestion ?: return
+        questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
+        val missing = question.questions.indexOfFirst { item ->
+            val draft = questionDrafts[question.questions.indexOf(item)] ?: DshQuestionDraft()
+            draft.selected.isEmpty() && draft.custom.isBlank() && !draft.skipped
+        }
+        if (missing >= 0) {
+            questionIndex = missing
+            loadQuestionDraft(missing)
+            questionError = "请回答此问题"
+            return
+        }
+        questionError = ""
+        interactionBusy = true
+        val answer = buildQuestionAnswer(question, questionDrafts)
+        repository.respondQuestion(
+            rpcId = question.rpcId,
+            sessionId = question.sessionId,
+            answer = answer,
+        ) { _, _ ->
+            setTimeout(pagerId, 0) {
+                interactionBusy = false
+                refreshPendingInteractions()
+            }
+        }
+    }
+
+    private fun editQueueItem(itemId: String) {
+        val item = queueItems.firstOrNull { it.id == itemId } ?: return
+        val text = item.text ?: return
+        queueDockExpanded = true
+        queueEditingId = itemId
+        queueEditingText = text
+    }
+
+    private fun saveQueueItem(itemId: String) {
+        val repository = repository as? DshRemoteRepository ?: return
+        val text = queueEditingText.trim()
+        if (queueActionBusy || itemId != queueEditingId || text.isEmpty()) return
+        queueActionBusy = true
+        repository.updateQueue(
+            sessionId = activeSessionId,
+            itemId = itemId,
+            action = JSONObject().apply {
+                put("kind", "edit")
+                put("content", JSONArray().apply { put(JSONObject().apply { put("type", "text"); put("text", text) }) })
+            },
+        ) { _, _ ->
+            setTimeout(pagerId, 0) {
+                queueActionBusy = false
+                cancelQueueItemEdit()
+                refreshQueueDock()
+            }
+        }
+    }
+
+    private fun cancelQueueItemEdit() {
+        queueEditingId = ""
+        queueEditingText = ""
+    }
+
+    private fun removeQueueItem(itemId: String) {
+        updateQueueItem(itemId, JSONObject().apply { put("kind", "remove") })
+    }
+
+    private fun steerQueueItem(itemId: String) {
+        updateQueueItem(itemId, JSONObject().apply { put("kind", "steer") })
+    }
+
+    private fun updateQueueItem(itemId: String, action: JSONObject) {
+        val repository = repository as? DshRemoteRepository ?: return
+        if (queueActionBusy) return
+        queueActionBusy = true
+        repository.updateQueue(
+            sessionId = activeSessionId,
+            itemId = itemId,
+            action = action,
+        ) { _, _ ->
+            setTimeout(pagerId, 0) {
+                queueActionBusy = false
+                refreshQueueDock()
+            }
+        }
+    }
+
+    private fun renameActiveSession() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val current = sessions.firstOrNull { it.id == activeSessionId } ?: return
+        val title = current.title.takeIf { it != "尚无标题" && it != "新会话" } ?: ""
+        if (title.isBlank()) return
+        repository.renameSession(activeSessionId, title) { _, _ ->
+            setTimeout(pagerId, 0) { loadRepository(preferredSessionId = activeSessionId) }
+        }
+    }
+
+    private fun archiveActiveSession() {
+        val repository = repository as? DshRemoteRepository ?: return
+        repository.archiveSession(activeSessionId) { _, _ ->
+            setTimeout(pagerId, 0) {
+                loadRepository(preferredSessionId = null)
+                refreshWorkspaceGroups()
+            }
+        }
+    }
+
+    private fun forkActiveSession() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val lastSeq = repository.store.sessionLastSeq[activeSessionId]
+        repository.forkSession(activeSessionId, lastSeq) { value, error ->
+            if (error != null || value == null) {
+                setTimeout(pagerId, 0) {
+                    messages.add(DshMessage(
+                        "fork-error-${messages.size}",
+                        DshMessageRole.ERROR,
+                        error?.message ?: "session.fork failed",
+                    ))
+                }
+                return@forkSession
+            }
+            val childSessionId = value.optString("sessionId")
+            setTimeout(pagerId, 0) {
+                if (childSessionId.isNotEmpty()) loadRepository(preferredSessionId = childSessionId)
+            }
+        }
+    }
+
+    private fun exportActiveSession() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val url = repository.sessionExportUrl(activeSessionId)
+        acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
+            "link_view",
+            JSONObject().apply {
+                put("pageName", "link_view")
+                put("url", url)
+            },
+        )
+    }
+
+    private fun openWorkspaceBrowser() {
+        if (!isRemoteHost) return
+        closeSessionDrawer()
+        workspaceBrowserVisible = true
+        workspaceBrowserError = ""
+        workspaceBrowserNewName = ""
+        loadDirectory(null)
+    }
+
+    private fun loadDirectory(path: String?) {
+        val repository = repository as? DshRemoteRepository ?: return
+        workspaceBrowserBusy = true
+        workspaceBrowserError = ""
+        repository.listDirectory(path) { listing, error ->
+            setTimeout(pagerId, 0) {
+                workspaceBrowserBusy = false
+                if (error != null || listing == null) {
+                    workspaceBrowserError = error?.message ?: "无法读取目录"
+                    return@setTimeout
+                }
+                workspaceBrowserPath = listing.path
+                workspaceBrowserHome = listing.home
+                workspaceDirectoryEntries.clear()
+                workspaceDirectoryEntries.addAll(listing.entries.filterNot { it.hidden })
+            }
+        }
+    }
+
+    private fun createRemoteDirectory() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val name = workspaceBrowserNewName.trim()
+        if (workspaceBrowserPath.isEmpty() || name.isEmpty()) return
+        workspaceBrowserBusy = true
+        repository.createDirectory(workspaceBrowserPath, name) { createdPath, error ->
+            setTimeout(pagerId, 0) {
+                workspaceBrowserBusy = false
+                if (error != null || createdPath == null) {
+                    workspaceBrowserError = error?.message ?: "无法创建目录"
+                    return@setTimeout
+                }
+                workspaceBrowserNewName = ""
+                loadDirectory(createdPath)
+            }
+        }
+    }
+
+    private fun adoptCurrentDirectoryAsWorkspace() {
+        val repository = repository as? DshRemoteRepository ?: return
+        if (workspaceBrowserPath.isEmpty()) return
+        workspaceBrowserBusy = true
+        repository.createWorkspace(workspaceBrowserPath) { _, error ->
+            setTimeout(pagerId, 0) {
+                workspaceBrowserBusy = false
+                if (error != null) {
+                    workspaceBrowserError = error.message
+                    return@setTimeout
+                }
+                workspaceBrowserVisible = false
+                loadRepository(preferredSessionId = activeSessionId)
+            }
+        }
+    }
+
+    private fun openWorkspaceRename(workspaceId: String, currentTitle: String) {
+        workspaceRenameTargetId = workspaceId
+        workspaceRenameDraft = currentTitle
+        workspaceActionError = ""
+    }
+
+    private fun saveWorkspaceRename() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val workspaceId = workspaceRenameTargetId
+        val title = workspaceRenameDraft.trim()
+        if (workspaceId.isEmpty() || title.isEmpty()) return
+        workspaceActionBusy = true
+        workspaceActionError = ""
+        repository.renameWorkspace(workspaceId, title) { _, error ->
+            setTimeout(pagerId, 0) {
+                workspaceActionBusy = false
+                if (error != null) {
+                    workspaceActionError = error.message
+                    return@setTimeout
+                }
+                workspaceRenameTargetId = ""
+                workspaceRenameDraft = ""
+                refreshWorkspaceGroups()
+            }
+        }
+    }
+
+    private fun openWorkspaceDelete(workspaceId: String) {
+        workspaceDeleteTargetId = workspaceId
+        workspaceActionError = ""
+    }
+
+    private fun confirmWorkspaceDelete() {
+        val repository = repository as? DshRemoteRepository ?: return
+        val workspaceId = workspaceDeleteTargetId
+        if (workspaceId.isEmpty()) return
+        workspaceActionBusy = true
+        workspaceActionError = ""
+        repository.deleteWorkspace(workspaceId) { _, error ->
+            setTimeout(pagerId, 0) {
+                workspaceActionBusy = false
+                if (error != null) {
+                    workspaceActionError = error.message
+                    return@setTimeout
+                }
+                workspaceDeleteTargetId = ""
+                refreshWorkspaceGroups()
+            }
+        }
+    }
+
+    private fun moveWorkspace(workspaceId: String, delta: Int) {
+        val repository = repository as? DshRemoteRepository ?: return
+        val ordered = workspaceGroups.filter { it.workspaceId.isNotEmpty() }
+        val index = ordered.indexOfFirst { it.workspaceId == workspaceId }
+        if (index < 0) return
+        val targetIndex = index + delta
+        if (targetIndex < 0 || targetIndex >= ordered.size) return
+        val beforeWorkspaceId = if (targetIndex == ordered.lastIndex) {
+            null
+        } else {
+            ordered[targetIndex].workspaceId
+        }
+        workspaceActionBusy = true
+        workspaceActionError = ""
+        repository.moveWorkspaceBefore(workspaceId, beforeWorkspaceId) { _, error ->
+            setTimeout(pagerId, 0) {
+                workspaceActionBusy = false
+                if (error != null) {
+                    workspaceActionError = error.message
+                    return@setTimeout
+                }
+                refreshWorkspaceGroups()
+            }
+        }
     }
 
     private fun restoreCachedSessions() {
@@ -853,7 +2174,7 @@ internal class DshHomePage : BasePager() {
         if (state.isEmpty() && firstMessages.isNotEmpty()) state.addAll(firstMessages)
         sessionMessageStates[firstSessionId] = state
         sessionMessageReady.add(firstSessionId)
-        if (connectionMode == DshConnectionMode.REMOTE) {
+        if (isRemoteHost) {
             sessionCacheStates[firstSessionId] = DshSessionCacheState.STALE
         }
         messages = state
@@ -1167,7 +2488,7 @@ internal class DshHomePage : BasePager() {
         dismissKeyboard()
         val prompt = draft.trim()
         if (prompt.isEmpty() || streaming) return
-        val hostRepository = repository
+        val hostRepository = repository as? DshRemoteRepository
         if (hostRepository == null) {
             connectionLabel = "本地内核尚未连接"
             messages.add(DshMessage(
@@ -1177,10 +2498,14 @@ internal class DshHomePage : BasePager() {
             ))
             return
         }
+        if (!hostRepository.isProductReady()) {
+            connectionLabel = if (sshMode) "远程 DSH 正在同步，暂不能发送" else "本地 DSH 正在同步，暂不能发送"
+            return
+        }
         if (sessions.isEmpty()) {
             connectionLabel = "正在创建会话"
-            hostRepository.createSession({ sessionId ->
-                sessions.add(DshSession(sessionId, "新会话", "Host", ""))
+            hostRepository.createSession(null, { sessionId ->
+                sessions.add(DshSession(sessionId, "新会话", "Host", "", blank = true))
                 runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
                 activeSessionId = sessionId
                 loadModels(sessionId)
@@ -1198,6 +2523,7 @@ internal class DshHomePage : BasePager() {
         val sessionId = activeSessionId
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
+        val reasoningId = "$assistantId-reasoning"
         messages.add(user)
         // Keep the assistant response in the same list row throughout the
         // stream. Replacing a separate temporary row at completion can leave
@@ -1206,6 +2532,10 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[sessionId] = messages
         scrollMessagesToMessage(user.id)
         streamingAssistantId = assistantId
+        streamingAssistantRootId = assistantId
+        streamingAssistantSegment = 0
+        streamingReasoningId = reasoningId
+        streamingReasoningContent = ""
         streamingAssistantContent = ""
         pendingAssistantDelta.setLength(0)
         draft = ""
@@ -1217,21 +2547,38 @@ internal class DshHomePage : BasePager() {
             pagerId = pagerId,
             sessionId = sessionId,
             prompt = prompt,
-            onDelta = { delta -> queueAssistantDelta(assistantId, delta) },
+            onDelta = { delta, isReasoning ->
+                if (isReasoning) queueReasoningDelta(reasoningId, delta)
+                else queueAssistantDelta(assistantId, delta)
+            },
             onComplete = { result ->
                 if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
                 flushAssistantDelta()
-                val completedContent = result.ifEmpty { streamingAssistantContent }
+                if (streamingAssistantId.isEmpty() && result.isNotEmpty()) {
+                    ensureStreamingAssistantSegment()
+                }
+                // A turn may contain several assistant text blocks separated by
+                // tool calls. The current segment already contains the final
+                // block; using the turn-wide accumulator here would move all
+                // earlier text back into this last row.
+                val completedContent = streamingAssistantContent.ifEmpty { result }
+                DshStreamLog.i(
+                    "ui.complete session=$sessionId resultChars=${result.length} liveChars=${streamingAssistantContent.length} preview='${DshStreamLog.preview(completedContent)}'",
+                )
                 settleStreamingMessage(DshMessageRole.ASSISTANT, completedContent)
                 persistMessages(sessionId)
+                if (isRemoteHost) loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
                 connectionLabel = "已连接"
                 streamHandle = null
             },
             onError = { error ->
                 if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
                 flushAssistantDelta()
+                ensureStreamingAssistantSegment()
+                DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
                 settleStreamingMessage(DshMessageRole.ERROR, error)
                 persistMessages(sessionId)
+                if (isRemoteHost) loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
                 connectionLabel = "已连接"
                 streamHandle = null
             },
@@ -1244,6 +2591,7 @@ internal class DshHomePage : BasePager() {
         streamHandle?.cancel()
         streamHandle = null
         flushAssistantDelta()
+        ensureStreamingAssistantSegment()
         val stoppedContent = streamingAssistantContent + "\n\n*已停止*"
         sessionRenderLog("stream.stop.begin session=$activeSessionId messages=${messages.size} chars=${stoppedContent.length}")
         settleStreamingMessage(DshMessageRole.ASSISTANT, stoppedContent)
@@ -1260,7 +2608,12 @@ internal class DshHomePage : BasePager() {
         if (streamingAssistantId.isNotEmpty()) {
             updateStreamingMessage(partial, streaming = false)
         }
+        finalizeStreamingReasoning()
         streamingAssistantId = ""
+        streamingAssistantRootId = ""
+        streamingAssistantSegment = 0
+        streamingReasoningId = ""
+        streamingReasoningContent = ""
         pendingAssistantDelta.setLength(0)
         streamingAssistantContent = ""
         assistantFlushScheduled = false
@@ -1300,12 +2653,14 @@ internal class DshHomePage : BasePager() {
     private fun loadModels(sessionId: String) {
         val hostRepository = repository ?: return
         hostRepository.loadModels(sessionId, { loaded ->
+            if (activeSessionId != sessionId) return@loadModels
             selectedModelLabel = loaded.current.name
             modelOptions.clear()
             modelOptions.addAll(loaded.options)
             modelPickerBusy = false
             modelPickerError = if (loaded.routable) "" else "当前模型不可用，请选择其他模型。"
         }, { error ->
+            if (activeSessionId != sessionId) return@loadModels
             modelPickerBusy = false
             modelPickerError = error
         })
@@ -1349,30 +2704,105 @@ internal class DshHomePage : BasePager() {
 
     private fun queueAssistantDelta(id: String, delta: String) {
         if (delta.isEmpty()) return
-        if (streamingAssistantId != id) return
+        if (!streaming || streamingAssistantRootId != id) return
+        ensureStreamingAssistantSegment()
         pendingAssistantDelta.append(delta)
-        if (assistantFlushScheduled) return
+        val firstPaint = streamingAssistantContent.isEmpty()
+        if (assistantFlushScheduled && !firstPaint) return
         assistantFlushScheduled = true
-        setTimeout(pagerId, STREAM_FLUSH_INTERVAL_MS) {
+        setTimeout(pagerId, if (firstPaint) 0 else STREAM_FLUSH_INTERVAL_MS) {
             assistantFlushScheduled = false
             flushAssistantDelta()
         }
+    }
+
+    private fun queueReasoningDelta(id: String, delta: String) {
+        if (delta.isEmpty() || streamingReasoningId != id) return
+        streamingReasoningContent += delta
+        val index = messages.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            messages[index] = messages[index].copy(
+                content = streamingReasoningContent,
+                streaming = true,
+                isReasoning = true,
+            )
+        } else {
+            messages.add(DshMessage(id, DshMessageRole.ASSISTANT, streamingReasoningContent, streaming = true, isReasoning = true))
+        }
+        scrollMessagesToEnd()
     }
 
     private fun flushAssistantDelta() {
         if (streamingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
         streamingAssistantContent += pendingAssistantDelta.toString()
         pendingAssistantDelta.setLength(0)
+        DshStreamLog.i(
+            "ui.flush id=$streamingAssistantId chars=${streamingAssistantContent.length} preview='${DshStreamLog.preview(streamingAssistantContent)}'",
+        )
         updateStreamingMessage(streamingAssistantContent, streaming = true)
+        refreshSessionRenderTree(activeSessionId)
         // Follow the assistant while SSE produces new content. The initial
         // send still anchors on the user's message until the first delta.
         scrollMessagesToEnd()
     }
 
-    private fun updateStreamingMessage(content: String, streaming: Boolean) {
+    /**
+     * A live assistant response is an ordered sequence of text segments and
+     * tool cards. Start a new row lazily after a tool card so the next delta is
+     * placed after that card instead of being appended to the old row.
+     */
+    private fun ensureStreamingAssistantSegment() {
+        if (streamingAssistantId.isNotEmpty()) return
+        if (streamingAssistantRootId.isEmpty()) return
+        val id = if (streamingAssistantSegment == 0) {
+            streamingAssistantRootId
+        } else {
+            "$streamingAssistantRootId-segment-${streamingAssistantSegment}"
+        }
+        streamingAssistantId = id
+        streamingAssistantContent = ""
+        messages.add(DshMessage(id, DshMessageRole.ASSISTANT, "", streaming = true))
+    }
+
+    /** Close the current text row immediately before the next tool card. */
+    private fun splitStreamingAssistantBeforeTool() {
+        if (!streaming || streamingAssistantRootId.isEmpty()) return
+        flushAssistantDelta()
+        val id = streamingAssistantId
+        if (id.isNotEmpty()) {
+            val index = messages.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                val current = messages[index]
+                if (current.content.isEmpty()) {
+                    messages.removeAt(index)
+                } else {
+                    messages[index] = current.copy(streaming = false)
+                }
+            }
+        }
+        streamingAssistantId = ""
+        streamingAssistantContent = ""
+        streamingAssistantSegment += 1
+        pendingAssistantDelta.setLength(0)
+        assistantFlushScheduled = false
+    }
+
+    private fun updateStreamingMessage(content: String, streaming: Boolean, isReasoning: Boolean = false) {
         val index = messages.indexOfFirst { it.id == streamingAssistantId }
         if (index < 0) return
-        messages[index] = messages[index].copy(content = content, streaming = streaming)
+        messages[index] = messages[index].copy(
+            content = content,
+            streaming = streaming,
+            isReasoning = isReasoning,
+        )
+    }
+
+    private fun finalizeStreamingReasoning() {
+        if (streamingReasoningId.isEmpty()) return
+        val index = messages.indexOfFirst { it.id == streamingReasoningId }
+        if (index >= 0) {
+            messages[index] = messages[index].copy(streaming = false, isReasoning = true)
+        }
     }
 
     private fun scrollMessagesToEnd() {
@@ -1439,6 +2869,7 @@ internal class DshHomePage : BasePager() {
         if (id.isNotEmpty()) {
             val sessionId = activeSessionId
             val finalContent = content.ifEmpty { streamingAssistantContent }
+            finalizeStreamingReasoning()
             val index = messages.indexOfFirst { it.id == id }
             if (index >= 0) {
                 messages[index] = messages[index].copy(
@@ -1449,13 +2880,25 @@ internal class DshHomePage : BasePager() {
             } else {
                 messages.add(DshMessage(id, role, finalContent, streaming = false))
             }
-            streamingAssistantId = ""
+            DshStreamLog.i(
+                "ui.settle id=$id role=$role index=$index chars=${finalContent.length} preview='${DshStreamLog.preview(finalContent)}'",
+            )
+            streamingReasoningId = ""
+            streamingReasoningContent = ""
             pendingAssistantDelta.setLength(0)
             stopButtonVisible = false
             streaming = false
-            streamingAssistantContent = ""
+            streamingAssistantContent = finalContent
             addTaskWhenPagerUpdateLayoutFinish {
                 if (activeSessionId != sessionId) return@addTaskWhenPagerUpdateLayoutFinish
+                if (!streaming && streamingAssistantId == id) {
+                    streamingAssistantId = ""
+                    streamingAssistantRootId = ""
+                    streamingAssistantSegment = 0
+                    if (streamingAssistantContent == finalContent) {
+                        streamingAssistantContent = ""
+                    }
+                }
                 refreshSessionRenderTree(sessionId)
                 sessionRenderLog("stream.render.layout session=$sessionId messages=${messages.size}")
                 setTimeout(pagerId, 16) {
@@ -1470,6 +2913,10 @@ internal class DshHomePage : BasePager() {
             return
         }
         streamingAssistantId = ""
+        streamingAssistantRootId = ""
+        streamingAssistantSegment = 0
+        streamingReasoningId = ""
+        streamingReasoningContent = ""
         pendingAssistantDelta.setLength(0)
         streaming = false
         stopButtonVisible = false
@@ -1484,7 +2931,19 @@ internal class DshHomePage : BasePager() {
 
     private fun replaceMessagesIfChanged(next: List<DshMessage>) {
         val filtered = next.filterNot { it.isRuntimeContextSnapshot() }
+        if (streaming && isRemoteHost) {
+            // History is a snapshot that can arrive while the current turn is
+            // still being projected. Replacing the observable list here drops
+            // optimistic text segments and their in-order tool cards.
+            DshStreamLog.i(
+                "ui.replace-messages deferred-during-stream from=${messages.size} to=${filtered.size}",
+            )
+            return
+        }
         if (messages.toList() == filtered) return
+        DshStreamLog.i(
+            "ui.replace-messages from=${messages.size} to=${filtered.size} streaming=$streaming preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
+        )
         messages.clear()
         messages.addAll(filtered)
         sessionMessageStates[activeSessionId] = messages
@@ -1497,7 +2956,7 @@ internal class DshHomePage : BasePager() {
         private const val ENGINE_RETRY_DELAY_MS = 1_000
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
-        private const val STREAM_FLUSH_INTERVAL_MS = 100
+        private const val STREAM_FLUSH_INTERVAL_MS = 16
     }
 }
 
@@ -1666,7 +3125,7 @@ private fun ViewContainer<*, *>.DshCredentialSetupModal(
             }
             Text {
                 attr {
-                    text("配置 DeepSeek 官方模型，即可开始使用。")
+                    text(if (title().contains("电脑端")) "确认后将修改电脑端 DSH 的凭据。" else "配置 DeepSeek 官方模型，即可开始使用。")
                     marginTop(8f)
                     fontSize(14f)
                     lineHeight(21f)
@@ -1752,11 +3211,17 @@ private fun ViewContainer<*, *>.DshCredentialSetupModal(
 
 private fun ViewContainer<*, *>.DshSessionDrawer(
     sessions: () -> ObservableList<DshSession>,
+    workspaceGroups: () -> ObservableList<DshWorkspaceGroup>,
+    isWebTimeline: () -> Boolean,
     activeId: () -> String,
     animated: () -> Boolean,
     onClose: () -> Unit,
     onOpenSettings: () -> Unit,
     onNewSession: () -> Unit,
+    onAddWorkspace: () -> Unit,
+    onRenameWorkspace: (String, String) -> Unit,
+    onDeleteWorkspace: (String) -> Unit,
+    onMoveWorkspace: (String, Int) -> Unit,
     onSelect: (String) -> Unit,
 ) {
     Modal(inWindow = true) {
@@ -1844,6 +3309,31 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
                 }
                 event { click { onOpenSettings() } }
             }
+            vif({ isWebTimeline() }) {
+                View {
+                    attr {
+                        height(42f)
+                        marginTop(8f)
+                        flexDirectionRow()
+                        alignItemsCenter()
+                        paddingLeft(12f)
+                        paddingRight(12f)
+                        borderRadius(9f)
+                        backgroundColor(Color(0x00000000))
+                    }
+                    Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f) } }
+                    Text {
+                        attr {
+                            text("添加工作区")
+                            marginLeft(10f)
+                            fontSize(14f)
+                            fontWeightMedium()
+                            color(Color(0xFF4176E6))
+                        }
+                    }
+                    event { click { onAddWorkspace() } }
+                }
+            }
             Text {
                 attr {
                     text("会话")
@@ -1855,53 +3345,82 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
             }
             Scroller {
                 attr { flex(1f) }
-                vfor({ sessions() }) { session ->
-                    View {
-                        attr {
-                            height(48f)
-                            marginBottom(4f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            paddingLeft(12f)
-                            paddingRight(10f)
-                            borderRadius(9f)
-                            backgroundColor(Color(
-                                if (activeId() == session.id) 0xFFE3E6EA else 0x00FFFFFF,
-                            ))
-                        }
+                vif({ !isWebTimeline() }) {
+                    vfor({ visibleSessionList(sessions()) }) { session ->
+                        DshSessionDrawerRow(
+                            title = session.title,
+                            subtitle = session.workspace,
+                            active = activeId() == session.id,
+                            running = session.running,
+                            onSelect = { onSelect(session.id) },
+                        )
+                    }
+                }
+                vif({ isWebTimeline() }) {
+                    vfor({ workspaceGroups() }) { group ->
                         View {
                             attr {
-                                size(7f, 7f)
-                                borderRadius(4f)
-                                backgroundColor(Color(if (session.running) 0xFF4176E6 else 0xFFADB2B8))
-                            }
-                        }
-                        View {
-                            attr {
-                                flex(1f)
-                                marginLeft(10f)
+                                marginTop(10f)
+                                marginBottom(6f)
                                 flexDirectionColumn()
-                                justifyContentCenter()
                             }
                             Text {
                                 attr {
-                                    text(session.title)
+                                    text(group.title + if (group.path.isEmpty()) "" else " · ${group.path}")
                                     lines(1)
-                                    fontSize(14f)
-                                    color(Color(0xFF2B3136))
+                                    fontSize(12f)
+                                    fontWeightMedium()
+                                    color(Color(0xFF7A838A))
                                 }
                             }
-                            Text {
-                                attr {
-                                    text(session.workspace)
-                                    lines(1)
-                                    marginTop(2f)
-                                    fontSize(10f)
-                                    color(Color(0xFF969DA3))
+                            View {
+                                attr { flexDirectionRow(); marginTop(4f) }
+                                Text {
+                                    attr {
+                                        text("重命名")
+                                        marginRight(10f)
+                                        fontSize(11f)
+                                        color(Color(0xFF4176E6))
+                                    }
+                                    event { click { onRenameWorkspace(group.workspaceId, group.title) } }
                                 }
+                                Text {
+                                    attr {
+                                        text("删除注册")
+                                        fontSize(11f)
+                                        color(Color(0xFFD25A5A))
+                                    }
+                                    event { click { onDeleteWorkspace(group.workspaceId) } }
+                                }
+                                Text {
+                                    attr {
+                                        text("上移")
+                                        marginLeft(10f)
+                                        fontSize(11f)
+                                        color(Color(0xFF7A838A))
+                                    }
+                                    event { click { onMoveWorkspace(group.workspaceId, -1) } }
+                                }
+                                Text {
+                                    attr {
+                                        text("下移")
+                                        marginLeft(8f)
+                                        fontSize(11f)
+                                        color(Color(0xFF7A838A))
+                                    }
+                                    event { click { onMoveWorkspace(group.workspaceId, 1) } }
+                                }
+                            }
+                            group.sessions.forEach { session ->
+                                DshSessionDrawerRow(
+                                    title = session.title,
+                                    subtitle = if (session.cwd.isEmpty()) group.title else session.cwd,
+                                    active = activeId() == session.id,
+                                    running = session.running,
+                                    onSelect = { onSelect(session.id) },
+                                )
                             }
                         }
-                        event { click { onSelect(session.id) } }
                     }
                 }
             }
@@ -1913,6 +3432,60 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
             }
             event { click { onClose() } }
         }
+    }
+}
+
+private fun ViewContainer<*, *>.DshSessionDrawerRow(
+    title: String,
+    subtitle: String,
+    active: Boolean,
+    running: Boolean,
+    onSelect: () -> Unit,
+) {
+    View {
+        attr {
+            height(48f)
+            marginBottom(4f)
+            flexDirectionRow()
+            alignItemsCenter()
+            paddingLeft(12f)
+            paddingRight(10f)
+            borderRadius(9f)
+            backgroundColor(Color(if (active) 0xFFE3E6EA else 0x00FFFFFF))
+        }
+        View {
+            attr {
+                size(7f, 7f)
+                borderRadius(4f)
+                backgroundColor(Color(if (running) 0xFF4176E6 else 0xFFADB2B8))
+            }
+        }
+        View {
+            attr {
+                flex(1f)
+                marginLeft(10f)
+                flexDirectionColumn()
+                justifyContentCenter()
+            }
+            Text {
+                attr {
+                    text(title)
+                    lines(1)
+                    fontSize(14f)
+                    color(Color(0xFF2B3136))
+                }
+            }
+            Text {
+                attr {
+                    text(subtitle)
+                    lines(1)
+                    marginTop(2f)
+                    fontSize(10f)
+                    color(Color(0xFF969DA3))
+                }
+            }
+        }
+        event { click { onSelect() } }
     }
 }
 
@@ -2068,12 +3641,13 @@ private fun ViewContainer<*, *>.DshTopBar(
             }
             Text {
                 attr {
-                    text(if (isConnectionReadyLabel(connection())) "连接成功" else "dsh engine 初始化中")
+                    val ready = isConnectionReadyLabel(connection())
+                    text(if (ready) "连接成功" else topBarConnectingText(connection()))
                     width(132f)
                     fontSize(11f)
                     lines(1)
                     textAlignRight()
-                    color(Color(if (isConnectionReadyLabel(connection())) 0xFF2EAF67 else 0xFF89939D))
+                    color(Color(if (ready) 0xFF2EAF67 else 0xFF89939D))
                 }
             }
         }
@@ -2112,14 +3686,14 @@ private fun ViewContainer<*, *>.DshSessionRail(
                     flex(1f)
                     flexDirectionRow()
                 }
-                vfor({ sessions() }) { session ->
+                vfor({ visibleSessionList(sessions()) }) { session ->
                     DshSessionButton(session, activeId() == session.id, onSelect)
                 }
             }
         } else {
             Scroller {
                 attr { flex(1f) }
-                vfor({ sessions() }) { session ->
+                vfor({ visibleSessionList(sessions()) }) { session ->
                     DshSessionButton(session, activeId() == session.id, onSelect)
                 }
             }
@@ -2149,14 +3723,266 @@ private fun ViewContainer<*, *>.DshSessionButton(
     }
 }
 
+private fun ViewContainer<*, *>.DshSessionDetailsPanel(
+    title: () -> String,
+    cwd: () -> String,
+    modelLabel: () -> String,
+    agentPreset: () -> String,
+    running: () -> Boolean,
+    queueCount: () -> Int,
+    jobCount: () -> Int,
+    onRename: () -> Unit,
+    onArchive: () -> Unit,
+    onFork: () -> Unit,
+    onExport: () -> Unit,
+) {
+    View {
+        attr {
+            width(280f)
+            height(pagerData.pageViewHeight)
+            flexDirectionColumn()
+            padding(16f)
+            backgroundColor(Color(0xFFF7F9FA))
+            border(Border(1f, BorderStyle.SOLID, Color(0xFFE5E8EB)))
+        }
+        Text {
+            attr {
+                text("Session")
+                fontSize(12f)
+                color(Color(0xFF7A8790))
+            }
+        }
+        Text {
+            attr {
+                text(title())
+                marginTop(6f)
+                fontSize(17f)
+                fontWeightSemiBold()
+                color(Color(0xFF1F2933))
+                lines(2)
+            }
+        }
+        View {
+            attr {
+                height(1f)
+                marginTop(14f)
+                backgroundColor(Color(0xFFE5E8EB))
+            }
+        }
+        DshDetailRow("状态", if (running()) "运行中" else "空闲")
+        DshDetailRow("模型", modelLabel())
+        vif({ agentPreset().isNotEmpty() }) {
+            DshDetailRow("Agent Preset", agentPreset())
+        }
+        DshDetailRow("队列", "${queueCount()} 条")
+        DshDetailRow("后台任务", "${jobCount()} 个")
+        vif({ cwd().isNotEmpty() }) {
+            DshDetailRow("目录", cwd())
+        }
+        View {
+            attr {
+                flexDirectionRow()
+                marginTop(16f)
+            }
+            Text {
+                attr {
+                    text("重命名")
+                    flex(1f)
+                    fontSize(13f)
+                    color(Color(0xFF4176E6))
+                }
+                event { click { onRename() } }
+            }
+            Text {
+                attr {
+                    text("归档")
+                    flex(1f)
+                    fontSize(13f)
+                    color(Color(0xFFD25A5A))
+                }
+                event { click { onArchive() } }
+            }
+            Text {
+                attr {
+                    text("分支")
+                    flex(1f)
+                    fontSize(13f)
+                    color(Color(0xFF4176E6))
+                }
+                event { click { onFork() } }
+            }
+            Text {
+                attr {
+                    text("导出")
+                    flex(1f)
+                    fontSize(13f)
+                    color(Color(0xFF4176E6))
+                }
+                event { click { onExport() } }
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.DshDetailRow(
+    label: String,
+    value: String,
+) {
+    View {
+        attr {
+            minHeight(44f)
+            marginTop(10f)
+            flexDirectionColumn()
+            justifyContentCenter()
+        }
+        Text {
+            attr {
+                text(label)
+                fontSize(11f)
+                color(Color(0xFF8B9298))
+            }
+        }
+        Text {
+            attr {
+                text(value)
+                marginTop(2f)
+                fontSize(13f)
+                color(Color(0xFF343E47))
+                lines(2)
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.DshWorkspaceBrowserModal(
+    path: () -> String,
+    home: () -> String,
+    entries: () -> ObservableList<DshDirectoryEntry>,
+    busy: () -> Boolean,
+    error: () -> String,
+    newName: () -> String,
+    onDirectorySelect: (String) -> Unit,
+    onNewNameChange: (String) -> Unit,
+    onCreateDirectory: () -> Unit,
+    onAdopt: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            allCenter()
+            paddingLeft(20f)
+            paddingRight(20f)
+            backgroundColor(Color(0x66000000))
+        }
+        View {
+            attr {
+                width(pagerData.pageViewWidth - 40f)
+                maxWidth(560f)
+                maxHeight(pagerData.pageViewHeight - 80f)
+                flexDirectionColumn()
+                padding(18f)
+                borderRadius(16f)
+                backgroundColor(Color.WHITE)
+            }
+            View {
+                attr { height(36f); flexDirectionRow(); alignItemsCenter() }
+                Text {
+                    attr {
+                        text(if (path().isEmpty()) home() else path())
+                        flex(1f)
+                        lines(1)
+                        fontSize(17f)
+                        fontWeightBold()
+                        color(Color(0xFF1F2933))
+                    }
+                }
+                View { attr { size(32f, 32f); allCenter() }; Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f) } }; DshHitButton { onClose() } }
+            }
+            Scroller {
+                attr {
+                    flex(1f)
+                    marginTop(12f)
+                    borderRadius(8f)
+                    backgroundColor(Color(0xFFF7F9FA))
+                }
+                vfor({ entries() }) { entry ->
+                    View {
+                        attr {
+                            height(42f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingLeft(10f)
+                            paddingRight(10f)
+                        }
+                        Text {
+                            attr {
+                                text(entry.name)
+                                flex(1f)
+                                lines(1)
+                                fontSize(14f)
+                                color(Color(0xFF343E47))
+                            }
+                        }
+                        event { click { if (!busy()) onDirectorySelect(entry.path) } }
+                    }
+                }
+            }
+            vif({ error().isNotEmpty() }) {
+                Text { attr { text(error()); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+            }
+            Input {
+                attr {
+                    height(38f)
+                    marginTop(10f)
+                    fontSize(14f)
+                    placeholder("新目录名称")
+                    placeholderColor(Color(0xFF98A1A9))
+                }
+                event { textDidChange { onNewNameChange(it.text) } }
+            }
+            View {
+                attr { height(42f); marginTop(12f); flexDirectionRow(); justifyContentFlexEnd() }
+                Text {
+                    attr {
+                        text(if (busy()) "处理中..." else "新建目录")
+                        width(88f)
+                        height(38f)
+                        textAlignCenter()
+                        fontSize(13f)
+                        color(Color(0xFF7A838A))
+                    }
+                    event { click { if (!busy()) onCreateDirectory() } }
+                }
+                Text {
+                    attr {
+                        text(if (busy()) "处理中..." else "使用此目录")
+                        width(112f)
+                        height(38f)
+                        marginLeft(8f)
+                        textAlignCenter()
+                        fontSize(13f)
+                        color(Color(0xFF4176E6))
+                    }
+                    event { click { if (!busy()) onAdopt() } }
+                }
+            }
+        }
+    }
+}
+
 private fun ViewContainer<*, *>.DshConversation(
     conversationIds: () -> ObservableList<String>,
     activeConversationId: () -> String,
     messagesForSession: (String) -> ObservableList<DshMessage>,
     streaming: () -> Boolean,
+    streamingMessageId: () -> String,
+    streamingContent: () -> String,
     scrollerRef: (String, ViewRef<ListView<*, *>>) -> Unit,
     messageRef: (String, String, ViewRef<com.tencent.kuikly.core.views.DivView>) -> Unit,
     draft: () -> String,
+    skills: () -> ObservableList<DshSkill>,
+    onPickSkill: (String) -> Unit,
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
@@ -2173,11 +3999,58 @@ private fun ViewContainer<*, *>.DshConversation(
     onOpenModels: () -> Unit,
     onToggleAttachments: () -> Unit,
     onToggleVoice: () -> Unit,
+    isWebTimeline: () -> Boolean,
+    isDisclosureExpanded: (String) -> Boolean,
+    onToggleDisclosure: (String) -> Unit,
+    isBodyDisclosureExpanded: (String) -> Boolean,
+    onToggleBodyDisclosure: (String) -> Unit,
+    isJsonNodeExpanded: (String, String) -> Boolean,
+    onToggleJsonNode: (String, String) -> Unit,
+    onCopyToolContent: (String) -> Unit,
+    attachmentDataUrl: (String) -> String?,
+    queueItems: () -> ObservableList<DshQueueItem>,
+    jobItems: () -> ObservableList<DshJobItem>,
+    goal: () -> DshGoalSnapshot?,
+    goalActionBusy: () -> Boolean,
+    goalActionError: () -> String,
+    onPauseGoal: () -> Unit,
+    onResumeGoal: () -> Unit,
+    onEditGoal: (String, (Boolean) -> Unit) -> Unit,
+    onClearGoal: () -> Unit,
+    jobsPanelExpanded: () -> Boolean,
+    jobsNow: () -> Long,
+    onToggleJobsPanel: () -> Unit,
+    queueExpanded: () -> Boolean,
+    queueEditingId: () -> String,
+    queueActionBusy: () -> Boolean,
+    queueEditingText: () -> String,
+    sessionRunning: () -> Boolean,
+    onToggleQueue: () -> Unit,
+    onEditQueueItem: (String) -> Unit,
+    onQueueEditingTextChange: (String) -> Unit,
+    onSaveQueueItem: (String) -> Unit,
+    onCancelQueueItemEdit: () -> Unit,
+    onRemoveQueueItem: (String) -> Unit,
+    onSteerQueueItem: (String) -> Unit,
+    pendingApproval: () -> DshPendingApproval?,
+    pendingQuestion: () -> DshPendingQuestion?,
+    interactionBusy: () -> Boolean,
+    selectedQuestionOptions: () -> ObservableList<String>,
+    questionCustom: () -> String,
+    questionIndex: () -> Int,
+    questionError: () -> String,
+    onAnswerApproval: (String) -> Unit,
+    onToggleQuestionOption: (String) -> Unit,
+    onQuestionCustomChange: (String) -> Unit,
+    onQuestionNavigate: (Int) -> Unit,
+    onQuestionSkip: () -> Unit,
+    onSubmitQuestion: () -> Unit,
+    availableWidth: Float,
 ) {
     View {
         attr {
             flex(1f)
-            width(pagerData.pageViewWidth)
+            width(availableWidth)
             flexDirectionColumn()
             backgroundColor(Color.WHITE)
         }
@@ -2195,7 +4068,7 @@ private fun ViewContainer<*, *>.DshConversation(
             View {
                 attr {
                 flex(1f)
-                width(pagerData.pageViewWidth)
+                width(availableWidth)
                 backgroundColor(Color.WHITE)
             }
             vfor({ conversationIds() }) { sessionId ->
@@ -2203,7 +4076,7 @@ private fun ViewContainer<*, *>.DshConversation(
                     ref { scrollerRef(sessionId, it) }
                     attr {
                         absolutePositionAllZero()
-                        width(pagerData.pageViewWidth)
+                        width(availableWidth)
                         padding(16f, 18f, 20f, 18f)
                         firstContentLoadMaxIndex(CHAT_INITIAL_RENDER_COUNT)
                         preloadViewDistance(pagerData.pageViewHeight)
@@ -2220,6 +4093,7 @@ private fun ViewContainer<*, *>.DshConversation(
                         dragBegin { onDismissKeyboard() }
                         register("touchDown", { onDismissKeyboard() })
                     }
+                    // Kuikly: vfor/vforLazy 的直接子节点必须是普通 View，不能是 vif/vfor。
                     vforLazy(
                         { messagesForSession(sessionId) },
                         maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
@@ -2227,23 +4101,170 @@ private fun ViewContainer<*, *>.DshConversation(
                         View {
                             ref { messageRef(sessionId, message.id, it) }
                             attr {
-                                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                                width((availableWidth - 36f).coerceAtLeast(0f))
                             }
-                            DshMessageRow(message, streaming() && activeConversationId() == sessionId)
+                            DshMessageRow(
+                                message,
+                                pageStreaming = {
+                                    streaming() &&
+                                        activeConversationId() == sessionId &&
+                                        streamingMessageId() == message.id
+                                },
+                                isWebTimeline = isWebTimeline(),
+                                isExpanded = { isDisclosureExpanded(message.id) },
+                                onToggle = {
+                                    onToggleDisclosure(message.id)
+                                },
+                                isBodyExpanded = { isBodyDisclosureExpanded(message.id) },
+                                onToggleBody = {
+                                    onToggleBodyDisclosure(message.id)
+                                },
+                                isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
+                                onToggleJsonNode = { onToggleJsonNode(message.id, it) },
+                                onCopyToolContent = { onCopyToolContent(it) },
+                                attachmentDataUrl = { attachmentDataUrl(it) },
+                                contentProvider = {
+                                    if (streamingMessageId() != message.id) {
+                                        message.content
+                                    } else if (streaming() && activeConversationId() == sessionId) {
+                                        streamingContent().ifEmpty {
+                                            message.content.ifEmpty { DshStreamingMarkdown.PLACEHOLDER }
+                                        }
+                                    } else {
+                                        message.content.ifEmpty { streamingContent() }
+                                    }
+                                },
+                            )
                         }
                     }
+                }
+            }
+        }
+        vif({ isWebTimeline() && queueItems().isNotEmpty() }) {
+            DshQueueDock {
+                attr {
+                    items = queueItems()
+                    expanded = queueExpanded()
+                    editingId = queueEditingId()
+                    actionBusy = queueActionBusy()
+                    editingText = queueEditingText()
+                    running = sessionRunning()
+                    onToggle = onToggleQueue
+                    onEdit = onEditQueueItem
+                    onEditingTextChange = onQueueEditingTextChange
+                    onSaveEdit = onSaveQueueItem
+                    onCancelEdit = onCancelQueueItemEdit
+                    onRemove = onRemoveQueueItem
+                    onSteer = onSteerQueueItem
+                }
+            }
+        }
+        vif({ isWebTimeline() && jobItems().isNotEmpty() }) {
+            DshJobsPanel {
+                attr {
+                    jobs = jobItems()
+                    expanded = jobsPanelExpanded()
+                    now = jobsNow()
+                    onToggle = onToggleJobsPanel
+                }
+            }
+        }
+        vif({ isWebTimeline() && goal() != null }) {
+            DshGoalBar {
+                attr {
+                    snapshot = goal()
+                    busy = goalActionBusy()
+                    error = goalActionError()
+                    onPause = onPauseGoal
+                    onResume = onResumeGoal
+                    onEdit = onEditGoal
+                    onClear = onClearGoal
+                }
+            }
+        }
+        vif({ isWebTimeline() && pendingApproval() != null }) {
+            DshApprovalPanel {
+                attr {
+                    approval = pendingApproval()
+                    busy = interactionBusy()
+                    onAnswer = onAnswerApproval
+                }
+            }
+        }
+        vif({ isWebTimeline() && pendingApproval() == null && pendingQuestion() != null }) {
+            DshQuestionFlow {
+                attr {
+                    question = pendingQuestion()
+                    val options = ObservableList<DshPendingQuestionOption>()
+                    pendingQuestion()?.questions?.getOrNull(questionIndex())?.options?.let(options::addAll)
+                    this.options = options
+                    selected = selectedQuestionOptions()
+                    custom = questionCustom()
+                    index = questionIndex()
+                    error = questionError()
+                    busy = interactionBusy()
+                    onToggleOption = onToggleQuestionOption
+                    onCustomChange = onQuestionCustomChange
+                    onNavigate = onQuestionNavigate
+                    onSkip = onQuestionSkip
+                    onSubmit = onSubmitQuestion
                 }
             }
         }
             View {
                 attr {
                     height(COMPOSER_HEIGHT)
-                    width(pagerData.pageViewWidth)
+                    width(availableWidth)
                     flexDirectionColumn()
                     padding(12f, 14f, 12f, 14f)
                     backgroundColor(Color.WHITE)
                     borderRadius(22f)
                     border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
+                }
+                vif({
+                    isWebTimeline() && draft().startsWith("/") &&
+                        visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
+                }) {
+                    View {
+                        attr {
+                            maxHeight(132f)
+                            marginBottom(6f)
+                            flexDirectionColumn()
+                            backgroundColor(Color(0xFFF7F9FB))
+                            borderRadius(8f)
+                            border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                        }
+                        vfor({ visibleSkillList(skills(), draft().removePrefix("/")) }) { skill ->
+                            View {
+                                attr {
+                                    height(32f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    paddingLeft(8f)
+                                    paddingRight(8f)
+                                }
+                                event { click { onPickSkill(skill.name) } }
+                                Text {
+                                    attr {
+                                        text("/${skill.name}")
+                                        width(110f)
+                                        fontSize(13f)
+                                        fontWeightMedium()
+                                        color(Color(0xFF2F6F4F))
+                                    }
+                                }
+                                Text {
+                                    attr {
+                                        text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
+                                        flex(1f)
+                                        lines(1)
+                                        fontSize(11f)
+                                        color(Color(0xFF727D84))
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             Input {
                 ref { inputRef(it) }
@@ -2387,10 +4408,271 @@ private fun ViewContainer<*, *>.DshConversation(
     }
 }
 
-private fun ViewContainer<*, *>.DshMessageRow(message: DshMessage, pageStreaming: Boolean) {
+private fun ViewContainer<*, *>.DshMessageRow(
+    message: DshMessage,
+    pageStreaming: () -> Boolean,
+    isWebTimeline: Boolean,
+    isExpanded: () -> Boolean,
+    onToggle: () -> Unit,
+    isBodyExpanded: () -> Boolean = { false },
+    onToggleBody: () -> Unit = {},
+    isJsonNodeExpanded: (String) -> Boolean = { false },
+    onToggleJsonNode: (String) -> Unit = {},
+    onCopyToolContent: (String) -> Unit = {},
+    attachmentDataUrl: (String) -> String? = { null },
+    contentProvider: (() -> String)? = null,
+) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
+    if (isWebTimeline && message.isContextInjection) {
+        View {
+            attr {
+                width(pagerData.pageViewWidth - 36f)
+                marginBottom(12f)
+            }
+            DshDisclosureRow {
+                attr {
+                    title = "上下文注入"
+                    iconAsset = "context.svg"
+                    summary = message.toolName.orEmpty()
+                    body = if (message.contextCatalog.isNotEmpty()) {
+                        message.contextCatalog.joinToString("\n") { "${it.name}\n${it.description}" }
+                    } else if (message.contextSections.isNotEmpty()) {
+                        message.contextSections.joinToString("\n\n") {
+                            "${it.title}\n${boundedContextText(it.body)}"
+                        }
+                    } else if (message.contextRecalls.isNotEmpty()) {
+                        message.contextRecalls.joinToString("\n") {
+                            "${it.label} · 保留 ${it.retainedMessages} · 省略 ${it.omittedMessages}${if (it.truncated) " · 已截断" else ""}"
+                        } + "\n\n" + boundedContextText(message.contextBody)
+                    } else if (message.contextInstructions.isNotEmpty()) {
+                        message.contextInstructions.joinToString("\n") { "${it.path} · ${it.action}" } +
+                            "\n\n" + boundedContextText(message.contextBody)
+                    } else if (message.contextRelaySender.isNotEmpty()) {
+                        "来自 ${message.contextRelaySender}\n\n${boundedContextText(message.contextBody)}"
+                    } else {
+                        boundedContextText(message.contextBody)
+                    }
+                    open = isExpanded()
+                    expandable = message.contextCanExpand()
+                    this.onToggle = onToggle
+                }
+            }
+        }
+        return
+    }
+    if (isWebTimeline && message.attachmentId != null) {
+        val dataUrl = attachmentDataUrl(message.attachmentId)
+        View {
+            attr {
+                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                height(220f)
+                marginBottom(12f)
+                borderRadius(8f)
+                backgroundColor(Color(0xFFF6F8FA))
+                border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+                justifyContentCenter()
+                alignItemsCenter()
+            }
+            if (dataUrl != null) {
+                Image {
+                    attr {
+                        src(dataUrl)
+                        width((pagerData.pageViewWidth - 40f).coerceAtLeast(0f))
+                        height(216f)
+                        resizeCover()
+                    }
+                }
+            } else {
+                Text {
+                    attr {
+                        text("图片加载中")
+                        fontSize(12f)
+                        color(Color(0xFF7A838A))
+                    }
+                }
+            }
+        }
+        return
+    }
+    if (isWebTimeline && message.isReasoning) {
+        View {
+            attr {
+                width(pagerData.pageViewWidth - 36f)
+                marginBottom(12f)
+            }
+            DshDisclosureRow {
+                attr {
+                    title = "Think"
+                    iconAsset = "think.svg"
+                    summary = message.content.dshReasoningSummary(message.streaming)
+                    body = message.content
+                    open = isExpanded()
+                    expandable = message.content.isNotEmpty()
+                    this.onToggle = onToggle
+                }
+            }
+        }
+        return
+    }
+    if (isWebTimeline && message.remoteTool?.kind == DshRemoteToolKind.SKILL) {
+        val remoteTool = message.remoteTool
+        View {
+            attr {
+                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
+                marginBottom(12f)
+                padding(8f, 10f, 8f, 10f)
+                borderRadius(8f)
+                backgroundColor(Color(
+                    when {
+                        message.toolError -> 0xFFFFF6F6
+                        message.toolRunning -> 0xFFF7FCFA
+                        else -> 0xFFFCFDFE
+                    },
+                ))
+                border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+            }
+            DshDisclosureRow {
+                attr {
+                    title = "Skill"
+                    iconAsset = "tool-skill.svg"
+                    summary = remoteTool.summary
+                    errorSummary = message.toolError
+                    body = message.content
+                    open = isExpanded()
+                    expandable = message.content.isNotEmpty()
+                    this.onToggle = onToggle
+                }
+            }
+        }
+        return
+    }
+    if (isWebTimeline && message.role == DshMessageRole.TOOL) {
+        val remoteTool = message.remoteTool
+        val isRemoteSpecial = remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION || remoteTool?.kind == DshRemoteToolKind.TODO
+        val isJson = !isRemoteSpecial && (message.content.trimStart().startsWith("{") || message.content.trimStart().startsWith("["))
+        val cardLabel = remoteTool?.title ?: when (message.toolCardType) {
+            DshToolCardType.TERMINAL -> "Bash"
+            DshToolCardType.READ -> "Read"
+            DshToolCardType.DIFF -> "Diff"
+            DshToolCardType.SEARCH -> "Search"
+            DshToolCardType.WEB -> "Web"
+            DshToolCardType.JSON -> "JSON"
+            DshToolCardType.GENERIC -> message.toolName ?: "工具"
+        }
+        View {
+            attr {
+                width(pagerData.pageViewWidth - 36f)
+                marginBottom(12f)
+                flexDirectionColumn()
+                padding(8f, 10f, 8f, 10f)
+                borderRadius(8f)
+                backgroundColor(Color(
+                    when {
+                        message.toolError -> 0xFFFFF6F6
+                        message.toolRunning -> 0xFFF7FCFA
+                        else -> 0xFFFCFDFE
+                    },
+                ))
+                border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+            }
+            View {
+                attr {
+                    height(22f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    marginBottom(4f)
+                }
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets(remoteTool?.iconAsset() ?: message.toolCardType.iconAsset()))
+                        size(14f, 14f)
+                    }
+                }
+                View {
+                    attr {
+                        size(7f, 7f)
+                        marginLeft(5f)
+                        borderRadius(4f)
+                        backgroundColor(Color(
+                            when {
+                                message.toolError -> 0xFFC64C4C
+                                message.toolRunning -> 0xFF2F9E63
+                                else -> 0xFF77848C
+                            },
+                        ))
+                    }
+                }
+                Text {
+                    attr {
+                        text(cardLabel)
+                        marginLeft(6f)
+                        fontSize(11f)
+                        fontWeightMedium()
+                        color(Color(
+                            when {
+                                message.toolError -> 0xFFB14646
+                                message.toolRunning -> 0xFF2F7D4F
+                                else -> 0xFF5D6871
+                            },
+                        ))
+                    }
+                }
+                Text {
+                    attr {
+                        text(if (message.toolRunning) "运行中" else if (message.toolError) "失败" else "完成")
+                        marginLeft(8f)
+                        fontSize(10f)
+                        color(Color(0xFF7A838A))
+                    }
+                }
+                View { attr { flex(1f) } }
+                Text {
+                    attr {
+                        text("复制")
+                        fontSize(11f)
+                        color(Color(0xFF4176E6))
+                    }
+                    event { click { onCopyToolContent(message.content) } }
+                }
+            }
+            vif({ !isJson }) {
+            DshDisclosureRow {
+                attr {
+                    title = cardLabel
+                    summary = remoteTool?.summary ?: message.content.lineSequence().firstOrNull().orEmpty()
+                    errorSummary = message.toolError
+                    body = message.content
+                    open = isExpanded()
+                    expandable = message.content.isNotEmpty()
+                        this.onToggle = onToggle
+                }
+            }
+            }
+            vif({ isJson }) {
+                DshJsonTree {
+                    attr {
+                        content = message.content
+                        this.isExpanded = { nodeId -> isJsonNodeExpanded(nodeId) }
+                        this.onToggle = { nodeId -> onToggleJsonNode(nodeId) }
+                    }
+                }
+            }
+            vif({ isExpanded() }) {
+                DshLongText {
+                    attr {
+                        content = message.content
+                        expanded = isBodyExpanded()
+                        maxLines = 16
+                        error = message.content.startsWith("Error:") || message.content.startsWith("error:")
+                        this.onToggle = onToggleBody
+                    }
+                }
+            }
+        }
+        return
+    }
         View {
             attr {
                 flexDirectionColumn()
@@ -2436,12 +4718,31 @@ private fun ViewContainer<*, *>.DshMessageRow(message: DshMessage, pageStreaming
                     }
                 }
             } else {
+                View {
+                    attr {
+                        flexDirectionColumn()
+                    }
                     DshMarkdown {
                         attr {
                             contentWidth = (pagerData.pageViewWidth - 36f).coerceAtLeast(0f)
-                            content = message.content.ifEmpty { "正在生成..." }
-                        streaming = message.streaming && pageStreaming
-                        darkMode = false
+                            val raw = contentProvider?.invoke() ?: message.content
+                            val live = pageStreaming()
+                            content = if (live) raw.ifEmpty { DshStreamingMarkdown.PLACEHOLDER } else raw
+                            liveContent = contentProvider
+                            streamingProvider = pageStreaming
+                            streaming = live
+                            darkMode = false
+                        }
+                    }
+                    vif({ pageStreaming() }) {
+                        Text {
+                            attr {
+                                text(DshStreamingMarkdown.CURSOR)
+                                fontSize(14f)
+                                color(Color(0xFF4176E6))
+                                marginTop(2f)
+                            }
+                        }
                     }
                 }
             }
@@ -2460,12 +4761,21 @@ private fun ViewContainer<*, *>.DshHitButton(onClick: () -> Unit) {
 }
 
 private fun isConnectionReadyLabel(label: String): Boolean {
-    return label.startsWith("已连接")
+    return label.startsWith("已连接") ||
+        label.endsWith("已连接") ||
+        label.endsWith("已就绪") ||
+        label == "连接成功"
+}
+
+private fun topBarConnectingText(label: String): String {
+    val value = label.trim()
+    if (value.isEmpty()) return "连接中"
+    return value
 }
 
 private const val COMPOSER_HEIGHT = 142f
-private const val CHAT_INITIAL_RENDER_COUNT = 6
-private const val CHAT_MAX_RENDERED_MESSAGES = 16
+private const val CHAT_INITIAL_RENDER_COUNT = 48
+private const val CHAT_MAX_RENDERED_MESSAGES = 128
 private const val SESSION_CACHE_WARM_LIMIT = 7
 private const val SESSION_CACHE_WARM_INTERVAL_MS = 16
 private const val SESSION_CACHE_WARM_START_DELAY_MS = 600
