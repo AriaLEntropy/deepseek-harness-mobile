@@ -21,7 +21,14 @@ import com.tencent.kuikly.core.timer.setTimeout
 /** First page shown by the app. It only selects a host and never starts an engine. */
 @Page("connection_setup")
 internal class DshConnectionSetupPage : BasePager() {
-    private var sshMode by observable(false)
+    private var connectionMode by observable(DshConnectionMode.LOCAL)
+    private val sshMode: Boolean
+        get() = connectionMode == DshConnectionMode.SSH
+    private var relayPaired by observable(false)
+    private var relayHostName by observable("")
+    private var relayHostId by observable("")
+    private var relayOrigin by observable("")
+    private var relayMessage by observable("")
     private var host by observable("")
     private var user by observable("")
     private var sshPort by observable("22")
@@ -46,7 +53,7 @@ internal class DshConnectionSetupPage : BasePager() {
         val legacyKey = prefs.getItem(LEGACY_KEY_ID_KEY)
         val legacyProfile = if (legacyHost.isNotBlank() && legacyUser.isNotBlank() && legacyKey.isNotBlank()) {
             DshLegacyRemoteProfile(
-                mode = DshConnectionMode.REMOTE,
+                mode = DshConnectionMode.SSH,
                 host = legacyHost,
                 sshPort = prefs.getItem(LEGACY_SSH_PORT_KEY).toIntOrNull() ?: 22,
                 username = legacyUser,
@@ -61,15 +68,20 @@ internal class DshConnectionSetupPage : BasePager() {
             createDshLocalStore("$databaseDir/dsh.db", legacyProfile)
         }.getOrNull()
         val store = localStore
-        sshMode = runCatching { store?.loadLastConnectionMode() == DshConnectionMode.REMOTE }.getOrDefault(false)
+        connectionMode = runCatching { store?.loadLastConnectionMode() }.getOrNull() ?: DshConnectionMode.LOCAL
+        val relay = runCatching { store?.loadRelayProfile() }.getOrNull()
+        relayPaired = relay != null
+        relayHostId = relay?.hostId.orEmpty()
+        relayHostName = relay?.hostName.orEmpty()
+        relayOrigin = relay?.relayOrigin.orEmpty()
         var profile = runCatching { store?.loadRemoteProfile() }.getOrNull()
         if (profile == null && legacyProfile != null) {
             runCatching { store?.migrateLegacyRemoteProfile(legacyProfile) }
             profile = runCatching { store?.loadRemoteProfile() }.getOrNull()
         }
         if (profile != null && legacyMode == "ssh") {
-            sshMode = true
-            runCatching { store?.saveLastConnectionMode(DshConnectionMode.REMOTE) }
+            connectionMode = DshConnectionMode.SSH
+            runCatching { store?.saveLastConnectionMode(DshConnectionMode.SSH) }
         }
         if (profile != null) clearLegacyPreferences()
         host = profile?.host.orEmpty()
@@ -115,10 +127,32 @@ internal class DshConnectionSetupPage : BasePager() {
                     Text { attr { text("选择 Agent 运行位置"); marginTop(10f); fontSize(15f); color(Color(0xFF68737D)) } }
                     View {
                         attr { height(48f); marginTop(24f); flexDirectionRow(); padding(4f); borderRadius(10f); backgroundColor(Color(0xFFE9EDF1)) }
-                        DshSetupModeButton("手机本地", { !ctx.sshMode }, { ctx.sshMode = false; ctx.error = "" })
-                        DshSetupModeButton("SSH 连接电脑", { ctx.sshMode }, { ctx.sshMode = true; ctx.error = "" })
+                        DshSetupModeButton("手机本地", { ctx.connectionMode == DshConnectionMode.LOCAL }, { ctx.connectionMode = DshConnectionMode.LOCAL; ctx.error = "" })
+                        DshSetupModeButton("扫码连接", { ctx.connectionMode == DshConnectionMode.RELAY }, { ctx.connectionMode = DshConnectionMode.RELAY; ctx.error = "" })
+                        DshSetupModeButton("SSH", { ctx.connectionMode == DshConnectionMode.SSH }, { ctx.connectionMode = DshConnectionMode.SSH; ctx.error = "" })
                     }
-                    vif({ ctx.sshMode }) {
+                    vif({ ctx.connectionMode == DshConnectionMode.RELAY }) {
+                        vif({ !ctx.relayPaired }) {
+                            Text { attr { text("扫描电脑 Settings > Remote Access 中的二维码。首版只保存一台电脑。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(Color(0xFF68737D)) } }
+                        }
+                        vif({ ctx.relayPaired }) {
+                            Text { attr { text(ctx.relayHostName.ifEmpty { "已配对电脑" }); marginTop(16f); fontSize(16f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Text { attr { text(ctx.relayOrigin); marginTop(6f); fontSize(13f); color(Color(0xFF68737D)) } }
+                            Text { attr { text(ctx.relayMessage.ifEmpty { "已保存配对，连接后进入聊天" }); marginTop(8f); fontSize(13f); color(Color(0xFF4F565C)) } }
+                        }
+                        View {
+                            attr { height(46f); marginTop(16f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); borderRadius(8f); backgroundColor(Color(0xFF4176E6)) }
+                            Text { attr { text(if (ctx.busy) "处理中..." else if (ctx.relayPaired) "重新扫码" else "扫描电脑二维码"); fontSize(15f); color(Color.WHITE) } }
+                            event { click { if (!ctx.busy) ctx.scanRelayQr() } }
+                        }
+                        vif({ ctx.relayPaired }) {
+                            Text {
+                                attr { text("移除这台电脑"); marginTop(12f); fontSize(14f); color(Color(0xFFBF3535)) }
+                                event { click { if (!ctx.busy) ctx.forgetRelay() } }
+                            }
+                        }
+                    }
+                    vif({ ctx.connectionMode == DshConnectionMode.SSH }) {
                         DshSetupInput("SSH 主机", { ctx.host }, "例如 Tailscale IP 或域名") { ctx.host = it; ctx.error = "" }
                         DshSetupInput("SSH 用户名", { ctx.user }, "例如 alex") { ctx.user = it; ctx.error = "" }
                         View {
@@ -148,11 +182,60 @@ internal class DshConnectionSetupPage : BasePager() {
                             marginBottom(24f)
                             borderRadius(10f)
                             backgroundColor(Color(if (ctx.busy) 0xFFB7C8FE else 0xFF4176E6))
-                            titleAttr { text(if (ctx.sshMode) "保存并连接电脑" else "进入本地 Agent"); fontSize(15f); color(Color.WHITE) }
+                            titleAttr { text(when (ctx.connectionMode) {
+                                DshConnectionMode.SSH -> "保存并连接电脑"
+                                DshConnectionMode.RELAY -> if (ctx.relayPaired) "连接已配对电脑" else "请先扫码"
+                                DshConnectionMode.LOCAL -> "进入本地 Agent"
+                            }); fontSize(15f); color(Color.WHITE) }
                         }
                         event { click { if (!ctx.busy) ctx.continueToHost() } }
                     }
                 }
+            }
+        }
+    }
+
+
+    private fun scanRelayQr() {
+        if (!pageData.isAndroid) {
+            error = "扫码连接目前仅支持 Android"
+            return
+        }
+        busy = true
+        error = ""
+        acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).scanAndPair { result ->
+            setTimeout(pagerId, 0) {
+                busy = false
+                if (!result.ok) {
+                    error = result.message.ifEmpty { "扫码配对失败" }
+                    return@setTimeout
+                }
+                relayPaired = true
+                relayHostId = result.hostId
+                relayHostName = result.hostName.ifEmpty { "电脑" }
+                relayOrigin = result.relayOrigin
+                relayMessage = "配对成功"
+                error = ""
+                runCatching {
+                    localStore?.saveRelayProfile(
+                        DshRelayProfile(result.hostId, result.hostName.ifEmpty { "电脑" }, result.relayOrigin, result.pairedAt),
+                    )
+                    localStore?.saveLastConnectionMode(DshConnectionMode.RELAY)
+                }
+            }
+        }
+    }
+
+    private fun forgetRelay() {
+        acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).forget { _ ->
+            setTimeout(pagerId, 0) {
+                runCatching { localStore?.clearRelayProfile() }
+                relayPaired = false
+                relayHostId = ""
+                relayHostName = ""
+                relayOrigin = ""
+                relayMessage = ""
+                error = ""
             }
         }
     }
@@ -180,8 +263,17 @@ internal class DshConnectionSetupPage : BasePager() {
 
     private fun continueToHost() {
         fingerprintPending = ""
-        if (!sshMode) {
+        if (connectionMode == DshConnectionMode.LOCAL) {
             runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.LOCAL) }
+            openHome()
+            return
+        }
+        if (connectionMode == DshConnectionMode.RELAY) {
+            if (!relayPaired) {
+                error = "请先扫描电脑二维码"
+                return
+            }
+            runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.RELAY) }
             openHome()
             return
         }
@@ -211,7 +303,7 @@ internal class DshConnectionSetupPage : BasePager() {
                             remoteDshPort = dsh, keyId = keyId, hostFingerprint = sshFingerprint,
                         )
                         runCatching { localStore?.saveRemoteProfile(profile) }
-                        runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.REMOTE) }
+                        runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.SSH) }
                         probeRemote(profile)
                     }
                 }
@@ -239,26 +331,28 @@ internal class DshConnectionSetupPage : BasePager() {
                     sshFingerprint = state.message
                 }
                 DshSshPhase.READY -> {
-                    val repository = DshHostRepository(
+                        val repository = DshRemoteRepository(
                         network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
-                        sse = acquireModule(DshSseModule.MODULE_NAME),
+                        webSocket = acquireModule(DshWebSocketModule.MODULE_NAME),
                         connection = DshHostConnection("http://127.0.0.1:${state.localPort}"),
                         pagerId = pagerId,
                     )
                     probeRepository = repository
-                    repository.loadSessions({
-                        setTimeout(pagerId, 0) {
-                            busy = false
-                            error = ""
-                            module.stopSsh()
-                            openHome()
-                        }
-                    }, { message ->
-                        setTimeout(pagerId, 0) {
-                            busy = false
-                            error = "远程 DSH 不可用：$message"
-                            module.stopSsh()
-                        }
+                        repository.loadSessions({
+                            setTimeout(pagerId, 0) {
+                                busy = false
+                                error = ""
+                                (probeRepository as? DshRemoteRepository)?.stop()
+                                module.stopSsh()
+                                openHome()
+                            }
+                        }, { message ->
+                            setTimeout(pagerId, 0) {
+                                busy = false
+                                error = "远程 DSH 不可用：$message"
+                                (probeRepository as? DshRemoteRepository)?.stop()
+                                module.stopSsh()
+                            }
                     })
                 }
                 DshSshPhase.ERROR -> {
@@ -299,8 +393,15 @@ internal class DshConnectionSetupPage : BasePager() {
     private fun openHome() {
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("home", JSONObject().apply {
             put("pageName", "home")
-            put("connectionMode", if (sshMode) "remote" else "local")
-            put("profileId", DshSessionScope.DEFAULT_REMOTE_PROFILE_ID)
+            put("connectionMode", when (connectionMode) {
+                DshConnectionMode.LOCAL -> "local"
+                DshConnectionMode.RELAY -> "relay"
+                DshConnectionMode.SSH -> "ssh"
+            })
+            put("profileId", when (connectionMode) {
+                DshConnectionMode.RELAY -> relayHostId.ifEmpty { DshSessionScope.DEFAULT_REMOTE_PROFILE_ID }
+                else -> DshSessionScope.DEFAULT_REMOTE_PROFILE_ID
+            })
         })
     }
 
