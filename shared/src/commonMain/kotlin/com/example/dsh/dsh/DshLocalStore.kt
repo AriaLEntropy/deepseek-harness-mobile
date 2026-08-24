@@ -8,6 +8,9 @@ internal interface DshLocalStore {
     fun saveLastConnectionMode(mode: DshConnectionMode)
     fun loadRemoteProfile(): DshRemoteProfile?
     fun saveRemoteProfile(profile: DshRemoteProfile)
+    fun loadRelayProfile(): DshRelayProfile?
+    fun saveRelayProfile(profile: DshRelayProfile)
+    fun clearRelayProfile()
     fun migrateLegacyRemoteProfile(profile: DshLegacyRemoteProfile): Boolean
     fun clearLegacyRemotePreferenceKeys() = Unit
 
