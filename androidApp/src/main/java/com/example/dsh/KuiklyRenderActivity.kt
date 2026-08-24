@@ -22,6 +22,8 @@ import com.example.dsh.adapter.KRThreadAdapter
 import com.example.dsh.adapter.KRUncaughtExceptionHandlerAdapter
 import com.example.dsh.module.KRBridgeModule
 import com.example.dsh.module.KRDshEngineModule
+import com.example.dsh.module.KRDshRelayModule
+import com.example.dsh.module.KRDshWebSocketModule
 import com.example.dsh.module.KRDshSseModule
 import com.example.dsh.module.KRShareModule
 import com.tencent.kuiklybase.android.KRWebView
@@ -72,6 +74,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         KRBridgeModule.dispatchActivityResult(requestCode, resultCode, data)
+        KRDshRelayModule.dispatchActivityResult(requestCode, resultCode, data)
     }
 
     override fun onResume() {
@@ -90,6 +93,12 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             }
             moduleExport(KRDshEngineModule.MODULE_NAME) {
                 KRDshEngineModule()
+            }
+            moduleExport(KRDshRelayModule.MODULE_NAME) {
+                KRDshRelayModule()
+            }
+            moduleExport(KRDshWebSocketModule.MODULE_NAME) {
+                KRDshWebSocketModule()
             }
             moduleExport(KRDshSseModule.MODULE_NAME) {
                 KRDshSseModule()
