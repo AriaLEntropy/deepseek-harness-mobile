@@ -4,7 +4,7 @@
 
 **本仓库只连接电脑上的 DSH**，不再内嵌 Node.js / Harness，APK 不再携带约 115 MB 的 `payload.zip`。
 
-App 启动后先选连接方式，再进入聊天：
+App 启动后先选连接方式，再进入聊天。**扫码连电脑的完整启动命令见 [怎么启动（扫码连电脑）](#怎么启动扫码连电脑)。**
 
 - **扫码连接**：扫描电脑 DSH Settings 里的二维码，经 Relay 访问电脑上的 Harness。
 - **SSH**：用本机端口转发连到电脑上的 DSH。
@@ -38,10 +38,55 @@ App 连上 Host 之后的 JSON-RPC、事件流和会话时间线见 **[docs/app-
 
 两种远程模式互不影响。从扫码切到 SSH 后，看不到另一套缓存，这是预期行为。
 
-- 电脑已经在跑 DSH，手机和电脑同一 Wi-Fi / 热点：选 **扫码连接**。Relay 与插件的下载、安装、启动见下方「通过扫码连接」。
+- 电脑已经在跑 DSH，手机和电脑同一 Wi-Fi / 热点：选 **扫码连接**。启动命令见上方「怎么启动（扫码连电脑）」。
 - 已有 SSH 私钥，或不想在电脑上跑 Relay：选 **SSH**。
 
 扫码连接目前仅支持 Android。
+
+## 怎么启动（扫码连电脑）
+
+最终要**同时开着三样**：电脑上的 Relay、电脑上的 DSH、手机上的 App。建议开两个电脑终端，都不要关。
+
+**终端 1 — Relay（默认 `127.0.0.1:8787`）**
+
+```bash
+git clone https://github.com/yukiykchen/dsh-scan-remote.git
+cd dsh-scan-remote/relay
+cp .env.example .env
+npm ci
+npm run build
+HOST=127.0.0.1 PORT=8787 npm start
+```
+
+另开窗口确认还活着：
+
+```bash
+curl http://127.0.0.1:8787/health
+```
+
+**终端 2 — 安装插件并启动 DSH（默认 `127.0.0.1:3080`）**
+
+```bash
+npx @deepseek-ai/dsh plugin --profile web add "github:yukiykchen/dsh-scan-remote#v0.0.1"
+
+ipconfig getifaddr en0    # macOS Wi-Fi；Linux 用 ip addr / hostname -I
+export PUBLIC_RELAY_URL=http://192.168.1.10:8787   # 换成上一步的电脑 LAN IP，手机必须能打开
+npx @deepseek-ai/dsh web
+```
+
+浏览器打开本机 DSH，进入 **Settings > Remote Access**，应看到二维码。
+
+**手机 — 安装并打开 App**
+
+```bash
+git clone https://github.com/yukiykchen/deepseek-harness-mobile.git
+cd deepseek-harness-mobile
+./gradlew :androidApp:installDebug
+```
+
+或用 Android Studio 打开本仓库，运行 `androidApp`。打开 App → **扫码连接** → **扫描电脑二维码** → **连接已配对电脑**。
+
+DeepSeek API Key 配在电脑端 DSH，不要配在手机里。手机和电脑必须在同一可互通网段（同一 Wi-Fi 或同一热点）。更细的说明、换网络、SSH 见下方各节。
 
 ## 工作原理
 
@@ -221,10 +266,10 @@ npx @deepseek-ai/dsh web
 
 SSH 模式只建立本地端口转发，不通过 SSH 执行远程命令，也不需要把 DSH 端口暴露到公网。
 
-电脑端先启动 DSH，并保持回环监听：
+电脑端先启动 DSH，并保持回环监听（SSH 模式不需要 Relay）：
 
 ```bash
-dsh web --port 3080
+npx @deepseek-ai/dsh web --port 3080
 ```
 
 推荐为手机使用的 SSH 用户配置 Ed25519 公钥：
