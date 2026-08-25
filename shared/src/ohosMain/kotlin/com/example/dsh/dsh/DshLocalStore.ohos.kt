@@ -20,7 +20,7 @@ private class DshSqliteStore(path: String) : DshLocalStore {
         listOf("deepseek_api_key", apiKey),
     )
 
-    override fun loadLastConnectionMode(): DshConnectionMode = DshConnectionMode.LOCAL
+    override fun loadLastConnectionMode(): DshConnectionMode = DshConnectionMode.RELAY
     override fun saveLastConnectionMode(mode: DshConnectionMode) = Unit
     override fun loadRemoteProfile(): DshRemoteProfile? = null
     override fun saveRemoteProfile(profile: DshRemoteProfile) = Unit

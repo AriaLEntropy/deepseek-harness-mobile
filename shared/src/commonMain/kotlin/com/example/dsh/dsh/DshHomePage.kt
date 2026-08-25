@@ -213,7 +213,7 @@ internal class DshHomePage : BasePager() {
     private var engineReady = false
     private var relayEngineEndpoint = ""
     private var pendingApiKey = ""
-    private var connectionMode by observable(DshConnectionMode.LOCAL)
+    private var connectionMode by observable(DshConnectionMode.RELAY)
     private val sshMode: Boolean
         get() = connectionMode == DshConnectionMode.SSH
     private val isRemoteHost: Boolean
@@ -350,7 +350,7 @@ internal class DshHomePage : BasePager() {
         connectionMode = when (pageData.params.optString("connectionMode")) {
             "relay" -> DshConnectionMode.RELAY
             "ssh", "remote" -> DshConnectionMode.SSH
-            else -> DshConnectionMode.LOCAL
+            else -> DshConnectionMode.RELAY
         }
         remoteProfileId = pageData.params.optString("profileId").ifEmpty { DshSessionScope.DEFAULT_REMOTE_PROFILE_ID }
         loadSshConfig()
@@ -954,40 +954,9 @@ internal class DshHomePage : BasePager() {
                 startRelayEngine(generation)
                 return
             }
-            DshConnectionMode.LOCAL -> Unit
-        }
-        if (!pageData.params.optBoolean("embeddedEngine")) {
-            connectionLabel = "当前平台不支持内置 Harness"
-            return
-        }
-        val module = acquireModule<DshEngineModule>(DshEngineModule.MODULE_NAME)
-        engineModule = module
-        module.start { state ->
-            if (!isCurrent(generation, DshConnectionMode.LOCAL)) return@start
-            when (state.phase) {
-                DshEnginePhase.IDLE -> connectionLabel = "准备本地内核"
-                DshEnginePhase.PREPARING -> {
-                    connectionLabel = if (state.progress > 0) "解压内核 ${state.progress}%" else state.message
-                }
-                DshEnginePhase.STARTING -> connectionLabel = state.message.ifEmpty { "本地内核启动中" }
-                DshEnginePhase.READY -> {
-                    engineReady = true
-                    connectionLabel = "本地内核已就绪"
-                    if (pendingApiKey.isNotEmpty() && repository == null) {
-                        connectLocalEngine(pendingApiKey)
-                    }
-                }
-                DshEnginePhase.ERROR -> {
-                    engineReady = false
-                    connectionLabel = "内核启动失败"
-                    messages.clear()
-                    messages.add(DshMessage("engine-error", DshMessageRole.ERROR, state.message))
-                }
-                DshEnginePhase.STOPPED -> {
-                    engineReady = false
-                    connectionLabel = "本地内核已停止"
-                }
-                DshEnginePhase.UNSUPPORTED -> connectionLabel = "当前平台不支持内置 Harness"
+            DshConnectionMode.LOCAL -> {
+                connectionLabel = "本地模式已独立为 DSH Local App"
+                return
             }
         }
     }
@@ -1302,7 +1271,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun setConnectionMode(useSsh: Boolean) {
-        connectionMode = if (useSsh) DshConnectionMode.SSH else DshConnectionMode.LOCAL
+        connectionMode = if (useSsh) DshConnectionMode.SSH else DshConnectionMode.RELAY
         sshSettingsError = ""
     }
 
@@ -1367,7 +1336,7 @@ internal class DshHomePage : BasePager() {
                 }
             }
         } else {
-            runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.LOCAL) }
+            runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.RELAY) }
             updateSshSettingsVisibility(false)
             stopCurrentEngine()
             openConnectionSetup()
@@ -3339,7 +3308,7 @@ private fun ViewContainer<*, *>.DshConnectionSettingsModal(
                 attr { height(42f); marginTop(8f); flexDirectionRow(); borderRadius(8f); backgroundColor(Color(0xFFF1F3F5)); padding(4f) }
                 View {
                     attr { flex(1f); height(34f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); backgroundColor(Color(if (!sshMode()) 0xFFFFFFFF else 0x00FFFFFF)); borderRadius(6f) }
-                    Text { attr { text("手机本地"); fontSize(13f); color(Color(if (!sshMode()) 0xFF4176E6 else 0xFF68737D)) } }
+                    Text { attr { text("扫码连接"); fontSize(13f); color(Color(if (!sshMode()) 0xFF4176E6 else 0xFF68737D)) } }
                     event { click { onModeChange(false) } }
                 }
                 View {
@@ -3349,10 +3318,10 @@ private fun ViewContainer<*, *>.DshConnectionSettingsModal(
                 }
             }
             vif({ !sshMode() }) {
-                Text { attr { text("手机本地模式会启动内嵌 Node.js Agent。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(Color(0xFF68737D)) } }
+                Text { attr { text("扫码模式连接电脑上的 DSH。返回连接页可重新扫码或更换电脑。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(Color(0xFF68737D)) } }
                 View {
                     attr { height(40f); marginTop(16f); flexDirectionRow(); justifyContentFlexEnd() }
-                    Button { attr { width(132f); height(40f); borderRadius(8f); backgroundColor(Color(0xFF4176E6)); titleAttr { text("配置 API Key"); fontSize(14f); color(Color.WHITE) } }; event { click { onOpenApiKey() } } }
+                    Button { attr { width(132f); height(40f); borderRadius(8f); backgroundColor(Color(0xFF4176E6)); titleAttr { text("返回连接页"); fontSize(14f); color(Color.WHITE) } }; event { click { if (!busy()) onSave() } } }
                 }
             }
             velse {

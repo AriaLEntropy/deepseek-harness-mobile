@@ -5,7 +5,7 @@ internal actual fun createDshLocalStore(path: String, legacyProfile: DshLegacyRe
 private object EmptyDshLocalStore : DshLocalStore {
     override fun loadApiKey(): String = ""
     override fun saveApiKey(apiKey: String) = Unit
-    override fun loadLastConnectionMode(): DshConnectionMode = DshConnectionMode.LOCAL
+    override fun loadLastConnectionMode(): DshConnectionMode = DshConnectionMode.RELAY
     override fun saveLastConnectionMode(mode: DshConnectionMode) = Unit
     override fun loadRemoteProfile(): DshRemoteProfile? = null
     override fun saveRemoteProfile(profile: DshRemoteProfile) = Unit

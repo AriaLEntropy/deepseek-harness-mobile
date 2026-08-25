@@ -1,7 +1,5 @@
 package com.example.dsh.module
 
-import com.example.dsh.engine.DshEngineManager
-import com.example.dsh.engine.EngineState
 import com.example.dsh.ssh.DshSshConfig
 import com.example.dsh.ssh.DshSshKeyStore
 import com.example.dsh.ssh.SshTunnelManager
@@ -10,17 +8,17 @@ import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 
 internal class KRDshEngineModule : KuiklyRenderBaseModule() {
-    private var stateListener: ((EngineState) -> Unit)? = null
     private var sshListener: ((SshState) -> Unit)? = null
 
     override fun call(method: String, params: String?, callback: KuiklyRenderCallback?): Any? = when (method) {
         "start" -> {
-            stateListener?.let(DshEngineManager::removeListener)
-            val listener: (EngineState) -> Unit = { state ->
-                activity?.runOnUiThread { callback?.invoke(state.toMap()) }
-            }
-            stateListener = listener
-            DshEngineManager.start(requireNotNull(context), listener)
+            callback?.invoke(
+                mapOf(
+                    "phase" to "UNSUPPORTED",
+                    "progress" to 0,
+                    "message" to "本地模式已移至 DSH Local",
+                ),
+            )
             null
         }
         "startSsh" -> {
@@ -62,19 +60,14 @@ internal class KRDshEngineModule : KuiklyRenderBaseModule() {
             null
         }
         "sshEndpoint" -> SshTunnelManager.endpoint()
-        "status" -> DshEngineManager.currentState().toMap()
-        "stop" -> {
-            DshEngineManager.stop()
-            null
-        }
+        "status" -> mapOf(
+            "phase" to "UNSUPPORTED",
+            "progress" to 0,
+            "message" to "本地模式已移至 DSH Local",
+        )
+        "stop" -> null
         else -> null
     }
-
-    private fun EngineState.toMap(): Map<String, Any> = mapOf(
-        "phase" to phase.name,
-        "progress" to progress,
-        "message" to message,
-    )
 
     private fun SshState.toMap(): Map<String, Any> = mapOf(
         "phase" to phase.name,

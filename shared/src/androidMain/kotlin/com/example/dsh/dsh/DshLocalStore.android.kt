@@ -27,7 +27,7 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
         when (it) {
             "relay" -> DshConnectionMode.RELAY
             "ssh", "remote" -> DshConnectionMode.SSH
-            else -> DshConnectionMode.LOCAL
+            else -> DshConnectionMode.RELAY
         }
     }
 

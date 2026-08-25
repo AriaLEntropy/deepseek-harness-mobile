@@ -21,7 +21,7 @@ import com.tencent.kuikly.core.timer.setTimeout
 /** First page shown by the app. It only selects a host and never starts an engine. */
 @Page("connection_setup")
 internal class DshConnectionSetupPage : BasePager() {
-    private var connectionMode by observable(DshConnectionMode.LOCAL)
+    private var connectionMode by observable(DshConnectionMode.RELAY)
     private val sshMode: Boolean
         get() = connectionMode == DshConnectionMode.SSH
     private var relayPaired by observable(false)
@@ -68,7 +68,9 @@ internal class DshConnectionSetupPage : BasePager() {
             createDshLocalStore("$databaseDir/dsh.db", legacyProfile)
         }.getOrNull()
         val store = localStore
-        connectionMode = runCatching { store?.loadLastConnectionMode() }.getOrNull() ?: DshConnectionMode.LOCAL
+        connectionMode = runCatching { store?.loadLastConnectionMode() }.getOrNull()
+            ?.takeUnless { it == DshConnectionMode.LOCAL }
+            ?: DshConnectionMode.RELAY
         val relay = runCatching { store?.loadRelayProfile() }.getOrNull()
         relayPaired = relay != null
         relayHostId = relay?.hostId.orEmpty()
@@ -124,10 +126,9 @@ internal class DshConnectionSetupPage : BasePager() {
                         flexDirectionColumn()
                     }
                     Text { attr { text("连接 DSH"); fontSize(28f); fontWeightBold(); color(Color(0xFF1F2933)) } }
-                    Text { attr { text("选择 Agent 运行位置"); marginTop(10f); fontSize(15f); color(Color(0xFF68737D)) } }
+                    Text { attr { text("选择电脑上的 Agent"); marginTop(10f); fontSize(15f); color(Color(0xFF68737D)) } }
                     View {
                         attr { height(48f); marginTop(24f); flexDirectionRow(); padding(4f); borderRadius(10f); backgroundColor(Color(0xFFE9EDF1)) }
-                        DshSetupModeButton("手机本地", { ctx.connectionMode == DshConnectionMode.LOCAL }, { ctx.connectionMode = DshConnectionMode.LOCAL; ctx.error = "" })
                         DshSetupModeButton("扫码连接", { ctx.connectionMode == DshConnectionMode.RELAY }, { ctx.connectionMode = DshConnectionMode.RELAY; ctx.error = "" })
                         DshSetupModeButton("SSH", { ctx.connectionMode == DshConnectionMode.SSH }, { ctx.connectionMode = DshConnectionMode.SSH; ctx.error = "" })
                     }
@@ -185,7 +186,7 @@ internal class DshConnectionSetupPage : BasePager() {
                             titleAttr { text(when (ctx.connectionMode) {
                                 DshConnectionMode.SSH -> "保存并连接电脑"
                                 DshConnectionMode.RELAY -> if (ctx.relayPaired) "连接已配对电脑" else "请先扫码"
-                                DshConnectionMode.LOCAL -> "进入本地 Agent"
+                                DshConnectionMode.LOCAL -> "请改用 DSH Local"
                             }); fontSize(15f); color(Color.WHITE) }
                         }
                         event { click { if (!ctx.busy) ctx.continueToHost() } }
@@ -264,8 +265,7 @@ internal class DshConnectionSetupPage : BasePager() {
     private fun continueToHost() {
         fingerprintPending = ""
         if (connectionMode == DshConnectionMode.LOCAL) {
-            runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.LOCAL) }
-            openHome()
+            error = "本地模式已独立为 DSH Local App"
             return
         }
         if (connectionMode == DshConnectionMode.RELAY) {
