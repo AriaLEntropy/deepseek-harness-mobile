@@ -9,7 +9,7 @@ App 启动后先选连接方式，再进入聊天：
 - **扫码连接**：扫描电脑 DSH Settings 里的二维码，经 Relay 访问电脑上的 Harness。
 - **SSH**：用本机端口转发连到电脑上的 DSH。
 
-若要在手机上跑内嵌 Agent，请使用独立工程 **DSH Local**（`com.example.dsh.local`，需 Shizuku 与 `payload.zip`）。两个 App 可以同时安装。
+若要在手机上跑内嵌 Agent，请使用独立仓库 **[DSH Local](https://github.com/yukiykchen/deepseek-harness-local)**（`com.example.dsh.local`，需 Shizuku 与 `payload.zip`）。两个 App 可以同时安装。
 
 本项目的目标不是把 DeepSeek Harness 翻译成 Kotlin，而是用 Kotlin/Kuikly 做宿主界面，连到电脑上的 Host。
 
