@@ -89,9 +89,14 @@ internal fun DshRemoteToolCallModel.iconAsset(): String = when (kind) {
     DshRemoteToolKind.SEARCH -> "tool-search.svg"
     DshRemoteToolKind.WEB -> "tool-web.svg"
     DshRemoteToolKind.SKILL -> "tool-skill.svg"
-    DshRemoteToolKind.ASK_QUESTION,
+    DshRemoteToolKind.ASK_QUESTION -> "tool-ask.svg"
     DshRemoteToolKind.TODO,
     DshRemoteToolKind.GENERIC -> cardType.iconAsset()
+}
+
+internal fun String.dshLooksLikeJson(): Boolean {
+    val value = trimStart()
+    return value.startsWith("{") || value.startsWith("[")
 }
 
 internal fun String.dshReasoningSummary(running: Boolean): String {
@@ -287,6 +292,7 @@ internal class DshHomePage : BasePager() {
     private val webDisclosureStates = mutableMapOf<String, Boolean>()
     private val webBodyDisclosureStates = mutableMapOf<String, Boolean>()
     private val webJsonNodeStates = mutableMapOf<String, Boolean>()
+    private var webDisclosureRevision by observable(0)
     private var attachmentRevision by observable(0)
     private val cachedAttachmentDataUrls = mutableMapOf<String, String>()
     private val pendingAttachmentReads = mutableSetOf<String>()
@@ -305,6 +311,11 @@ internal class DshHomePage : BasePager() {
     private var queueEditingId by observable("")
     private var queueEditingText by observable("")
     private var sessionRunning by observable(false)
+    private var turnElapsedMs by observable(0L)
+    private var turnShimmerOn by observable(false)
+    private var turnStatusMark: TimeMark? = null
+    private var turnStatusTickerGeneration = 0
+    private var turnStatusClockBucket = -1L
     private var workspaceBrowserVisible by observable(false)
     private var workspaceBrowserPath by observable("")
     private var workspaceBrowserHome by observable("")
@@ -465,22 +476,15 @@ internal class DshHomePage : BasePager() {
                                 },
                                 onToggleVoice = { ctx.toggleVoice() },
                                 isWebTimeline = { ctx.isRemoteHost },
-                                isDisclosureExpanded = { ctx.webDisclosureStates[it] == true },
-                                onToggleDisclosure = {
-                                    ctx.webDisclosureStates[it] = !(ctx.webDisclosureStates[it] == true)
-                                    ctx.webBodyDisclosureStates.remove(it)
-                                    ctx.webJsonNodeStates.clear()
-                                },
-                                isBodyDisclosureExpanded = { ctx.webBodyDisclosureStates[it] == true },
-                                onToggleBodyDisclosure = {
-                                    ctx.webBodyDisclosureStates[it] = !(ctx.webBodyDisclosureStates[it] == true)
-                                },
+                                isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
+                                onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
+                                isBodyDisclosureExpanded = { ctx.isWebBodyDisclosureExpanded(it) },
+                                onToggleBodyDisclosure = { ctx.toggleWebBodyDisclosure(it) },
                                 isJsonNodeExpanded = { messageId, nodeId ->
-                                    ctx.webJsonNodeStates["$messageId:$nodeId"] == true
+                                    ctx.isWebJsonNodeExpanded(messageId, nodeId)
                                 },
                                 onToggleJsonNode = { messageId, nodeId ->
-                                    val key = "$messageId:$nodeId"
-                                    ctx.webJsonNodeStates[key] = !(ctx.webJsonNodeStates[key] == true)
+                                    ctx.toggleWebJsonNode(messageId, nodeId)
                                 },
                                 onCopyToolContent = {
                                     ctx.bridgeModule.copyToPasteboard(it)
@@ -504,6 +508,9 @@ internal class DshHomePage : BasePager() {
                                 queueActionBusy = { ctx.queueActionBusy },
                                 queueEditingText = { ctx.queueEditingText },
                                 sessionRunning = { ctx.sessionRunning },
+                                turnReconnecting = { isReconnectLabel(ctx.connectionLabel) },
+                                turnElapsedMs = { ctx.turnElapsedMs },
+                                turnShimmerOn = { ctx.turnShimmerOn },
                                 onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
                                 onEditQueueItem = { ctx.editQueueItem(it) },
                                 onQueueEditingTextChange = { ctx.queueEditingText = it },
@@ -579,22 +586,15 @@ internal class DshHomePage : BasePager() {
                             },
                             onToggleVoice = { ctx.toggleVoice() },
                             isWebTimeline = { ctx.isRemoteHost },
-                            isDisclosureExpanded = { ctx.webDisclosureStates[it] == true },
-                            onToggleDisclosure = {
-                                ctx.webDisclosureStates[it] = !(ctx.webDisclosureStates[it] == true)
-                                ctx.webBodyDisclosureStates.remove(it)
-                                ctx.webJsonNodeStates.clear()
-                            },
-                            isBodyDisclosureExpanded = { ctx.webBodyDisclosureStates[it] == true },
-                            onToggleBodyDisclosure = {
-                                ctx.webBodyDisclosureStates[it] = !(ctx.webBodyDisclosureStates[it] == true)
-                            },
+                            isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
+                            onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
+                            isBodyDisclosureExpanded = { ctx.isWebBodyDisclosureExpanded(it) },
+                            onToggleBodyDisclosure = { ctx.toggleWebBodyDisclosure(it) },
                             isJsonNodeExpanded = { messageId, nodeId ->
-                                ctx.webJsonNodeStates["$messageId:$nodeId"] == true
+                                ctx.isWebJsonNodeExpanded(messageId, nodeId)
                             },
                             onToggleJsonNode = { messageId, nodeId ->
-                                val key = "$messageId:$nodeId"
-                                ctx.webJsonNodeStates[key] = !(ctx.webJsonNodeStates[key] == true)
+                                ctx.toggleWebJsonNode(messageId, nodeId)
                             },
                             onCopyToolContent = {
                                 ctx.bridgeModule.copyToPasteboard(it)
@@ -618,6 +618,9 @@ internal class DshHomePage : BasePager() {
                             queueActionBusy = { ctx.queueActionBusy },
                             queueEditingText = { ctx.queueEditingText },
                             sessionRunning = { ctx.sessionRunning },
+                            turnReconnecting = { isReconnectLabel(ctx.connectionLabel) },
+                            turnElapsedMs = { ctx.turnElapsedMs },
+                            turnShimmerOn = { ctx.turnShimmerOn },
                             onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
                             onEditQueueItem = { ctx.editQueueItem(it) },
                             onQueueEditingTextChange = { ctx.queueEditingText = it },
@@ -1030,6 +1033,7 @@ internal class DshHomePage : BasePager() {
                     (repository as? DshRemoteRepository)?.stop()
                     repository = null
                     connectionLabel = "扫码连接重试中"
+                    syncTurnStatusTicker()
                 }
                 DshRelayPhase.STOPPED -> {
                     engineReady = false
@@ -1120,6 +1124,7 @@ internal class DshHomePage : BasePager() {
                             if (running) "host-session-running" else "host-session-idle",
                         )
                     }
+                    syncTurnStatusTicker()
                 }
             },
             onProjection = { sessionId, key, value, seq ->
@@ -1176,6 +1181,7 @@ internal class DshHomePage : BasePager() {
         if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) {
             loadRepository(preferredSessionId = activeSessionId)
         }
+        syncTurnStatusTicker()
     }
 
     private fun connectLocalEngine(apiKey: String) {
@@ -1689,6 +1695,7 @@ internal class DshHomePage : BasePager() {
             connectionLabel = "正在生成"
         }
         attachAdoptedLiveStream(sessionId)
+        syncTurnStatusTicker()
         DshStreamLog.i(
             "ui.resync.resume reason=$reason id=${streamingAssistantId} chars=${streamingAssistantContent.length}",
         )
@@ -2483,6 +2490,45 @@ internal class DshHomePage : BasePager() {
         perfLog("switch.$traceId.end", startedAt)
     }
 
+    private fun isWebDisclosureExpanded(id: String): Boolean {
+        webDisclosureRevision
+        return webDisclosureStates[id] == true
+    }
+
+    private fun toggleWebDisclosure(id: String) {
+        val next = webDisclosureStates[id] != true
+        webDisclosureStates[id] = next
+        if (!next) {
+            webBodyDisclosureStates.remove(id)
+            webJsonNodeStates.keys.filter { it.startsWith("$id:") }.toList().forEach(webJsonNodeStates::remove)
+        }
+        webDisclosureRevision += 1
+        refreshSessionRenderTree(activeSessionId)
+    }
+
+    private fun isWebBodyDisclosureExpanded(id: String): Boolean {
+        webDisclosureRevision
+        return webBodyDisclosureStates[id] == true
+    }
+
+    private fun toggleWebBodyDisclosure(id: String) {
+        webBodyDisclosureStates[id] = webBodyDisclosureStates[id] != true
+        webDisclosureRevision += 1
+        refreshSessionRenderTree(activeSessionId)
+    }
+
+    private fun isWebJsonNodeExpanded(messageId: String, nodeId: String): Boolean {
+        webDisclosureRevision
+        return webJsonNodeStates["$messageId:$nodeId"] == true
+    }
+
+    private fun toggleWebJsonNode(messageId: String, nodeId: String) {
+        val key = "$messageId:$nodeId"
+        webJsonNodeStates[key] = webJsonNodeStates[key] != true
+        webDisclosureRevision += 1
+        refreshSessionRenderTree(activeSessionId)
+    }
+
     private fun applyActiveSessionChrome() {
         pendingApproval = null
         pendingQuestion = null
@@ -2506,6 +2552,45 @@ internal class DshHomePage : BasePager() {
         DshConnectionMode.SSH -> "远程连接重建中"
         DshConnectionMode.RELAY -> "扫码连接重建中"
         DshConnectionMode.LOCAL -> "本地 DSH 连接重建中"
+    }
+
+    private fun isTurnStatusActive(): Boolean =
+        streaming || stopButtonVisible || sessionRunning
+
+    private fun syncTurnStatusTicker() {
+        if (!isTurnStatusActive()) {
+            turnStatusTickerGeneration += 1
+            turnStatusMark = null
+            turnElapsedMs = 0
+            turnShimmerOn = false
+            turnStatusClockBucket = -1L
+            return
+        }
+        if (turnStatusMark == null) {
+            turnStatusMark = TimeSource.Monotonic.markNow()
+        }
+        val token = ++turnStatusTickerGeneration
+        fun tick() {
+            if (token != turnStatusTickerGeneration) return
+            if (!isTurnStatusActive()) {
+                turnStatusMark = null
+                turnElapsedMs = 0
+                turnShimmerOn = false
+                turnStatusClockBucket = -1L
+                return
+            }
+            val elapsed = turnStatusMark?.elapsedNow()?.inWholeMilliseconds ?: 0L
+            val showClock = elapsed >= TURN_STATUS_CLOCK_AFTER_MS
+            val clockBucket = if (showClock) elapsed / 1_000L else 0L
+            if (clockBucket != turnStatusClockBucket) {
+                turnStatusClockBucket = clockBucket
+                turnElapsedMs = elapsed
+            }
+            val shimmer = ((elapsed / 1_800L) % 2L) == 1L
+            if (turnShimmerOn != shimmer) turnShimmerOn = shimmer
+            setTimeout(pagerId, if (showClock) 1_000 else 200) { tick() }
+        }
+        tick()
     }
 
     private fun syncBusyLabel(): String = when (connectionMode) {
@@ -2765,13 +2850,12 @@ internal class DshHomePage : BasePager() {
         val assistantId = "assistant-${messages.size}"
         val reasoningId = "$assistantId-reasoning"
         messages.add(user)
-        // Keep the assistant response in the same list row throughout the
-        // stream. Replacing a separate temporary row at completion can leave
-        // LazyLoop without a realized render view until the next drag.
-        messages.add(DshMessage(assistantId, DshMessageRole.ASSISTANT, "", streaming = true))
+        // DSH ChatView keeps the assistant node out of the flow until the
+        // first token. The turn-status row ("Deep diving...") occupies that
+        // gap so LazyLoop never has to realize an empty markdown bubble.
         sessionMessageStates[sessionId] = messages
         scrollMessagesToMessage(user.id)
-        streamingAssistantId = assistantId
+        streamingAssistantId = ""
         streamingAssistantRootId = assistantId
         streamingAssistantSegment = 0
         streamingReasoningId = reasoningId
@@ -2783,6 +2867,7 @@ internal class DshHomePage : BasePager() {
         streaming = true
         stopButtonVisible = true
         connectionLabel = "正在生成"
+        syncTurnStatusTicker()
         streamHandle = hostRepository.streamReply(
             pagerId = pagerId,
             sessionId = sessionId,
@@ -2863,6 +2948,7 @@ internal class DshHomePage : BasePager() {
         assistantFlushScheduled = false
         streaming = false
         stopButtonVisible = false
+        syncTurnStatusTicker()
     }
 
     private fun dismissKeyboard() {
@@ -3133,6 +3219,7 @@ internal class DshHomePage : BasePager() {
             stopButtonVisible = false
             streaming = false
             streamingAssistantContent = finalContent
+            syncTurnStatusTicker()
             addTaskWhenPagerUpdateLayoutFinish {
                 if (activeSessionId != sessionId) return@addTaskWhenPagerUpdateLayoutFinish
                 if (!streaming && streamingAssistantId == id) {
@@ -3169,6 +3256,7 @@ internal class DshHomePage : BasePager() {
         streaming = false
         stopButtonVisible = false
         streamingAssistantContent = ""
+        syncTurnStatusTicker()
     }
 
     private fun persistMessages(sessionId: String) {
@@ -4221,6 +4309,48 @@ private fun ViewContainer<*, *>.DshWorkspaceBrowserModal(
     }
 }
 
+private fun ViewContainer<*, *>.DshTurnStatus(
+    visible: () -> Boolean,
+    reconnecting: () -> Boolean,
+    elapsedMs: () -> Long,
+    shimmerOn: () -> Boolean,
+) {
+    vif({ visible() }) {
+        View {
+            attr {
+                flexDirectionRow()
+                alignItemsCenter()
+                height(26f)
+                marginTop(4f)
+                marginBottom(8f)
+            }
+            Text {
+                attr {
+                    text(dshTurnStatusLabel(reconnecting()))
+                    fontSize(14f)
+                    fontWeightBold()
+                    color(Color(if (shimmerOn()) TURN_STATUS_HIGHLIGHT else TURN_STATUS_BLUE))
+                    animation(Animation.linear(1.8f), shimmerOn())
+                }
+            }
+            vif({ elapsedMs() >= TURN_STATUS_CLOCK_AFTER_MS }) {
+                Text {
+                    attr {
+                        text(dshFormatTurnDuration(elapsedMs()))
+                        fontSize(13f)
+                        color(Color(0xFF8A9399))
+                        marginLeft(8f)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val TURN_STATUS_BLUE = 0xFF4D6BFE
+private const val TURN_STATUS_HIGHLIGHT = 0xFFC5D4FF
+private const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
+
 private fun ViewContainer<*, *>.DshConversation(
     conversationIds: () -> ObservableList<String>,
     activeConversationId: () -> String,
@@ -4275,6 +4405,9 @@ private fun ViewContainer<*, *>.DshConversation(
     queueActionBusy: () -> Boolean,
     queueEditingText: () -> String,
     sessionRunning: () -> Boolean,
+    turnReconnecting: () -> Boolean,
+    turnElapsedMs: () -> Long,
+    turnShimmerOn: () -> Boolean,
     onToggleQueue: () -> Unit,
     onEditQueueItem: (String) -> Unit,
     onQueueEditingTextChange: (String) -> Unit,
@@ -4377,15 +4510,27 @@ private fun ViewContainer<*, *>.DshConversation(
                                     if (streamingMessageId() != message.id) {
                                         message.content
                                     } else if (streaming() && activeConversationId() == sessionId) {
-                                        streamingContent().ifEmpty {
-                                            message.content.ifEmpty { DshStreamingMarkdown.PLACEHOLDER }
-                                        }
+                                        streamingContent().ifEmpty { message.content }
                                     } else {
                                         message.content.ifEmpty { streamingContent() }
                                     }
                                 },
                             )
                         }
+                    }
+                    View {
+                        attr {
+                            width((availableWidth - 36f).coerceAtLeast(0f))
+                        }
+                        DshTurnStatus(
+                            visible = {
+                                activeConversationId() == sessionId &&
+                                    (streaming() || stopButtonVisible() || sessionRunning())
+                            },
+                            reconnecting = turnReconnecting,
+                            elapsedMs = turnElapsedMs,
+                            shimmerOn = turnShimmerOn,
+                        )
                     }
                 }
             }
@@ -4679,6 +4824,15 @@ private fun ViewContainer<*, *>.DshMessageRow(
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
+    val renderedContent = contentProvider?.invoke() ?: message.content
+    if (
+        message.role == DshMessageRole.ASSISTANT &&
+        !message.isReasoning &&
+        pageStreaming() &&
+        renderedContent.isEmpty()
+    ) {
+        return
+    }
     if (isWebTimeline && message.isContextInjection) {
         View {
             attr {
@@ -4711,6 +4865,9 @@ private fun ViewContainer<*, *>.DshMessageRow(
                     open = isExpanded()
                     expandable = message.contextCanExpand()
                     this.onToggle = onToggle
+                    bodyExpanded = isBodyExpanded()
+                    this.onToggleBody = onToggleBody
+                    maxBodyLines = 8
                 }
             }
         }
@@ -4765,6 +4922,9 @@ private fun ViewContainer<*, *>.DshMessageRow(
                     open = isExpanded()
                     expandable = message.content.isNotEmpty()
                     this.onToggle = onToggle
+                    bodyExpanded = isBodyExpanded()
+                    this.onToggleBody = onToggleBody
+                    maxBodyLines = 8
                 }
             }
         }
@@ -4776,16 +4936,6 @@ private fun ViewContainer<*, *>.DshMessageRow(
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
                 marginBottom(12f)
-                padding(8f, 10f, 8f, 10f)
-                borderRadius(8f)
-                backgroundColor(Color(
-                    when {
-                        message.toolError -> 0xFFFFF6F6
-                        message.toolRunning -> 0xFFF7FCFA
-                        else -> 0xFFFCFDFE
-                    },
-                ))
-                border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
             }
             DshDisclosureRow {
                 attr {
@@ -4797,6 +4947,11 @@ private fun ViewContainer<*, *>.DshMessageRow(
                     open = isExpanded()
                     expandable = message.content.isNotEmpty()
                     this.onToggle = onToggle
+                    bodyExpanded = isBodyExpanded()
+                    this.onToggleBody = onToggleBody
+                    maxBodyLines = 8
+                    chrome = true
+                    running = message.toolRunning
                 }
             }
         }
@@ -4804,8 +4959,20 @@ private fun ViewContainer<*, *>.DshMessageRow(
     }
     if (isWebTimeline && message.role == DshMessageRole.TOOL) {
         val remoteTool = message.remoteTool
-        val isRemoteSpecial = remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION || remoteTool?.kind == DshRemoteToolKind.TODO
-        val isJson = !isRemoteSpecial && (message.content.trimStart().startsWith("{") || message.content.trimStart().startsWith("["))
+        val isRemoteSpecial = remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION ||
+            remoteTool?.kind == DshRemoteToolKind.TODO
+        val rawBody = remoteTool?.output?.takeIf { it.isNotEmpty() }
+            ?: remoteTool?.body?.takeIf { it.isNotEmpty() }
+            ?: remoteTool?.input?.takeIf { it.isNotEmpty() }
+            ?: message.content
+        val toolBody = if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) {
+            dshAskReadableBody(remoteTool.input, rawBody).ifEmpty { "已回答" }
+        } else {
+            rawBody
+        }
+        val trimmedBody = toolBody.trimStart()
+        val isJson = !isRemoteSpecial &&
+            (trimmedBody.startsWith("{") || trimmedBody.startsWith("["))
         val cardLabel = remoteTool?.title ?: when (message.toolCardType) {
             DshToolCardType.TERMINAL -> "Bash"
             DshToolCardType.READ -> "Read"
@@ -4815,113 +4982,32 @@ private fun ViewContainer<*, *>.DshMessageRow(
             DshToolCardType.JSON -> "JSON"
             DshToolCardType.GENERIC -> message.toolName ?: "工具"
         }
+        val summary = remoteTool?.summary?.takeUnless { it.dshLooksLikeJson() }
+            ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "已完成" else
+                toolBody.lineSequence().firstOrNull().orEmpty().takeUnless { it.dshLooksLikeJson() }.orEmpty()
         View {
             attr {
-                width(pagerData.pageViewWidth - 36f)
+                width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
                 marginBottom(12f)
-                flexDirectionColumn()
-                padding(8f, 10f, 8f, 10f)
-                borderRadius(8f)
-                backgroundColor(Color(
-                    when {
-                        message.toolError -> 0xFFFFF6F6
-                        message.toolRunning -> 0xFFF7FCFA
-                        else -> 0xFFFCFDFE
-                    },
-                ))
-                border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
             }
-            View {
-                attr {
-                    height(22f)
-                    flexDirectionRow()
-                    alignItemsCenter()
-                    marginBottom(4f)
-                }
-                Image {
-                    attr {
-                        src(ImageUri.commonAssets(remoteTool?.iconAsset() ?: message.toolCardType.iconAsset()))
-                        size(14f, 14f)
-                    }
-                }
-                View {
-                    attr {
-                        size(7f, 7f)
-                        marginLeft(5f)
-                        borderRadius(4f)
-                        backgroundColor(Color(
-                            when {
-                                message.toolError -> 0xFFC64C4C
-                                message.toolRunning -> 0xFF2F9E63
-                                else -> 0xFF77848C
-                            },
-                        ))
-                    }
-                }
-                Text {
-                    attr {
-                        text(cardLabel)
-                        marginLeft(6f)
-                        fontSize(11f)
-                        fontWeightMedium()
-                        color(Color(
-                            when {
-                                message.toolError -> 0xFFB14646
-                                message.toolRunning -> 0xFF2F7D4F
-                                else -> 0xFF5D6871
-                            },
-                        ))
-                    }
-                }
-                Text {
-                    attr {
-                        text(if (message.toolRunning) "运行中" else if (message.toolError) "失败" else "完成")
-                        marginLeft(8f)
-                        fontSize(10f)
-                        color(Color(0xFF7A838A))
-                    }
-                }
-                View { attr { flex(1f) } }
-                Text {
-                    attr {
-                        text("复制")
-                        fontSize(11f)
-                        color(Color(0xFF4176E6))
-                    }
-                    event { click { onCopyToolContent(message.content) } }
-                }
-            }
-            vif({ !isJson }) {
             DshDisclosureRow {
                 attr {
-                    title = cardLabel
-                    summary = remoteTool?.summary ?: message.content.lineSequence().firstOrNull().orEmpty()
+                    title = if (cardLabel.dshLooksLikeJson()) (remoteTool?.toolName ?: "工具") else cardLabel
+                    iconAsset = remoteTool?.iconAsset() ?: message.toolCardType.iconAsset()
+                    this.summary = summary
                     errorSummary = message.toolError
-                    body = message.content
+                    body = if (isJson) "" else toolBody
+                    jsonContent = if (isJson) toolBody else ""
                     open = isExpanded()
-                    expandable = message.content.isNotEmpty()
-                        this.onToggle = onToggle
-                }
-            }
-            }
-            vif({ isJson }) {
-                DshJsonTree {
-                    attr {
-                        content = message.content
-                        this.isExpanded = { nodeId -> isJsonNodeExpanded(nodeId) }
-                        this.onToggle = { nodeId -> onToggleJsonNode(nodeId) }
-                    }
-                }
-            }
-            vif({ isExpanded() }) {
-                DshLongText {
-                    attr {
-                        content = message.content
-                        expanded = isBodyExpanded()
-                        maxLines = 16
-                        error = message.content.startsWith("Error:") || message.content.startsWith("error:")
-                        this.onToggle = onToggleBody
-                    }
+                    expandable = true
+                    this.onToggle = onToggle
+                    bodyExpanded = isBodyExpanded()
+                    this.onToggleBody = onToggleBody
+                    maxBodyLines = 8
+                    this.isJsonNodeExpanded = isJsonNodeExpanded
+                    this.onToggleJsonNode = onToggleJsonNode
+                    chrome = true
+                    running = message.toolRunning
                 }
             }
         }
@@ -4981,14 +5067,14 @@ private fun ViewContainer<*, *>.DshMessageRow(
                             contentWidth = (pagerData.pageViewWidth - 36f).coerceAtLeast(0f)
                             val raw = contentProvider?.invoke() ?: message.content
                             val live = pageStreaming()
-                            content = if (live) raw.ifEmpty { DshStreamingMarkdown.PLACEHOLDER } else raw
+                            content = raw
                             liveContent = contentProvider
                             streamingProvider = pageStreaming
                             streaming = live
                             darkMode = false
                         }
                     }
-                    vif({ pageStreaming() }) {
+                    vif({ pageStreaming() && (contentProvider?.invoke() ?: message.content).isNotEmpty() }) {
                         Text {
                             attr {
                                 text(DshStreamingMarkdown.CURSOR)

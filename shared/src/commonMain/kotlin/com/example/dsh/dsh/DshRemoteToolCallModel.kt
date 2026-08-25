@@ -137,7 +137,11 @@ internal object DshRemoteToolCallModels {
         // generic card. Only an absent result view inherits the call view.
         val card = view?.let(::toolCardType) ?: base.cardType
         val title = view?.optString("title")?.takeIf { it.isNotEmpty() } ?: base.title
-        val body = resultBody(base.kind, card, view, result.output)
+        val body = when (base.kind) {
+            DshRemoteToolKind.ASK_QUESTION -> dshAskReadableBody(base.input, result.output)
+                .ifEmpty { resultBody(base.kind, card, view, result.output) }
+            else -> resultBody(base.kind, card, view, result.output)
+        }
         val todo = if (base.kind == DshRemoteToolKind.TODO) {
             TodoSummary(base.todoDone, base.todoTotal, base.todoActive, base.todoActiveExtra)
         } else TodoSummary()
@@ -168,9 +172,10 @@ internal object DshRemoteToolCallModels {
         output: String,
         question: AnswerSummary,
     ): String = when (base.kind) {
-        DshRemoteToolKind.ASK_QUESTION -> if (question.total > 0) {
-            "已回答 ${question.answered}/${question.total}"
-        } else if (output.isNotEmpty()) output.lineSequence().firstOrNull().orEmpty() else "已完成"
+        DshRemoteToolKind.ASK_QUESTION -> when {
+            question.total > 0 -> "已回答 ${question.answered}/${question.total}"
+            else -> "已完成"
+        }
         DshRemoteToolKind.TODO -> todoLabel(base.todoDone, base.todoTotal, base.todoActive, base.todoActiveExtra)
         DshRemoteToolKind.SEARCH -> title.takeIf { it.isNotEmpty() && title != base.title }
             ?: base.summary
@@ -293,7 +298,7 @@ internal object DshRemoteToolCallModels {
     }
 
     private fun answerSummary(output: String): AnswerSummary {
-        val root = parseJson(output) as? JSONObject ?: return AnswerSummary()
+        val root = dshExtractJsonObject(output) ?: return AnswerSummary()
         val answers = root.optJSONArray("answers") ?: return AnswerSummary()
         var answered = 0
         for (index in 0 until answers.length()) {
@@ -419,11 +424,68 @@ private fun remoteWebBody(view: JSONObject): String = when (view.optString("kind
     else -> {
         val sources = view.optJSONArray("sources") ?: JSONArray()
         buildString {
-            appendLine(view.optString("answer"))
+            view.optString("answer").takeIf { it.isNotEmpty() }?.let { appendLine(it).appendLine() }
             for (index in 0 until sources.length()) {
                 val source = sources.optJSONObject(index) ?: continue
-                appendLine("- ${source.optString("title").ifEmpty { source.optString("url") }} ${source.optString("url")}")
+                val title = source.optString("title").ifEmpty { source.optString("url") }
+                val url = source.optString("url")
+                appendLine(title)
+                if (url.isNotEmpty() && url != title) appendLine(url)
+                appendLine()
             }
         }.trim()
     }
+}
+
+internal fun dshAskReadableBody(input: String, output: String): String {
+    val answersRoot = dshExtractJsonObject(output) ?: return ""
+    val answers = answersRoot.optJSONArray("answers") ?: return ""
+    if (answers.length() == 0) return ""
+    val questions = dshExtractJsonObject(input)?.optJSONArray("questions")
+    return buildString {
+        for (index in 0 until answers.length()) {
+            val answer = answers.optJSONObject(index) ?: continue
+            val id = answer.optString("id")
+            val prompt = dshAskPrompt(questions, id, index)
+            val selected = buildString {
+                val values = answer.optJSONArray("selected")
+                if (values != null) {
+                    for (item in 0 until values.length()) {
+                        if (isNotEmpty()) append("、")
+                        append(values.optString(item))
+                    }
+                }
+            }
+            val custom = answer.optString("custom")
+            val value = listOf(selected, custom).filter { it.isNotEmpty() }.joinToString(" · ")
+            if (prompt.isNotEmpty() && value.isNotEmpty()) appendLine("$prompt：$value")
+            else if (value.isNotEmpty()) appendLine(value)
+            else if (prompt.isNotEmpty()) appendLine(prompt)
+        }
+    }.trim()
+}
+
+private fun dshAskPrompt(questions: JSONArray?, id: String, index: Int): String {
+    if (questions == null) return id
+    for (itemIndex in 0 until questions.length()) {
+        val item = questions.optJSONObject(itemIndex) ?: continue
+        if (id.isNotEmpty() && item.optString("id") == id) {
+            return item.optString("prompt").ifEmpty { item.optString("question") }.ifEmpty { id }
+        }
+    }
+    questions.optJSONObject(index)?.let { item ->
+        return item.optString("prompt").ifEmpty { item.optString("question") }.ifEmpty { id }
+    }
+    return id
+}
+
+private fun dshExtractJsonObject(raw: String): JSONObject? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return null
+    fun parse(text: String) = runCatching { JSONObject(text) }.getOrNull()
+    parse(trimmed)?.let { return it }
+    val start = trimmed.indexOf('{')
+    val end = trimmed.lastIndexOf('}')
+    if (start >= 0 && end > start) return parse(trimmed.substring(start, end + 1))
+    return null
 }

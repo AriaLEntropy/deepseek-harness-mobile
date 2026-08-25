@@ -89,6 +89,17 @@ internal fun dshIsTransportInterrupt(code: String, message: String = ""): Boolea
     return message.contains("世代已失效") || message.contains("连接已停止")
 }
 
+internal fun dshTurnStatusLabel(reconnecting: Boolean): String =
+    if (reconnecting) "Reconnecting..." else "Deep diving..."
+
+/** Matches DSH conversation `duration.seconds` / `duration.minutes`. */
+internal fun dshFormatTurnDuration(elapsedMs: Long): String {
+    val total = maxOf(0L, elapsedMs / 1000L)
+    val minutes = total / 60L
+    val seconds = total % 60L
+    return if (minutes > 0) "${minutes}分${seconds.toString().padStart(2, '0')}秒" else "${total}秒"
+}
+
 internal data class DshImageLimits(
     val maxImageBytes: Long,
     val maxImagesPerMessage: Int,

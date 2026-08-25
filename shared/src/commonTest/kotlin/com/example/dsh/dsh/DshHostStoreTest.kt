@@ -440,6 +440,14 @@ class DshHostStoreTest {
     }
 
     @Test
+    fun turnStatusLabelAndClockMatchDshWeb() {
+        assertEquals("Deep diving...", dshTurnStatusLabel(reconnecting = false))
+        assertEquals("Reconnecting...", dshTurnStatusLabel(reconnecting = true))
+        assertEquals("3秒", dshFormatTurnDuration(3_000))
+        assertEquals("1分05秒", dshFormatTurnDuration(65_000))
+    }
+
+    @Test
     fun transportInterruptCodesCoverReconnect() {
         assertTrue(dshIsTransportInterrupt("generation-cancelled"))
         assertTrue(dshIsTransportInterrupt("cancelled"))
@@ -644,9 +652,19 @@ class DshHostStoreTest {
         assertEquals("src/App.kt", edit?.summary)
         assertEquals(DshRemoteToolKind.ASK_QUESTION, ask?.kind)
         assertEquals("等待回答", ask?.summary)
+        assertEquals("tool-ask.svg", ask?.iconAsset())
         assertEquals(DshRemoteToolKind.TODO, todo?.kind)
         assertEquals("1/2 已完成 · ship it", todo?.summary)
         assertNull(DshMessage("local", DshMessageRole.TOOL, "tool").remoteTool)
+    }
+
+    @Test
+    fun askReadableBodyHidesRawJsonAndKeepsSelectedAnswers() {
+        val input = """{"questions":[{"id":"research_topic","prompt":"研究主题"}]}"""
+        val output = """{"answers":[{"id":"research_topic","selected":["方案调研"]}]}"""
+        assertEquals("研究主题：方案调研", dshAskReadableBody(input, output))
+        assertTrue("{\"answers\"".dshLooksLikeJson())
+        assertFalse("已回答 1/1".dshLooksLikeJson())
     }
 
     @Test

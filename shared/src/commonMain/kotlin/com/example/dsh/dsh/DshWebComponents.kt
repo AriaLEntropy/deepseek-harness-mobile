@@ -34,6 +34,20 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                 attr {
                     flex(1f)
                     flexDirectionColumn()
+                    if (ctx.attr.chrome) {
+                        padding(8f, 10f, 8f, 10f)
+                        borderRadius(8f)
+                        backgroundColor(
+                            Color(
+                                when {
+                                    ctx.attr.errorSummary -> 0xFFFFF6F6
+                                    ctx.attr.running -> 0xFFF7FCFA
+                                    else -> 0xFFFCFDFE
+                                },
+                            ),
+                        )
+                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+                    }
                 }
                 View {
                     attr {
@@ -41,7 +55,6 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         flexDirectionRow()
                         alignItemsCenter()
                     }
-                    event { click { if (ctx.attr.expandable) ctx.attr.onToggle() } }
                     vif({ ctx.attr.iconAsset.isNotEmpty() }) {
                         Image {
                             attr {
@@ -87,8 +100,14 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             }
                         }
                     }
-                    vif({ !ctx.attr.expandable }) {
+                    vif({ ctx.attr.summary.isEmpty() }) {
                         View { attr { flex(1f) } }
+                    }
+                    DshTapTarget {
+                        if (ctx.attr.expandable) {
+                            ctx.attr.open = !ctx.attr.open
+                            ctx.attr.onToggle()
+                        }
                     }
                 }
                 vif({ ctx.attr.open }) {
@@ -97,18 +116,38 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             marginTop(6f)
                             marginBottom(8f)
                             flexDirectionColumn()
-                            padding(10f)
-                            borderRadius(8f)
-                            backgroundColor(Color(0xFFF6F8FA))
-                            border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
                         }
-                        Text {
-                            attr {
-                                text(ctx.attr.body)
-                                fontSize(12f)
-                                lineHeight(18f)
-                                fontFamily("monospace")
-                                color(Color(0xFF333B42))
+                        vif({ ctx.attr.jsonContent.isNotEmpty() }) {
+                            DshJsonTree {
+                                attr {
+                                    content = ctx.attr.jsonContent
+                                    this.isExpanded = ctx.attr.isJsonNodeExpanded
+                                    this.onToggle = ctx.attr.onToggleJsonNode
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
+                            DshLongText {
+                                attr {
+                                    content = ctx.attr.body
+                                    expanded = ctx.attr.bodyExpanded
+                                    maxLines = ctx.attr.maxBodyLines
+                                    error = ctx.attr.errorSummary
+                                    this.onToggle = {
+                                        ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
+                                        ctx.attr.onToggleBody()
+                                    }
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() }) {
+                            Text {
+                                attr {
+                                    text("暂无输出")
+                                    fontSize(12f)
+                                    color(Color(0xFF8A9399))
+                                    margin(10f)
+                                }
                             }
                         }
                     }
@@ -127,6 +166,14 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var open: Boolean by observable(false)
     var expandable: Boolean by observable(false)
     var onToggle: () -> Unit by observable({})
+    var bodyExpanded: Boolean by observable(false)
+    var onToggleBody: () -> Unit by observable({})
+    var maxBodyLines: Int by observable(8)
+    var jsonContent: String by observable("")
+    var isJsonNodeExpanded: (String) -> Boolean by observable({ false })
+    var onToggleJsonNode: (String) -> Unit by observable({})
+    var chrome: Boolean by observable(false)
+    var running: Boolean by observable(false)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */
@@ -136,10 +183,14 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
 
     override fun body(): ViewBuilder {
         val ctx = this
-        val lines = ctx.attr.content.dshCollapsedLines(ctx.attr.maxLines)
-        val joined = lines.joinToString("\n")
+        val expanded = ctx.attr.expanded
         val hidden = ctx.attr.content.lineSequence().count() - ctx.attr.maxLines
-        val capped = hidden > 0 && !ctx.attr.expanded
+        val capped = hidden > 0 && !expanded
+        val joined = if (expanded) {
+            ctx.attr.content
+        } else {
+            ctx.attr.content.dshCollapsedLines(ctx.attr.maxLines).joinToString("\n")
+        }
         return {
             View {
                 attr {
@@ -151,8 +202,13 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                 }
                 Scroller {
                     attr {
-                        if (ctx.attr.maxHeight > 0f) height(ctx.attr.maxHeight.coerceAtMost(280f))
-                        else height((ctx.attr.maxLines * 18f).coerceAtMost(280f))
+                        height(
+                            when {
+                                ctx.attr.maxHeight > 0f -> ctx.attr.maxHeight.coerceAtMost(280f)
+                                expanded -> 280f
+                                else -> (ctx.attr.maxLines * 18f).coerceAtMost(280f)
+                            },
+                        )
                     }
                     Text {
                         attr {
@@ -165,25 +221,43 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                     }
                 }
                 vif({ capped }) {
-                    Text {
+                    View {
                         attr {
-                            text("… 其余 $hidden 行")
-                            fontSize(12f)
-                            color(Color(0xFF4176E6))
+                            height(20f)
                             marginTop(6f)
+                            justifyContentCenter()
                         }
-                        event { click { ctx.attr.onToggle() } }
+                        Text {
+                            attr {
+                                text("… 其余 $hidden 行")
+                                fontSize(12f)
+                                color(Color(0xFF4176E6))
+                            }
+                        }
+                        DshTapTarget {
+                            ctx.attr.expanded = true
+                            ctx.attr.onToggle()
+                        }
                     }
                 }
-                vif({ !capped && ctx.attr.expanded }) {
-                    Text {
+                vif({ expanded && hidden > 0 }) {
+                    View {
                         attr {
-                            text("收起")
-                            fontSize(12f)
-                            color(Color(0xFF4176E6))
+                            height(20f)
                             marginTop(6f)
+                            justifyContentCenter()
                         }
-                        event { click { ctx.attr.onToggle() } }
+                        Text {
+                            attr {
+                                text("收起")
+                                fontSize(12f)
+                                color(Color(0xFF4176E6))
+                            }
+                        }
+                        DshTapTarget {
+                            ctx.attr.expanded = false
+                            ctx.attr.onToggle()
+                        }
                     }
                 }
             }
@@ -324,7 +398,9 @@ internal class DshJsonTreeView : ComposeView<DshJsonTreeAttr, ComposeEvent>() {
                             attr {
                                 this.node = node
                                 expanded = ctx.attr.isExpanded(node.key)
+                                isNodeExpanded = ctx.attr.isExpanded
                                 onToggle = { ctx.attr.onToggle(node.key) }
+                                onToggleNode = ctx.attr.onToggle
                             }
                         }
                     }
@@ -364,7 +440,6 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                 }
                 View {
                     attr { height(28f); flexDirectionRow(); alignItemsCenter() }
-                    event { click { if (ctx.attr.node.children.isNotEmpty()) ctx.attr.onToggle() } }
                     vif({ ctx.attr.node.children.isNotEmpty() }) {
                         Image {
                             attr {
@@ -394,6 +469,12 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                             color(Color(0xFF7A838A))
                         }
                     }
+                    vif({ ctx.attr.node.children.isNotEmpty() }) {
+                        DshTapTarget {
+                            ctx.attr.expanded = !ctx.attr.expanded
+                            ctx.attr.onToggle()
+                        }
+                    }
                 }
                 vif({ ctx.attr.expanded && ctx.attr.node.children.isNotEmpty() }) {
                     val childNodes = com.tencent.kuikly.core.reactive.collection.ObservableList<DshJsonNode>()
@@ -402,8 +483,10 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                         DshJsonNodeRow {
                             attr {
                                 this.node = child
-                                expanded = false
-                                onToggle = {}
+                                expanded = ctx.attr.isNodeExpanded(child.key)
+                                isNodeExpanded = ctx.attr.isNodeExpanded
+                                onToggle = { ctx.attr.onToggleNode(child.key) }
+                                onToggleNode = ctx.attr.onToggleNode
                             }
                         }
                     }
@@ -417,6 +500,8 @@ internal class DshJsonNodeRowAttr : ComposeAttr() {
     var node: DshJsonNode by observable(DshJsonNode("$", "$", "null"))
     var expanded: Boolean by observable(false)
     var onToggle: () -> Unit by observable({})
+    var isNodeExpanded: (String) -> Boolean by observable({ false })
+    var onToggleNode: (String) -> Unit by observable({})
 }
 
 internal fun ViewContainer<*, *>.DshJsonTree(init: DshJsonTreeView.() -> Unit) {
