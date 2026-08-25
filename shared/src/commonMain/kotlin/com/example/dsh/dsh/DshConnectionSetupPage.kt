@@ -198,8 +198,8 @@ internal class DshConnectionSetupPage : BasePager() {
 
 
     private fun scanRelayQr() {
-        if (!pageData.isAndroid) {
-            error = "扫码连接目前仅支持 Android"
+        if (!pageData.isAndroid && !pageData.isIOS) {
+            error = "扫码连接目前仅支持 Android 和 iOS"
             return
         }
         busy = true
@@ -279,8 +279,8 @@ internal class DshConnectionSetupPage : BasePager() {
         }
         val ssh = sshPort.toIntOrNull()
         val dsh = dshPort.toIntOrNull()
-        if (!pageData.isAndroid) {
-            error = "远程 SSH 模式目前仅支持 Android"
+        if (!pageData.isAndroid && !pageData.isIOS) {
+            error = "远程 SSH 模式目前仅支持 Android 和 iOS"
             return
         }
         when {

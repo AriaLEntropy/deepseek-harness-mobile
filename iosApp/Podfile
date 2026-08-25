@@ -8,4 +8,17 @@ target 'iosApp' do
   pod 'KuiklyWebviewIOS', :git => 'https://github.com/Kuikly-contrib/KuiklyWebview.git', :tag => '1.0.0'
 
   pod 'SDWebImage'
+  pod 'NMSSH', '2.3.1'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      deployment = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f
+      if deployment < 14.1
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.1'
+      end
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386 x86_64'
+    end
+  end
 end

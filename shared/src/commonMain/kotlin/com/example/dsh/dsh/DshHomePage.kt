@@ -974,8 +974,8 @@ internal class DshHomePage : BasePager() {
 
 
     private fun startRelayEngine(generation: Long) {
-        if (!pageData.isAndroid) {
-            connectionLabel = "扫码连接目前仅支持 Android"
+        if (!pageData.isAndroid && !pageData.isIOS) {
+            connectionLabel = "扫码连接目前仅支持 Android 和 iOS"
             return
         }
         connectionLabel = "正在连接扫码电脑"
@@ -1265,7 +1265,7 @@ internal class DshHomePage : BasePager() {
 
     private fun updateSshSettingsVisibility(visible: Boolean) {
         sshSettingsVisible = visible
-        if (pageData.isAndroid) {
+        if (pageData.isAndroid || pageData.isIOS) {
             bridgeModule.setSystemBarsDimmed(visible)
         }
     }
@@ -1410,7 +1410,7 @@ internal class DshHomePage : BasePager() {
 
     private fun updateCredentialSetupVisibility(visible: Boolean) {
         credentialSetupVisible = visible
-        if (pageData.isAndroid) {
+        if (pageData.isAndroid || pageData.isIOS) {
             bridgeModule.setSystemBarsDimmed(visible)
         }
     }

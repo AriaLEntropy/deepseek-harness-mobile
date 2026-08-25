@@ -1,7 +1,9 @@
 #import "HRBridgeModule.h"
 
 #import "KuiklyRenderViewController.h"
+#import <UIKit/UIKit.h>
 #import <OpenKuiklyIOSRender/NSObject+KR.h>
+#import "iosApp-Swift.h"
 
 #define REQ_PARAM_KEY @"reqParam"
 #define CMD_KEY @"cmd"
@@ -39,6 +41,50 @@
         dispatch_sync(dispatch_get_main_queue(), dismissKeyboard);
     }
     return @"true";
+}
+
+- (void)setSystemBarsDimmed:(NSDictionary *)args {
+}
+
+- (void)pickSshKey:(NSDictionary *)args {
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    UIViewController *presenter = [DshNativeUi topViewController];
+    if (!presenter) {
+        if (callback) callback(@{ @"uri": @"" });
+        return;
+    }
+    [[DshSshKeyStore shared] pickKeyFrom:presenter completion:^(NSString *uri) {
+        if (callback) callback(@{ @"uri": uri ?: @"" });
+    }];
+}
+
+- (void)importSshKey:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    NSString *keyId = [[DshSshKeyStore shared] importUri:params[@"uri"] ?: @""];
+    if (keyId.length == 0) {
+        if (callback) callback(@{ @"ok": @NO, @"message": @"无法读取 SSH 私钥" });
+        return;
+    }
+    if (callback) callback(@{ @"ok": @YES, @"keyId": keyId });
+}
+
+- (void)validateSshKey:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    BOOL valid = [[DshSshKeyStore shared] validateKey:params[@"keyId"] ?: @""];
+    if (callback) callback(@{ @"valid": @(valid) });
+}
+
+- (void)deleteSshKey:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    [[DshSshKeyStore shared] deleteKey:params[@"keyId"] ?: @""];
+}
+
+- (void)startSshKeepAlive:(NSDictionary *)args {
+}
+
+- (void)stopSshKeepAlive:(NSDictionary *)args {
 }
 
 @end

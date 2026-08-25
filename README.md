@@ -1,6 +1,6 @@
 # DeepSeek Harness Mobile
 
-将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 接到 Android 手机的实验性移动端宿主项目。
+将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 接到 Android / iOS 手机的实验性移动端宿主项目。
 
 **本仓库只连接电脑上的 DSH**，不再内嵌 Node.js / Harness，APK 不再携带约 115 MB 的 `payload.zip`。
 
@@ -17,7 +17,7 @@ App 启动后先选连接方式，再进入聊天。**扫码连电脑的完整�
 
 ## 项目定位
 
-DeepSeek Harness 本身是一个插件化 Agent 运行时。本仓库提供 Android 宿主：
+DeepSeek Harness 本身是一个插件化 Agent 运行时。本仓库提供 Android / iOS 宿主：
 
 - 使用 Kuikly/Kotlin Multiplatform 实现主要 UI 和跨平台协议层；
 - 扫码 / SSH 远程模式用 HTTP RPC + WebSocket（`events.mux`）；
@@ -41,7 +41,7 @@ App 连上 Host 之后的 JSON-RPC、事件流和会话时间线见 **[docs/app-
 - 电脑已经在跑 DSH，手机和电脑同一 Wi-Fi / 热点：选 **扫码连接**。启动命令见上方「怎么启动（扫码连电脑）」。
 - 已有 SSH 私钥，或不想在电脑上跑 Relay：选 **SSH**。
 
-扫码连接目前仅支持 Android。
+扫码连接和 SSH 支持 Android 与 iOS。iOS 首次扫码会申请相机权限，首次 SSH 会要求确认主机指纹。
 
 ## 怎么启动（扫码连电脑）
 
@@ -154,6 +154,16 @@ minSdk     = 24
 targetSdk  = 28
 ```
 
+### 4. iOS 开发环境
+
+建议使用：
+
+- Xcode 15+（部署目标 iOS 14.1）；
+- CocoaPods（`iosApp` 目录执行 `pod install`）；
+- 一台 iOS 14.1 或更高版本的真机（扫码需要相机，SSH / 局域网 Relay 需要本机网络权限）。
+
+用 Xcode 打开 `iosApp/iosApp.xcworkspace`（不要只开 `xcodeproj`），选择 `iosApp` target 在真机上运行。NMSSH 自带的 OpenSSL 静态库是 iOS 真机切片，模拟器目前编不过 SSH 依赖；扫码也需要真机相机。
+
 ## 获取源码
 
 ```bash
@@ -254,7 +264,7 @@ npx @deepseek-ai/dsh web
 
 ### 4. 手机扫码
 
-1. 打开 Android App，选 **扫码连接**。
+1. 打开 Android 或 iOS App，选 **扫码连接**。
 2. 点 **扫描电脑二维码**，对准 Settings 页的码。
 3. 配对成功后点 **连接已配对电脑**。
 
@@ -397,13 +407,14 @@ ohosApp/                             # OpenHarmony 宿主工程
 ./gradlew :androidApp:assembleDebug
 ```
 
+iOS 在 `iosApp` 执行 `pod install` 后，用 Xcode 打开 `iosApp.xcworkspace` 编译。
+
 ## 当前限制
 
-- 当前主要验证 Android 移动端宿主流程，其他平台目录不代表功能已经完全对齐；
-- 扫码连接和 SSH 目前仅支持 Android；
+- 当前主要验证 Android / iOS 移动端宿主流程；
 - 模型推理仍然依赖 DeepSeek 在线 API，不是完全离线模型；
 - 扫码二维码绑定电脑当前局域网 IP，换网络后必须改 `publicRelayUrl`、重启 DSH 并重新扫码；
-- Android 后台进程可能被系统或厂商策略回收。
+- Android 后台进程可能被系统或厂商策略回收；iOS 在后台时系统可能暂停本机 loopback / SSH 转发。
 
 ## 许可证和上游项目
 
