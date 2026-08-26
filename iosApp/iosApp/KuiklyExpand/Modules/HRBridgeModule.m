@@ -30,6 +30,13 @@
     NSLog(@"KuiklyRender:%@", content);
 }
 
+- (void)toast:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    NSString *content = params[@"content"];
+    if (content.length == 0) return;
+    [DshNativeUi toast:content];
+}
+
 - (NSString *)closeKeyboard:(NSDictionary *)args {
     void (^dismissKeyboard)(void) = ^{
         [self.hr_rootView endEditing:YES];

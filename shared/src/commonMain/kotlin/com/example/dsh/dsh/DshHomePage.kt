@@ -1412,8 +1412,16 @@ internal class DshHomePage : BasePager() {
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("newSession.$traceId.click", startedAt)
         val hostRepository = repository ?: run {
-            connectionLabel = "请先配置 API Key"
-            openCredentialSettings()
+            if (isRemoteHost) {
+                closeSessionDrawer()
+                bridgeModule.toast("未连接到远程 DSH")
+            } else if (pendingApiKey.isEmpty()) {
+                connectionLabel = "请先配置 API Key"
+                openCredentialSettings()
+            } else {
+                closeSessionDrawer()
+                connectionLabel = "本地 DSH 尚未就绪"
+            }
             return
         }
         dismissKeyboard()
