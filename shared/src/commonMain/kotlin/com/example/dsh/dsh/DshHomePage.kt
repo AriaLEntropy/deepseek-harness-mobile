@@ -239,6 +239,7 @@ internal class DshHomePage : BasePager() {
     private var messages by observableList<DshMessage>()
     private var conversationPanelIds by observableList<String>()
     private var activeSessionId by observable("session-1")
+    private var preferBlankHomeOnNextLoad = true
     private var draft by observable("")
     private var streaming by observable(false)
     private var stopButtonVisible by observable(false)
@@ -312,7 +313,6 @@ internal class DshHomePage : BasePager() {
     private var queueEditingText by observable("")
     private var sessionRunning by observable(false)
     private var turnElapsedMs by observable(0L)
-    private var turnShimmerOn by observable(false)
     private var turnStatusMark: TimeMark? = null
     private var turnStatusTickerGeneration = 0
     private var turnStatusClockBucket = -1L
@@ -510,7 +510,6 @@ internal class DshHomePage : BasePager() {
                                 sessionRunning = { ctx.sessionRunning },
                                 turnReconnecting = { isReconnectLabel(ctx.connectionLabel) },
                                 turnElapsedMs = { ctx.turnElapsedMs },
-                                turnShimmerOn = { ctx.turnShimmerOn },
                                 onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
                                 onEditQueueItem = { ctx.editQueueItem(it) },
                                 onQueueEditingTextChange = { ctx.queueEditingText = it },
@@ -616,7 +615,6 @@ internal class DshHomePage : BasePager() {
                             sessionRunning = { ctx.sessionRunning },
                             turnReconnecting = { isReconnectLabel(ctx.connectionLabel) },
                             turnElapsedMs = { ctx.turnElapsedMs },
-                            turnShimmerOn = { ctx.turnShimmerOn },
                             onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
                             onEditQueueItem = { ctx.editQueueItem(it) },
                             onQueueEditingTextChange = { ctx.queueEditingText = it },
@@ -899,11 +897,23 @@ internal class DshHomePage : BasePager() {
             preloadAllSessionMessages()
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接 · 正在同步远程历史"
             if (loaded.isNotEmpty()) {
-                activeSessionId = loaded.firstOrNull { it.id == preferredSessionId }?.id
-                    ?: loaded.firstOrNull { !it.blank }?.id
-                    ?: loaded.first().id
-                sessionRunning = loaded.firstOrNull { it.id == activeSessionId }?.running == true
+                val preferBlankHome = preferBlankHomeOnNextLoad
+                preferBlankHomeOnNextLoad = false
+                val nextId = if (preferBlankHome) {
+                    loaded.firstOrNull { it.blank }?.id
+                } else {
+                    loaded.firstOrNull { it.id == preferredSessionId }?.id
+                        ?: loaded.firstOrNull { !it.blank }?.id
+                        ?: loaded.first().id
+                }
                 refreshWorkspaceGroups()
+                if (nextId == null) {
+                    messages = ObservableList()
+                    createSession()
+                    return@loadSessions
+                }
+                activeSessionId = nextId
+                sessionRunning = loaded.firstOrNull { it.id == activeSessionId }?.running == true
                 refreshQueueDock()
                 refreshJobsPanel()
                 refreshPendingInteractions()
@@ -913,14 +923,9 @@ internal class DshHomePage : BasePager() {
                     resyncStreamingWithHost(activeSessionId, "session-list")
                 }
             } else {
-                messages.clear()
-                messages.add(
-                    DshMessage(
-                        id = "no-session",
-                        role = DshMessageRole.ERROR,
-                        content = "当前还没有会话，打开左上角菜单后点击“新会话”即可开始。",
-                    ),
-                )
+                preferBlankHomeOnNextLoad = false
+                messages = ObservableList()
+                createSession()
             }
         }, { error ->
             if (!connectionCoordinator.isActive(connectionMode)) return@loadSessions
@@ -2348,21 +2353,22 @@ internal class DshHomePage : BasePager() {
         if (cached.isEmpty()) return
         sessions.clear()
         sessions.addAll(cached)
-        val firstSessionId = cached.first().id
-        val firstMessages = runCatching { store.loadMessages(activeConnectionId, firstSessionId) }
-            .getOrDefault(emptyList())
-            .filterNot { it.isRuntimeContextSnapshot() }
-        activeSessionId = firstSessionId
-        val state = sessionMessageStates[firstSessionId] ?: ObservableList()
-        if (state.size == 1 && state.firstOrNull()?.id == "api-key-required") state.clear()
-        if (state.isEmpty() && firstMessages.isNotEmpty()) state.addAll(firstMessages)
-        sessionMessageStates[firstSessionId] = state
-        sessionMessageReady.add(firstSessionId)
-        if (isRemoteHost) {
-            sessionCacheStates[firstSessionId] = DshSessionCacheState.STALE
+        val homeId = cached.firstOrNull { it.blank }?.id
+        if (homeId != null) {
+            activeSessionId = homeId
+            val state = sessionMessageStates[homeId] ?: ObservableList()
+            state.clear()
+            sessionMessageStates[homeId] = state
+            sessionMessageReady.add(homeId)
+            messages = state
+            ensureConversationPanel(homeId)
+            return
         }
+        val state = ObservableList<DshMessage>()
         messages = state
-        ensureConversationPanel(firstSessionId)
+        sessionMessageStates[activeSessionId] = state
+        sessionMessageReady.add(activeSessionId)
+        ensureConversationPanel(activeSessionId)
     }
 
     private fun loadApiKeyAsync() {
@@ -2531,7 +2537,6 @@ internal class DshHomePage : BasePager() {
             turnStatusTickerGeneration += 1
             turnStatusMark = null
             turnElapsedMs = 0
-            turnShimmerOn = false
             turnStatusClockBucket = -1L
             return
         }
@@ -2544,7 +2549,6 @@ internal class DshHomePage : BasePager() {
             if (!isTurnStatusActive()) {
                 turnStatusMark = null
                 turnElapsedMs = 0
-                turnShimmerOn = false
                 turnStatusClockBucket = -1L
                 return
             }
@@ -2555,9 +2559,8 @@ internal class DshHomePage : BasePager() {
                 turnStatusClockBucket = clockBucket
                 turnElapsedMs = elapsed
             }
-            val shimmer = ((elapsed / 1_800L) % 2L) == 1L
-            if (turnShimmerOn != shimmer) turnShimmerOn = shimmer
-            setTimeout(pagerId, if (showClock) 1_000 else 200) { tick() }
+            val wait = if (showClock) 1_000L else (TURN_STATUS_CLOCK_AFTER_MS - elapsed).coerceAtLeast(200L)
+            setTimeout(pagerId, wait.toInt()) { tick() }
         }
         tick()
     }
@@ -2679,7 +2682,9 @@ internal class DshHomePage : BasePager() {
                         "sessionData.disk.done:$sessionId messages=${loaded.size} query=${queryMs}ms uiWait=${uiWaitMs}ms",
                         readStartedAt,
                     )
-                    if (state.isEmpty() && loaded.isNotEmpty()) {
+                    if (state.isEmpty() && loaded.isNotEmpty() &&
+                        sessions.firstOrNull { it.id == sessionId }?.blank != true
+                    ) {
                         state.addAll(loaded)
                         perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                     }
@@ -2725,7 +2730,9 @@ internal class DshHomePage : BasePager() {
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
                 // session ID, so an inactive session can be updated safely.
-                if (state.isEmpty() && loaded.isNotEmpty()) {
+                if (state.isEmpty() && loaded.isNotEmpty() &&
+                    sessions.firstOrNull { it.id == sessionId }?.blank != true
+                ) {
                     state.addAll(loaded)
                     perfLog("sessionData.ui.applied:$sessionId messages=${loaded.size}")
                 }
@@ -4169,7 +4176,6 @@ private fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
     reconnecting: () -> Boolean,
     elapsedMs: () -> Long,
-    shimmerOn: () -> Boolean,
 ) {
     vif({ visible() }) {
         View {
@@ -4185,8 +4191,7 @@ private fun ViewContainer<*, *>.DshTurnStatus(
                     text(dshTurnStatusLabel(reconnecting()))
                     fontSize(14f)
                     fontWeightBold()
-                    color(Color(if (shimmerOn()) TURN_STATUS_HIGHLIGHT else TURN_STATUS_BLUE))
-                    animation(Animation.linear(1.8f), shimmerOn())
+                    color(Color(TURN_STATUS_BLUE))
                 }
             }
             vif({ elapsedMs() >= TURN_STATUS_CLOCK_AFTER_MS }) {
@@ -4204,8 +4209,68 @@ private fun ViewContainer<*, *>.DshTurnStatus(
 }
 
 private const val TURN_STATUS_BLUE = 0xFF4D6BFE
-private const val TURN_STATUS_HIGHLIGHT = 0xFFC5D4FF
 private const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
+
+private fun ViewContainer<*, *>.DshNewSessionHome() {
+    View {
+        attr {
+            absolutePositionAllZero()
+            allCenter()
+            zIndex(2)
+            paddingLeft(28f)
+            paddingRight(28f)
+        }
+        event {
+            click { }
+        }
+        View {
+            attr {
+                flexDirectionColumn()
+                alignItemsCenter()
+            }
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("fish.svg"))
+                    size(56f, 56f)
+                }
+            }
+            View {
+                attr {
+                    marginTop(16f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                }
+                Text {
+                    attr {
+                        text("探索未至之境")
+                        fontSize(26f)
+                        fontWeightBold()
+                        color(Color(0xFF1B1F24))
+                    }
+                }
+                View {
+                    attr {
+                        marginLeft(8f)
+                        paddingLeft(8f)
+                        paddingRight(8f)
+                        height(22f)
+                        allCenter()
+                        borderRadius(11f)
+                        backgroundColor(Color(0xFFE8F1FF))
+                    }
+                    Text {
+                        attr {
+                            text("预览版")
+                            fontSize(11f)
+                            fontWeightMedium()
+                            color(Color(0xFF4176E6))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 private fun ViewContainer<*, *>.DshConversation(
     conversationIds: () -> ObservableList<String>,
@@ -4263,7 +4328,6 @@ private fun ViewContainer<*, *>.DshConversation(
     sessionRunning: () -> Boolean,
     turnReconnecting: () -> Boolean,
     turnElapsedMs: () -> Long,
-    turnShimmerOn: () -> Boolean,
     onToggleQueue: () -> Unit,
     onEditQueueItem: (String) -> Unit,
     onQueueEditingTextChange: (String) -> Unit,
@@ -4385,10 +4449,17 @@ private fun ViewContainer<*, *>.DshConversation(
                             },
                             reconnecting = turnReconnecting,
                             elapsedMs = turnElapsedMs,
-                            shimmerOn = turnShimmerOn,
                         )
                     }
                 }
+            }
+            vif({
+                messagesForSession(activeConversationId()).isEmpty() &&
+                    !streaming() &&
+                    !stopButtonVisible() &&
+                    !sessionRunning()
+            }) {
+                DshNewSessionHome()
             }
         }
         vif({ isWebTimeline() && queueItems().isNotEmpty() }) {
@@ -4528,7 +4599,13 @@ private fun ViewContainer<*, *>.DshConversation(
                     backgroundColor(Color(0x00FFFFFF))
                     fontSize(15f)
                     color(Color(0xFF28323C))
-                    placeholder(if (voiceActive()) "正在聆听..." else "请输入您的问题...")
+                    placeholder(
+                        when {
+                            voiceActive() -> "正在聆听..."
+                            messagesForSession(activeConversationId()).isEmpty() -> "描述你想要构建的内容"
+                            else -> "请输入您的问题..."
+                        },
+                    )
                     placeholderColor(Color(0xFF91A0AA))
                     returnKeyTypeSend()
                     editable(!voiceActive())
