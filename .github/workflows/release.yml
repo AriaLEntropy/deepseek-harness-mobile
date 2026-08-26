@@ -62,10 +62,6 @@ jobs:
           notes="$(mktemp)"
           cat > "$notes" <<EOF
           Android 试用包。允许未知来源后安装 \`dsh-mobile-${GITHUB_REF_NAME#v}.apk\`。
-
-          iOS 目前需要用 Xcode 打开 \`iosApp/iosApp.xcworkspace\` 装到真机，GitHub 无法分发可直接安装的 IPA。
-
-          手机和电脑需在同一可互通网段。公司网若隔离终端，扫码连不上 Relay。
           EOF
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; uploading APK if missing."
