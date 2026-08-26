@@ -25,12 +25,28 @@ android {
         minSdk = 24
         targetSdk = 28
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "0.0.1"
+    }
+
+    signingConfigs {
+        val previewStore = rootProject.file("keystore/preview.jks")
+        if (previewStore.isFile) {
+            create("preview") {
+                storeFile = previewStore
+                storePassword = "dsh-preview"
+                keyAlias = "dsh"
+                keyPassword = "dsh-preview"
+            }
+        }
     }
 
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            val preview = signingConfigs.findByName("preview")
+            if (preview != null) {
+                signingConfig = preview
+            }
         }
     }
     lint {

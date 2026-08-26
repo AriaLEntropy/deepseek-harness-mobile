@@ -78,13 +78,17 @@ npx @deepseek-ai/dsh web
 
 **手机 — 安装并打开 App**
 
+Android 试用包从 [GitHub Releases](https://github.com/yukiykchen/deepseek-harness-mobile/releases) 下载 `dsh-mobile-*.apk`，在系统设置里允许未知来源后安装。给仓库打 `v*` tag（例如 `v0.0.1`）会由 GitHub Actions 自动打 Release APK。
+
+也可以自己编：
+
 ```bash
 git clone https://github.com/yukiykchen/deepseek-harness-mobile.git
 cd deepseek-harness-mobile
 ./gradlew :androidApp:installDebug
 ```
 
-或用 Android Studio 打开本仓库，运行 `androidApp`。打开 App → **扫码连接** → **扫描电脑二维码** → **连接已配对电脑**。
+或用 Android Studio 打开本仓库，运行 `androidApp`。iOS 目前没有 sideload 包，需用 Xcode 打开 `iosApp/iosApp.xcworkspace` 装到真机。打开 App → **扫码连接** → **扫描电脑二维码** → **连接已配对电脑**。
 
 DeepSeek API Key 配在电脑端 DSH，不要配在手机里。手机和电脑必须在同一可互通网段（同一 Wi-Fi 或同一热点）。更细的说明、换网络、SSH 见下方各节。
 

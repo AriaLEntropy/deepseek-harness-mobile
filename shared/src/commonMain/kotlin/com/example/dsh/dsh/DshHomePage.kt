@@ -542,10 +542,6 @@ internal class DshHomePage : BasePager() {
                                     running = { ctx.sessionRunning },
                                     queueCount = { ctx.queueItems.size },
                                     jobCount = { ctx.jobItems.size },
-                                    onRename = { ctx.renameActiveSession() },
-                                    onArchive = { ctx.archiveActiveSession() },
-                                    onFork = { ctx.forkActiveSession() },
-                                    onExport = { ctx.exportActiveSession() },
                                 )
                             }
                         }
@@ -669,10 +665,6 @@ internal class DshHomePage : BasePager() {
                         onClose = { ctx.closeSessionDrawer() },
                         onOpenSettings = { ctx.openConnectionSettings() },
                         onNewSession = { ctx.createSession() },
-                        onAddWorkspace = { ctx.openWorkspaceBrowser() },
-                        onRenameWorkspace = { id, title -> ctx.openWorkspaceRename(id, title) },
-                        onDeleteWorkspace = { id -> ctx.openWorkspaceDelete(id) },
-                        onMoveWorkspace = { id, delta -> ctx.moveWorkspace(id, delta) },
                         onSelect = { id ->
                             ctx.closeSessionDrawer()
                             setTimeout(ctx.pagerId, 0) {
@@ -3523,10 +3515,6 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
     onClose: () -> Unit,
     onOpenSettings: () -> Unit,
     onNewSession: () -> Unit,
-    onAddWorkspace: () -> Unit,
-    onRenameWorkspace: (String, String) -> Unit,
-    onDeleteWorkspace: (String) -> Unit,
-    onMoveWorkspace: (String, Int) -> Unit,
     onSelect: (String) -> Unit,
 ) {
     Modal(inWindow = true) {
@@ -3614,31 +3602,6 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
                 }
                 event { click { onOpenSettings() } }
             }
-            vif({ isWebTimeline() }) {
-                View {
-                    attr {
-                        height(42f)
-                        marginTop(8f)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        paddingLeft(12f)
-                        paddingRight(12f)
-                        borderRadius(9f)
-                        backgroundColor(Color(0x00000000))
-                    }
-                    Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f) } }
-                    Text {
-                        attr {
-                            text("添加工作区")
-                            marginLeft(10f)
-                            fontSize(14f)
-                            fontWeightMedium()
-                            color(Color(0xFF4176E6))
-                        }
-                    }
-                    event { click { onAddWorkspace() } }
-                }
-            }
             Text {
                 attr {
                     text("会话")
@@ -3676,44 +3639,6 @@ private fun ViewContainer<*, *>.DshSessionDrawer(
                                     fontSize(12f)
                                     fontWeightMedium()
                                     color(Color(0xFF7A838A))
-                                }
-                            }
-                            View {
-                                attr { flexDirectionRow(); marginTop(4f) }
-                                Text {
-                                    attr {
-                                        text("重命名")
-                                        marginRight(10f)
-                                        fontSize(11f)
-                                        color(Color(0xFF4176E6))
-                                    }
-                                    event { click { onRenameWorkspace(group.workspaceId, group.title) } }
-                                }
-                                Text {
-                                    attr {
-                                        text("删除注册")
-                                        fontSize(11f)
-                                        color(Color(0xFFD25A5A))
-                                    }
-                                    event { click { onDeleteWorkspace(group.workspaceId) } }
-                                }
-                                Text {
-                                    attr {
-                                        text("上移")
-                                        marginLeft(10f)
-                                        fontSize(11f)
-                                        color(Color(0xFF7A838A))
-                                    }
-                                    event { click { onMoveWorkspace(group.workspaceId, -1) } }
-                                }
-                                Text {
-                                    attr {
-                                        text("下移")
-                                        marginLeft(8f)
-                                        fontSize(11f)
-                                        color(Color(0xFF7A838A))
-                                    }
-                                    event { click { onMoveWorkspace(group.workspaceId, 1) } }
                                 }
                             }
                             group.sessions.forEach { session ->
@@ -4038,10 +3963,6 @@ private fun ViewContainer<*, *>.DshSessionDetailsPanel(
     running: () -> Boolean,
     queueCount: () -> Int,
     jobCount: () -> Int,
-    onRename: () -> Unit,
-    onArchive: () -> Unit,
-    onFork: () -> Unit,
-    onExport: () -> Unit,
 ) {
     View {
         attr {
@@ -4085,48 +4006,6 @@ private fun ViewContainer<*, *>.DshSessionDetailsPanel(
         DshDetailRow("后台任务", "${jobCount()} 个")
         vif({ cwd().isNotEmpty() }) {
             DshDetailRow("目录", cwd())
-        }
-        View {
-            attr {
-                flexDirectionRow()
-                marginTop(16f)
-            }
-            Text {
-                attr {
-                    text("重命名")
-                    flex(1f)
-                    fontSize(13f)
-                    color(Color(0xFF4176E6))
-                }
-                event { click { onRename() } }
-            }
-            Text {
-                attr {
-                    text("归档")
-                    flex(1f)
-                    fontSize(13f)
-                    color(Color(0xFFD25A5A))
-                }
-                event { click { onArchive() } }
-            }
-            Text {
-                attr {
-                    text("分支")
-                    flex(1f)
-                    fontSize(13f)
-                    color(Color(0xFF4176E6))
-                }
-                event { click { onFork() } }
-            }
-            Text {
-                attr {
-                    text("导出")
-                    flex(1f)
-                    fontSize(13f)
-                    color(Color(0xFF4176E6))
-                }
-                event { click { onExport() } }
-            }
         }
     }
 }
