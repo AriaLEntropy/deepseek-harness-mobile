@@ -2,7 +2,20 @@ package com.example.dsh.dsh
 
 import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.module.Module
-import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
+import io.ktor.client.plugins.sse.SSEClientException
+import io.ktor.client.plugins.sse.sse
+import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 internal enum class DshSseEventKind { OPEN, FRAME, ERROR, CLOSED }
 
@@ -14,44 +27,72 @@ internal data class DshSseEvent(
 
 internal interface DshSseHandle { fun close() }
 
-/** Legacy local-mode transport. Remote mode uses DshWebSocketModule instead. */
+/**
+ * Local-mode events.mux transport. Uses Ktor SSE for framing; 426 falls back
+ * to Ktor WebSockets. Remote mode still uses [DshWebSocketModule].
+ */
 internal class DshSseModule : Module() {
-    private var sequence = 0
+    private val client = createDshHttpClient()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun moduleName(): String = MODULE_NAME
 
     fun connect(url: String, token: String = "", onEvent: (DshSseEvent) -> Unit): DshSseHandle {
-        val connectionId = "dsh-sse-${++sequence}"
-        val params = JSONObject().apply {
-            put("connectionId", connectionId)
-            put("url", url)
-            put("token", token)
-        }
         KLog.i(TAG, "connect requested")
-        toNative(
-            keepCallbackAlive = true,
-            methodName = "connect",
-            param = params.toString(),
-            callback = { value ->
-                val kind = runCatching { DshSseEventKind.valueOf(value?.optString("kind").orEmpty()) }
-                    .getOrDefault(DshSseEventKind.ERROR)
-                onEvent(DshSseEvent(kind, value?.optString("data").orEmpty(), value?.optString("message").orEmpty()))
-            },
-            syncCall = false,
-        )
-        return object : DshSseHandle {
-            private var closed = false
-            override fun close() {
-                if (closed) return
-                closed = true
-                toNative(
-                    keepCallbackAlive = false,
-                    methodName = "disconnect",
-                    param = JSONObject().apply { put("connectionId", connectionId) }.toString(),
-                    callback = null,
-                    syncCall = false,
-                )
+        val job = scope.launch {
+            try {
+                openSse(url, token, onEvent)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: SSEClientException) {
+                if (error.response?.status == HttpStatusCode.UpgradeRequired) {
+                    openWebSocket(url, token, onEvent)
+                } else {
+                    emit(onEvent, DshSseEvent(DshSseEventKind.ERROR, message = error.message ?: "SSE connection failed"))
+                }
+            } catch (error: Throwable) {
+                emit(onEvent, DshSseEvent(DshSseEventKind.ERROR, message = error.message ?: "SSE connection failed"))
             }
+        }
+        return JobHandle(job)
+    }
+
+    private suspend fun openSse(url: String, token: String, onEvent: (DshSseEvent) -> Unit) {
+        client.sse(url, request = {
+            headers.append(HttpHeaders.Accept, "text/event-stream")
+            headers.append(HttpHeaders.CacheControl, "no-cache")
+            if (token.isNotEmpty()) headers.append(HttpHeaders.Authorization, "Bearer $token")
+        }) {
+            emit(onEvent, DshSseEvent(DshSseEventKind.OPEN))
+            incoming.collect { event ->
+                event.data?.takeIf { it.isNotEmpty() }?.let { data ->
+                    emit(onEvent, DshSseEvent(DshSseEventKind.FRAME, data))
+                }
+            }
+            emit(onEvent, DshSseEvent(DshSseEventKind.CLOSED))
+        }
+    }
+
+    private suspend fun openWebSocket(url: String, token: String, onEvent: (DshSseEvent) -> Unit) {
+        client.webSocket(dshWebSocketUrl(url), request = {
+            if (token.isNotEmpty()) headers.append(HttpHeaders.Authorization, "Bearer $token")
+        }) {
+            emit(onEvent, DshSseEvent(DshSseEventKind.OPEN))
+            for (frame in incoming) {
+                val text = (frame as? Frame.Text)?.readText().orEmpty()
+                if (text.isNotEmpty()) emit(onEvent, DshSseEvent(DshSseEventKind.FRAME, text))
+            }
+            emit(onEvent, DshSseEvent(DshSseEventKind.CLOSED))
+        }
+    }
+
+    private suspend fun emit(onEvent: (DshSseEvent) -> Unit, event: DshSseEvent) {
+        withContext(Dispatchers.Main) { onEvent(event) }
+    }
+
+    private class JobHandle(private val job: Job) : DshSseHandle {
+        override fun close() {
+            job.cancel()
         }
     }
 

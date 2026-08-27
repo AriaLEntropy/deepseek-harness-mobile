@@ -49,6 +49,8 @@ kotlin {
                 implementation("com.tencent.kuikly-open:core-annotations:${Version.getKuiklyOhosVersion()}")
                 implementation("com.tencent.kuiklybase:KuiklyMarkdown:1.0.6-2.0.21-ohos")
                 implementation("com.tencent.kuiklybase:KuiklyWebview:1.0.2-2.0.21-KBA-010")
+                implementation("io.ktor:ktor-client-core:3.2.3")
+                implementation("io.ktor:ktor-client-websockets:3.2.3")
 
             }
         }
@@ -62,12 +64,14 @@ kotlin {
             dependsOn(commonMain)
             dependencies {
                 implementation("net.shantu.kuiklysqlite:kuiklySqlite:1.0.0")
+                implementation("io.ktor:ktor-client-cio:3.2.3")
             }
             ohosArm64Main.dependsOn(this)
         }
         val androidMain by getting {
             dependencies {
                 api("com.tencent.kuikly-open:core-render-android:${Version.getKuiklyOhosVersion()}")
+                implementation("io.ktor:ktor-client-okhttp:3.2.3")
             }
         }
 
@@ -76,6 +80,9 @@ kotlin {
         val iosSimulatorArm64Main by getting
         val iosMain by creating {
             dependsOn(commonMain)
+            dependencies {
+                implementation("io.ktor:ktor-client-darwin:3.2.3")
+            }
             iosX64Main.dependsOn(this)
             iosArm64Main.dependsOn(this)
             iosSimulatorArm64Main.dependsOn(this)

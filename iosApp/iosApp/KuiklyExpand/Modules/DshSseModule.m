@@ -95,7 +95,7 @@ didReceiveResponse:(NSURLResponse *)response
           dataTask:(NSURLSessionDataTask *)dataTask
     didReceiveData:(NSData *)data {
     [self.buffer appendData:data];
-    [self consumeEvents];
+    [self emitCompleteUtf8Chunks];
 }
 
 - (void)URLSession:(NSURLSession *)session
@@ -109,6 +109,14 @@ didCompleteWithError:(NSError *)error {
         if (error) {
             [self emit:@{ @"kind": @"ERROR", @"message": error.localizedDescription ?: @"SSE connection failed" }];
         } else {
+            [self emitCompleteUtf8Chunks];
+            if (self.buffer.length > 0) {
+                NSString *trailing = [[NSString alloc] initWithData:self.buffer encoding:NSUTF8StringEncoding];
+                [self.buffer setLength:0];
+                if (trailing.length > 0) {
+                    [self emit:@{ @"kind": @"CHUNK", @"data": trailing }];
+                }
+            }
             [self emit:@{ @"kind": @"CLOSED" }];
         }
     }
@@ -172,26 +180,36 @@ didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode
     }];
 }
 
-- (void)consumeEvents {
-    static const unsigned char delimiterBytes[] = { '\n', '\n' };
-    NSData *delimiter = [NSData dataWithBytes:delimiterBytes length:sizeof(delimiterBytes)];
-    while (self.buffer.length > 0) {
-        NSRange range = [self.buffer rangeOfData:delimiter options:0 range:NSMakeRange(0, self.buffer.length)];
-        if (range.location == NSNotFound) return;
-        NSData *eventData = [self.buffer subdataWithRange:NSMakeRange(0, range.location)];
-        [self.buffer replaceBytesInRange:NSMakeRange(0, NSMaxRange(range)) withBytes:NULL length:0];
-        NSString *event = [[NSString alloc] initWithData:eventData encoding:NSUTF8StringEncoding];
-        if (!event) continue;
-        NSMutableArray<NSString *> *dataLines = [NSMutableArray array];
-        for (NSString *line in [event componentsSeparatedByString:@"\n"]) {
-            if (![line hasPrefix:@"data:"]) continue;
-            NSString *value = [line substringFromIndex:5];
-            if ([value hasPrefix:@" "]) value = [value substringFromIndex:1];
-            [dataLines addObject:value];
-        }
-        if (dataLines.count > 0) {
-            [self emit:@{ @"kind": @"FRAME", @"data": [dataLines componentsJoinedByString:@"\n"] }];
-        }
+- (NSUInteger)completeUtf8Length {
+    const unsigned char *bytes = self.buffer.bytes;
+    NSUInteger length = self.buffer.length;
+    if (length == 0) return 0;
+    NSUInteger index = length;
+    NSUInteger continuation = 0;
+    while (index > 0 && (bytes[index - 1] & 0xC0) == 0x80) {
+        continuation += 1;
+        index -= 1;
+        if (continuation == 3) break;
+    }
+    if (index == 0) return 0;
+    unsigned char lead = bytes[index - 1];
+    NSUInteger needed = 0;
+    if (lead < 0x80) needed = 0;
+    else if (lead >= 0xC2 && lead <= 0xDF) needed = 1;
+    else if (lead >= 0xE0 && lead <= 0xEF) needed = 2;
+    else if (lead >= 0xF0 && lead <= 0xF4) needed = 3;
+    else return index - 1;
+    return continuation >= needed ? length : index - 1;
+}
+
+- (void)emitCompleteUtf8Chunks {
+    NSUInteger complete = [self completeUtf8Length];
+    if (complete == 0) return;
+    NSData *slice = [self.buffer subdataWithRange:NSMakeRange(0, complete)];
+    [self.buffer replaceBytesInRange:NSMakeRange(0, complete) withBytes:NULL length:0];
+    NSString *chunk = [[NSString alloc] initWithData:slice encoding:NSUTF8StringEncoding];
+    if (chunk.length > 0) {
+        [self emit:@{ @"kind": @"CHUNK", @"data": chunk }];
     }
 }
 

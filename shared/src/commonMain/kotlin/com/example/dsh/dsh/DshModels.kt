@@ -293,6 +293,58 @@ internal data class DshMessage(
     val remoteTool: DshRemoteToolCallModel? = null,
 )
 
+internal fun dshIsLiveAssistantText(message: DshMessage): Boolean =
+    message.role == DshMessageRole.ASSISTANT &&
+        !message.isReasoning &&
+        message.attachmentId == null
+
+/**
+ * Assistant text that belongs to the in-progress turn sits after the latest
+ * user message. A completed previous reply is before that user and must not
+ * be reused as the live streaming target.
+ */
+internal fun dshAssistantTailForCurrentTurn(messages: List<DshMessage>): DshMessage? {
+    val lastUserIndex = messages.indexOfLast { it.role == DshMessageRole.USER }
+    return messages.withIndex().lastOrNull { (index, message) ->
+        index > lastUserIndex && dshIsLiveAssistantText(message)
+    }?.value
+}
+
+/**
+ * History resync after sending a new prompt can still contain the previous
+ * assistant. [anchorAssistantId] is that previous reply; never resume into it.
+ */
+internal fun dshHistoryTailToResume(
+    messages: List<DshMessage>,
+    anchorAssistantId: String,
+): DshMessage? {
+    val live = dshAssistantTailForCurrentTurn(messages) ?: return null
+    if (anchorAssistantId.isNotEmpty() && live.id == anchorAssistantId) return null
+    return live
+}
+
+/** Ignores id/streaming so a host key remap does not look like new content. */
+internal fun DshMessage.visuallyEquals(other: DshMessage): Boolean =
+    role == other.role &&
+        content == other.content &&
+        toolName == other.toolName &&
+        hidden == other.hidden &&
+        toolCardType == other.toolCardType &&
+        toolRunning == other.toolRunning &&
+        toolError == other.toolError &&
+        isContextInjection == other.isContextInjection &&
+        contextForm == other.contextForm &&
+        contextBody == other.contextBody &&
+        isReasoning == other.isReasoning &&
+        attachmentId == other.attachmentId &&
+        toolCallId == other.toolCallId &&
+        remoteTool == other.remoteTool
+
+internal fun dshMessagesVisuallyEqual(left: List<DshMessage>, right: List<DshMessage>): Boolean {
+    if (left.size != right.size) return false
+    return left.indices.all { left[it].visuallyEquals(right[it]) }
+}
+
 internal data class DshContextCatalogEntry(
     val name: String,
     val description: String,

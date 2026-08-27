@@ -24,7 +24,6 @@ import com.example.dsh.module.KRBridgeModule
 import com.example.dsh.module.KRDshEngineModule
 import com.example.dsh.module.KRDshRelayModule
 import com.example.dsh.module.KRDshWebSocketModule
-import com.example.dsh.module.KRDshSseModule
 import com.example.dsh.module.KRShareModule
 import com.tencent.kuiklybase.android.KRWebView
 import org.json.JSONObject
@@ -99,9 +98,6 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             }
             moduleExport(KRDshWebSocketModule.MODULE_NAME) {
                 KRDshWebSocketModule()
-            }
-            moduleExport(KRDshSseModule.MODULE_NAME) {
-                KRDshSseModule()
             }
         }
     }

@@ -117,6 +117,9 @@ internal class DshHomePage : BasePager() {
     // at the current text segment between ordered tool cards.
     private var streamingAssistantRootId = ""
     private var streamingAssistantSegment = 0
+    // Last completed assistant when the current prompt was sent. Resync must
+    // not graft the new stream onto that bubble.
+    private var streamingTurnAnchorAssistantId = ""
     private var streamingReasoningId = ""
     private var streamingReasoningContent = ""
     private val pendingAssistantDelta = StringBuilder()
@@ -1464,12 +1467,21 @@ internal class DshHomePage : BasePager() {
         DshStreamLog.i(
             "ui.resync.begin reason=$reason session=$sessionId running=$sessionRunning streaming=$streaming stop=$stopButtonVisible",
         )
+        // A local prompt is already painting this turn. Reloading the web
+        // timeline remounts every markdown bubble and delays the first token.
+        if (reason == "host-session-running" && isLocalPromptInFlight()) {
+            DshStreamLog.i(
+                "ui.resync.skip-local-stream reason=$reason session=$sessionId root=$streamingAssistantRootId",
+            )
+            return
+        }
         if (sessionRunning) {
             loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = true) {
                 resumeStreamingFromHistory(sessionId, reason)
             }
         } else {
-            loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = true) {
+            val forceReplace = streaming || stopButtonVisible
+            loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = forceReplace) {
                 finishStreamingFromHistory(sessionId)
                 connectionLabel = "已连接"
                 DshStreamLog.i("ui.resync.settled reason=$reason session=$sessionId messages=${messages.size}")
@@ -1477,8 +1489,12 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    private fun isLocalPromptInFlight(): Boolean =
+        streaming && streamingAssistantRootId.isNotEmpty()
+
     private fun rebindStreamingToHistoryTail(): Boolean {
-        val live = messages.lastOrNull { it.role == DshMessageRole.ASSISTANT && !it.isReasoning } ?: return false
+        val live = dshHistoryTailToResume(messages.toList(), streamingTurnAnchorAssistantId)
+            ?: return false
         streamingAssistantId = live.id
         streamingAssistantRootId = live.id
         streamingAssistantSegment = 0
@@ -1501,7 +1517,8 @@ internal class DshHomePage : BasePager() {
 
     private fun resumeStreamingFromHistory(sessionId: String, reason: String) {
         if (sessionId != activeSessionId) return
-        if (rebindStreamingToHistoryTail()) {
+        val rebound = rebindStreamingToHistoryTail()
+        if (rebound) {
             streaming = true
             stopButtonVisible = true
             connectionLabel = "正在生成"
@@ -1510,10 +1527,23 @@ internal class DshHomePage : BasePager() {
                 messages[index] = messages[index].copy(streaming = true)
             }
         } else {
-            streamingAssistantRootId = "assistant-adopted-${messages.size}"
-            streamingAssistantId = ""
-            streamingAssistantSegment = 0
-            streamingAssistantContent = ""
+            if (streamingAssistantRootId.isEmpty()) {
+                streamingAssistantRootId = "assistant-adopted-${messages.size}"
+            }
+            val liveStillPresent = streamingAssistantId.isNotEmpty() &&
+                messages.any { it.id == streamingAssistantId }
+            if (!liveStillPresent) {
+                val kept = streamingAssistantContent + pendingAssistantDelta.toString()
+                pendingAssistantDelta.setLength(0)
+                streamingAssistantId = ""
+                streamingAssistantSegment = 0
+                streamingAssistantContent = ""
+                if (kept.isNotEmpty()) {
+                    ensureStreamingAssistantSegment()
+                    streamingAssistantContent = kept
+                    updateStreamingMessage(kept, streaming = true)
+                }
+            }
             streaming = true
             stopButtonVisible = true
             connectionLabel = "正在生成"
@@ -1521,7 +1551,7 @@ internal class DshHomePage : BasePager() {
         attachAdoptedLiveStream(sessionId)
         syncTurnStatusTicker()
         DshStreamLog.i(
-            "ui.resync.resume reason=$reason id=${streamingAssistantId} chars=${streamingAssistantContent.length}",
+            "ui.resync.resume reason=$reason rebound=$rebound id=${streamingAssistantId.ifEmpty { streamingAssistantRootId }} chars=${streamingAssistantContent.length}",
         )
     }
 
@@ -1539,8 +1569,7 @@ internal class DshHomePage : BasePager() {
                     if (streamingAssistantRootId.isEmpty()) {
                         streamingAssistantRootId = "assistant-adopted-${messages.size}"
                     }
-                    if (streamingAssistantId.isEmpty()) ensureStreamingAssistantSegment()
-                    queueAssistantDelta(streamingAssistantId, delta)
+                    queueAssistantDelta(streamingAssistantRootId, delta)
                 }
             },
             onComplete = { result ->
@@ -1555,7 +1584,6 @@ internal class DshHomePage : BasePager() {
                 )
                 settleStreamingMessage(DshMessageRole.ASSISTANT, completedContent)
                 persistMessages(sessionId)
-                loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
                 connectionLabel = "已连接"
                 streamHandle = null
             },
@@ -1570,7 +1598,6 @@ internal class DshHomePage : BasePager() {
                 DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
                 settleStreamingMessage(DshMessageRole.ERROR, error)
                 persistMessages(sessionId)
-                loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
                 connectionLabel = "已连接"
                 streamHandle = null
             },
@@ -2696,6 +2723,7 @@ internal class DshHomePage : BasePager() {
         sessionMessageStates[sessionId] = messages
         if (wasEmpty) remountConversationList(sessionId)
         scrollMessagesToMessage(user.id)
+        streamingTurnAnchorAssistantId = messages.lastOrNull(::dshIsLiveAssistantText)?.id.orEmpty()
         streamingAssistantId = ""
         streamingAssistantRootId = assistantId
         streamingAssistantSegment = 0
@@ -2703,6 +2731,7 @@ internal class DshHomePage : BasePager() {
         streamingReasoningContent = ""
         streamingAssistantContent = ""
         pendingAssistantDelta.setLength(0)
+        assistantFlushScheduled = false
         draft = ""
         inputView?.setText("")
         streaming = true
@@ -2733,7 +2762,6 @@ internal class DshHomePage : BasePager() {
                 )
                 settleStreamingMessage(DshMessageRole.ASSISTANT, completedContent)
                 persistMessages(sessionId)
-                if (isRemoteHost) loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
                 connectionLabel = "已连接"
                 streamHandle = null
             },
@@ -2748,7 +2776,6 @@ internal class DshHomePage : BasePager() {
                 DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
                 settleStreamingMessage(DshMessageRole.ERROR, error)
                 persistMessages(sessionId)
-                if (isRemoteHost) loadWebTimeline(sessionId, scrollToEndAfterLoad = false)
                 connectionLabel = "已连接"
                 streamHandle = null
             },
@@ -2787,6 +2814,7 @@ internal class DshHomePage : BasePager() {
         pendingAssistantDelta.setLength(0)
         streamingAssistantContent = ""
         assistantFlushScheduled = false
+        streamingTurnAnchorAssistantId = ""
         streaming = false
         stopButtonVisible = false
         syncTurnStatusTicker()
@@ -3067,6 +3095,7 @@ internal class DshHomePage : BasePager() {
                     streamingAssistantId = ""
                     streamingAssistantRootId = ""
                     streamingAssistantSegment = 0
+                    streamingTurnAnchorAssistantId = ""
                     if (streamingAssistantContent == finalContent) {
                         streamingAssistantContent = ""
                     }
@@ -3091,6 +3120,7 @@ internal class DshHomePage : BasePager() {
         streamingAssistantId = ""
         streamingAssistantRootId = ""
         streamingAssistantSegment = 0
+        streamingTurnAnchorAssistantId = ""
         streamingReasoningId = ""
         streamingReasoningContent = ""
         pendingAssistantDelta.setLength(0)
@@ -3117,14 +3147,38 @@ internal class DshHomePage : BasePager() {
             )
             return
         }
-        if (messages.toList() == filtered) return
+        val current = messages.toList()
+        if (current == filtered) return
+        if (dshMessagesVisuallyEqual(current, filtered)) {
+            DshStreamLog.i(
+                "ui.replace-messages skip-visual-equal from=${current.size} force=$force",
+            )
+            return
+        }
+        val remount = current.isEmpty() && filtered.isNotEmpty()
         DshStreamLog.i(
-            "ui.replace-messages from=${messages.size} to=${filtered.size} streaming=$streaming force=$force preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
+            "ui.replace-messages from=${current.size} to=${filtered.size} streaming=$streaming force=$force remount=$remount preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
         )
-        messages.clear()
-        messages.addAll(filtered)
+        applyMessagesInPlace(filtered)
         sessionMessageStates[activeSessionId] = messages
-        remountConversationList(activeSessionId)
+        if (remount) remountConversationList(activeSessionId)
+    }
+
+    private fun applyMessagesInPlace(next: List<DshMessage>) {
+        val shared = minOf(messages.size, next.size)
+        for (index in 0 until shared) {
+            if (messages[index] != next[index]) messages[index] = next[index]
+        }
+        when {
+            next.size < messages.size -> {
+                for (index in messages.lastIndex downTo next.size) {
+                    messages.removeAt(index)
+                }
+            }
+            next.size > messages.size -> {
+                messages.addAll(next.subList(messages.size, next.size))
+            }
+        }
     }
 
     companion object {

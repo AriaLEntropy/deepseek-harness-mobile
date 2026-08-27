@@ -1,6 +1,5 @@
 package com.example.dsh.dsh
 
-import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ComposeAttr
 import com.tencent.kuikly.core.base.ComposeEvent
 import com.tencent.kuikly.core.base.ComposeView
@@ -9,22 +8,21 @@ import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.reactive.ReactiveObserver
 import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.views.View
-import com.tencent.kuiklybase.KuiklyMarkdown
-import com.tencent.kuiklybase.KuiklyStreamingMarkdown
+import com.tencent.kuiklybase.components.markdownComponents
 import com.tencent.kuiklybase.config.MarkdownColors
 import com.tencent.kuiklybase.config.MarkdownConfig
 import com.tencent.kuiklybase.config.MarkdownDimens
 import com.tencent.kuiklybase.config.MarkdownTypography
 import com.tencent.kuiklybase.config.FontWeight
 import com.tencent.kuiklybase.config.TextStyleConfig
+import com.tencent.kuiklybase.render.renderMarkdownElement
 import com.tencent.kuiklybase.streaming.MarkdownBlock
-import com.tencent.kuiklybase.streaming.MarkdownStreamingState
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.timer.setTimeout
 
 /** DSH theme wrapper around KuiklyMarkdown's DSL renderer. */
 internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
-    private val streamingState = MarkdownStreamingState()
+    private val streamingState = DshIncrementalMarkdownState()
     private var blockList by observableList<MarkdownBlock>()
     private var lastContent = ""
     private var lastStreaming = false
@@ -52,11 +50,16 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                                 width(ctx.attr.contentWidth)
                             }
                         }
-                        KuiklyStreamingMarkdown(
-                            state = ctx.streamingState,
-                            block = block,
-                            config = ctx.markdownConfig(),
-                        )
+                        ctx.streamingState.slice(block.id)?.let { slice ->
+                            renderMarkdownElement(
+                                node = slice.node,
+                                components = markdownComponents(),
+                                content = slice.parseResult.content,
+                                config = ctx.markdownConfig(),
+                                referenceLinkHandler = slice.parseResult.referenceLinkHandler,
+                                includeSpacer = true,
+                            )
+                        }
                     }
                 }
             }
@@ -106,7 +109,10 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             lastStreaming = streaming
             return
         }
-        if (streaming && !lastStreaming) streamingState.reset()
+        if (streaming && !lastStreaming) {
+            DshStreamLog.i("render.stream-start chars=${content.length}")
+            streamingState.reset()
+        }
         lastContent = content
         lastStreaming = streaming
         val next = streamingState.renderStreaming(content, streaming, force = !streaming)
@@ -116,10 +122,8 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         }
         val previousCount = blockList.size
         DshStreamingMarkdown.applyBlocks(blockList, next, streaming)
-        val last = next.lastOrNull()
-        val lastKind = last?.let { DshStreamLog.blockKind(it.blockContent) } ?: "-"
         DshStreamLog.i(
-            "render.apply streaming=$streaming chars=${content.length} prevBlocks=$previousCount ${DshStreamLog.blocks(next)} lastKind=$lastKind live='${DshStreamLog.preview(content)}'",
+            "render.apply streaming=$streaming uiBlocks=$previousCount→${blockList.size} ${DshStreamLog.blocks(next)}",
         )
     }
 

@@ -1,7 +1,6 @@
 package com.example.dsh.dsh
 
 import com.tencent.kuiklybase.streaming.MarkdownBlock
-import com.tencent.kuiklybase.streaming.MarkdownStreamingState
 
 /**
  * Streaming markdown helpers modeled on:
@@ -9,6 +8,9 @@ import com.tencent.kuiklybase.streaming.MarkdownStreamingState
  *   provisional rendering of an unclosed fence as a code block
  * - CMP compose-markdown / llm-typewriter: prefix-stable snapshots, live last block
  * - Cherry Studio: ~1 frame (16ms) coalescing after the first paint
+ *
+ * Incremental parse lives in [DshIncrementalMarkdownState]: this file only
+ * handles display-time fence closing, 16ms coalescing constants, and list diff.
  */
 internal object DshStreamingMarkdown {
     const val PLACEHOLDER = "正在生成..."
@@ -17,7 +19,7 @@ internal object DshStreamingMarkdown {
 
     fun displayText(raw: String, streaming: Boolean): String {
         if (raw.isEmpty()) return if (streaming) PLACEHOLDER else raw
-        return if (streaming) closeOpenFence(raw) else raw
+        return raw
     }
 
     /**
@@ -64,11 +66,10 @@ internal object DshStreamingMarkdown {
     }
 }
 
-internal fun MarkdownStreamingState.renderStreaming(
+internal fun DshIncrementalMarkdownState.renderStreaming(
     raw: String,
     streaming: Boolean,
     force: Boolean,
 ): List<MarkdownBlock>? {
-    val text = DshStreamingMarkdown.displayText(raw, streaming)
-    return update(text, force = force || !streaming)
+    return update(raw, streaming, force = force || !streaming)
 }

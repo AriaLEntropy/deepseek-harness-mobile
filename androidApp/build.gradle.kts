@@ -24,8 +24,8 @@ android {
         applicationId = "com.example.dsh"
         minSdk = 24
         targetSdk = 28
-        versionCode = 3
-        versionName = "0.0.3"
+        versionCode = 4
+        versionName = "0.0.4"
         ndk {
             abiFilters += "arm64-v8a"
         }
