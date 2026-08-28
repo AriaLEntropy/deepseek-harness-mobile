@@ -197,7 +197,10 @@ internal object DshRelayManager {
                     .put("clientRandomB64", clientRandomB64)
                     .put("clientProofB64", SealedTunnelCrypto.clientProof(master, accessSessionId, clientRandomB64)),
             )
-            val wsClient = http.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()
+            val wsClient = http.newBuilder()
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .pingInterval(20, TimeUnit.SECONDS)
+                .build()
             wsClient.newWebSocket(
                 Request.Builder().url(tunnelUrl).header("Authorization", "Bearer $ticket").build(),
                 object : WebSocketListener() {

@@ -24,6 +24,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
     private var state: [String: Any] = ["phase": "IDLE", "message": "", "localPort": 0, "localToken": "", "hostId": "", "hostName": "", "relayOrigin": "", "paired": false, "generation": 0]
     private var pathMonitor: NWPathMonitor?
     private var pendingHello: (master: String, clientRandomB64: String, generation: Int64, origin: String)?
+    private var pingTimer: Timer?
 
     private override init() {
         super.init()
@@ -142,6 +143,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
         session = nil
         cipher = nil
         pendingHello = nil
+        stopTunnelPing()
         dropLoopback("disconnect")
         publish(phase: "STOPPED", message: "扫码连接已断开", hostId: hostId, hostName: hostName, relayOrigin: relayOrigin, paired: secrets.hasPairing())
     }
@@ -226,6 +228,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
             let socket = session.webSocketTask(with: request)
             webSocket = socket
             socket.resume()
+            startTunnelPing(socket)
             send(hello, on: socket)
             receive(on: socket)
         } catch {
@@ -388,8 +391,32 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
         }
     }
 
+    private func startTunnelPing(_ socket: URLSessionWebSocketTask) {
+        stopTunnelPing()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let timer = Timer(timeInterval: 20, repeats: true) { [weak socket] _ in
+                socket?.sendPing { error in
+                    if let error {
+                        NSLog("[DshRelay] tunnel ping failed: %@", error.localizedDescription)
+                    }
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.pingTimer = timer
+        }
+    }
+
+    private func stopTunnelPing() {
+        DispatchQueue.main.async { [weak self] in
+            self?.pingTimer?.invalidate()
+            self?.pingTimer = nil
+        }
+    }
+
     private func scheduleReconnect() {
         if stopped { return }
+        stopTunnelPing()
         dropLoopback("reconnect")
         publish(phase: "RECONNECTING", message: "扫码连接重试中", localPort: 0, localToken: "")
         Thread.detachNewThread { [weak self] in

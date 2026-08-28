@@ -241,6 +241,8 @@ final class DshRelayLoopbackServer {
         writeRaw(fd, "HTTP/1.1 101 Switching Protocols\r\n")
         writeRaw(fd, "Upgrade: websocket\r\nConnection: Upgrade\r\n")
         writeRaw(fd, "Sec-WebSocket-Accept: \(accept)\r\n\r\n")
+        var disableTimeout = timeval(tv_sec: 0, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &disableTimeout, socklen_t(MemoryLayout<timeval>.size))
         socketsLock.lock()
         sockets[channel] = fd
         socketsLock.unlock()
@@ -252,18 +254,26 @@ final class DshRelayLoopbackServer {
         }
         while !stopped {
             guard let frame = readWsFrame(fd) else { break }
-            if frame.opcode == 8 {
+            switch frame.opcode {
+            case 8:
                 sendInner("ws_close", ["code": 1000, "reason": ""], channel)
-                break
+                return
+            case 9:
+                writeUnmasked(fd, opcode: 10, payload: frame.payload)
+            case 10:
+                continue
+            case 0, 1, 2:
+                sendInner(
+                    "ws_frame",
+                    [
+                        "dataB64": frame.payload.base64EncodedString(),
+                        "opcode": frame.opcode == 2 ? 2 : 1,
+                    ],
+                    channel
+                )
+            default:
+                continue
             }
-            sendInner(
-                "ws_frame",
-                [
-                    "dataB64": frame.payload.base64EncodedString(),
-                    "opcode": frame.opcode == 2 ? 2 : 1,
-                ],
-                channel
-            )
         }
     }
 
@@ -274,16 +284,22 @@ final class DshRelayLoopbackServer {
         guard let fd else { return }
         let data = Data(base64Encoded: payload["dataB64"] as? String ?? "") ?? Data()
         let opcode = intValue(payload["opcode"], fallback: 1) == 2 ? 2 : 1
-        var header = Data([UInt8(0x80 | opcode)])
-        if data.count < 126 {
-            header.append(UInt8(data.count))
+        writeUnmasked(fd, opcode: opcode, payload: data)
+    }
+
+    private func writeUnmasked(_ fd: Int32, opcode: Int, payload: Data) {
+        socketsLock.lock()
+        defer { socketsLock.unlock() }
+        var header = Data([UInt8(0x80 | (opcode & 0x0f))])
+        if payload.count < 126 {
+            header.append(UInt8(payload.count))
         } else {
             header.append(126)
-            header.append(UInt8((data.count >> 8) & 0xff))
-            header.append(UInt8(data.count & 0xff))
+            header.append(UInt8((payload.count >> 8) & 0xff))
+            header.append(UInt8(payload.count & 0xff))
         }
         _ = header.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, header.count) }
-        _ = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, data.count) }
+        _ = payload.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, payload.count) }
     }
 
     private func readWsFrame(_ fd: Int32) -> (opcode: Int, payload: Data)? {

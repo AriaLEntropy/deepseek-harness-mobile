@@ -217,21 +217,28 @@ internal class DshRelayLoopbackServer(
         writeRaw(output, "Upgrade: websocket\r\nConnection: Upgrade\r\n")
         writeRaw(output, "Sec-WebSocket-Accept: $accept\r\n\r\n")
         output.flush()
+        socket.soTimeout = 0
         sockets[channel] = socket
         try {
             while (!socket.isClosed) {
-                val frame = readWsFrame(input) ?: break
-                if (frame.first == 8) {
-                    sendInner("ws_close", JSONObject().put("code", 1000).put("reason", ""), channel)
-                    break
+                val frame = DshWebSocketFrames.readFrame(input) ?: break
+                when {
+                    DshWebSocketFrames.isClose(frame.opcode) -> {
+                        sendInner("ws_close", JSONObject().put("code", 1000).put("reason", ""), channel)
+                        break
+                    }
+                    DshWebSocketFrames.isPing(frame.opcode) -> {
+                        writeUnmasked(socket, DshWebSocketFrames.OPCODE_PONG, frame.payload)
+                    }
+                    DshWebSocketFrames.isPong(frame.opcode) -> Unit
+                    DshWebSocketFrames.isData(frame.opcode) -> sendInner(
+                        "ws_frame",
+                        JSONObject()
+                            .put("dataB64", android.util.Base64.encodeToString(frame.payload, android.util.Base64.NO_WRAP))
+                            .put("opcode", DshWebSocketFrames.forwardOpcode(frame.opcode)),
+                        channel,
+                    )
                 }
-                sendInner(
-                    "ws_frame",
-                    JSONObject()
-                        .put("dataB64", android.util.Base64.encodeToString(frame.second, android.util.Base64.NO_WRAP))
-                        .put("opcode", if (frame.first == 2) 2 else 1),
-                    channel,
-                )
             }
         } catch (_: Exception) {
         } finally {
@@ -244,42 +251,16 @@ internal class DshRelayLoopbackServer(
     private fun writeWsFrame(channel: String, payload: JSONObject) {
         val socket = sockets[channel] ?: return
         val data = android.util.Base64.decode(payload.optString("dataB64"), android.util.Base64.DEFAULT)
-        val opcode = if (payload.optInt("opcode") == 2) 2 else 1
-        val output = socket.getOutputStream()
-        val header = ByteArray(2)
-        header[0] = (0x80 or opcode).toByte()
-        if (data.size < 126) {
-            header[1] = data.size.toByte()
-            output.write(header)
-        } else {
-            header[1] = 126
-            output.write(header)
-            output.write(byteArrayOf(((data.size shr 8) and 0xff).toByte(), (data.size and 0xff).toByte()))
-        }
-        output.write(data)
-        output.flush()
+        val opcode = DshWebSocketFrames.forwardOpcode(payload.optInt("opcode"))
+        writeUnmasked(socket, opcode, data)
     }
 
-    private fun readWsFrame(input: BufferedInputStream): Pair<Int, ByteArray>? {
-        val b1 = input.read()
-        val b2 = input.read()
-        if (b1 < 0 || b2 < 0) return null
-        val opcode = b1 and 0x0f
-        val masked = b2 and 0x80 != 0
-        var len = b2 and 0x7f
-        if (len == 126) {
-            val extra = input.readNBytesCompat(2)
-            len = ((extra[0].toInt() and 0xff) shl 8) or (extra[1].toInt() and 0xff)
-        } else if (len == 127) {
-            val extra = input.readNBytesCompat(8)
-            len = ByteBufferWrap.intFrom8(extra)
+    private fun writeUnmasked(socket: Socket, opcode: Int, payload: ByteArray) {
+        synchronized(socket) {
+            val output = socket.getOutputStream()
+            output.write(DshWebSocketFrames.encodeUnmasked(opcode, payload))
+            output.flush()
         }
-        val mask = if (masked) input.readNBytesCompat(4) else ByteArray(0)
-        val data = input.readNBytesCompat(len)
-        if (masked) {
-            for (i in data.indices) data[i] = (data[i].toInt() xor mask[i % 4].toInt()).toByte()
-        }
-        return opcode to data
     }
 
     private fun websocketAccept(key: String): String {
@@ -330,13 +311,5 @@ internal class DshRelayLoopbackServer(
 
     companion object {
         private const val TAG = "DshRelayLoopback"
-    }
-}
-
-private object ByteBufferWrap {
-    fun intFrom8(bytes: ByteArray): Int {
-        var value = 0
-        for (b in bytes) value = (value shl 8) or (b.toInt() and 0xff)
-        return value
     }
 }
