@@ -16,6 +16,7 @@ Pods
 Pods/*
 Pods-iosApp/*
 Kotlin-js-store
+.kotlin
 
 ## Various settings
 *.pbxuser
