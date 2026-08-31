@@ -25,8 +25,16 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
     private var pathMonitor: NWPathMonitor?
     private var pendingHello: (master: String, clientRandomB64: String, generation: Int64, origin: String)?
     private var pingTimer: Timer?
+    private let httpSession: URLSession
 
     private override init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForResource = 45
+        configuration.allowsConstrainedNetworkAccess = true
+        configuration.allowsExpensiveNetworkAccess = true
+        httpSession = URLSession(configuration: configuration)
         super.init()
         restorePairing()
     }
@@ -66,6 +74,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
                 "deviceLabel": "iOS",
                 "platform": "ios",
             ]
+            DshLocalNetworkAccess.prepare(for: link.origin)
             let json = try httpPost(url: "\(link.origin)/pair/claim-device", body: body, authorization: nil)
             let http = json.http
             let object = json.object
@@ -93,7 +102,8 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
                 "pairedAt": Int64(Date().timeIntervalSince1970 * 1000),
             ]
         } catch {
-            let message = relayNetworkMessage(error)
+            let origin = (try? parsePairQr(qr).origin) ?? relayOrigin
+            let message = relayNetworkMessage(error, origin: origin)
             publish(phase: "ERROR", message: message, paired: secrets.hasPairing())
             return ["ok": false, "message": message]
         }
@@ -183,6 +193,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
             hostId = secrets.hostId() ?? ""
             hostName = (secrets.hostName() ?? "").nilIfEmpty ?? hostName
             relayOrigin = origin
+            DshLocalNetworkAccess.prepare(for: origin)
             publish(phase: "CONNECTING", message: "正在申请访问票", hostId: hostId, hostName: hostName, relayOrigin: origin, paired: true, generation: myGeneration)
             let ticket = try httpPost(
                 url: "\(origin)/access-ticket",
@@ -221,6 +232,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
             var request = URLRequest(url: URL(string: tunnelUrl)!)
             request.setValue("Bearer \(ticketValue)", forHTTPHeaderField: "Authorization")
             let configuration = URLSessionConfiguration.default
+            configuration.waitsForConnectivity = true
             configuration.timeoutIntervalForRequest = .infinity
             configuration.timeoutIntervalForResource = .infinity
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
@@ -232,9 +244,10 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
             send(hello, on: socket)
             receive(on: socket)
         } catch {
-            NSLog("[DshRelay] connect failed: %@", error.localizedDescription)
+            let message = relayNetworkMessage(error, origin: relayOrigin)
+            NSLog("[DshRelay] connect failed: %@", message)
             if !stopped && myGeneration == currentGeneration() {
-                publish(phase: "ERROR", message: error.localizedDescription.nilIfEmpty ?? "连接失败", hostId: hostId, hostName: hostName, relayOrigin: relayOrigin, paired: true, generation: myGeneration)
+                publish(phase: "ERROR", message: message, hostId: hostId, hostName: hostName, relayOrigin: relayOrigin, paired: true, generation: myGeneration)
                 scheduleReconnect()
             }
         }
@@ -248,8 +261,9 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
         lock.unlock()
         if stopped || myGeneration != currentGeneration() { return }
         if let error {
-            NSLog("[DshRelay] relay socket failed: %@", error.localizedDescription)
-            publish(phase: "ERROR", message: error.localizedDescription.nilIfEmpty ?? "隧道失败")
+            let message = relayNetworkMessage(error, origin: relayOrigin)
+            NSLog("[DshRelay] relay socket failed: %@", message)
+            publish(phase: "ERROR", message: message)
         }
         scheduleReconnect()
     }
@@ -260,8 +274,9 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
             switch result {
             case .failure(let error):
                 if !self.stopped {
-                    NSLog("[DshRelay] relay socket failed: %@", error.localizedDescription)
-                    self.publish(phase: "ERROR", message: error.localizedDescription.nilIfEmpty ?? "隧道失败")
+                    let message = self.relayNetworkMessage(error, origin: self.relayOrigin)
+                    NSLog("[DshRelay] relay socket failed: %@", message)
+                    self.publish(phase: "ERROR", message: message)
                     self.scheduleReconnect()
                 }
             case .success(let message):
@@ -494,7 +509,7 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
         var capturedData: Data?
         var capturedResponse: HTTPURLResponse?
         var capturedError: Error?
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        httpSession.dataTask(with: request) { data, response, error in
             capturedData = data
             capturedResponse = response as? HTTPURLResponse
             capturedError = error
@@ -506,9 +521,43 @@ final class DshRelayRuntime: NSObject, URLSessionWebSocketDelegate {
         return (capturedResponse?.statusCode ?? 0, object)
     }
 
-    private func relayNetworkMessage(_ error: Error) -> String {
+    private func relayNetworkMessage(_ error: Error, origin: String) -> String {
         let nsError = error as NSError
-        return nsError.localizedDescription.isEmpty ? "配对失败" : nsError.localizedDescription
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorAppTransportSecurityRequiresSecureConnection:
+                return "iOS 拦截了明文 HTTP（App Transport Security）。局域网 / Tailscale 扫码需要允许任意网络加载；请重装本版 App。公网 Relay 请改用 HTTPS。"
+            case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost, NSURLErrorTimedOut, NSURLErrorDataNotAllowed, NSURLErrorCannotFindHost:
+                if DshRelayRuntime.isLocalRelayHost(origin) {
+                    return "连不上同一网络上的 Relay。请到「设置 > 隐私与安全性 > 本地网络」允许本 App，并确认手机与电脑在同一 Wi-Fi。"
+                }
+            default:
+                break
+            }
+        }
+        if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENETDOWN) {
+            return "连不上同一网络上的 Relay。请到「设置 > 隐私与安全性 > 本地网络」允许本 App。"
+        }
+        let description = nsError.localizedDescription
+        if description.contains("App Transport Security") || description.contains("安全连接") {
+            return "iOS 拦截了明文 HTTP（App Transport Security）。请重装本版 App，或把 PUBLIC_RELAY_URL 改为 https。"
+        }
+        return description.isEmpty ? "连接失败" : description
+    }
+
+    private static func isLocalRelayHost(_ origin: String) -> Bool {
+        guard let host = URL(string: origin)?.host?.lowercased(), !host.isEmpty else { return false }
+        if host == "localhost" || host.hasSuffix(".local") || !host.contains(".") { return true }
+        let parts = host.split(separator: ".").compactMap { UInt8($0) }
+        guard parts.count == 4 else { return false }
+        let a = parts[0]
+        let b = parts[1]
+        return a == 10
+            || a == 127
+            || (a == 192 && b == 168)
+            || (a == 172 && (16...31).contains(b))
+            || (a == 100 && (64...127).contains(b))
+            || (a == 169 && b == 254)
     }
 
     private func jsonObject(_ text: String) -> [String: Any]? {

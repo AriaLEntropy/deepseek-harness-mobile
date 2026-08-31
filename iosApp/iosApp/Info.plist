@@ -23,12 +23,17 @@
 	<key>NSCameraUsageDescription</key>
 	<string>扫描电脑上的 DSH 配对二维码</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>连接同一网络上的 DSH Relay 和 SSH 主机</string>
+	<string>DSH 需要访问同一 Wi-Fi 上的电脑 Relay，才能完成扫码连接和 SSH。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dsh-relay._tcp</string>
+	</array>
+	<!-- Do not add NSAllowsLocalNetworking next to NSAllowsArbitraryLoads: iOS 10+
+	     then ignores ArbitraryLoads, and cleartext HTTP/WS (LAN, Tailscale, public IP)
+	     is blocked as App Transport Security. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>UIApplicationSceneManifest</key>
