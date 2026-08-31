@@ -78,4 +78,39 @@ class DshStreamingTurnTest {
         val right = listOf(DshMessage("b", DshMessageRole.ASSISTANT, "new"))
         assertEquals(false, dshMessagesVisuallyEqual(left, right))
     }
+
+    @Test
+    fun liveBufferWinsOverFirstFlushSnapshot() {
+        val stored = "I'll write some Kotlin coroutine code examples for you.\n\n```kotlin\nfun main"
+        val live = stored + "() = runBlocking {\n    delay(1)\n}\n```"
+        assertEquals(
+            live,
+            dshDisplayedAssistantContent(stored, live, isLiveRow = true),
+        )
+    }
+
+    @Test
+    fun emptyPlaceholderUsesLiveUntilSettle() {
+        assertEquals(
+            "full reply",
+            dshDisplayedAssistantContent(stored = "", live = "full reply", isLiveRow = true),
+        )
+    }
+
+    @Test
+    fun settledRowUsesStoredOnceLiveIsCleared() {
+        val full = "complete markdown with a code fence"
+        assertEquals(
+            full,
+            dshDisplayedAssistantContent(stored = full, live = "", isLiveRow = false),
+        )
+    }
+
+    @Test
+    fun neverFallsBackToShorterStoredWhenLiveRemains() {
+        assertEquals(
+            "abcdef",
+            dshDisplayedAssistantContent(stored = "abc", live = "abcdef", isLiveRow = false),
+        )
+    }
 }

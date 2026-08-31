@@ -4,6 +4,7 @@ import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
+import com.tencent.kuikly.core.directives.scrollToPosition
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.reactive.handler.observable
@@ -22,6 +23,7 @@ import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.views.ListView
+import com.tencent.kuikly.core.views.ScrollParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +38,7 @@ private const val SESSION_CACHE_WARM_START_DELAY_MS = 600
 private const val CONVERSATION_PANEL_CACHE_LIMIT = 8
 private const val SCROLL_SETTLE_ATTEMPTS = 6
 private val SCROLL_SETTLE_DELAYS_MS = intArrayOf(0, 16, 32, 64, 120, 200)
+private const val FOLLOW_LIST_SLACK_PX = 72f
 
 /** First usable DSH surface: local sessions, streaming Markdown, and a composer. */
 @Page("home")
@@ -125,6 +128,7 @@ internal class DshHomePage : BasePager() {
     private val pendingAssistantDelta = StringBuilder()
     private var assistantFlushScheduled = false
     private var scrollSettleGeneration = 0
+    private var followListTail = true
     private var perfTraceSequence = 0
     private var preloadTraceSequence = 0
     private val connectionCoordinator = DshConnectionCoordinator()
@@ -304,6 +308,7 @@ internal class DshHomePage : BasePager() {
                                 onSend = { ctx.sendDraft() },
                                 onStop = { ctx.stopStream() },
                                 onDismissKeyboard = { ctx.dismissKeyboard() },
+                                onUserListScroll = { ctx.onConversationUserScroll(it) },
                                 modelLabel = { ctx.selectedModelLabel },
                                 attachmentMenuVisible = { ctx.attachmentMenuVisible },
                                 voiceActive = { ctx.voiceActive },
@@ -411,6 +416,7 @@ internal class DshHomePage : BasePager() {
                             onSend = { ctx.sendDraft() },
                             onStop = { ctx.stopStream() },
                             onDismissKeyboard = { ctx.dismissKeyboard() },
+                            onUserListScroll = { ctx.onConversationUserScroll(it) },
                             modelLabel = { ctx.selectedModelLabel },
                             attachmentMenuVisible = { ctx.attachmentMenuVisible },
                             voiceActive = { ctx.voiceActive },
@@ -2249,6 +2255,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadApiKeyAsync() {
+        if (isRemoteHost) return
         val store = localStore
         if (store == null) {
             showCredentialSetupIfNeeded("")
@@ -2258,9 +2265,7 @@ internal class DshHomePage : BasePager() {
             val apiKey = runCatching { store.loadApiKey() }.getOrDefault("")
             setTimeout(pagerId, 0) {
                 pendingApiKey = apiKey
-                if (sshMode) {
-                    connectionLabel = "等待 SSH 连接"
-                } else if (apiKey.isEmpty()) {
+                if (apiKey.isEmpty()) {
                     showCredentialSetupIfNeeded(apiKey)
                 } else if (engineReady && repository == null && connectionMode == DshConnectionMode.LOCAL) {
                     connectLocalEngine(apiKey)
@@ -2270,6 +2275,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun showCredentialSetupIfNeeded(apiKey: String) {
+        if (isRemoteHost) return
         if (pendingApiKey.isNotEmpty() || apiKey.isNotEmpty()) return
         connectionLabel = "等待配置"
         updateCredentialSetupVisibility(true)
@@ -2722,6 +2728,7 @@ internal class DshHomePage : BasePager() {
         // gap so LazyLoop never has to realize an empty markdown bubble.
         sessionMessageStates[sessionId] = messages
         if (wasEmpty) remountConversationList(sessionId)
+        pinFollowListTail()
         scrollMessagesToMessage(user.id)
         streamingTurnAnchorAssistantId = messages.lastOrNull(::dshIsLiveAssistantText)?.id.orEmpty()
         streamingAssistantId = ""
@@ -2928,7 +2935,8 @@ internal class DshHomePage : BasePager() {
         } else {
             messages.add(DshMessage(id, DshMessageRole.ASSISTANT, streamingReasoningContent, streaming = true, isReasoning = true))
         }
-        scrollMessagesToEnd()
+        realizeVisibleMessages()
+        if (followListTail) scrollMessagesToEnd()
     }
 
     private fun flushAssistantDelta() {
@@ -2938,10 +2946,13 @@ internal class DshHomePage : BasePager() {
         DshStreamLog.i(
             "ui.flush id=$streamingAssistantId chars=${streamingAssistantContent.length} preview='${DshStreamLog.preview(streamingAssistantContent)}'",
         )
-        updateStreamingMessage(streamingAssistantContent, streaming = true)
+        // Keep the ObservableList row stable while tokens arrive. `messages[i] =
+        // copy()` is remove+add; LazyLoop treats an append at currentEnd as
+        // "behind the visible range" and will not build the cell until scroll.
+        // DshMarkdown already reads `streamingAssistantContent` via liveContent.
+        insertLiveAssistantRow()
+        ensureLiveMessageCell()
         refreshSessionRenderTree(activeSessionId)
-        // Follow the assistant while SSE produces new content. The initial
-        // send still anchors on the user's message until the first delta.
         scrollMessagesToEnd()
     }
 
@@ -2959,8 +2970,42 @@ internal class DshHomePage : BasePager() {
             "$streamingAssistantRootId-segment-${streamingAssistantSegment}"
         }
         streamingAssistantId = id
-        streamingAssistantContent = ""
+        if (streamingAssistantContent.isEmpty() && pendingAssistantDelta.isEmpty()) {
+            // Inserting an empty assistant into a brand-new List (only the user
+            // bubble) is "add behind currentEnd". LazyLoop will not build that
+            // cell until a real scroll, and DshMessageRow also skips mounting
+            // Markdown when the first paint is empty. Wait for the first flush.
+            return
+        }
+        insertLiveAssistantRow()
+    }
+
+    private fun insertLiveAssistantRow() {
+        val id = streamingAssistantId
+        if (id.isEmpty() || messages.any { it.id == id }) return
+        // Keep content empty until settle. The first-flush snapshot must not
+        // become the display source; DshMarkdown reads the live buffer.
         messages.add(DshMessage(id, DshMessageRole.ASSISTANT, "", streaming = true))
+        ensureLiveMessageCell()
+    }
+
+    /**
+     * vforLazy only creates items inside `[currentStart, currentEnd)`. Appending
+     * the first assistant after the list was mounted with a single user bubble
+     * lands at `currentEnd`. `setContentOffset` is a no-op when content is
+     * shorter than the viewport (new session, first turn), so the cell never
+     * appears until the user drags. `scrollToPosition` is what actually builds it.
+     */
+    private fun ensureLiveMessageCell() {
+        if (!followListTail) return
+        val id = streamingAssistantId
+        if (id.isEmpty()) return
+        if (messageRowRefs[messageRowKey(activeSessionId, id)]?.view != null) return
+        val list = messageScrollerRefs[activeSessionId]?.view ?: return
+        val index = messages.indexOfFirst { it.id == id }
+        if (index < 0) return
+        DshStreamLog.i("ui.realize-live-cell id=$id index=$index size=${messages.size}")
+        list.scrollToPosition(index, 0f, false)
     }
 
     /** Close the current text row immediately before the next tool card. */
@@ -2972,10 +3017,12 @@ internal class DshHomePage : BasePager() {
             val index = messages.indexOfFirst { it.id == id }
             if (index >= 0) {
                 val current = messages[index]
-                if (current.content.isEmpty()) {
+                val text = current.content.ifEmpty { streamingAssistantContent }
+                if (text.isEmpty()) {
                     messages.removeAt(index)
                 } else {
-                    messages[index] = current.copy(streaming = false)
+                    messages[index] = current.copy(content = text, streaming = false)
+                    realizeVisibleMessages()
                 }
             }
         }
@@ -2994,6 +3041,7 @@ internal class DshHomePage : BasePager() {
             streaming = streaming,
             isReasoning = isReasoning,
         )
+        if (index >= messages.size - 1) realizeVisibleMessages()
     }
 
     private fun finalizeStreamingReasoning() {
@@ -3005,7 +3053,10 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun scrollMessagesToEnd() {
+        if (!followListTail) return
         val generation = ++scrollSettleGeneration
+        ensureLiveMessageCell()
+        realizeVisibleMessages()
         addTaskWhenPagerUpdateLayoutFinish {
             settleScrollToEnd(generation, 0)
         }
@@ -3025,7 +3076,9 @@ internal class DshHomePage : BasePager() {
      * list walk down a few screens after launch.
      */
     private fun settleScrollToEnd(generation: Int, attempt: Int) {
-        if (generation != scrollSettleGeneration) return
+        if (generation != scrollSettleGeneration || !followListTail) return
+        ensureLiveMessageCell()
+        realizeVisibleMessages()
         scrollMessagesToEndAfterLayout()
         if (attempt >= SCROLL_SETTLE_ATTEMPTS) return
         setTimeout(pagerId, SCROLL_SETTLE_DELAYS_MS[attempt]) {
@@ -3035,7 +3088,34 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    private fun realizeVisibleMessages() {
+        val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
+        val content = scroller.contentView as? ListContentView ?: return
+        content.flexNode.markDirty()
+        content.createRenderViewsOnVisibleRect()
+    }
+
+    private fun onConversationUserScroll(params: ScrollParams) {
+        val maxOffset = (params.contentHeight - params.viewHeight).coerceAtLeast(0f)
+        val nearBottom = params.offsetY >= maxOffset - FOLLOW_LIST_SLACK_PX
+        if (nearBottom) {
+            followListTail = true
+            return
+        }
+        if (params.isDragging) cancelFollowListTail()
+    }
+
+    private fun cancelFollowListTail() {
+        followListTail = false
+        scrollSettleGeneration += 1
+    }
+
+    private fun pinFollowListTail() {
+        followListTail = true
+    }
+
     private fun scrollMessagesToEndAfterLayout() {
+        if (!followListTail) return
         val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
         val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
         val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
@@ -3079,6 +3159,7 @@ internal class DshHomePage : BasePager() {
             } else {
                 messages.add(DshMessage(id, role, finalContent, streaming = false))
             }
+            realizeVisibleMessages()
             DshStreamLog.i(
                 "ui.settle id=$id role=$role index=$index chars=${finalContent.length} preview='${DshStreamLog.preview(finalContent)}'",
             )
@@ -3092,12 +3173,15 @@ internal class DshHomePage : BasePager() {
             addTaskWhenPagerUpdateLayoutFinish {
                 if (activeSessionId != sessionId) return@addTaskWhenPagerUpdateLayoutFinish
                 if (!streaming && streamingAssistantId == id) {
-                    streamingAssistantId = ""
-                    streamingAssistantRootId = ""
-                    streamingAssistantSegment = 0
-                    streamingTurnAnchorAssistantId = ""
-                    if (streamingAssistantContent == finalContent) {
-                        streamingAssistantContent = ""
+                    val stored = messages.firstOrNull { it.id == id }?.content.orEmpty()
+                    if (stored.length >= finalContent.length) {
+                        streamingAssistantId = ""
+                        streamingAssistantRootId = ""
+                        streamingAssistantSegment = 0
+                        streamingTurnAnchorAssistantId = ""
+                        if (streamingAssistantContent == finalContent) {
+                            streamingAssistantContent = ""
+                        }
                     }
                 }
                 refreshSessionRenderTree(sessionId)
