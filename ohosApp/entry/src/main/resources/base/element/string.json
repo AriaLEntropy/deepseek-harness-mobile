@@ -10,7 +10,15 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "kuiklydemo"
+      "value": "DSH"
+    },
+    {
+      "name": "dsh_camera_reason",
+      "value": "Scan the computer QR code to pair Relay"
+    },
+    {
+      "name": "dsh_network_reason",
+      "value": "Pair with the computer over Wi-Fi"
     }
   ]
 }

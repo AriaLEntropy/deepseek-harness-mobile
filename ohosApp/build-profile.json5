@@ -1,6 +1,19 @@
 {
   "app": {
     "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "/Users/yukiykchen/.ohos/config/default_ohosApp_zbrli5__r1URq7RJHnHiz4V7mDkDo08dGGtVUi8Pb_k=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BFED0FADAE6A931621B110AD2E33E95DAB731AB3140BC98C4F6BFB9DFDC462FFBBF10F03923AB90",
+          "profile": "/Users/yukiykchen/.ohos/config/default_ohosApp_zbrli5__r1URq7RJHnHiz4V7mDkDo08dGGtVUi8Pb_k=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "/Users/yukiykchen/.ohos/config/default_ohosApp_zbrli5__r1URq7RJHnHiz4V7mDkDo08dGGtVUi8Pb_k=.p12",
+          "storePassword": "0000001B12383CF07B8EFD395494D130957904CC5433985C107C087B182434000DF058832778AB5E2C44C6"
+        }
+      }
     ],
     "products": [
       {

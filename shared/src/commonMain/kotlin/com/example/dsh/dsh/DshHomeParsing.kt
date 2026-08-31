@@ -4,8 +4,13 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 
-internal fun visibleSkillList(source: ObservableList<DshSkill>, query: String): ObservableList<DshSkill> =
-    ObservableList<DshSkill>().also { result -> result.addAll(source.filter { it.name.startsWith(query) }) }
+internal fun visibleSkillList(source: ObservableList<DshSkill>, query: String): ObservableList<DshSkill> {
+    val next = source.toList().filter { it.name.startsWith(query) }
+    skillFilterCache.diffUpdate(next) { old, new -> old.name == new.name }
+    return skillFilterCache
+}
+
+private val skillFilterCache = ObservableList<DshSkill>()
 
 internal fun isRemoteCatalogInvalidationEvent(event: String): Boolean = event in setOf(
     "commands/change",

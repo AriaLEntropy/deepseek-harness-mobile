@@ -21,10 +21,4 @@ internal fun HttpClientConfig<*>.installDshSseClient() {
     }
 }
 
-internal fun dshWebSocketUrl(httpUrl: String): String = when {
-    httpUrl.startsWith("https://") -> "wss://${httpUrl.removePrefix("https://")}"
-    httpUrl.startsWith("http://") -> "ws://${httpUrl.removePrefix("http://")}"
-    else -> httpUrl
-}
-
 private const val CONNECT_TIMEOUT_MS = 10_000L

@@ -52,6 +52,10 @@ static const void *kDshImageSrcKey = &kDshImageSrcKey;
             } else if (svgURL) {
                 svgImage = [SVGKImage imageWithContentsOfURL:svgURL];
             }
+            NSArray *fatal = svgImage.parseErrorsAndWarnings.errorsFatal;
+            if (fatal.count > 0) {
+                NSLog(@"[%@] svg parse fatal src=%@ errors=%@", kDshImageTag, url, fatal);
+            }
             UIImage *uiImage = svgImage.UIImage;
             dispatch_async(dispatch_get_main_queue(), ^{
                 UIImageView *strongView = weakView;

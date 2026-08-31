@@ -39,6 +39,16 @@ kotlin {
 
     ohosArm64 {
         binaries.sharedLib {
+            linkerOpts(
+                "-L${rootProject.projectDir}/ohosApp/entry/libs/arm64-v8a",
+                "-lpbcurlwrapper",
+            )
+        }
+        compilations.getByName("main").compileTaskProvider.configure {
+            compilerOptions {
+                optIn.add("kotlinx.cinterop.ExperimentalForeignApi")
+                optIn.add("kotlin.experimental.ExperimentalNativeApi")
+            }
         }
     }
 
@@ -48,10 +58,11 @@ kotlin {
                 implementation("com.tencent.kuikly-open:core:${Version.getKuiklyOhosVersion()}")
                 implementation("com.tencent.kuikly-open:core-annotations:${Version.getKuiklyOhosVersion()}")
                 implementation("com.tencent.kuiklybase:KuiklyMarkdown:1.0.6-2.0.21-ohos")
-                implementation("com.tencent.kuiklybase:KuiklyWebview:1.0.2-2.0.21-KBA-010")
-                implementation("io.ktor:ktor-client-core:3.2.3")
-                implementation("io.ktor:ktor-client-websockets:3.2.3")
-
+                implementation("com.tencent.kuiklybase:KuiklyWebview:1.0.1-2.0.21-KBA-010")
+                // HarmonyOS KN variant from KuiklyBase-platform; stock 1.10.1 has no ohos_arm64.
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0-KBA-002")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.1-KBA-003")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1-KBA-003")
             }
         }
         val commonTest by getting {
@@ -64,14 +75,13 @@ kotlin {
             dependsOn(commonMain)
             dependencies {
                 implementation("net.shantu.kuiklysqlite:kuiklySqlite:1.0.0")
-                implementation("io.ktor:ktor-client-cio:3.2.3")
+                implementation("com.tencent.kuiklybase:network:0.0.4")
             }
             ohosArm64Main.dependsOn(this)
         }
         val androidMain by getting {
             dependencies {
                 api("com.tencent.kuikly-open:core-render-android:${Version.getKuiklyOhosVersion()}")
-                implementation("io.ktor:ktor-client-okhttp:3.2.3")
             }
         }
 
@@ -80,9 +90,6 @@ kotlin {
         val iosSimulatorArm64Main by getting
         val iosMain by creating {
             dependsOn(commonMain)
-            dependencies {
-                implementation("io.ktor:ktor-client-darwin:3.2.3")
-            }
             iosX64Main.dependsOn(this)
             iosArm64Main.dependsOn(this)
             iosSimulatorArm64Main.dependsOn(this)
@@ -154,4 +161,41 @@ fun getCommonCompilerArgs(): List<String> {
 
 fun getLinkerArgs(): List<String> {
     return listOf()
+}
+
+val nativeLibsDir = rootProject.file("ohosApp/entry/libs/arm64-v8a")
+val pbcurlwrapperSo = nativeLibsDir.resolve("libpbcurlwrapper.so")
+val opensslSo = nativeLibsDir.resolve("libopenssl.so")
+val downloadPbcurlwrapper = tasks.register("downloadPbcurlwrapper") {
+    outputs.files(pbcurlwrapperSo, opensslSo)
+    doLast {
+        nativeLibsDir.mkdirs()
+        fun fetch(file: java.io.File, url: String, minBytes: Long) {
+            if (file.exists() && file.length() > minBytes) {
+                return
+            }
+            exec {
+                commandLine("curl", "-L", "--fail", "--retry", "3", "-o", file.absolutePath, url)
+            }
+            if (!file.exists() || file.length() < minBytes) {
+                throw GradleException("downloaded ${file.name} is too small (${file.length()} bytes)")
+            }
+        }
+        fetch(
+            pbcurlwrapperSo,
+            "https://github.com/Tencent-TDS/KuiklyBase-components/raw/master/NetworkKMM/network/libs/libpbcurlwrapper.so",
+            100_000L,
+        )
+        fetch(
+            opensslSo,
+            "https://github.com/Tencent-TDS/KuiklyBase-components/raw/master/NetworkKMM/ohosApp/pbcurlwrapper/libs/arm64-v8a/libopenssl.so",
+            1_000_000L,
+        )
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("OhosArm64") && (name.startsWith("link") || name.startsWith("compileKotlin"))) {
+        dependsOn(downloadPbcurlwrapper)
+    }
 }

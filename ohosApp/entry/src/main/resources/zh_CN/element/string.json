@@ -10,7 +10,15 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "kuiklydemo"
+      "value": "DSH"
+    },
+    {
+      "name": "dsh_camera_reason",
+      "value": "扫描电脑二维码以配对 Relay"
+    },
+    {
+      "name": "dsh_network_reason",
+      "value": "通过 Wi-Fi 与电脑配对"
     }
   ]
 }

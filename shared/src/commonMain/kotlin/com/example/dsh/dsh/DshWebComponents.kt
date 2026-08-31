@@ -670,8 +670,9 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
 
     override fun body(): ViewBuilder {
         val ctx = this
-        val jobs = ObservableList<DshJobItem>().also { it.addAll(dshOrderedJobs(ctx.attr.jobs.toList())) }
-        val liveCount = jobs.count { it.status == "running" || it.status == "stopping" }
+        val snapshot = ctx.attr.jobs.toList()
+        val ordered = dshOrderedJobs(snapshot)
+        val liveCount = ordered.count { it.status == "running" || it.status == "stopping" }
         return {
             vif({ ctx.attr.jobs.isNotEmpty() }) {
                 View {
@@ -688,7 +689,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                         event { click { ctx.attr.onToggle() } }
                         Text {
                             attr {
-                                text(if (liveCount > 0) "后台任务 · $liveCount 运行中" else "后台任务 · ${jobs.size}")
+                                text(if (liveCount > 0) "后台任务 · $liveCount 运行中" else "后台任务 · ${snapshot.size}")
                                 flex(1f)
                                 fontSize(13f)
                                 color(Color(0xFF39424A))
@@ -703,7 +704,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                         }
                     }
                     vif({ ctx.attr.expanded }) {
-                    vfor({ jobs }) { job ->
+                    vfor({ ctx.attr.jobs }) { job ->
                         View {
                             attr {
                                 minHeight(46f)

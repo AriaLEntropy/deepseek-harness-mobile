@@ -1,10 +1,12 @@
 import { KuiklyNativeManager } from '@kuikly-open/render';
 import Napi from 'libentry.so';
+import { DshOhosContext } from './native/DshOhosContext';
 
 class MyNativeManager extends KuiklyNativeManager {
   protected loadNative(): number {
-    // 调用Napi接口，初始化 Kuikly Native
-    return Napi.initKuikly();
+    const handler = Napi.initKuikly();
+    DshOhosContext.installMainHandler();
+    return handler;
   }
 }
 

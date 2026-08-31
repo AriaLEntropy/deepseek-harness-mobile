@@ -5,8 +5,19 @@ import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.View
 
-internal fun visibleSessionList(source: ObservableList<DshSession>): ObservableList<DshSession> =
-    ObservableList<DshSession>().also { result -> result.addAll(source.filterNot { it.blank }) }
+internal fun syncVisibleSessions(
+    source: ObservableList<DshSession>,
+    dest: ObservableList<DshSession>,
+) {
+    val next = source.toList().filterNot { it.blank }
+    dest.diffUpdate(next) { old, new -> old.id == new.id }
+    val count = minOf(dest.size, next.size)
+    for (index in 0 until count) {
+        if (dest[index] != next[index]) {
+            dest[index] = next[index]
+        }
+    }
+}
 
 internal fun ViewContainer<*, *>.DshHitButton(onClick: () -> Unit) {
     View {

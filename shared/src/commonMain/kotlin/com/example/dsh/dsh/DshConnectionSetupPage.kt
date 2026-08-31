@@ -13,9 +13,7 @@ import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
-import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.compose.Button
-import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.timer.setTimeout
 
 /** First page shown by the app. It only selects a host and never starts an engine. */
@@ -115,7 +113,7 @@ internal class DshConnectionSetupPage : BasePager() {
                         backgroundColor(Color.WHITE)
                         borderBottom(Border(1f, BorderStyle.SOLID, Color(0xFFE5E8EB)))
                     }
-                    Image { attr { src(ImageUri.commonAssets("wordmark.svg")); width(118f); height(24f) } }
+                    DshWordmark(height = 24f)
                 }
                 View {
                     attr {
@@ -198,8 +196,8 @@ internal class DshConnectionSetupPage : BasePager() {
 
 
     private fun scanRelayQr() {
-        if (!pageData.isAndroid && !pageData.isIOS) {
-            error = "扫码连接目前仅支持 Android 和 iOS"
+        if (!pageData.supportsRelayBridge) {
+            error = "扫码连接目前仅支持 Android、iOS 和 HarmonyOS"
             return
         }
         busy = true
@@ -279,7 +277,7 @@ internal class DshConnectionSetupPage : BasePager() {
         }
         val ssh = sshPort.toIntOrNull()
         val dsh = dshPort.toIntOrNull()
-        if (!pageData.isAndroid && !pageData.isIOS) {
+        if (!pageData.supportsSshBridge) {
             error = "远程 SSH 模式目前仅支持 Android 和 iOS"
             return
         }

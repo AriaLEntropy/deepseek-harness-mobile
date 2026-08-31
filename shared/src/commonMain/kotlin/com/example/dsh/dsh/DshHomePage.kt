@@ -72,6 +72,7 @@ internal class DshHomePage : BasePager() {
         get() = sessionScope.storageKey
 
     private var sessions by observableList<DshSession>()
+    private val visibleSessions by observableList<DshSession>()
     private var messages by observableList<DshMessage>()
     private var conversationPanelIds by observableList<String>()
     private var activeSessionId by observable("session-1")
@@ -270,7 +271,7 @@ internal class DshHomePage : BasePager() {
                             }
                             vif({ ctx.isRemoteHost }) {
                                 DshSessionRail(
-                                    sessions = { ctx.sessions },
+                                    sessions = { ctx.visibleSessions },
                                     activeId = { ctx.activeSessionId },
                                     compact = false,
                                     onSelect = { id ->
@@ -503,7 +504,7 @@ internal class DshHomePage : BasePager() {
 
                 vif({ ctx.sessionDrawerVisible }) {
                     DshSessionDrawer(
-                        sessions = { ctx.sessions },
+                        sessions = { ctx.visibleSessions },
                         workspaceGroups = { ctx.workspaceGroups },
                         isWebTimeline = { ctx.isRemoteHost },
                         activeId = { ctx.activeSessionId },
@@ -723,6 +724,10 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    private fun refreshVisibleSessions() {
+        syncVisibleSessions(sessions, visibleSessions)
+    }
+
     private fun loadRepository(preferredSessionId: String? = null) {
         val hostRepository = repository ?: return
         hostRepository.loadSessions({ loaded ->
@@ -741,6 +746,7 @@ internal class DshHomePage : BasePager() {
             }
             sessions.clear()
             sessions.addAll(loaded)
+            refreshVisibleSessions()
             runCatching { localStore?.replaceSessions(activeConnectionId, loaded) }
             preloadAllSessionMessages()
             connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接 · 正在同步远程历史"
@@ -819,8 +825,8 @@ internal class DshHomePage : BasePager() {
 
 
     private fun startRelayEngine(generation: Long) {
-        if (!pageData.isAndroid && !pageData.isIOS) {
-            connectionLabel = "扫码连接目前仅支持 Android 和 iOS"
+        if (!pageData.supportsRelayBridge) {
+            connectionLabel = "扫码连接目前仅支持 Android、iOS 和 HarmonyOS"
             return
         }
         connectionLabel = "正在连接扫码电脑"
@@ -1315,6 +1321,7 @@ internal class DshHomePage : BasePager() {
             // this list also rewrites SQLite with only the newly created row.
             if (sessions.none { it.id == created.id }) {
                 sessions.add(0, created)
+                refreshVisibleSessions()
             }
             runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
             activeSessionId = sessionId
@@ -2236,6 +2243,7 @@ internal class DshHomePage : BasePager() {
         if (cached.isEmpty()) return
         sessions.clear()
         sessions.addAll(cached)
+        refreshVisibleSessions()
         val homeId = cached.firstOrNull { it.blank }?.id
         if (homeId != null) {
             activeSessionId = homeId
@@ -2703,6 +2711,7 @@ internal class DshHomePage : BasePager() {
             connectionLabel = "正在创建会话"
             hostRepository.createSession(null, { sessionId ->
                 sessions.add(DshSession(sessionId, "新会话", "Host", "", blank = true))
+                refreshVisibleSessions()
                 runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
                 activeSessionId = sessionId
                 loadModels(sessionId)
