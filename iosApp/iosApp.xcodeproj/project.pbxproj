@@ -30,6 +30,7 @@
 		D5A1101829A2A174009349F1 /* DshQrScanViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A1101729A2A173009349F1 /* DshQrScanViewController.swift */; };
 		D5A1101A29A2A174009349F1 /* DshSshKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A1101929A2A173009349F1 /* DshSshKeyStore.swift */; };
 		D5A1101C29A2A174009349F1 /* DshNativeUi.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A1101B29A2A173009349F1 /* DshNativeUi.swift */; };
+		D5A1101D29A2A174009349F1 /* DshLocalNetworkAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A1101E29A2A173009349F1 /* DshLocalNetworkAccess.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -71,6 +72,7 @@
 		D5A1101729A2A173009349F1 /* DshQrScanViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DshQrScanViewController.swift; sourceTree = "<group>"; };
 		D5A1101929A2A173009349F1 /* DshSshKeyStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DshSshKeyStore.swift; sourceTree = "<group>"; };
 		D5A1101B29A2A173009349F1 /* DshNativeUi.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DshNativeUi.swift; sourceTree = "<group>"; };
+		D5A1101E29A2A173009349F1 /* DshLocalNetworkAccess.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DshLocalNetworkAccess.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -197,6 +199,7 @@
 				D5A1101129A2A173009349F1 /* DshRelaySecrets.swift */,
 				D5A1101329A2A173009349F1 /* DshRelayLoopback.swift */,
 				D5A1101529A2A173009349F1 /* DshRelayRuntime.swift */,
+				D5A1101E29A2A173009349F1 /* DshLocalNetworkAccess.swift */,
 				D5A1101729A2A173009349F1 /* DshQrScanViewController.swift */,
 				D5A1101929A2A173009349F1 /* DshSshKeyStore.swift */,
 				D5A1101B29A2A173009349F1 /* DshNativeUi.swift */,
@@ -363,6 +366,7 @@
 				D5A1101229A2A174009349F1 /* DshRelaySecrets.swift in Sources */,
 				D5A1101429A2A174009349F1 /* DshRelayLoopback.swift in Sources */,
 				D5A1101629A2A174009349F1 /* DshRelayRuntime.swift in Sources */,
+				D5A1101D29A2A174009349F1 /* DshLocalNetworkAccess.swift in Sources */,
 				D5A1101829A2A174009349F1 /* DshQrScanViewController.swift in Sources */,
 				D5A1101A29A2A174009349F1 /* DshSshKeyStore.swift in Sources */,
 				D5A1101C29A2A174009349F1 /* DshNativeUi.swift in Sources */,

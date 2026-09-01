@@ -3,11 +3,13 @@ source 'https://cdn.cocoapods.org/'
 target 'iosApp' do
   use_frameworks!
   platform :ios, '14.1'
-  pod 'OpenKuiklyIOSRender' , '~> 2.7.0'
+  pod 'OpenKuiklyIOSRender' , '~> 2.24.0'
   pod 'shared', :path => '../shared'
   pod 'KuiklyWebviewIOS', :git => 'https://github.com/Kuikly-contrib/KuiklyWebview.git', :tag => '1.0.0'
 
   pod 'SDWebImage'
+  # Kuikly iOS 不内置 SVG；UIImage / SDWebImage 都解不了。官方示例用 SVGKit 3.x。
+  pod 'SVGKit', :git => 'https://github.com/troZee/SVGKit.git', :branch => '3.x'
   pod 'NMSSH', '2.3.1'
 end
 

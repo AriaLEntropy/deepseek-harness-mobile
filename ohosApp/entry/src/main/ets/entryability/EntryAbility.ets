@@ -6,10 +6,14 @@ import window from '@ohos.window';
 import { KuiklyRenderAdapterManager } from '@kuikly-open/render';
 import { LogAdapter } from '../kuikly/adapter/LogAdapter';
 import { RouterAdapter } from '../kuikly/adapter/RouterAdapter';
+import { DshOhosContext } from '../kuikly/native/DshOhosContext';
+import { DshRelayRuntime } from '../kuikly/native/DshRelayRuntime';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onCreate');
+    DshOhosContext.attach(this.context);
+    DshRelayRuntime.shared.attach();
   }
 
   onDestroy(): void {

@@ -273,6 +273,19 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
     }
 }
 
+private const val DSH_WORDMARK_RATIO = 143f / 23f
+
+internal fun ViewContainer<*, *>.DshWordmark(height: Float = 22f) {
+    Image {
+        attr {
+            src(ImageUri.commonAssets("wordmark.svg"))
+            width(height * DSH_WORDMARK_RATIO)
+            height(height)
+            resizeContain()
+        }
+    }
+}
+
 internal fun ViewContainer<*, *>.DshSessionDrawer(
     sessions: () -> ObservableList<DshSession>,
     workspaceGroups: () -> ObservableList<DshWorkspaceGroup>,
@@ -309,13 +322,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                     flexDirectionRow()
                     alignItemsCenter()
                 }
-                Image {
-                    attr {
-                        src(ImageUri.commonAssets("wordmark.svg"))
-                        width(118f)
-                        height(28f)
-                    }
-                }
+                DshWordmark()
                 View { attr { flex(1f) } }
                 View {
                     attr { size(38f, 38f); allCenter() }
@@ -381,7 +388,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
             Scroller {
                 attr { flex(1f) }
                 vif({ !isWebTimeline() }) {
-                    vfor({ visibleSessionList(sessions()) }) { session ->
+                    vfor({ sessions() }) { session ->
                         DshSessionDrawerRow(
                             title = session.title,
                             subtitle = session.workspace,
@@ -685,14 +692,14 @@ internal fun ViewContainer<*, *>.DshSessionRail(
                     flex(1f)
                     flexDirectionRow()
                 }
-                vfor({ visibleSessionList(sessions()) }) { session ->
+                vfor({ sessions() }) { session ->
                     DshSessionButton(session, activeId() == session.id, onSelect)
                 }
             }
         } else {
             Scroller {
                 attr { flex(1f) }
-                vfor({ visibleSessionList(sessions()) }) { session ->
+                vfor({ sessions() }) { session ->
                     DshSessionButton(session, activeId() == session.id, onSelect)
                 }
             }

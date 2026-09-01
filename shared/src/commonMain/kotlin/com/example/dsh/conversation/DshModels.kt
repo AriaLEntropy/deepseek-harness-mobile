@@ -308,6 +308,25 @@ internal fun dshIsLiveAssistantText(message: DshMessage): Boolean =
         message.attachmentId == null
 
 /**
+ * What the assistant bubble should paint.
+ *
+ * The list row is only a placeholder until settle writes the finished string.
+ * While this row is the live target, [live] is the source of truth — never a
+ * shorter first-flush snapshot in [stored].
+ */
+internal fun dshDisplayedAssistantContent(
+    stored: String,
+    live: String,
+    isLiveRow: Boolean,
+): String {
+    if (isLiveRow && live.isNotEmpty()) {
+        return if (live.length >= stored.length) live else stored
+    }
+    if (stored.length >= live.length) return stored.ifEmpty { live }
+    return live
+}
+
+/**
  * Assistant text that belongs to the in-progress turn sits after the latest
  * user message. A completed previous reply is before that user and must not
  * be reused as the live streaming target.

@@ -1,22 +1,29 @@
 PODS:
+  - CocoaLumberjack (3.9.1):
+    - CocoaLumberjack/Core (= 3.9.1)
+  - CocoaLumberjack/Core (3.9.1)
   - KuiklyWebviewIOS (1.0.0):
     - OpenKuiklyIOSRender
   - NMSSH (2.3.1)
-  - OpenKuiklyIOSRender (2.7.0)
+  - OpenKuiklyIOSRender (2.24.0)
   - SDWebImage (5.21.7):
     - SDWebImage/Core (= 5.21.7)
   - SDWebImage/Core (5.21.7)
   - shared (1.0)
+  - SVGKit (3.1.0):
+    - CocoaLumberjack (~> 3.0)
 
 DEPENDENCIES:
   - KuiklyWebviewIOS (from `https://github.com/Kuikly-contrib/KuiklyWebview.git`, tag `1.0.0`)
   - NMSSH (= 2.3.1)
-  - OpenKuiklyIOSRender (~> 2.7.0)
+  - OpenKuiklyIOSRender (~> 2.24.0)
   - SDWebImage
   - shared (from `../shared`)
+  - SVGKit (from `https://github.com/troZee/SVGKit.git`, branch `3.x`)
 
 SPEC REPOS:
   trunk:
+    - CocoaLumberjack
     - NMSSH
     - OpenKuiklyIOSRender
     - SDWebImage
@@ -27,19 +34,27 @@ EXTERNAL SOURCES:
     :tag: 1.0.0
   shared:
     :path: "../shared"
+  SVGKit:
+    :branch: 3.x
+    :git: https://github.com/troZee/SVGKit.git
 
 CHECKOUT OPTIONS:
   KuiklyWebviewIOS:
     :git: https://github.com/Kuikly-contrib/KuiklyWebview.git
     :tag: 1.0.0
+  SVGKit:
+    :commit: 495ead905959a44a386bf06a0525f4aeb3a59722
+    :git: https://github.com/troZee/SVGKit.git
 
 SPEC CHECKSUMS:
+  CocoaLumberjack: e4ba3b414dfca8c1916c6303d37f63b3a95134c6
   KuiklyWebviewIOS: ee364aedfbd65165016192041811e6f6491763a7
   NMSSH: cd689ae535a1581a6dd9fd4600ff71247df510a6
-  OpenKuiklyIOSRender: 2e6f7be3adae40f8167bb56a3e6803d1b18fd16e
+  OpenKuiklyIOSRender: 7e846eb2455ead4090f475f692e33ac717c4bcac
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   shared: d8b6d38fd437245727fc107299c3f3235c5baae4
+  SVGKit: 3c8468aab0026048532a3b27a0c81cdd939f0649
 
-PODFILE CHECKSUM: 77649e8849863fe60d691a1fcf24cb834d6b74a8
+PODFILE CHECKSUM: 047d3d74c95b62f337ce5be185696edd0a6ef3be
 
 COCOAPODS: 1.16.2

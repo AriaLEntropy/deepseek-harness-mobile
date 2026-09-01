@@ -24,6 +24,7 @@ import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
+import com.tencent.kuikly.core.views.ScrollParams
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
@@ -149,6 +150,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onDismissKeyboard: () -> Unit,
+    onUserListScroll: (ScrollParams) -> Unit,
     modelLabel: () -> String,
     attachmentMenuVisible: () -> Boolean,
     voiceActive: () -> Boolean,
@@ -256,7 +258,12 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 }
                                 event {
                                     click { onDismissKeyboard() }
-                                    dragBegin { onDismissKeyboard() }
+                                    dragBegin { params ->
+                                        onDismissKeyboard()
+                                        onUserListScroll(params)
+                                    }
+                                    scroll { onUserListScroll(it) }
+                                    scrollEnd { onUserListScroll(it) }
                                     register("touchDown", { onDismissKeyboard() })
                                 }
                                 vforLazy(
@@ -289,13 +296,16 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {
-                                                if (streamingMessageId() != message.id) {
-                                                    message.content
-                                                } else if (streaming() && activeConversationId() == sessionId) {
-                                                    streamingContent().ifEmpty { message.content }
-                                                } else {
-                                                    message.content.ifEmpty { streamingContent() }
-                                                }
+                                                val stored = messagesForSession(sessionId)
+                                                    .firstOrNull { it.id == message.id }
+                                                    ?.content
+                                                    .orEmpty()
+                                                dshDisplayedAssistantContent(
+                                                    stored = stored,
+                                                    live = streamingContent(),
+                                                    isLiveRow = streamingMessageId() == message.id &&
+                                                        activeConversationId() == sessionId,
+                                                )
                                             },
                                         )
                                     }

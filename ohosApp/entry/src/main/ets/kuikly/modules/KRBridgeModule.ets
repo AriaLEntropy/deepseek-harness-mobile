@@ -1,11 +1,16 @@
 import { common } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, pasteboard } from '@kit.BasicServicesKit';
+import { promptAction } from '@kit.ArkUI';
 import { KRAny } from '@kuikly-open/render';
 import { KuiklyRenderBaseModule } from '@kuikly-open/render';
 import { KuiklyRenderCallback } from '@kuikly-open/render';
 import util from '@ohos.util';
 import fs from '@ohos.file.fs';
+import router from '@ohos.router';
 import { fileUri } from '@kit.CoreFileKit';
+import { jsonString, mapOf, moduleParams } from '../native/DshJson';
+import { DshSshKeyStore } from '../native/DshSshKeyStore';
+import { DshOhosContext, dshError } from '../native/DshOhosContext';
 
 export class KRBridgeModule extends KuiklyRenderBaseModule {
   static readonly MODULE_NAME = "HRBridgeModule";
@@ -41,11 +46,11 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         break;
       }
       case KRBridgeModule.COPY_TO_PASTE_BOARD: {
-        this.copyToPasteboard();
+        this.copyToPasteboard(params);
         break;
       }
       case KRBridgeModule.TOAST: {
-        this.toast();
+        this.toast(params);
         break;
       }
       case KRBridgeModule.LOG: {
@@ -74,6 +79,23 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         this.readAssetFile(params, callback);
         break;
       }
+      case 'pickSshKey':
+        this.pickSshKey(callback);
+        break;
+      case 'importSshKey':
+        this.importSshKey(params, callback);
+        break;
+      case 'validateSshKey':
+        this.validateSshKey(params, callback);
+        break;
+      case 'deleteSshKey':
+        this.deleteSshKey(params);
+        break;
+      case 'closeKeyboard':
+      case 'setSystemBarsDimmed':
+      case 'startSshKeepAlive':
+      case 'stopSshKeepAlive':
+        break;
       default:
         break;
     }
@@ -83,20 +105,27 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
   private showAlert(params: KRAny, callback: KuiklyRenderCallback) {
   }
 
-  // TODO close page
   private closePage() {
+    router.back();
   }
 
   // TODO open new page
   private openPage() {
   }
 
-  // TODO copy to paste board
-  private copyToPasteboard() {
+  private copyToPasteboard(params: KRAny): void {
+    const content = jsonString(moduleParams(params as Object), 'content');
+    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content);
+    pasteboard.getSystemPasteboard().setData(data);
   }
 
-  // TODO open toast
-  private toast() {
+  private toast(params: KRAny): void {
+    const content = jsonString(moduleParams(params as Object), 'content');
+    try {
+      promptAction.showToast({ message: content, duration: 2000 });
+    } catch (error) {
+      dshError('toast failed', error as Object);
+    }
   }
 
   private log(params: KRAny) {
@@ -147,6 +176,9 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
     const file = fs.openSync(assetURI, fs.OpenMode.READ_ONLY);
     const stat = fs.statSync(file.fd);
     const arrayBuffer = new ArrayBuffer(stat.size);
+    const slot = DshOhosContext.bindOnce((value: Record<string, Object>) => {
+      callback(value);
+    });
     fs.read(file.fd, arrayBuffer, (err: BusinessError, readLen: number) => {
       if (err) {
         console.error("read failed with error message: " + err.message + ", error code: " + err.code);
@@ -154,11 +186,43 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         let buf = new Uint8Array(arrayBuffer, 0, readLen);
         const textDecoder = new util.TextDecoder('utf-8');
         const res = textDecoder.decodeWithStream(new Uint8Array(buf));
-        callback({
-          'result': JSON.parse(res)
-        });
+        const parsed: Record<string, Object> = {};
+        parsed['result'] = JSON.parse(res);
+        DshOhosContext.postToMain(slot, parsed);
       }
       fs.closeSync(file);
     });
+  }
+
+  private pickSshKey(callback: KuiklyRenderCallback): void {
+    const slot = DshOhosContext.bindOnce((value: Record<string, Object>) => {
+      callback(value);
+    });
+    new DshSshKeyStore().pickKey().then((uri: string) => {
+      DshOhosContext.postToMain(slot, mapOf(['uri'], [uri]));
+    }).catch((error: Object) => {
+      dshError('pickSshKey failed', error);
+      DshOhosContext.postToMain(slot, mapOf(['uri'], ['']));
+    });
+  }
+
+  private importSshKey(params: KRAny, callback: KuiklyRenderCallback): void {
+    const uri = jsonString(moduleParams(params as Object), 'uri');
+    const keyId = new DshSshKeyStore().importUri(uri);
+    if (keyId.length === 0) {
+      callback(mapOf(['ok', 'message'], [false, '无法导入 SSH 私钥']));
+      return;
+    }
+    callback(mapOf(['ok', 'keyId'], [true, keyId]));
+  }
+
+  private validateSshKey(params: KRAny, callback: KuiklyRenderCallback): void {
+    const keyId = jsonString(moduleParams(params as Object), 'keyId');
+    callback(mapOf(['valid'], [new DshSshKeyStore().validateKey(keyId)]));
+  }
+
+  private deleteSshKey(params: KRAny): void {
+    const keyId = jsonString(moduleParams(params as Object), 'keyId');
+    new DshSshKeyStore().deleteKey(keyId);
   }
 }
