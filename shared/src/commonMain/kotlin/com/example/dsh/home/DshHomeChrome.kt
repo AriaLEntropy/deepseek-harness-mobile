@@ -615,6 +615,7 @@ internal fun ViewContainer<*, *>.DshTopBar(
             backgroundColor(Color.WHITE)
             borderBottom(Border(1f, BorderStyle.SOLID, Color(0xFFEBEEF2)))
         }
+//        菜单图标
         View {
             attr { size(38f, 38f); allCenter() }
             Image {
@@ -624,6 +625,7 @@ internal fun ViewContainer<*, *>.DshTopBar(
                 }
             }
         }
+//        会话标题
         Text {
             attr {
                 text(title())
@@ -635,6 +637,7 @@ internal fun ViewContainer<*, *>.DshTopBar(
                 lines(1)
             }
         }
+//        连接状态
         View {
             attr {
                 val ready = isConnectionReadyLabel(connection())

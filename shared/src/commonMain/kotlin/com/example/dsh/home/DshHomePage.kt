@@ -234,6 +234,8 @@ internal class DshHomePage : BasePager() {
         val wide = pagerData.pageViewWidth >= 720f
         return {
             ctx.perfLog("body.builder.begin")
+            // ===== 根容器 =====
+            // 整页的根 View：纵向布局撑满剩余空间，背景色 BG，顶部留出系统状态栏高度。
             View {
                 attr {
                     flex(1f)
@@ -242,6 +244,9 @@ internal class DshHomePage : BasePager() {
                     paddingTop(pagerData.statusBarHeight)
                 }
 
+                // ===== 顶部栏 =====
+                // 58dp 高的标题栏容器（zIndex 置顶），内部是 DshTopBar（当前会话标题 + 连接状态）。
+                // 在 viewDidLoad 里给它注册了点击：收起键盘并打开会话抽屉。
                 View {
                     ref { ctx.topBarRef = it }
                     attr {
@@ -254,6 +259,9 @@ internal class DshHomePage : BasePager() {
                     )
                 }
 
+                // ===== 主内容容器 =====
+                // 撑满剩余空间，容纳下方的会话栏/对话区/详情面板与抽屉遮罩。
+                // 会话抽屉打开时整体右移（translate），露出右侧变暗的边缘，带位移动画。
                 View {
                     attr {
                         flex(1f)
@@ -272,12 +280,14 @@ internal class DshHomePage : BasePager() {
                     }
                     if (wide) {
                         ctx.perfLog("body.conversation.begin wide=true panels=${ctx.conversationPanelIds.size}")
+                        // ==== 宽屏（平板/桌面）三栏布局容器 ====
                         View {
                             attr {
                                 flex(1f)
                                 flexDirectionRow()
                                 backgroundColor(Color(BG))
                             }
+                            // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
                             vif({ ctx.isRemoteHost }) {
                                 DshSessionRail(
                                     sessions = { ctx.visibleSessions },
@@ -289,11 +299,15 @@ internal class DshHomePage : BasePager() {
                                     },
                                 )
                             }
+                            // centerWidth：中间对话区可用宽度 = 总宽 - 左会话栏(236) - 右详情面板(280)，最小 360。
                             val centerWidth = if (ctx.isRemoteHost) {
                                 (ctx.pagerData.pageViewWidth - 236f - 280f).coerceAtLeast(360f)
                             } else {
                                 ctx.pagerData.pageViewWidth
                             }
+                            // -- 中间「对话区」--：核心聊天界面 = 消息列表 + 底部输入区。
+                            //    输入区内含技能、模型选择、附件、语音、停止按钮，
+                            //    以及远程模式下的任务队列/作业面板/目标/审批与提问等。
                             DshConversation(
                                 conversationIds = { ctx.conversationPanelIds },
                                 activeConversationId = { ctx.activeSessionId },
@@ -328,6 +342,8 @@ internal class DshHomePage : BasePager() {
                                     ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
                                 },
                                 onToggleVoice = { ctx.toggleVoice() },
+                                folderLabel = { ctx.composerFolderLabel() },
+                                onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
                                 isWebTimeline = { ctx.isRemoteHost },
                                 isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                                 onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
@@ -387,6 +403,8 @@ internal class DshHomePage : BasePager() {
                                 onSubmitQuestion = { ctx.submitQuestion() },
                                 availableWidth = centerWidth,
                             )
+                            // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
+                            //    工作目录、模型、运行状态、队列/作业数量。
                             vif({ ctx.isRemoteHost }) {
                                 DshSessionDetailsPanel(
                                     title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "尚无标题" },
@@ -401,6 +419,8 @@ internal class DshHomePage : BasePager() {
                         }
                         ctx.perfLog("body.conversation.end wide=true")
                     } else {
+                        // ==== 窄屏（手机）单栏布局 ====
+                        // 不显示会话栏/详情面板，对话区直接铺满整宽。
                         ctx.perfLog("body.conversation.begin wide=false panels=${ctx.conversationPanelIds.size}")
                         DshConversation(
                             conversationIds = { ctx.conversationPanelIds },
@@ -436,6 +456,8 @@ internal class DshHomePage : BasePager() {
                                 ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
                             },
                             onToggleVoice = { ctx.toggleVoice() },
+                            folderLabel = { ctx.composerFolderLabel() },
+                            onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
                             isWebTimeline = { ctx.isRemoteHost },
                             isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                             onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
@@ -498,6 +520,7 @@ internal class DshHomePage : BasePager() {
                         ctx.perfLog("body.conversation.end wide=false")
                     }
 
+                    // -- 会话抽屉「遮罩层」--：全屏半透明黑盖在主内容上，点击关闭抽屉。
                     vif({ ctx.sessionDrawerVisible }) {
                         View {
                             attr {
@@ -511,6 +534,9 @@ internal class DshHomePage : BasePager() {
                     }
                 }
 
+                // ===== 会话抽屉 =====
+                // 从左侧滑出的侧栏（覆盖在主内容之上）：会话列表、工作区分组、
+                // 新建会话、连接设置入口；点击遮罩或选择会话后关闭。
                 vif({ ctx.sessionDrawerVisible }) {
                     DshSessionDrawer(
                         sessions = { ctx.visibleSessions },
@@ -530,6 +556,8 @@ internal class DshHomePage : BasePager() {
                     )
                 }
 
+                // ===== 模型选择弹窗 =====
+                // 选择当前会话使用的模型。
                 vif({ ctx.modelPickerVisible }) {
                     DshModelPicker(
                         options = { ctx.modelOptions },
@@ -540,6 +568,8 @@ internal class DshHomePage : BasePager() {
                     )
                 }
 
+                // ===== API Key 设置弹窗 =====
+                // 输入并保存 DeepSeek API Key（也可用于修改远程 DSH 的 Key）。
                 vif({ ctx.credentialSetupVisible }) {
                     DshCredentialSetupModal(
                         title = { ctx.credentialSetupTitle },
@@ -557,6 +587,8 @@ internal class DshHomePage : BasePager() {
                         onClose = { ctx.closeCredentialSettings() },
                     )
                 }
+                // ===== 连接设置弹窗 =====
+                // 配置连接方式（扫码 RELAY / SSH）：主机、端口、用户名、私钥导入、指纹确认、DSH 端口。
                 vif({ ctx.sshSettingsVisible }) {
                     DshConnectionSettingsModal(
                         sshMode = { ctx.sshMode },
@@ -584,6 +616,8 @@ internal class DshHomePage : BasePager() {
                         },
                     )
                 }
+                // ===== 工作区浏览器弹窗 =====
+                // 仅远程模式：浏览/新建远程目录，并把当前目录设为工作区。
                 vif({ ctx.workspaceBrowserVisible && ctx.isRemoteHost }) {
                     DshWorkspaceBrowserModal(
                         path = { ctx.workspaceBrowserPath },
@@ -599,6 +633,8 @@ internal class DshHomePage : BasePager() {
                         onClose = { ctx.workspaceBrowserVisible = false },
                     )
                 }
+                // ===== 重命名工作区 弹窗 =====
+                // 内嵌 Modal：输入新名称 → 保存/取消；错误信息红字显示。
                 vif({ ctx.workspaceRenameTargetId.isNotEmpty() && ctx.isRemoteHost }) {
                     Modal(inWindow = true) {
                         attr {
@@ -645,6 +681,8 @@ internal class DshHomePage : BasePager() {
                         }
                     }
                 }
+                // ===== 删除工作区注册 确认弹窗 =====
+                // 仅从列表移除注册，不删除实际目录/会话/日志；红色「删除注册」按钮。
                 vif({ ctx.workspaceDeleteTargetId.isNotEmpty() && ctx.isRemoteHost }) {
                     Modal(inWindow = true) {
                         attr {
@@ -831,7 +869,6 @@ internal class DshHomePage : BasePager() {
         sshFingerprint = profile?.hostFingerprint.orEmpty()
         sshKeyLabel = if (sshKeyId.isEmpty()) "未导入私钥" else "已导入私钥"
     }
-
 
     private fun startRelayEngine(generation: Long) {
         if (!pageData.supportsRelayBridge) {
@@ -1273,6 +1310,12 @@ internal class DshHomePage : BasePager() {
         if (pageData.isAndroid || pageData.isIOS) {
             bridgeModule.setSystemBarsDimmed(visible)
         }
+    }
+
+    private fun composerFolderLabel(): String {
+        val session = sessions.firstOrNull { it.id == activeSessionId }
+        val cwd = session?.cwd
+        return if (cwd.isNullOrEmpty()) "文件夹（可选）" else cwd
     }
 
     private fun createSession() {

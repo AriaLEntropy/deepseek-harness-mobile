@@ -33,6 +33,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
     reconnecting: () -> Boolean,
     elapsedMs: () -> Long,
 ) {
+    // 回合状态条：思考中/重连中提示 + 已耗时
     vif({ visible() }) {
         View {
             attr {
@@ -67,6 +68,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
 internal const val TURN_STATUS_BLUE = 0xFF4D6BFE
 internal const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
 
+// 空白会话首页：无消息时的占位引导（logo + 标语 + 预览版徽标）
 internal fun ViewContainer<*, *>.DshNewSessionHome() {
     View {
         attr {
@@ -157,6 +159,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     onOpenModels: () -> Unit,
     onToggleAttachments: () -> Unit,
     onToggleVoice: () -> Unit,
+    folderLabel: () -> String,
+    onOpenFolderBrowser: () -> Unit,
     isWebTimeline: () -> Boolean,
     isDisclosureExpanded: (String) -> Boolean,
     onToggleDisclosure: (String) -> Unit,
@@ -209,6 +213,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     onSubmitQuestion: () -> Unit,
     availableWidth: Float,
 ) {
+    // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
         attr {
             flex(1f)
@@ -216,6 +221,7 @@ internal fun ViewContainer<*, *>.DshConversation(
             flexDirectionColumn()
             backgroundColor(Color.WHITE)
         }
+        // 消息视口容器：消息列表区域，随键盘高度向上收缩，输入条自然浮在键盘上方
         View {
             attr {
                 flex(1f)
@@ -227,12 +233,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                 marginBottom(keyboardHeight())
                 animation(keyboardAnimation(), keyboardHeight())
             }
+            // 消息页容器：承载所有会话页面的层，白色背景
             View {
                 attr {
                 flex(1f)
                 width(availableWidth)
                 backgroundColor(Color.WHITE)
             }
+            // 单个会话的消息页：按会话 id 叠放，仅激活会话可见可点
             vfor({ conversationIds() }) { sessionId ->
                 View {
                     attr {
@@ -246,6 +254,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     // vfor 的直接子节点不能是 vif/vbind。空 List 先挂载后 addAll
                     // 时 LazyLoop 会把增量当成「加到可见范围后面」而不建 cell。
                     vbind({ conversationListEpoch(sessionId) }) {
+                        // 消息滚动列表：懒加载渲染该会话消息，点击/拖动收起键盘
                         vif({ messagesForSession(sessionId).isNotEmpty() }) {
                             List {
                                 ref { scrollerRef(sessionId, it) }
@@ -269,6 +278,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 vforLazy(
                                     { messagesForSession(sessionId) },
                                     maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
+                                // 单条消息行：包一层宽度约束，内部由 DshMessageRow 渲染
                                 ) { message, _, _ ->
                                     View {
                                         ref { messageRef(sessionId, message.id, it) }
@@ -310,6 +320,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         )
                                     }
                                 }
+                                // 回合状态行：当前 turn 进行中的状态提示
                                 View {
                                     attr {
                                         width((availableWidth - 36f).coerceAtLeast(0f))
@@ -328,6 +339,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                 }
             }
+            // 空白会话引导：无消息且非运行中时展示 DshNewSessionHome
             vif({
                 conversationListEpoch(activeConversationId())
                 isBlankConversation() &&
@@ -339,6 +351,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 DshNewSessionHome()
             }
         }
+        // 队列停靠栏（Web 时间线）：展示等待执行的任务队列
         vif({ isWebTimeline() && queueItems().isNotEmpty() }) {
             DshQueueDock {
                 attr {
@@ -358,6 +371,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
+        // 任务面板（Web 时间线）：展示后台任务进度
         vif({ isWebTimeline() && jobItems().isNotEmpty() }) {
             DshJobsPanel {
                 attr {
@@ -368,6 +382,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
+        // 目标栏（Web 时间线）：展示当前 Agent 目标与暂停/继续操作
         vif({ isWebTimeline() && goal() != null }) {
             DshGoalBar {
                 attr {
@@ -381,6 +396,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
+        // 审批面板：Host 请求授权（如执行命令/改文件）时弹出
         vif({ isWebTimeline() && pendingApproval()?.sessionId == activeConversationId() }) {
             DshApprovalPanel {
                 attr {
@@ -390,6 +406,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
+        // 提问流程面板：Host 向用户提问/选择时弹出
         vif({
             isWebTimeline() &&
                 pendingApproval() == null &&
@@ -414,206 +431,252 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-            View {
-                attr {
-                    height(COMPOSER_HEIGHT)
-                    width(availableWidth)
-                    flexDirectionColumn()
-                    padding(12f, 14f, 12f, 14f)
-                    backgroundColor(Color.WHITE)
-                    borderRadius(22f)
-                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
-                }
-                vif({
-                    isWebTimeline() && draft().startsWith("/") &&
-                        visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
-                }) {
+
+                // 输入条容器：顶部工具行 + 输入框 + 底部文件夹，总高 COMPOSER_HEIGHT
+                View {
+                    attr {
+                        height(COMPOSER_HEIGHT)
+                        width(availableWidth)
+                        flexDirectionColumn()
+                        padding(10f, 12f, 10f, 12f)
+                        backgroundColor(Color.WHITE)
+                        borderRadius(22f)
+                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
+                    }
+                    // 技能建议列表：输入 / 开头时展示匹配的技能供点选
+                    vif({
+                        isWebTimeline() && draft().startsWith("/") &&
+                                visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
+                    }) {
+                        View {
+                            attr {
+                                maxHeight(132f)
+                                marginBottom(6f)
+                                flexDirectionColumn()
+                                backgroundColor(Color(0xFFF7F9FB))
+                                borderRadius(8f)
+                                border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                            }
+                            // 单个技能建议行：/技能名 + 描述，点击选用
+                            vfor({ visibleSkillList(skills(), draft().removePrefix("/")) }) { skill ->
+                                View {
+                                    attr {
+                                        height(32f)
+                                        flexDirectionRow()
+                                        alignItemsCenter()
+                                        paddingLeft(8f)
+                                        paddingRight(8f)
+                                    }
+                                    event { click { onPickSkill(skill.name) } }
+                                    Text {
+                                        attr {
+                                            text("/${skill.name}")
+                                            width(110f)
+                                            fontSize(13f)
+                                            fontWeightMedium()
+                                            color(Color(0xFF2F6F4F))
+                                        }
+                                    }
+                                    Text {
+                                        attr {
+                                            text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
+                                            flex(1f)
+                                            lines(1)
+                                            fontSize(11f)
+                                            color(Color(0xFF727D84))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // 输入框：消息/按住说话，回车发送，键盘高度变化通知外层
+                    Input {
+                        ref { inputRef(it) }
+                        attr {
+                            height(46f)
+                            backgroundColor(Color(0x00FFFFFF))
+                            fontSize(15f)
+                            color(Color(0xFF28323C))
+                            placeholder(
+                                when {
+                                    voiceActive() -> "正在聆听..."
+                                    else -> "发消息或按住说话，让电脑继续工作..."
+                                },
+                            )
+                            placeholderColor(Color(0xFF91A0AA))
+                            returnKeyTypeSend()
+                            editable(!voiceActive())
+                        }
+                        event {
+                            inputFocus { onInputFocusChange(true) }
+                            textDidChange { onDraftChange(it.text) }
+                            keyboardHeightChange { onKeyboardHeightChange(it) }
+                            inputBlur {
+                                onInputFocusChange(false)
+                                onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
+                            }
+                            inputReturn { onSend() }
+                        }
+                    }
+
+                    // 顶部工具行：模型选择 + 附件(+) + 语音/发送
                     View {
                         attr {
-                            maxHeight(132f)
-                            marginBottom(6f)
-                            flexDirectionColumn()
-                            backgroundColor(Color(0xFFF7F9FB))
-                            borderRadius(8f)
-                            border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                            height(40f)
+                            flexDirectionRow()
+                            alignItemsCenter()
                         }
-                        vfor({ visibleSkillList(skills(), draft().removePrefix("/")) }) { skill ->
+                        // 模型选择 chip：显示当前模型名，点击弹出模型列表
+                        View {
+                            attr {
+                                height(32f)
+                                paddingLeft(10f)
+                                paddingRight(8f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                borderRadius(16f)
+                                backgroundColor(Color(0xFFF1F3F5))
+                            }
+                            Text {
+                                attr {
+                                    text(modelLabel())
+                                    flex(1f)
+                                    lines(1)
+                                    fontSize(13f)
+                                    color(Color(0xFF31363B))
+                                }
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(16f, 16f)
+                                }
+                            }
+                            DshHitButton(onOpenModels)
+                        }
+                        // 附件按钮：加号，点击展开图片/文件选择菜单
+                        View { attr { flex(1f) } }
+                        View {
+                            attr { size(34f, 34f); allCenter() }
+                            Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f) } }
+                            DshHitButton { onToggleAttachments() }
+                        }
+                        // 语音/发送/停止按钮：停止时红色方块，有文字时发送，否则按住说话
+                        View {
+                            attr {
+                                size(40f, 40f)
+                                marginLeft(6f)
+                                borderRadius(20f)
+                                allCenter()
+                                backgroundColor(Color(
+                                    when {
+                                        stopButtonVisible() -> 0xFFE05252
+                                        voiceActive() -> 0xFF679EFE
+                                        else -> 0xFF4176E6
+                                    },
+                                ))
+                            }
+                            vif({ stopButtonVisible() }) {
+                                Image { attr { src(ImageUri.commonAssets("square.svg")); size(21f, 21f) } }
+                            }
+                            velse {
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets(if (draft().isEmpty()) "mic.svg" else "send.svg"))
+                                        size(21f, 21f)
+                                    }
+                                }
+                            }
+                            DshHitButton {
+                                when {
+                                    stopButtonVisible() -> onStop()
+                                    draft().isNotEmpty() -> onSend()
+                                    else -> onToggleVoice()
+                                }
+                            }
+                        }
+                    }
+
+                    // 附件菜单：点击附件按钮展开（图片/文件两个选项）
+                    vif({ attachmentMenuVisible() }) {
+                        View {
+                            attr {
+                                height(82f)
+                                marginBottom(8f)
+                                flexDirectionColumn()
+                                padding(8f)
+                                borderRadius(10f)
+                                backgroundColor(Color(0xFFF5F6F7))
+                            }
+                            // 附件菜单 - 图片选项行
                             View {
                                 attr {
                                     height(32f)
                                     flexDirectionRow()
                                     alignItemsCenter()
                                     paddingLeft(8f)
-                                    paddingRight(8f)
                                 }
-                                event { click { onPickSkill(skill.name) } }
-                                Text {
-                                    attr {
-                                        text("/${skill.name}")
-                                        width(110f)
-                                        fontSize(13f)
-                                        fontWeightMedium()
-                                        color(Color(0xFF2F6F4F))
-                                    }
+                                Text { attr { text("图片"); fontSize(14f); color(Color(0xFF3B4147)) } }
+                                View { attr { flex(1f) } }
+                                Text { attr { text("PNG / JPG / WebP / GIF"); fontSize(11f); color(Color(0xFF9098A0)) } }
+                            }
+                            // 附件菜单 - 文件选项行
+                            View {
+                                attr {
+                                    height(32f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    paddingLeft(8f)
                                 }
-                                Text {
-                                    attr {
-                                        text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
-                                        flex(1f)
-                                        lines(1)
-                                        fontSize(11f)
-                                        color(Color(0xFF727D84))
-                                    }
-                                }
+                                Text { attr { text("文件"); fontSize(14f); color(Color(0xFF3B4147)) } }
+                                View { attr { flex(1f) } }
+                                Text { attr { text("选择本地文件"); fontSize(11f); color(Color(0xFF9098A0)) } }
                             }
                         }
                     }
-                }
-            Input {
-                ref { inputRef(it) }
-                attr {
-                    height(58f)
-                    backgroundColor(Color(0x00FFFFFF))
-                    fontSize(15f)
-                    color(Color(0xFF28323C))
-                    placeholder(
-                        when {
-                            voiceActive() -> "正在聆听..."
-                            isBlankConversation() &&
-                                messagesForSession(activeConversationId()).isEmpty() -> "描述你想要构建的内容"
-                            else -> "请输入您的问题..."
-                        },
-                    )
-                    placeholderColor(Color(0xFF91A0AA))
-                    returnKeyTypeSend()
-                    editable(!voiceActive())
-                }
-                event {
-                    inputFocus { onInputFocusChange(true) }
-                    textDidChange { onDraftChange(it.text) }
-                    keyboardHeightChange { onKeyboardHeightChange(it) }
-                    inputBlur {
-                        onInputFocusChange(false)
-                        onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
-                    }
-                    inputReturn { onSend() }
-                }
-            }
 
-            vif({ attachmentMenuVisible() }) {
-                View {
-                    attr {
-                        height(82f)
-                        marginBottom(8f)
-                        flexDirectionColumn()
-                        padding(8f)
-                        borderRadius(10f)
-                        backgroundColor(Color(0xFFF5F6F7))
-                    }
+                    // 底部工具行：文件夹（沟通文件系统）
                     View {
                         attr {
-                            height(32f)
+                            height(38f)
+                            marginTop(4f)
                             flexDirectionRow()
                             alignItemsCenter()
-                            paddingLeft(8f)
                         }
-                        Text { attr { text("图片"); fontSize(14f); color(Color(0xFF3B4147)) } }
-                        View { attr { flex(1f) } }
-                        Text { attr { text("PNG / JPG / WebP / GIF"); fontSize(11f); color(Color(0xFF9098A0)) } }
-                    }
-                    View {
-                        attr {
-                            height(32f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            paddingLeft(8f)
+                        // 文件夹 chip：显示当前工作目录，点击打开文件系统浏览器
+                        View {
+                            attr {
+                                height(30f)
+                                paddingLeft(10f)
+                                paddingRight(8f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                borderRadius(15f)
+                                backgroundColor(Color(0xFFF3F5F7))
+                            }
+                            Text {
+                                attr {
+                                    text(folderLabel())
+                                    flex(1f)
+                                    lines(1)
+                                    fontSize(12f)
+                                    color(Color(0xFF4F565C))
+                                }
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(14f, 14f)
+                                }
+                            }
+                            DshHitButton(onOpenFolderBrowser)
                         }
-                        Text { attr { text("文件"); fontSize(14f); color(Color(0xFF3B4147)) } }
                         View { attr { flex(1f) } }
-                        Text { attr { text("选择本地文件"); fontSize(11f); color(Color(0xFF9098A0)) } }
                     }
                 }
-            }
 
-            View {
-                attr {
-                    height(48f)
-                    flexDirectionRow()
-                    alignItemsCenter()
-                }
-                View {
-                    attr {
-                        width(184f)
-                        height(40f)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        paddingLeft(12f)
-                        paddingRight(9f)
-                        borderRadius(20f)
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFCFD3D6)))
-                    }
-                    Text {
-                        attr {
-                            text(modelLabel())
-                            flex(1f)
-                            lines(1)
-                            fontSize(14f)
-                            color(Color(0xFF31363B))
-                        }
-                    }
-                    Image {
-                        attr {
-                            src(ImageUri.commonAssets("chevron-down.svg"))
-                            size(18f, 18f)
-                        }
-                    }
-                    DshHitButton(onOpenModels)
-                }
-                View { attr { flex(1f) } }
-                View {
-                    attr { size(40f, 40f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("sliders.svg")); size(22f, 22f) } }
-                }
-                View {
-                    attr {
-                        size(48f, 48f)
-                        marginLeft(6f)
-                        borderRadius(24f)
-                        allCenter()
-                        backgroundColor(Color(
-                            when {
-                                stopButtonVisible() -> 0xFFE05252
-                                voiceActive() -> 0xFF679EFE
-                                else -> 0xFF4176E6
-                            },
-                        ))
-                    }
-                    vif({ stopButtonVisible() }) {
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets("square.svg"))
-                                size(23f, 23f)
-                            }
-                        }
-                    }
-                    velse {
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets(if (draft().isEmpty()) "mic.svg" else "send.svg"))
-                                size(23f, 23f)
-                            }
-                        }
-                    }
-                    DshHitButton {
-                            when {
-                                stopButtonVisible() -> onStop()
-                                draft().isNotEmpty() -> onSend()
-                                else -> onToggleVoice()
-                            }
-                    }
-                }
-            }
-            }
+
         }
     }
 }
@@ -644,6 +707,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     ) {
         return
     }
+    // 上下文注入卡片：Web 时间线下展示注入到上下文的资料（可展开）
     if (isWebTimeline && message.isContextInjection) {
         View {
             attr {
@@ -684,6 +748,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         }
         return
     }
+    // 附件图片卡片：消息附带的上传图片，加载中显示占位文案
     if (isWebTimeline && message.attachmentId != null) {
         val dataUrl = attachmentDataUrl(message.attachmentId)
         View {
@@ -718,6 +783,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         }
         return
     }
+    // 推理过程卡片（Think）：展示模型思考摘要，可展开全文
     if (isWebTimeline && message.isReasoning) {
         View {
             attr {
@@ -741,6 +807,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         }
         return
     }
+    // Skill 调用卡片：展示技能执行摘要与结果
     if (isWebTimeline && message.remoteTool?.kind == DshRemoteToolKind.SKILL) {
         val remoteTool = message.remoteTool
         View {
@@ -796,6 +863,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         val summary = remoteTool?.summary?.takeUnless { it.dshLooksLikeJson() }
             ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "已完成" else
                 toolBody.lineSequence().firstOrNull().orEmpty().takeUnless { it.dshLooksLikeJson() }.orEmpty()
+        // 工具调用卡片：Bash/Read/Search 等，JSON 结果可折叠展开
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
@@ -824,12 +892,14 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         }
         return
     }
+        // 普通消息行：用户气泡右对齐，助手/错误左对齐
         View {
             attr {
                 flexDirectionColumn()
                 alignItems(if (isUser) FlexAlign.FLEX_END else FlexAlign.FLEX_START)
                 marginBottom(18f)
         }
+        // 消息角色标签：你 / DeepSeek / 工具 / 错误
         Text {
             attr {
                 text(when (message.role) {
@@ -843,6 +913,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 marginBottom(5f)
             }
         }
+        // 消息内容容器：用户/错误为气泡底色，助手为纯文本
         View {
             attr {
                 if (!isUser && !isError) {
@@ -868,6 +939,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         color(Color(if (isUser) 0xFF34415B else 0xFFB53232))
                     }
                 }
+            // 助手回复内容：Markdown 渲染 + 流式光标
             } else {
                 View {
                     attr {
