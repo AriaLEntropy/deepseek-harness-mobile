@@ -1,5 +1,6 @@
-package com.example.dsh.dsh
+package com.example.dsh.connection
 
+import com.example.dsh.infrastructure.createDshHttpClient
 import com.tencent.kuikly.core.log.KLog
 import io.ktor.client.plugins.sse.SSEClientException
 import io.ktor.client.plugins.sse.sse
