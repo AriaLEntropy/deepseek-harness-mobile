@@ -194,6 +194,7 @@ internal class DshHomePage : BasePager() {
     private var questionCustom by observable("")
     private var questionIndex by observable(0)
     private var questionError by observable("")
+    private var messageActionsMessage by observable<DshMessage?>(null)
     private val questionDrafts = mutableMapOf<Int, DshQuestionDraft>()
 
     override fun created() {
@@ -371,6 +372,7 @@ internal class DshHomePage : BasePager() {
                                     ctx.bridgeModule.copyToPasteboard(it)
                                     ctx.bridgeModule.toast("已复制")
                                 },
+                                onMessageLongPress = { ctx.openMessageActions(it) },
                                 attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                                 queueItems = { ctx.queueItems },
                                 jobItems = { ctx.jobItems },
@@ -490,6 +492,7 @@ internal class DshHomePage : BasePager() {
                                 ctx.bridgeModule.copyToPasteboard(it)
                                 ctx.bridgeModule.toast("已复制")
                             },
+                            onMessageLongPress = { ctx.openMessageActions(it) },
                             attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                             queueItems = { ctx.queueItems },
                             jobItems = { ctx.jobItems },
@@ -809,6 +812,13 @@ internal class DshHomePage : BasePager() {
                         }
                     }
                 }
+                // ===== 消息长按操作菜单 =====
+                // 长按 AI 输出消息时弹出的底部操作菜单（复制/选择文本/反馈/分支/分享）。
+                DshMessageActionsMenu(
+                    visible = { ctx.messageActionsMessage != null },
+                    items = { ctx.messageActionsItems() },
+                    onDismiss = { ctx.closeMessageActions() },
+                )
             }
         }
     }
@@ -2982,6 +2992,35 @@ internal class DshHomePage : BasePager() {
         inputView?.blur()
         bridgeModule.closeKeyboard()
         keyboardHeight = 0f
+    }
+
+    private fun openMessageActions(message: DshMessage) {
+        dismissKeyboard()
+        messageActionsMessage = message
+    }
+
+    private fun closeMessageActions() {
+        messageActionsMessage = null
+    }
+
+    private fun copyMessageActionsText() {
+        val message = messageActionsMessage ?: return
+        bridgeModule.copyToPasteboard(message.content)
+        bridgeModule.toast("已复制")
+        closeMessageActions()
+    }
+
+    private fun messageActionsItems(): ObservableList<DshMessageActionItem> {
+        val result = ObservableList<DshMessageActionItem>()
+        result.addAll(listOf(
+            DshMessageActionItem("复制", "copy.svg", { copyMessageActionsText() }),
+            DshMessageActionItem("选择文本", "text-select.svg", { closeMessageActions() }),
+            DshMessageActionItem("好的回答", "like.svg", { closeMessageActions() }),
+            DshMessageActionItem("有问题的回答", "dislike.svg", { closeMessageActions() }),
+            DshMessageActionItem("在新对话中分支", "branch.svg", { closeMessageActions() }),
+            DshMessageActionItem("分享", "share.svg", { closeMessageActions() }),
+        ))
+        return result
     }
 
     private fun updateKeyboard(params: KeyboardParams) {

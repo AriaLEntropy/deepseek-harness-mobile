@@ -175,6 +175,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     isJsonNodeExpanded: (String, String) -> Boolean,
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
+    onMessageLongPress: (DshMessage) -> Unit = {},
     attachmentDataUrl: (String) -> String?,
     queueItems: () -> ObservableList<DshQueueItem>,
     jobItems: () -> ObservableList<DshJobItem>,
@@ -226,11 +227,11 @@ internal fun ViewContainer<*, *>.DshConversation(
             width(availableWidth)
             flexDirectionColumn()
             backgroundColor(Color.WHITE)
-            // 与 DSH Web composer 一致的左右 clearance，避免输入条贴住手机左右边框
-            paddingLeft(16f)
-            paddingRight(16f)
-            // 底部安全区：8px 基础间距（对齐 DSH Web composer 底部）+ 系统安全区（Android 虚拟导航栏）
-            paddingBottom(8f + pagerData.safeAreaInsets.bottom)
+            // 底部仅留固定 8px 间距（对齐 DSH Web composer 底部）。
+            // 页面是 immersive（LAYOUT_FULLSCREEN + STABLE，无 LAYOUT_HIDE_NAVIGATION），
+            // 系统已将内容区停在虚拟导航栏上方、pageViewHeight 已扣除导航栏高度，
+            // 此时 safeAreaInsets.bottom 仍返回导航栏高度，若再加会双重 padding 把输入条抬高一个导航栏。
+            paddingBottom(8f)
         }
         // 消息视口容器：消息列表区域，随键盘高度向上收缩，输入条自然浮在键盘上方
         View {
@@ -315,6 +316,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
+                                            onLongPress = { onMessageLongPress(it) },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {
                                                 val stored = messagesForSession(sessionId)
@@ -447,12 +449,12 @@ internal fun ViewContainer<*, *>.DshConversation(
                 vif({ isBlankConversation() }) {
                     View {
                         attr {
-                            width(availableWidth)
+                            width((availableWidth - 24f).coerceAtLeast(0f))
+                            marginLeft(12f)
+                            marginRight(12f)
                             flexDirectionRow()
                             alignItemsCenter()
                             marginBottom(8f)
-                            paddingLeft(12f)
-                            paddingRight(12f)
                         }
                         // 文件夹 chip（工作区选择器）：透明药丸，与 DSH Web HeroShell.workspace 一致（无边框，r16，primary 色）
                         View {
@@ -522,13 +524,15 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                 }
 
-                // 输入卡：DSH Web 风格，细描边 + 弥散阴影，10px 顶部内边距
+                // 输入卡：DSH Web 风格，细描边 + 弥散阴影，10px 顶部内边距。
+                // 左右对称 margin 出 clearance（各 12px），宽度扣减 24 避免右侧溢出截断。
                 View {
                     attr {
-                        width(availableWidth)
+                        width((availableWidth - 24f).coerceAtLeast(0f))
+                        marginLeft(12f)
+                        marginRight(12f)
                         flexDirectionColumn()
                         paddingTop(10f)
-                        marginBottom(8f)
                         backgroundColor(Color.WHITE)
                         borderRadius(22f)
                         border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
@@ -785,6 +789,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     isJsonNodeExpanded: (String) -> Boolean = { false },
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
+    onLongPress: (DshMessage) -> Unit = {},
     attachmentDataUrl: (String) -> String? = { null },
     contentProvider: (() -> String)? = null,
 ) {
@@ -1022,6 +1027,11 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         else -> 0x00FFFFFF
                     },
                 ))
+            }
+            event {
+                if (!isUser && !isError) {
+                    longPress { onLongPress(message) }
+                }
             }
             if (isUser || isError) {
                 Text {
