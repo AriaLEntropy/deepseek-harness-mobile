@@ -503,8 +503,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                             Image {
                                 attr {
-                                    src(ImageUri.commonAssets("sliders.svg"))
-                                    size(14f, 14f)
+                                    src(ImageUri.commonAssets("agent-preset.svg"))
+                                    size(16f, 16f)
                                 }
                             }
                             Text {
