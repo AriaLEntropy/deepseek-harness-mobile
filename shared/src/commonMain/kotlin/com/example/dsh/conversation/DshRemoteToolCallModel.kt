@@ -49,6 +49,10 @@ internal data class DshRemoteToolCallModel(
     val todoActiveExtra: Int = 0,
     val questionAnswered: Int = 0,
     val questionTotal: Int = 0,
+    /** Host event wall time of the tool/call event (ms epoch); 0 when unknown. */
+    val callTimeMs: Long = 0,
+    /** Tool wall time tool/call → tool/result (ms); 0 when either side lacks timing. */
+    val durationMs: Long = 0,
 )
 
 internal fun DshRemoteToolCallModel.toRemoteMessage(key: String): DshMessage = DshMessage(
@@ -67,13 +71,13 @@ internal object DshRemoteToolCallModels {
     fun fromHistoryCall(entry: JSONObject): DshRemoteToolCallModel? {
         val event = dshWireEvent(entry)
         if (event.optString("type") != "tool/call") return null
-        return fromCall(event.optJSONObject("data") ?: return null, dshWireView(entry))
+        return fromCall(event.optJSONObject("data") ?: return null, dshWireView(entry), event.optLong("time"))
     }
 
     fun fromLiveCall(raw: JSONObject): DshRemoteToolCallModel? {
         val event = dshWireEvent(raw)
         if (event.optString("type") != "tool/call") return null
-        return fromCall(event.optJSONObject("data") ?: return null, dshWireView(raw))
+        return fromCall(event.optJSONObject("data") ?: return null, dshWireView(raw), event.optLong("time"))
     }
 
     fun settleHistoryResult(
@@ -82,7 +86,7 @@ internal object DshRemoteToolCallModels {
     ): DshRemoteToolCallModel? {
         val event = dshWireEvent(entry)
         if (event.optString("type") != "tool/result") return null
-        return settle(previous, event.optJSONObject("data") ?: return null, dshWireView(entry))
+        return settle(previous, event.optJSONObject("data") ?: return null, dshWireView(entry), event.optLong("time"))
     }
 
     fun settleLiveResult(
@@ -91,10 +95,10 @@ internal object DshRemoteToolCallModels {
     ): DshRemoteToolCallModel? {
         val event = dshWireEvent(raw)
         if (event.optString("type") != "tool/result") return null
-        return settle(previous, event.optJSONObject("data") ?: return null, dshWireView(raw))
+        return settle(previous, event.optJSONObject("data") ?: return null, dshWireView(raw), event.optLong("time"))
     }
 
-    private fun fromCall(data: JSONObject, view: JSONObject?): DshRemoteToolCallModel {
+    private fun fromCall(data: JSONObject, view: JSONObject?, timeMs: Long): DshRemoteToolCallModel {
         val name = data.optString("name").ifEmpty { "工具" }
         val callId = data.optString("callId")
         val input = toolInputSummary(data.opt("arguments"))
@@ -121,6 +125,7 @@ internal object DshRemoteToolCallModels {
             todoTotal = todo.total,
             todoActive = todo.active,
             todoActiveExtra = todo.extra,
+            callTimeMs = timeMs,
         )
     }
 
@@ -128,6 +133,7 @@ internal object DshRemoteToolCallModels {
         previous: DshRemoteToolCallModel?,
         data: JSONObject,
         view: JSONObject?,
+        timeMs: Long,
     ): DshRemoteToolCallModel? {
         val result = resultPayload(data)
         val callId = result.callId
@@ -172,6 +178,8 @@ internal object DshRemoteToolCallModels {
             todoActiveExtra = todo.extra,
             questionAnswered = question.answered,
             questionTotal = question.total,
+            callTimeMs = base.callTimeMs,
+            durationMs = if (timeMs > 0 && base.callTimeMs > 0) (timeMs - base.callTimeMs).coerceAtLeast(0) else 0,
         )
     }
 
