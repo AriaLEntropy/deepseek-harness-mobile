@@ -38,3 +38,8 @@ Kotlin-js-store
 *.xcscmblueprint
 *.xcbkptlist
 *.pyc
+## Agent skills (tool-generated, not part of product code)
+.agents/
+.claude/
+agent/skills/
+skills-lock.json

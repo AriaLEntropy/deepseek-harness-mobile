@@ -14,6 +14,7 @@ import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
@@ -499,7 +500,22 @@ internal fun ViewContainer<*, *>.DshModelPicker(
     error: () -> String,
     onClose: () -> Unit,
     onSelect: (DshModelOption) -> Unit,
+    onSelectEffort: (String) -> Unit,
 ) {
+    var showEfforts = false
+    val selectedOpt: () -> DshModelOption? = { options().firstOrNull { it.selected } }
+    val selectedEfforts: () -> ObservableList<DshReasoningEffort> = {
+        val sel = selectedOpt()
+        ObservableList<DshReasoningEffort>().apply { addAll(sel?.reasoningEfforts.orEmpty()) }
+    }
+    val selectedEffortName: () -> String = {
+        val sel = selectedOpt()
+        sel?.reasoningEfforts?.firstOrNull { it.id == sel.reasoningEffort }?.name
+            ?: sel?.reasoningEffort ?: ""
+    }
+    val selectedSupportsEfforts: () -> Boolean = {
+        (selectedOpt()?.reasoningEfforts?.isEmpty()) != true
+    }
     Modal(inWindow = true) {
         attr {
             absolutePositionAllZero()
@@ -523,7 +539,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                 attr { height(40f); flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
-                        text("选择模型")
+                        text(if (showEfforts) "推理等级" else "选择模型")
                         fontSize(18f)
                         fontWeightBold()
                         color(Color(0xFF252B30))
@@ -547,14 +563,348 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                     }
                 }
             }
-            vif({ busy() && options().isEmpty() }) {
+            if (showEfforts) {
+                // 推理等级：顶部返回栏 + 当前模型名
+                View {
+                    attr {
+                        height(36f)
+                        marginTop(2f)
+                        marginBottom(4f)
+                        flexDirectionRow()
+                        alignItemsCenter()
+                    }
+                    View {
+                        attr { size(32f, 32f); allCenter() }
+                        Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f) } }
+                        event { click { showEfforts = false } }
+                    }
+                    Text {
+                        attr {
+                            text(selectedOpt()?.name ?: "")
+                            marginLeft(4f)
+                            fontSize(13f)
+                            color(Color(0xFF7D858C))
+                        }
+                    }
+                }
+                Scroller {
+                    attr { flex(1f); marginTop(4f) }
+                    vfor({ selectedEfforts() }) { effort ->
+                        View {
+                            attr {
+                                minHeight(54f)
+                                marginBottom(6f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                padding(10f, 12f, 10f, 12f)
+                                borderRadius(10f)
+                                backgroundColor(Color(
+                                    if (effort.id == selectedOpt()?.reasoningEffort) 0xFFF0F3FA else 0xFFF8F8F9,
+                                ))
+                            }
+                            View {
+                                attr { flex(1f); flexDirectionColumn() }
+                                Text {
+                                    attr {
+                                        text(effort.name)
+                                        fontSize(14f)
+                                        fontWeightMedium()
+                                        color(Color(0xFF2C3237))
+                                    }
+                                }
+                                if (effort.description.isNotEmpty()) {
+                                    Text {
+                                        attr {
+                                            text(effort.description)
+                                            marginTop(3f)
+                                            lines(1)
+                                            fontSize(11f)
+                                            color(Color(0xFF8B939A))
+                                        }
+                                    }
+                                }
+                            }
+                            if (effort.id == selectedOpt()?.reasoningEffort) {
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("check.svg"))
+                                        size(18f, 18f)
+                                        tintColor(Color(0xFF4176E6))
+                                    }
+                                }
+                            }
+                            event { click { if (!busy()) onSelectEffort(effort.id) } }
+                        }
+                    }
+                }
+            } else {
+                // 当前选中模型：若支持推理等级，显示"推理等级 ›"入口行
+                vif({ selectedSupportsEfforts() }) {
+                    View {
+                        attr {
+                            height(44f)
+                            marginTop(6f)
+                            marginBottom(2f)
+                            paddingLeft(12f)
+                            paddingRight(12f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            borderRadius(10f)
+                            backgroundColor(Color(0xFFF4F6FA))
+                        }
+                        Text {
+                            attr {
+                                text("推理等级")
+                                fontSize(14f)
+                                color(Color(0xFF2C3237))
+                            }
+                        }
+                        View { attr { flex(1f) } }
+                        Text {
+                            attr {
+                                text(selectedEffortName())
+                                marginRight(4f)
+                                fontSize(13f)
+                                color(Color(0xFF8B939A))
+                            }
+                        }
+                        Image { attr { src(ImageUri.commonAssets("chevron-right.svg")); size(14f, 14f) } }
+                        event { click { showEfforts = true } }
+                    }
+                }
+                vif({ busy() && options().isEmpty() }) {
+                    Text {
+                        attr {
+                            text("正在加载模型...")
+                            marginTop(24f)
+                            fontSize(14f)
+                            color(Color(0xFF7D858C))
+                        }
+                    }
+                }
+                Scroller {
+                    attr { flex(1f); marginTop(8f) }
+                    vfor({ options() }) { option ->
+                        View {
+                            attr {
+                                minHeight(58f)
+                                marginBottom(6f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                padding(10f, 12f, 10f, 12f)
+                                borderRadius(10f)
+                                backgroundColor(Color(if (option.selected) 0xFFF0F3FA else 0xFFF8F8F9))
+                            }
+                            View {
+                                attr { flex(1f); flexDirectionColumn() }
+                                Text {
+                                    attr {
+                                        text(option.name)
+                                        fontSize(14f)
+                                        fontWeightMedium()
+                                        color(Color(0xFF2C3237))
+                                    }
+                                }
+                                Text {
+                                    attr {
+                                        text(option.providerName + if (option.description.isEmpty()) "" else " · ${option.description}")
+                                        marginTop(3f)
+                                        lines(1)
+                                        fontSize(11f)
+                                        color(Color(0xFF8B939A))
+                                    }
+                                }
+                            }
+                            if (option.selected) {
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("check.svg"))
+                                        size(18f, 18f)
+                                        tintColor(Color(0xFF4176E6))
+                                    }
+                                }
+                            }
+                            event { click { if (!busy()) onSelect(option) } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal data class DshPermissionOption(
+    val value: String,
+    val label: String,
+    val selected: Boolean = false,
+)
+
+// dsh 语义：权限态 → 盾牌图标（read-only=盾牌+对勾，workspace-write=盾牌+铅笔，full-access=盾牌+感叹号）
+internal fun dshPermissionIcon(value: String): String = when (value) {
+    "read-only" -> "permission-read.svg"
+    "full-access" -> "permission-danger.svg"
+    else -> "permission-write.svg"
+}
+
+// 权限选择弹窗（会话开始前，users 在底部工具栏点击权限 chip 打开）。
+// 三个圆角卡片：盾牌 svg 在上、权限名在下，选中卡片蓝底高亮 + 右上对勾。
+internal fun ViewContainer<*, *>.DshPermissionPicker(
+    options: () -> ObservableList<DshPermissionOption>,
+    onClose: () -> Unit,
+    onSelect: (DshPermissionOption) -> Unit,
+) {
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            flexDirectionColumn()
+            justifyContentFlexEnd()
+            backgroundColor(Color(0x55000000))
+        }
+        View {
+            attr { flex(1f) }
+            event { click { onClose() } }
+        }
+        View {
+            attr {
+                flexDirectionColumn()
+                padding(18f)
+                borderRadius(20f)
+                backgroundColor(Color.WHITE)
+            }
+            View {
+                attr { height(40f); flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
-                        text("正在加载模型...")
-                        marginTop(24f)
-                        fontSize(14f)
-                        color(Color(0xFF7D858C))
+                        text("选择权限")
+                        fontSize(18f)
+                        fontWeightBold()
+                        color(Color(0xFF252B30))
                     }
+                }
+                View { attr { flex(1f) } }
+                View {
+                    attr { size(36f, 36f); allCenter() }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f) } }
+                    event { click { onClose() } }
+                }
+            }
+            // 三个圆角权限卡片：横向一行等宽，svg 在卡内上方、文字在下方（cf412 样式）
+            View {
+                attr {
+                    marginTop(12f)
+                    flexDirectionRow()
+                }
+                vforIndex({ options() }) { option, index, _ ->
+                    View {
+                        attr {
+                            flex(1f)
+                            height(84f)
+                            if (index > 0) marginLeft(12f)
+                            flexDirectionColumn()
+                            alignItemsCenter()
+                            justifyContentCenter()
+                            borderRadius(14f)
+                            border(Border(
+                                1f,
+                                BorderStyle.SOLID,
+                                Color(if (option.selected) 0xFF4176E6 else 0xFFE7EAEE),
+                            ))
+                            backgroundColor(Color(
+                                if (option.selected) 0xFFEDF3FE else 0xFFF8F8F9,
+                            ))
+                        }
+                        View {
+                            attr { size(22f, 22f); allCenter() }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets(dshPermissionIcon(option.value)))
+                                    size(20f, 20f)
+                                }
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(option.label)
+                                marginTop(6f)
+                                fontSize(13f)
+                                fontWeightMedium()
+                                color(Color(if (option.selected) 0xFF4176E6 else 0xFF3A4148))
+                            }
+                        }
+                        if (option.selected) {
+                            View {
+                                attr {
+                                    absolutePosition(top = 8f, left = 8f)
+                                    size(20f, 20f)
+                                    allCenter()
+                                    borderRadius(10f)
+                                    backgroundColor(Color(0xFF4176E6))
+                                }
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("check.svg"))
+                                        size(14f, 14f)
+                                        tintColor(Color.WHITE)
+                                    }
+                                }
+                            }
+                        }
+                        event { click { onSelect(option) } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal data class DshAgentModeOption(
+    val value: String,
+    val label: String,
+    val description: String,
+    val selected: Boolean = false,
+)
+
+// 模式选择弹窗（会话开始前，users 在 Hero 区点击模式 chip 打开）。
+// 纵向 list：每项 模式名 + 多行描述，选中项右侧蓝勾（d888 样式）。
+internal fun ViewContainer<*, *>.DshAgentModePicker(
+    options: () -> ObservableList<DshAgentModeOption>,
+    onClose: () -> Unit,
+    onSelect: (DshAgentModeOption) -> Unit,
+) {
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            flexDirectionColumn()
+            justifyContentFlexEnd()
+            backgroundColor(Color(0x55000000))
+        }
+        View {
+            attr { flex(1f) }
+            event { click { onClose() } }
+        }
+        View {
+            attr {
+                height((pagerData.pageViewHeight * 0.62f).coerceAtMost(520f))
+                flexDirectionColumn()
+                padding(18f)
+                borderRadius(20f)
+                backgroundColor(Color.WHITE)
+            }
+            View {
+                attr { height(40f); flexDirectionRow(); alignItemsCenter() }
+                Text {
+                    attr {
+                        text("选择模式")
+                        fontSize(18f)
+                        fontWeightBold()
+                        color(Color(0xFF252B30))
+                    }
+                }
+                View { attr { flex(1f) } }
+                View {
+                    attr { size(36f, 36f); allCenter() }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f) } }
+                    event { click { onClose() } }
                 }
             }
             Scroller {
@@ -562,7 +912,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                 vfor({ options() }) { option ->
                     View {
                         attr {
-                            minHeight(58f)
+                            minHeight(64f)
                             marginBottom(6f)
                             flexDirectionRow()
                             alignItemsCenter()
@@ -574,26 +924,32 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                             attr { flex(1f); flexDirectionColumn() }
                             Text {
                                 attr {
-                                    text(option.name)
+                                    text(option.label)
                                     fontSize(14f)
-                                    fontWeightMedium()
-                                    color(Color(0xFF2C3237))
+                                    fontWeightSemiBold()
+                                    color(Color(if (option.selected) 0xFF4176E6 else 0xFF2C3237))
                                 }
                             }
                             Text {
                                 attr {
-                                    text(option.providerName + if (option.description.isEmpty()) "" else " · ${option.description}")
-                                    marginTop(3f)
-                                    lines(1)
-                                    fontSize(11f)
+                                    text(option.description)
+                                    marginTop(4f)
+                                    fontSize(12f)
+                                    lineHeight(18f)
                                     color(Color(0xFF8B939A))
                                 }
                             }
                         }
                         if (option.selected) {
-                            Text { attr { text("✓"); fontSize(17f); color(Color(0xFF4176E6)) } }
+                            Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("check.svg"))
+                                        size(18f, 18f)
+                                        tintColor(Color(0xFF4176E6))
+                                    }
+                                }
                         }
-                        event { click { if (!busy()) onSelect(option) } }
+                        event { click { onSelect(option) } }
                     }
                 }
             }

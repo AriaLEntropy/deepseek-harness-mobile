@@ -17,6 +17,7 @@ import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
+import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
@@ -161,6 +162,11 @@ internal fun ViewContainer<*, *>.DshConversation(
     onToggleVoice: () -> Unit,
     folderLabel: () -> String,
     onOpenFolderBrowser: () -> Unit,
+    permissionValue: () -> String,
+    permissionLabel: () -> String,
+    onOpenPermissions: () -> Unit,
+    agentModeLabel: () -> String,
+    onOpenAgentModes: () -> Unit,
     isWebTimeline: () -> Boolean,
     isDisclosureExpanded: (String) -> Boolean,
     onToggleDisclosure: (String) -> Unit,
@@ -220,6 +226,11 @@ internal fun ViewContainer<*, *>.DshConversation(
             width(availableWidth)
             flexDirectionColumn()
             backgroundColor(Color.WHITE)
+            // 与 DSH Web composer 一致的左右 clearance，避免输入条贴住手机左右边框
+            paddingLeft(16f)
+            paddingRight(16f)
+            // 底部安全区：8px 基础间距（对齐 DSH Web composer 底部）+ 系统安全区（Android 虚拟导航栏）
+            paddingBottom(8f + pagerData.safeAreaInsets.bottom)
         }
         // 消息视口容器：消息列表区域，随键盘高度向上收缩，输入条自然浮在键盘上方
         View {
@@ -432,16 +443,96 @@ internal fun ViewContainer<*, *>.DshConversation(
             }
         }
 
-                // 输入条容器：顶部工具行 + 输入框 + 底部文件夹，总高 COMPOSER_HEIGHT
+                // Hero 配置区：文件夹 chip + 模式 chip，在输入卡上方，仅空白会话（未开始）时显示
+                vif({ isBlankConversation() }) {
+                    View {
+                        attr {
+                            width(availableWidth)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            marginBottom(8f)
+                            paddingLeft(12f)
+                            paddingRight(12f)
+                        }
+                        // 文件夹 chip（工作区选择器）：透明药丸，与 DSH Web HeroShell.workspace 一致（无边框，r16，primary 色）
+                        View {
+                            attr {
+                                height(28f)
+                                paddingLeft(8f)
+                                paddingRight(8f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                borderRadius(16f)
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("folder.svg"))
+                                    size(16f, 16f)
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text(folderLabel())
+                                    marginLeft(4f)
+                                    fontSize(13f)
+                                    color(Color(0xFF1B1F24))
+                                }
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(12f, 12f)
+                                }
+                            }
+                            DshHitButton(onOpenFolderBrowser)
+                        }
+                        // 模式 chip：透明药丸，dsh 语义 —— 图标 + 模式名 + 下箭头，点击打开模式选择弹窗
+                        View {
+                            attr {
+                                height(28f)
+                                marginLeft(8f)
+                                paddingLeft(8f)
+                                paddingRight(4f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                borderRadius(24f)
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("sliders.svg"))
+                                    size(14f, 14f)
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text(agentModeLabel())
+                                    marginLeft(4f)
+                                    fontSize(13f)
+                                    color(Color(0xFF81858C))
+                                }
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(12f, 12f)
+                                }
+                            }
+                            DshHitButton(onOpenAgentModes)
+                        }
+                    }
+                }
+
+                // 输入卡：DSH Web 风格，细描边 + 弥散阴影，10px 顶部内边距
                 View {
                     attr {
-                        height(COMPOSER_HEIGHT)
                         width(availableWidth)
                         flexDirectionColumn()
-                        padding(10f, 12f, 10f, 12f)
+                        paddingTop(10f)
+                        marginBottom(8f)
                         backgroundColor(Color.WHITE)
                         borderRadius(22f)
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
+                        border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
+                        boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
                     // 技能建议列表：输入 / 开头时展示匹配的技能供点选
                     vif({
@@ -450,6 +541,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }) {
                         View {
                             attr {
+                                marginLeft(16f)
+                                marginRight(12f)
                                 maxHeight(132f)
                                 marginBottom(6f)
                                 flexDirectionColumn()
@@ -490,10 +583,12 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                         }
                     }
-                    // 输入框：消息/按住说话，回车发送，键盘高度变化通知外层
+                    // 输入框：与 DSH Web 一致的 padding 和光标色
                     Input {
                         ref { inputRef(it) }
                         attr {
+                            marginLeft(16f)
+                            marginRight(12f)
                             height(46f)
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
@@ -504,7 +599,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     else -> "发消息或按住说话，让电脑继续工作..."
                                 },
                             )
-                            placeholderColor(Color(0xFF91A0AA))
+                            placeholderColor(Color(0xFFADB2B8))
                             returnKeyTypeSend()
                             editable(!voiceActive())
                         }
@@ -520,79 +615,115 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
 
-                    // 顶部工具行：模型选择 + 附件(+) + 语音/发送
+                    // 底部工具栏：flex wrap 布局，与 DSH Web 一致（左侧 + 按钮，右侧 模型 chip + 发送按钮）
                     View {
                         attr {
-                            height(40f)
                             flexDirectionRow()
+                            flexWrap(FlexWrap.WRAP)
                             alignItemsCenter()
+                            justifyContentSpaceBetween()
+                            padding(2f, 8f, 6f, 8f)
                         }
-                        // 模型选择 chip：显示当前模型名，点击弹出模型列表
+                        // 左侧功能区：+ 按钮
                         View {
                             attr {
-                                height(32f)
-                                paddingLeft(10f)
-                                paddingRight(8f)
                                 flexDirectionRow()
                                 alignItemsCenter()
-                                borderRadius(16f)
-                                backgroundColor(Color(0xFFF1F3F5))
                             }
-                            Text {
+                            // + 按钮：28px 圆，浅灰背景，与 DSH Web 一致
+                            View {
                                 attr {
-                                    text(modelLabel())
-                                    flex(1f)
-                                    lines(1)
-                                    fontSize(13f)
-                                    color(Color(0xFF31363B))
+                                    size(28f, 28f)
+                                    borderRadius(999f)
+                                    backgroundColor(Color(0xFFF5F6F7))
+                                    allCenter()
+                                }
+                                Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
+                                DshHitButton { onToggleAttachments() }
+                            }
+                            // 权限 chip：dsh 语义 —— 当前权限态盾牌图标 + 下箭头，会话开始前可选（仅图标，文字在弹窗内）
+                            vif({ isBlankConversation() }) {
+                                View {
+                                    attr {
+                                        marginLeft(6f)
+                                        height(28f)
+                                        paddingLeft(13f)
+                                        paddingRight(4f)
+                                        flexDirectionRow()
+                                        alignItemsCenter()
+                                        borderRadius(24f)
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets(dshPermissionIcon(permissionValue())))
+                                            size(16f, 16f)
+                                        }
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("chevron-down.svg"))
+                                            size(12f, 12f)
+                                        }
+                                    }
+                                    DshHitButton(onOpenPermissions)
                                 }
                             }
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("chevron-down.svg"))
-                                    size(16f, 16f)
-                                }
-                            }
-                            DshHitButton(onOpenModels)
                         }
-                        // 附件按钮：加号，点击展开图片/文件选择菜单
-                        View { attr { flex(1f) } }
-                        View {
-                            attr { size(34f, 34f); allCenter() }
-                            Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f) } }
-                            DshHitButton { onToggleAttachments() }
-                        }
-                        // 语音/发送/停止按钮：停止时红色方块，有文字时发送，否则按住说话
+                        // 右侧功能区：模型 chip + 停止/发送按钮
                         View {
                             attr {
-                                size(40f, 40f)
-                                marginLeft(6f)
-                                borderRadius(20f)
-                                allCenter()
-                                backgroundColor(Color(
-                                    when {
-                                        stopButtonVisible() -> 0xFFE05252
-                                        voiceActive() -> 0xFF679EFE
-                                        else -> 0xFF4176E6
-                                    },
-                                ))
+                                flexDirectionRow()
+                                alignItemsCenter()
                             }
-                            vif({ stopButtonVisible() }) {
-                                Image { attr { src(ImageUri.commonAssets("square.svg")); size(21f, 21f) } }
-                            }
-                            velse {
-                                Image {
+                            // 模型 chip：与 DSH Web 一致的透明药丸样式
+                            View {
+                                attr {
+                                    maxWidth(220f)
+                                    height(28f)
+                                    paddingLeft(8f)
+                                    paddingRight(20f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    borderRadius(8f)
+                                }
+                                Text {
                                     attr {
-                                        src(ImageUri.commonAssets(if (draft().isEmpty()) "mic.svg" else "send.svg"))
-                                        size(21f, 21f)
+                                        text(modelLabel())
+                                        fontSize(13f)
+                                        color(Color(0xFF81858C))
                                     }
                                 }
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("chevron-down.svg"))
+                                        size(12f, 12f)
+                                    }
+                                }
+                                DshHitButton(onOpenModels)
                             }
-                            DshHitButton {
-                                when {
-                                    stopButtonVisible() -> onStop()
-                                    draft().isNotEmpty() -> onSend()
-                                    else -> onToggleVoice()
+                            // 停止/发送按钮：34px 蓝色圆钮，白↑箭头，与 DSH Web 一致
+                            View {
+                                attr {
+                                    size(34f, 34f)
+                                    borderRadius(999f)
+                                    allCenter()
+                                    backgroundColor(Color(
+                                        if (stopButtonVisible()) 0xFFE05252
+                                        else 0xFF3964FE
+                                    ))
+                                    transform(translate = Translate(percentageX = 0f, percentageY = 0f, offsetY = -2f))
+                                }
+                                vif({ stopButtonVisible() }) {
+                                    Image { attr { src(ImageUri.commonAssets("square.svg")); size(16f, 16f) } }
+                                }
+                                velse {
+                                    Image { attr { src(ImageUri.commonAssets("arrow-up.svg")); size(16f, 16f) } }
+                                }
+                                DshHitButton {
+                                    when {
+                                        stopButtonVisible() -> onStop()
+                                        draft().isNotEmpty() -> onSend()
+                                    }
                                 }
                             }
                         }
@@ -602,7 +733,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                     vif({ attachmentMenuVisible() }) {
                         View {
                             attr {
-                                height(82f)
+                                marginLeft(16f)
+                                marginRight(12f)
                                 marginBottom(8f)
                                 flexDirectionColumn()
                                 padding(8f)
@@ -634,45 +766,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 Text { attr { text("选择本地文件"); fontSize(11f); color(Color(0xFF9098A0)) } }
                             }
                         }
-                    }
-
-                    // 底部工具行：文件夹（沟通文件系统）
-                    View {
-                        attr {
-                            height(38f)
-                            marginTop(4f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                        }
-                        // 文件夹 chip：显示当前工作目录，点击打开文件系统浏览器
-                        View {
-                            attr {
-                                height(30f)
-                                paddingLeft(10f)
-                                paddingRight(8f)
-                                flexDirectionRow()
-                                alignItemsCenter()
-                                borderRadius(15f)
-                                backgroundColor(Color(0xFFF3F5F7))
-                            }
-                            Text {
-                                attr {
-                                    text(folderLabel())
-                                    flex(1f)
-                                    lines(1)
-                                    fontSize(12f)
-                                    color(Color(0xFF4F565C))
-                                }
-                            }
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("chevron-down.svg"))
-                                    size(14f, 14f)
-                                }
-                            }
-                            DshHitButton(onOpenFolderBrowser)
-                        }
-                        View { attr { flex(1f) } }
                     }
                 }
 

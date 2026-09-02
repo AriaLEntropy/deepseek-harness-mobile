@@ -267,6 +267,7 @@ internal data class DshSession(
     val parentSessionId: String? = null,
     val origin: String? = null,
     val agentPreset: String? = null,
+    val permission: String? = null,
     val subscribedLastSeq: Int = -1,
 )
 
@@ -537,7 +538,15 @@ internal data class DshModelOption(
     val name: String,
     val description: String = "",
     val reasoningEffort: String? = null,
+    val reasoningEfforts: List<DshReasoningEffort> = emptyList(),
     val selected: Boolean = false,
+)
+
+// 单个模型的推理等级选项（id 用于提交，name 用于展示）
+internal data class DshReasoningEffort(
+    val id: String,
+    val name: String,
+    val description: String = "",
 )
 
 internal data class DshSkill(
@@ -599,6 +608,8 @@ internal interface DshRepository {
         workspaceId: String?,
         onSuccess: (String) -> Unit,
         onError: (String) -> Unit,
+        permission: String? = null,
+        agentPreset: String? = null,
     )
 
     fun loadHistory(

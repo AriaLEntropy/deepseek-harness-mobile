@@ -106,7 +106,14 @@ internal class DshHomePage : BasePager() {
     private var modelPickerBusy by observable(false)
     private var modelPickerError by observable("")
     private var selectedModelLabel by observable("选择模型")
+    private var selectedEffortLabel by observable("")
     private var modelOptions by observableList<DshModelOption>()
+    private var permissionPickerVisible by observable(false)
+    private var permissionValue by observable("workspace-write")
+    private var permissionLabel by observable("工作区写入")
+    private var agentModePickerVisible by observable(false)
+    private var agentModeValue by observable("standard")
+    private var agentModeLabel by observable("标准模式")
     private var attachmentMenuVisible by observable(false)
     private var voiceActive by observable(false)
     private var topBarRef: ViewRef<com.tencent.kuikly.core.views.DivView>? = null
@@ -333,7 +340,7 @@ internal class DshHomePage : BasePager() {
                                 onStop = { ctx.stopStream() },
                                 onDismissKeyboard = { ctx.dismissKeyboard() },
                                 onUserListScroll = { ctx.onConversationUserScroll(it) },
-                                modelLabel = { ctx.selectedModelLabel },
+                                modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
                                 attachmentMenuVisible = { ctx.attachmentMenuVisible },
                                 voiceActive = { ctx.voiceActive },
                                 onOpenModels = { ctx.openModelPicker() },
@@ -344,6 +351,11 @@ internal class DshHomePage : BasePager() {
                                 onToggleVoice = { ctx.toggleVoice() },
                                 folderLabel = { ctx.composerFolderLabel() },
                                 onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
+                                permissionValue = { ctx.permissionValue },
+                                permissionLabel = { ctx.permissionLabel },
+                                onOpenPermissions = { ctx.permissionPickerVisible = true },
+                                agentModeLabel = { ctx.agentModeLabel },
+                                onOpenAgentModes = { ctx.agentModePickerVisible = true },
                                 isWebTimeline = { ctx.isRemoteHost },
                                 isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                                 onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
@@ -409,7 +421,7 @@ internal class DshHomePage : BasePager() {
                                 DshSessionDetailsPanel(
                                     title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "尚无标题" },
                                     cwd = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.cwd ?: "" },
-                                    modelLabel = { ctx.selectedModelLabel },
+                                    modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
                                     agentPreset = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.agentPreset.orEmpty() },
                                     running = { ctx.sessionRunning },
                                     queueCount = { ctx.queueItems.size },
@@ -447,10 +459,15 @@ internal class DshHomePage : BasePager() {
                             onStop = { ctx.stopStream() },
                             onDismissKeyboard = { ctx.dismissKeyboard() },
                             onUserListScroll = { ctx.onConversationUserScroll(it) },
-                            modelLabel = { ctx.selectedModelLabel },
+                            modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
                             attachmentMenuVisible = { ctx.attachmentMenuVisible },
                             voiceActive = { ctx.voiceActive },
                             onOpenModels = { ctx.openModelPicker() },
+                            permissionValue = { ctx.permissionValue },
+                            permissionLabel = { ctx.permissionLabel },
+                            onOpenPermissions = { ctx.permissionPickerVisible = true },
+                            agentModeLabel = { ctx.agentModeLabel },
+                            onOpenAgentModes = { ctx.agentModePickerVisible = true },
                             onToggleAttachments = {
                                 ctx.dismissKeyboard()
                                 ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
@@ -565,6 +582,71 @@ internal class DshHomePage : BasePager() {
                         error = { ctx.modelPickerError },
                         onClose = { ctx.modelPickerVisible = false },
                         onSelect = { ctx.selectModel(it) },
+                        onSelectEffort = { ctx.selectModelEffort(it) },
+                    )
+                }
+
+                // ===== 权限选择弹窗 =====
+                // 会话开始前（现状只是一个本地选项），选择工作区写入权限。
+                // 注意：host 目前没有权限接口。选中值存本地，未来在 session.create /
+                // 发起首条消息时随参数下发，host 支持后即可用手机初始选的权限创建电脑端会话。
+                vif({ ctx.permissionPickerVisible }) {
+                    DshPermissionPicker(
+                        options = {
+                            ObservableList<DshPermissionOption>().apply {
+                                addAll(listOf(
+                                    DshPermissionOption("read-only", "只读", ctx.permissionValue == "read-only"),
+                                    DshPermissionOption("workspace-write", "工作区写入", ctx.permissionValue == "workspace-write"),
+                                    DshPermissionOption("full-access", "完全访问", ctx.permissionValue == "full-access"),
+                                ))
+                            }
+                        },
+                        onClose = { ctx.permissionPickerVisible = false },
+                        onSelect = { option ->
+                            ctx.permissionValue = option.value
+                            ctx.permissionLabel = option.label
+                            ctx.permissionPickerVisible = false
+                        },
+                    )
+                }
+
+                // ===== 模式选择弹窗 =====
+                // 会话开始前选择 Agent 模式（agentPreset）。host 有 agentPreset.list，
+                // 当前以本地预设为兜底；选中值存本地，未来在创建会话时随参数下发。
+                vif({ ctx.agentModePickerVisible }) {
+                    DshAgentModePicker(
+                        options = {
+                            ObservableList<DshAgentModeOption>().apply {
+                                addAll(listOf(
+                                    DshAgentModeOption(
+                                        "standard", "标准模式",
+                                        "功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流",
+                                        ctx.agentModeValue == "standard",
+                                    ),
+                                    DshAgentModeOption(
+                                        "ptc", "PTC 模式",
+                                        "具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作",
+                                        ctx.agentModeValue == "ptc",
+                                    ),
+                                    DshAgentModeOption(
+                                        "minimal", "极简模式",
+                                        "仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent",
+                                        ctx.agentModeValue == "minimal",
+                                    ),
+                                    DshAgentModeOption(
+                                        "creator", "创造模式",
+                                        "用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导",
+                                        ctx.agentModeValue == "creator",
+                                    ),
+                                ))
+                            }
+                        },
+                        onClose = { ctx.agentModePickerVisible = false },
+                        onSelect = { option ->
+                            ctx.agentModeValue = option.value
+                            ctx.agentModeLabel = option.label
+                            ctx.agentModePickerVisible = false
+                        },
                     )
                 }
 
@@ -1315,7 +1397,11 @@ internal class DshHomePage : BasePager() {
     private fun composerFolderLabel(): String {
         val session = sessions.firstOrNull { it.id == activeSessionId }
         val cwd = session?.cwd
-        return if (cwd.isNullOrEmpty()) "文件夹（可选）" else cwd
+        if (cwd.isNullOrEmpty()) return "文件夹（可选）"
+        // 只显示绝对路径最后一段（兼容 Windows 反斜杠与 Unix 斜杠，过滤空段），
+        // 完整路径仍在右侧「会话详情面板」展示，不丢失信息。
+        val leaf = cwd.split("\\", "/").lastOrNull { it.isNotBlank() } ?: return cwd
+        return leaf
     }
 
     private fun createSession() {
@@ -1368,6 +1454,8 @@ internal class DshHomePage : BasePager() {
                 workspace = "Host",
                 updatedLabel = "",
                 blank = true,
+                permission = permissionValue,
+                agentPreset = agentModeValue,
             )
             // Keep the existing sessions when creating a new one. Clearing
             // this list also rewrites SQLite with only the newly created row.
@@ -1395,7 +1483,7 @@ internal class DshHomePage : BasePager() {
             perfLog("newSession.$traceId.host.create.error:$error", startedAt)
             connectionLabel = "新会话创建失败"
             messages.add(DshMessage("session-create-error-${messages.size}", DshMessageRole.ERROR, error))
-        })
+        }, permission = permissionValue, agentPreset = agentModeValue)
     }
 
     private fun loadHistory(
@@ -2762,7 +2850,7 @@ internal class DshHomePage : BasePager() {
         if (sessions.isEmpty()) {
             connectionLabel = "正在创建会话"
             hostRepository.createSession(null, { sessionId ->
-                sessions.add(DshSession(sessionId, "新会话", "Host", "", blank = true))
+                sessions.add(DshSession(sessionId, "新会话", "Host", "", blank = true, permission = permissionValue, agentPreset = agentModeValue))
                 refreshVisibleSessions()
                 runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
                 activeSessionId = sessionId
@@ -2775,7 +2863,7 @@ internal class DshHomePage : BasePager() {
                     DshMessageRole.ERROR,
                     "无法创建会话：$error",
                 ))
-            })
+            }, permission = permissionValue, agentPreset = agentModeValue)
             return
         }
         val sessionId = activeSessionId
@@ -2922,6 +3010,7 @@ internal class DshHomePage : BasePager() {
         hostRepository.loadModels(sessionId, { loaded ->
             if (activeSessionId != sessionId) return@loadModels
             selectedModelLabel = loaded.current.name
+            selectedEffortLabel = selectedReasoningEffortName(loaded.current)
             modelOptions.clear()
             modelOptions.addAll(loaded.options)
             modelPickerBusy = false
@@ -2949,18 +3038,53 @@ internal class DshHomePage : BasePager() {
         modelPickerError = ""
         hostRepository.selectModel(activeSessionId, option, { selected ->
             selectedModelLabel = selected.name
+            selectedEffortLabel = selectedReasoningEffortName(selected)
             modelPickerBusy = false
             modelPickerVisible = false
             val currentOptions = modelOptions.toList()
             modelOptions.clear()
             modelOptions.addAll(currentOptions.map {
-                it.copy(selected = it.provider == selected.provider && it.model == selected.model)
+                if (it.provider == selected.provider && it.model == selected.model) {
+                    it.copy(selected = true, reasoningEffort = selected.reasoningEffort)
+                } else {
+                    it.copy(selected = false)
+                }
             })
         }, { error ->
             modelPickerBusy = false
             modelPickerError = error
         })
     }
+
+    // 提交推理等级变更到 host：复用 selectModel 更新 effort。
+    private fun selectModelEffort(effortId: String) {
+        val hostRepository = repository ?: return
+        val current = modelOptions.firstOrNull { it.selected } ?: return
+        modelPickerBusy = true
+        modelPickerError = ""
+        hostRepository.selectModel(activeSessionId, current.copy(reasoningEffort = effortId), { selected ->
+            selectedModelLabel = selected.name
+            selectedEffortLabel = selectedReasoningEffortName(selected)
+            modelPickerBusy = false
+            val currentOptions = modelOptions.toList()
+            modelOptions.clear()
+            modelOptions.addAll(currentOptions.map {
+                if (it.provider == selected.provider && it.model == selected.model) {
+                    it.copy(selected = true, reasoningEffort = selected.reasoningEffort)
+                } else {
+                    it.copy(selected = false)
+                }
+            })
+        }, { error ->
+            modelPickerBusy = false
+            modelPickerError = error
+        })
+    }
+
+    private fun selectedReasoningEffortName(option: DshModelOption): String =
+        option.reasoningEfforts.firstOrNull { it.id == option.reasoningEffort }?.name
+            ?: option.reasoningEffort
+            ?: ""
 
     private fun toggleVoice() {
         dismissKeyboard()

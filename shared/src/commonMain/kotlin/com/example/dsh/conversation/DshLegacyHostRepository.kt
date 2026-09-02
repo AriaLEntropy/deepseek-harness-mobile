@@ -105,13 +105,24 @@ internal class DshHostRepository(
                     val id = item.optString("id")
                     if (groupId.isEmpty() || id.isEmpty()) continue
                     val selected = groupId == provider && id == model
+                    val reasoning = item.optJSONObject("reasoning")
+                    val efforts = mutableListOf<DshReasoningEffort>()
+                    reasoning?.optJSONArray("efforts")?.let { array ->
+                        for (ei in 0 until array.length()) {
+                            val e = array.optJSONObject(ei) ?: continue
+                            val eid = e.optString("id")
+                            if (eid.isEmpty()) continue
+                            efforts += DshReasoningEffort(eid, e.optString("name").ifEmpty { eid }, e.optString("description"))
+                        }
+                    }
                     options += DshModelOption(
                         provider = groupId,
                         providerName = groupName,
                         model = id,
                         name = item.optString("name").ifEmpty { id },
                         description = item.optString("description"),
-                        reasoningEffort = if (selected) effort else item.optJSONObject("reasoning")?.optString("defaultEffort"),
+                        reasoningEffort = if (selected) effort else reasoning?.optString("defaultEffort"),
+                        reasoningEfforts = efforts,
                         selected = selected,
                     )
                 }
@@ -136,7 +147,9 @@ internal class DshHostRepository(
             onSuccess(option.copy(
                 provider = selected.optString("provider").ifEmpty { option.provider },
                 model = selected.optString("model").ifEmpty { option.model },
-                reasoningEffort = selected.optString("reasoningEffort").takeIf { it.isNotEmpty() },
+                reasoningEffort = selected.optString("reasoningEffort").takeIf { it.isNotEmpty() }
+                    ?: option.reasoningEffort,
+                reasoningEfforts = option.reasoningEfforts,
                 selected = true,
             ))
         }
@@ -166,7 +179,7 @@ internal class DshHostRepository(
         }
     }
 
-    override fun createSession(workspaceId: String?, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+    override fun createSession(workspaceId: String?, onSuccess: (String) -> Unit, onError: (String) -> Unit, permission: String?, agentPreset: String?) {
         request(DshHostProtocol.SESSION_CREATE, JSONObject()) { value, error ->
             val id = value?.optString("sessionId").orEmpty()
             if (error != null || id.isEmpty()) onError(error ?: "session.create 返回为空") else onSuccess(id)

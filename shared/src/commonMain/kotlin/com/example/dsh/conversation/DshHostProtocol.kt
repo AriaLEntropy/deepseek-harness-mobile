@@ -868,10 +868,21 @@ internal class DshRemoteHostRepository(
                     val model = models.optJSONObject(modelIndex) ?: continue
                     val id = model.optString("id")
                     if (provider.isEmpty() || id.isEmpty()) continue
-                    val effort = model.optJSONObject("reasoning")?.optString("defaultEffort")?.takeIf { it.isNotEmpty() }
+                    val reasoning = model.optJSONObject("reasoning")
+                    val efforts = mutableListOf<DshReasoningEffort>()
+                    reasoning?.optJSONArray("efforts")?.let { array ->
+                        for (ei in 0 until array.length()) {
+                            val e = array.optJSONObject(ei) ?: continue
+                            val eid = e.optString("id")
+                            if (eid.isEmpty()) continue
+                            efforts += DshReasoningEffort(eid, e.optString("name").ifEmpty { eid }, e.optString("description"))
+                        }
+                    }
+                    val effort = reasoning?.optString("defaultEffort")?.takeIf { it.isNotEmpty() }
                     options += DshModelOption(
                         provider, providerName, id, model.optString("name").ifEmpty { id }, model.optString("description"),
                         if (provider == currentProvider && id == currentModel) currentEffort ?: effort else effort,
+                        efforts,
                         provider == currentProvider && id == currentModel,
                     )
                 }
@@ -896,7 +907,10 @@ internal class DshRemoteHostRepository(
             onSuccess(option.copy(
                 provider = selected.optString("provider").ifEmpty { option.provider },
                 model = selected.optString("model").ifEmpty { option.model },
-                reasoningEffort = selected.optString("reasoningEffort").takeIf { it.isNotEmpty() }, selected = true,
+                reasoningEffort = selected.optString("reasoningEffort").takeIf { it.isNotEmpty() }
+                    ?: option.reasoningEffort,
+                reasoningEfforts = option.reasoningEfforts,
+                selected = true,
             ))
         }
     }
@@ -930,14 +944,17 @@ internal class DshRemoteHostRepository(
                     parentSessionId = item.optString("parentSessionId").takeIf { it.isNotEmpty() },
                     origin = item.optString("origin").takeIf { it.isNotEmpty() },
                     agentPreset = item.optString("agentPreset").takeIf { it.isNotEmpty() },
+                    permission = item.optString("permission").takeIf { it.isNotEmpty() },
                 ))
             }
         }
     }
 
-    override fun createSession(workspaceId: String?, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+    override fun createSession(workspaceId: String?, onSuccess: (String) -> Unit, onError: (String) -> Unit, permission: String?, agentPreset: String?) {
         val payload = JSONObject()
         workspaceId?.takeIf { it.isNotEmpty() }?.let { payload.put("workspaceId", it) }
+        permission?.takeIf { it.isNotEmpty() }?.let { payload.put("permission", it) }
+        agentPreset?.takeIf { it.isNotEmpty() }?.let { payload.put("agentPreset", it) }
         call(DshHostProtocol.SESSION_CREATE, payload) { value, error ->
             if (error != null || value == null) {
                 onError(error?.message ?: "session.create 返回为空")
@@ -1638,6 +1655,7 @@ internal class DshRemoteHostRepository(
                     parentSessionId = payload.optString("parentSessionId").takeIf { it.isNotEmpty() },
                     origin = payload.optString("origin").takeIf { it.isNotEmpty() },
                     agentPreset = payload.optString("agentPreset").takeIf { it.isNotEmpty() },
+                    permission = payload.optString("permission").takeIf { it.isNotEmpty() },
                 ))
             }
             "host/session-status" -> {
