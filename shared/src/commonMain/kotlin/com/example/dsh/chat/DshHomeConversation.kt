@@ -764,6 +764,10 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         if (stopButtonVisible()) 0xFFE05252
                                         else 0xFF3964FE
                                     ))
+                                    opacity(
+                                        if (stopButtonVisible() || draft().trim().isNotEmpty()) 1f
+                                        else 0.4f
+                                    )
                                     transform(translate = Translate(percentageX = 0f, percentageY = 0f, offsetY = -2f))
                                 }
                                 vif({ stopButtonVisible() }) {
@@ -775,7 +779,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 DshHitButton {
                                     when {
                                         stopButtonVisible() -> onStop()
-                                        draft().isNotEmpty() -> onSend()
+                                        draft().trim().isNotEmpty() -> onSend()
                                     }
                                 }
                             }
