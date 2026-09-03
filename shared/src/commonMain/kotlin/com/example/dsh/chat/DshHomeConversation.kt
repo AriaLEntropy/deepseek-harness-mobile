@@ -178,7 +178,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     isJsonNodeExpanded: (String, String) -> Boolean,
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
-    onMessageLongPress: (DshMessage, Float, Float) -> Unit = { _, _, _ -> },
+    onCopyMessageContent: (String) -> Unit = {},
+    onMessageLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     attachmentDataUrl: (String) -> String?,
     queueItems: () -> ObservableList<DshQueueItem>,
@@ -224,6 +225,10 @@ internal fun ViewContainer<*, *>.DshConversation(
     onQuestionSkip: () -> Unit,
     onSubmitQuestion: () -> Unit,
     availableWidth: Float,
+    connectionLabel: () -> String,
+    connectionCapsuleVisible: () -> Boolean,
+    connectionCapsuleFadeOut: () -> Boolean,
+    connectionCapsuleFadeOutAnimation: () -> Animation,
 ) {
     // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
@@ -323,7 +328,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
-                                            onLongPress = { msg, px, py -> onMessageLongPress(msg, px, py) },
+                                            onCopyMessageContent = { onCopyMessageContent(it) },
+                                            onLongPress = { msg, content, px, py -> onMessageLongPress(msg, content, px, py) },
                                             onFooterAction = { msg, action -> onFooterAction(msg, action) },
                                             // footer 只渲染"当前回合（最近一条 user 之后）最后一段
                                             // 已结算 assistant"，中间的过渡文本/分段不会重复渲染
@@ -826,8 +832,16 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                 }
 
-
         }
+        // 连接状态胶囊：浮在输入卡上方，仅非已连接时显示，不参与流式布局
+        DshConnectionStatusCapsule(
+                    visible = { connectionCapsuleVisible() },
+                    connectionLabel = connectionLabel,
+                    isBlankConversation = isBlankConversation,
+                    fadeOut = { connectionCapsuleFadeOut() },
+                    fadeOutAnimation = { connectionCapsuleFadeOutAnimation() },
+                )
+
     }
 }
 
@@ -842,7 +856,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     isJsonNodeExpanded: (String) -> Boolean = { false },
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
-    onLongPress: (DshMessage, Float, Float) -> Unit = { _, _, _ -> },
+    onCopyMessageContent: (String) -> Unit = {},
+    onLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     isTurnTail: () -> Boolean = { true },
     attachmentDataUrl: (String) -> String? = { null },
@@ -1060,7 +1075,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 if (!isUser && !isError) {
                     longPress {
                         DshStreamLog.i("longpress row fired role=${message.role} id=${message.id}")
-                        onLongPress(message, it.pageX, it.pageY)
+                        onLongPress(message, renderedContent, it.pageX, it.pageY)
                     }
                 }
             }
@@ -1099,7 +1114,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 if (!isUser && !isError) {
                     longPress {
                         DshStreamLog.i("longpress fired role=${message.role} id=${message.id}")
-                        onLongPress(message, it.pageX, it.pageY)
+                        onLongPress(message, renderedContent, it.pageX, it.pageY)
                     }
                 }
                 register("touchDown", {
@@ -1124,7 +1139,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     event {
                         longPress {
                             DshStreamLog.i("longpress inner fired role=${message.role} id=${message.id}")
-                            onLongPress(message, it.pageX, it.pageY)
+                            onLongPress(message, renderedContent, it.pageX, it.pageY)
                         }
                     }
                     DshMarkdown {
@@ -1155,7 +1170,14 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
         if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
-            DshMessageFooter { action -> onFooterAction(message, action) }
+            DshMessageFooter { action ->
+                // COPY 使用 contentProvider 渲染内容（流式结算后 contentProvider 返回完整内容）
+                if (action == DshMessageFooterAction.COPY) {
+                    onCopyMessageContent(renderedContent)
+                } else {
+                    onFooterAction(message, action)
+                }
+            }
         }
     }
 }

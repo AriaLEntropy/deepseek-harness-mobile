@@ -92,7 +92,20 @@ internal class DshHomePage : BasePager() {
     private var streamingAssistantContent by observable("")
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
-    private var connectionLabel by observable("本地内核启动中")
+    private var _connectionLabel by observable("本地内核启动中")
+    private var connectionLabel: String
+        get() = _connectionLabel
+        set(value) {
+            if (_connectionLabel != value) {
+                _connectionLabel = value
+                onConnectionLabelChanged(value)
+            }
+        }
+    /** 连接状态胶囊可见性，从已连接变就绪时延迟 3s 后淡出隐藏 */
+    private var connectionCapsuleVisible by observable(false)
+    private var connectionCapsuleFadeOut by observable(false)
+    private var connectionCapsuleFadeOutAnimation by observable(Animation.easeInOut(0.3f))
+    private var connectionCapsuleVersion = 0
     private var apiKeyDraft by observable("")
     private var credentialSetupVisible by observable(false)
     private var credentialSetupBusy by observable(false)
@@ -196,10 +209,33 @@ internal class DshHomePage : BasePager() {
     private var questionIndex by observable(0)
     private var questionError by observable("")
     private var messageActionsMessage by observable<DshMessage?>(null)
+    private var messageActionsContent by observable("")
     private var messageActionsX by observable(0f)
     private var messageActionsY by observable(0f)
     private var menuBlurUri by observable("")
     private val questionDrafts = mutableMapOf<Int, DshQuestionDraft>()
+
+    /** connectionLabel 变化时更新胶囊可见性，就绪态延迟 3s 后淡出隐藏 */
+    private fun onConnectionLabelChanged(label: String) {
+        if (!isConnectionReadyLabel(label)) {
+            connectionCapsuleVisible = true
+            connectionCapsuleFadeOut = false
+        } else if (connectionCapsuleVisible) {
+            connectionCapsuleVersion++
+            val version = connectionCapsuleVersion
+            setTimeout(pagerId, CONNECTION_CAPSULE_HOLD_MS) {
+                if (version == connectionCapsuleVersion && isConnectionReadyLabel(connectionLabel)) {
+                    connectionCapsuleFadeOut = true
+                    setTimeout(pagerId, CONNECTION_CAPSULE_FADE_MS) {
+                        if (version == connectionCapsuleVersion) {
+                            connectionCapsuleVisible = false
+                            connectionCapsuleFadeOut = false
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     override fun created() {
         super.created()
@@ -267,7 +303,6 @@ internal class DshHomePage : BasePager() {
                     }
                     DshTopBar(
                         title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "DeepSeek Harness" },
-                        connection = { ctx.connectionLabel },
                     )
                 }
 
@@ -376,7 +411,11 @@ internal class DshHomePage : BasePager() {
                                     ctx.bridgeModule.copyToPasteboard(it)
                                     ctx.bridgeModule.toast("已复制")
                                 },
-                                onMessageLongPress = { msg, px, py -> ctx.openMessageActions(msg, px, py) },
+                                onCopyMessageContent = {
+                                    ctx.bridgeModule.copyToPasteboard(it)
+                                    ctx.bridgeModule.toast("已复制")
+                                },
+                                onMessageLongPress = { msg, content, px, py -> ctx.openMessageActions(msg, content, px, py) },
                                 onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
                                  attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                                  queueItems = { ctx.queueItems },
@@ -422,6 +461,10 @@ internal class DshHomePage : BasePager() {
                                 onQuestionSkip = { ctx.skipQuestion() },
                                 onSubmitQuestion = { ctx.submitQuestion() },
                                 availableWidth = centerWidth,
+                                connectionLabel = { ctx.connectionLabel },
+                                connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
+                                connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
+                                connectionCapsuleFadeOutAnimation = { ctx.connectionCapsuleFadeOutAnimation },
                             )
                             // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
                             //    工作目录、模型、运行状态、队列/作业数量。
@@ -498,7 +541,11 @@ internal class DshHomePage : BasePager() {
                                 ctx.bridgeModule.copyToPasteboard(it)
                                 ctx.bridgeModule.toast("已复制")
                             },
-                            onMessageLongPress = { msg, px, py -> ctx.openMessageActions(msg, px, py) },
+                            onCopyMessageContent = {
+                                ctx.bridgeModule.copyToPasteboard(it)
+                                ctx.bridgeModule.toast("已复制")
+                            },
+                            onMessageLongPress = { msg, content, px, py -> ctx.openMessageActions(msg, content, px, py) },
                                 onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
                              attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                              queueItems = { ctx.queueItems },
@@ -544,6 +591,10 @@ internal class DshHomePage : BasePager() {
                             onQuestionSkip = { ctx.skipQuestion() },
                             onSubmitQuestion = { ctx.submitQuestion() },
                             availableWidth = ctx.pagerData.pageViewWidth,
+                            connectionLabel = { ctx.connectionLabel },
+                            connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
+                            connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
+                            connectionCapsuleFadeOutAnimation = { ctx.connectionCapsuleFadeOutAnimation },
                         )
                         ctx.perfLog("body.conversation.end wide=false")
                     }
@@ -3023,13 +3074,14 @@ internal class DshHomePage : BasePager() {
         keyboardHeight = 0f
     }
 
-    private fun openMessageActions(message: DshMessage, x: Float, y: Float) {
+    private fun openMessageActions(message: DshMessage, content: String, x: Float, y: Float) {
         // 长按事件可能重复触发，菜单已打开时直接忽略，避免重复截图/模糊
         if (messageActionsMessage != null) return
         bridgeModule.log("openMessageActions id=${message.id} role=${message.role} x=$x y=$y")
         dismissKeyboard()
         messageActionsX = x
         messageActionsY = y
+        messageActionsContent = content
         menuBlurUri = ""
         // 菜单是页面内覆盖层，必须先截图模糊再显示菜单，否则模糊图会包含菜单自身
         blurModule.captureBlur(24) { uri ->
@@ -3040,13 +3092,23 @@ internal class DshHomePage : BasePager() {
 
     private fun closeMessageActions() {
         messageActionsMessage = null
+        messageActionsContent = ""
         menuBlurUri = ""
     }
 
     private fun copyMessageActionsText() {
-        val message = messageActionsMessage ?: return
-        bridgeModule.copyToPasteboard(message.content)
+        if (messageActionsMessage == null) return
+        val content = messageActionsContent.ifEmpty { messageActionsMessage?.content.orEmpty() }
+        bridgeModule.copyToPasteboard(content)
         bridgeModule.toast("已复制")
+        closeMessageActions()
+    }
+
+    private fun selectMessageActionsText() {
+        if (messageActionsMessage == null) return
+        val content = messageActionsContent.ifEmpty { messageActionsMessage?.content.orEmpty() }
+        bridgeModule.copyToPasteboard(content)
+        bridgeModule.toast("已复制全文，可在输入框中选择所需文本")
         closeMessageActions()
     }
 
@@ -3068,7 +3130,7 @@ internal class DshHomePage : BasePager() {
         val result = ObservableList<DshMessageActionItem>()
         result.addAll(listOf(
             DshMessageActionItem("复制", "copy.svg", { copyMessageActionsText() }),
-            DshMessageActionItem("选择文本", "text-select.svg", { closeMessageActions() }),
+            DshMessageActionItem("选择文本", "text-select.svg", { selectMessageActionsText() }),
             DshMessageActionItem("好的回答", "like.svg", { closeMessageActions() }),
             DshMessageActionItem("有问题的回答", "dislike.svg", { closeMessageActions() }),
             DshMessageActionItem("在新对话中分支", "branch.svg", { closeMessageActions() }),
@@ -3551,5 +3613,7 @@ internal class DshHomePage : BasePager() {
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
         private const val STREAM_FLUSH_INTERVAL_MS = 16
+        private const val CONNECTION_CAPSULE_HOLD_MS = 3_000
+        private const val CONNECTION_CAPSULE_FADE_MS = 300
     }
 }

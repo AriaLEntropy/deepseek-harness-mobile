@@ -959,7 +959,6 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
 
 internal fun ViewContainer<*, *>.DshTopBar(
     title: () -> String,
-    connection: () -> String,
 ) {
     View {
         attr {
@@ -991,29 +990,6 @@ internal fun ViewContainer<*, *>.DshTopBar(
                 fontWeightMedium()
                 color(Color(0xFF0F1115))
                 lines(1)
-            }
-        }
-//        连接状态
-        View {
-            attr {
-                val ready = isConnectionReadyLabel(connection())
-                height(22f)
-                marginLeft(8f)
-                paddingLeft(8f)
-                paddingRight(8f)
-                borderRadius(11f)
-                backgroundColor(Color(if (ready) 0xFFE8F7EE else 0xFFF3F5F7))
-                justifyContentCenter()
-                alignItemsCenter()
-            }
-            Text {
-                attr {
-                    val ready = isConnectionReadyLabel(connection())
-                    text(if (ready) "已连接" else topBarConnectingText(connection()))
-                    fontSize(11f)
-                    lines(1)
-                    color(Color(if (ready) 0xFF1F8A4C else 0xFF6B7785))
-                }
             }
         }
     }
