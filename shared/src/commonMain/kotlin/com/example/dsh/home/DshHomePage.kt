@@ -900,6 +900,9 @@ internal class DshHomePage : BasePager() {
 
     private fun openSessionDrawer() {
         if (sessionDrawerVisible) return
+        // 抽屉是独立 Modal 窗口，菜单的透明捕获层够不着它；打开抽屉前先关闭长按菜单，
+        // 否则切换会话后菜单仍会残留。
+        closeMessageActions()
         // Mount transparent first, then start drawer and mask on the same frame.
         sessionDrawerMaskAnimation = Animation.easeInOut(0.24f)
         sessionDrawerMaskAnimated = false
@@ -2555,6 +2558,8 @@ internal class DshHomePage : BasePager() {
 
     private fun selectMountedSession(id: String, traceId: Int = 0, startedAt: TimeMark? = null) {
         if (id == activeSessionId) return
+        // 切换会话时兜底关闭长按菜单，覆盖所有切换路径（抽屉/会话栏/新建会话等）。
+        closeMessageActions()
         perfLog("switch.$traceId.mounted.begin", startedAt)
         refreshSessionRenderTree(id)
         cancelStreamingForSessionSwitch()
