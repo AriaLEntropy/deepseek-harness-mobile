@@ -886,7 +886,6 @@ internal class DshHomePage : BasePager() {
                 DshSelectTextModal(
                     visible = { ctx.selectTextModalVisible },
                     content = { ctx.selectTextModalContent },
-                    onCopyAll = { ctx.copySelectTextModalAll() },
                     onClose = { ctx.closeSelectTextModal() },
                 )
             }
@@ -3164,14 +3163,6 @@ internal class DshHomePage : BasePager() {
     private fun closeSelectTextModal() {
         selectTextModalVisible = false
         selectTextModalContent = ""
-    }
-
-    /** 弹窗内「复制全部」：复制弹窗当前展示的完整正文 */
-    private fun copySelectTextModalAll() {
-        if (selectTextModalContent.isEmpty()) return
-        bridgeModule.copyToPasteboard(selectTextModalContent)
-        bridgeModule.toast("已复制")
-        closeSelectTextModal()
     }
 
     private fun onMessageFooterAction(message: DshMessage, action: DshMessageFooterAction) {
