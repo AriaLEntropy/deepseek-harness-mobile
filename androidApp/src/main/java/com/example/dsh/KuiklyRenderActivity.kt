@@ -21,6 +21,7 @@ import com.example.dsh.adapter.KRRouterAdapter
 import com.example.dsh.adapter.KRThreadAdapter
 import com.example.dsh.adapter.KRUncaughtExceptionHandlerAdapter
 import com.example.dsh.module.KRBridgeModule
+import com.example.dsh.module.KRBlurModule
 import com.example.dsh.module.KRDshEngineModule
 import com.example.dsh.module.KRDshRelayModule
 import com.example.dsh.module.KRDshWebSocketModule
@@ -86,6 +87,9 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         with(kuiklyRenderExport) {
             moduleExport(KRBridgeModule.MODULE_NAME) {
                 KRBridgeModule()
+            }
+            moduleExport(KRBlurModule.MODULE_NAME) {
+                KRBlurModule()
             }
             moduleExport(KRShareModule.MODULE_NAME) {
                 KRShareModule()

@@ -803,6 +803,10 @@ internal fun dshOrderedJobs(jobs: List<DshJobItem>): List<DshJobItem> {
     )
 }
 
+/** Bottom jobs UI only represents work that can still change. */
+internal fun dshLiveJobs(jobs: List<DshJobItem>): List<DshJobItem> =
+    dshOrderedJobs(jobs.filter { it.status == "running" || it.status == "stopping" })
+
 private fun dshJobStatusLabel(status: String): String = when (status) {
     "running" -> "运行中"
     "stopping" -> "正在停止"

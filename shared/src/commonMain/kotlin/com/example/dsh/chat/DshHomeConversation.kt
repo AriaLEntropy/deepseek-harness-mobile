@@ -29,6 +29,9 @@ import com.tencent.kuikly.core.views.ScrollParams
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
+// AI 回答下方横向操作容器（footer）的可用操作项，对齐 dsh 原版 IconActions 行
+internal enum class DshMessageFooterAction { COPY, GOOD, BAD, BRANCH }
+
 internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
     reconnecting: () -> Boolean,
@@ -175,10 +178,12 @@ internal fun ViewContainer<*, *>.DshConversation(
     isJsonNodeExpanded: (String, String) -> Boolean,
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
-    onMessageLongPress: (DshMessage) -> Unit = {},
+    onMessageLongPress: (DshMessage, Float, Float) -> Unit = { _, _, _ -> },
+    onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     attachmentDataUrl: (String) -> String?,
     queueItems: () -> ObservableList<DshQueueItem>,
     jobItems: () -> ObservableList<DshJobItem>,
+    liveJobItems: () -> ObservableList<DshJobItem>,
     goal: () -> DshGoalSnapshot?,
     goalActionBusy: () -> Boolean,
     goalActionError: () -> String,
@@ -318,7 +323,19 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
-                                            onLongPress = { onMessageLongPress(it) },
+                                            onLongPress = { msg, px, py -> onMessageLongPress(msg, px, py) },
+                                            onFooterAction = { msg, action -> onFooterAction(msg, action) },
+                                            // 同一轮回答被切成多段（root[-segment-N]），
+                                            // footer 只在最后一段已结算的 assistant 上渲染一次
+                                            isTurnTail = {
+                                                val root = message.id.substringBefore("-segment-")
+                                                messagesForSession(sessionId)
+                                                    .lastOrNull {
+                                                        it.role == DshMessageRole.ASSISTANT &&
+                                                            !it.streaming &&
+                                                            it.id.substringBefore("-segment-") == root
+                                                    }?.id == message.id
+                                            },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {
                                                 val stored = messagesForSession(sessionId)
@@ -387,10 +404,10 @@ internal fun ViewContainer<*, *>.DshConversation(
             }
         }
         // 任务面板（Web 时间线）：展示后台任务进度
-        vif({ isWebTimeline() && jobItems().isNotEmpty() }) {
+        vif({ isWebTimeline() && liveJobItems().isNotEmpty() }) {
             DshJobsPanel {
                 attr {
-                    jobs = jobItems()
+                    jobs = liveJobItems()
                     expanded = jobsPanelExpanded()
                     now = jobsNow()
                     onToggle = onToggleJobsPanel
@@ -791,13 +808,16 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     isJsonNodeExpanded: (String) -> Boolean = { false },
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
-    onLongPress: (DshMessage) -> Unit = {},
+    onLongPress: (DshMessage, Float, Float) -> Unit = { _, _, _ -> },
+    onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
+    isTurnTail: () -> Boolean = { true },
     attachmentDataUrl: (String) -> String? = { null },
     contentProvider: (() -> String)? = null,
 ) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
+    DshStreamLog.i("row role=${message.role} id=${message.id} content='${DshStreamLog.preview(message.content, 40)}'")
     val renderedContent = contentProvider?.invoke() ?: message.content
     if (
         message.role == DshMessageRole.ASSISTANT &&
@@ -998,7 +1018,15 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 flexDirectionColumn()
                 alignItems(if (isUser) FlexAlign.FLEX_END else FlexAlign.FLEX_START)
                 marginBottom(18f)
-        }
+            }
+            event {
+                if (!isUser && !isError) {
+                    longPress {
+                        DshStreamLog.i("longpress row fired role=${message.role} id=${message.id}")
+                        onLongPress(message, it.pageX, it.pageY)
+                    }
+                }
+            }
         // 消息角色标签：你 / DeepSeek / 工具 / 错误
         Text {
             attr {
@@ -1032,8 +1060,14 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             }
             event {
                 if (!isUser && !isError) {
-                    longPress { onLongPress(message) }
+                    longPress {
+                        DshStreamLog.i("longpress fired role=${message.role} id=${message.id}")
+                        onLongPress(message, it.pageX, it.pageY)
+                    }
                 }
+                register("touchDown", {
+                    DshStreamLog.i("touchdown on msg role=${message.role} id=${message.id}")
+                })
             }
             if (isUser || isError) {
                 Text {
@@ -1049,6 +1083,12 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 View {
                     attr {
                         flexDirectionColumn()
+                    }
+                    event {
+                        longPress {
+                            DshStreamLog.i("longpress inner fired role=${message.role} id=${message.id}")
+                            onLongPress(message, it.pageX, it.pageY)
+                        }
                     }
                     DshMarkdown {
                         attr {
@@ -1073,6 +1113,52 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         }
                     }
                 }
+            }
+        }
+        // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
+        // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
+        if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
+            DshMessageFooter { action -> onFooterAction(message, action) }
+        }
+    }
+}
+
+// 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
+internal fun ViewContainer<*, *>.DshMessageFooter(
+    onAction: (DshMessageFooterAction) -> Unit,
+) {
+    View {
+        attr {
+            width(128f)
+            height(24f)
+            marginTop(2f)
+            flexDirectionRow()
+            alignItemsCenter()
+        }
+        DshFooterActionIcon("copy.svg", DshMessageFooterAction.COPY, onAction)
+        DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction)
+        DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction)
+        DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction)
+    }
+}
+
+// 单个操作图标按钮：32x24 紧凑热区，16px 图标居中
+internal fun ViewContainer<*, *>.DshFooterActionIcon(
+    asset: String,
+    action: DshMessageFooterAction,
+    onAction: (DshMessageFooterAction) -> Unit,
+) {
+    View {
+        attr {
+            width(32f)
+            height(24f)
+            allCenter()
+        }
+        event { click { onAction(action) } }
+        Image {
+            attr {
+                src(ImageUri.commonAssets(asset))
+                size(16f, 16f)
             }
         }
     }

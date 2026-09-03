@@ -163,6 +163,7 @@ internal class DshHomePage : BasePager() {
     private var jobsPanelExpanded by observable(false)
     private var jobsNow by observable(0L)
     private var jobsClockScheduled by observable(false)
+    private val liveJobItems by observableList<DshJobItem>()
     private val workspaceGroups by observableList<DshWorkspaceGroup>()
     private val skills by observableList<DshSkill>()
     private var goalSnapshot by observable<DshGoalSnapshot?>(null)
@@ -195,6 +196,9 @@ internal class DshHomePage : BasePager() {
     private var questionIndex by observable(0)
     private var questionError by observable("")
     private var messageActionsMessage by observable<DshMessage?>(null)
+    private var messageActionsX by observable(0f)
+    private var messageActionsY by observable(0f)
+    private var menuBlurUri by observable("")
     private val questionDrafts = mutableMapOf<Int, DshQuestionDraft>()
 
     override fun created() {
@@ -372,11 +376,13 @@ internal class DshHomePage : BasePager() {
                                     ctx.bridgeModule.copyToPasteboard(it)
                                     ctx.bridgeModule.toast("已复制")
                                 },
-                                onMessageLongPress = { ctx.openMessageActions(it) },
-                                attachmentDataUrl = { ctx.attachmentDataUrl(it) },
-                                queueItems = { ctx.queueItems },
-                                jobItems = { ctx.jobItems },
-                                goal = { ctx.goalSnapshot },
+                                onMessageLongPress = { msg, px, py -> ctx.openMessageActions(msg, px, py) },
+                                onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
+                                 attachmentDataUrl = { ctx.attachmentDataUrl(it) },
+                                 queueItems = { ctx.queueItems },
+                                 jobItems = { ctx.jobItems },
+                                 liveJobItems = { ctx.liveJobItems },
+                                 goal = { ctx.goalSnapshot },
                                 goalActionBusy = { ctx.goalActionBusy },
                                 goalActionError = { ctx.goalActionError },
                                 onPauseGoal = { ctx.pauseGoal() },
@@ -492,11 +498,13 @@ internal class DshHomePage : BasePager() {
                                 ctx.bridgeModule.copyToPasteboard(it)
                                 ctx.bridgeModule.toast("已复制")
                             },
-                            onMessageLongPress = { ctx.openMessageActions(it) },
-                            attachmentDataUrl = { ctx.attachmentDataUrl(it) },
-                            queueItems = { ctx.queueItems },
-                            jobItems = { ctx.jobItems },
-                            goal = { ctx.goalSnapshot },
+                            onMessageLongPress = { msg, px, py -> ctx.openMessageActions(msg, px, py) },
+                                onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
+                             attachmentDataUrl = { ctx.attachmentDataUrl(it) },
+                             queueItems = { ctx.queueItems },
+                             jobItems = { ctx.jobItems },
+                             liveJobItems = { ctx.liveJobItems },
+                             goal = { ctx.goalSnapshot },
                             goalActionBusy = { ctx.goalActionBusy },
                             goalActionError = { ctx.goalActionError },
                             onPauseGoal = { ctx.pauseGoal() },
@@ -817,6 +825,9 @@ internal class DshHomePage : BasePager() {
                 DshMessageActionsMenu(
                     visible = { ctx.messageActionsMessage != null },
                     items = { ctx.messageActionsItems() },
+                    blurUri = { ctx.menuBlurUri },
+                    x = { ctx.messageActionsX },
+                    y = { ctx.messageActionsY },
                     onDismiss = { ctx.closeMessageActions() },
                 )
             }
@@ -1607,6 +1618,7 @@ internal class DshHomePage : BasePager() {
                 }
             }
             sessionMessageReady.add(sessionId)
+            DshStreamLog.i("ui.timeline session=$sessionId size=${projected.size} rows=${projected.joinToString(" | ") { "${it.role.name}@${it.id}:${DshStreamLog.preview(it.content, 24)}" }}")
             replaceMessagesIfChanged(projected, forceReplace)
             if (projected.isNotEmpty()) {
                 persistMessages(sessionId)
@@ -1923,13 +1935,17 @@ internal class DshHomePage : BasePager() {
     private fun refreshJobsPanel() {
         if (!isRemoteHost) {
             jobItems.clear()
+            liveJobItems.clear()
+            jobsPanelExpanded = false
             return
         }
         val repository = repository as? DshRemoteRepository ?: return
         val items = repository.jobs(activeSessionId)
         jobItems.clear()
         jobItems.addAll(items)
-        if (items.isEmpty()) jobsPanelExpanded = false
+        liveJobItems.clear()
+        liveJobItems.addAll(dshLiveJobs(items))
+        if (liveJobItems.isEmpty()) jobsPanelExpanded = false
         if (jobsPanelExpanded) {
             jobsNow = bridgeModule.currentTimeStamp()
             scheduleJobsClock()
@@ -1945,7 +1961,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun scheduleJobsClock() {
-        if (!jobsPanelExpanded || jobsClockScheduled || jobItems.none { it.status == "running" || it.status == "stopping" }) return
+        if (!jobsPanelExpanded || jobsClockScheduled || liveJobItems.isEmpty()) return
         jobsClockScheduled = true
         setTimeout(pagerId, 1_000) {
             jobsClockScheduled = false
@@ -2994,13 +3010,24 @@ internal class DshHomePage : BasePager() {
         keyboardHeight = 0f
     }
 
-    private fun openMessageActions(message: DshMessage) {
+    private fun openMessageActions(message: DshMessage, x: Float, y: Float) {
+        // 长按事件可能重复触发，菜单已打开时直接忽略，避免重复截图/模糊
+        if (messageActionsMessage != null) return
+        bridgeModule.log("openMessageActions id=${message.id} role=${message.role} x=$x y=$y")
         dismissKeyboard()
-        messageActionsMessage = message
+        messageActionsX = x
+        messageActionsY = y
+        menuBlurUri = ""
+        // 菜单是页面内覆盖层，必须先截图模糊再显示菜单，否则模糊图会包含菜单自身
+        blurModule.captureBlur(24) { uri ->
+            menuBlurUri = uri
+            messageActionsMessage = message
+        }
     }
 
     private fun closeMessageActions() {
         messageActionsMessage = null
+        menuBlurUri = ""
     }
 
     private fun copyMessageActionsText() {
@@ -3008,6 +3035,20 @@ internal class DshHomePage : BasePager() {
         bridgeModule.copyToPasteboard(message.content)
         bridgeModule.toast("已复制")
         closeMessageActions()
+    }
+
+    private fun onMessageFooterAction(message: DshMessage, action: DshMessageFooterAction) {
+        when (action) {
+            DshMessageFooterAction.COPY -> {
+                bridgeModule.copyToPasteboard(message.content)
+                bridgeModule.toast("已复制")
+            }
+            DshMessageFooterAction.GOOD,
+            DshMessageFooterAction.BAD,
+            DshMessageFooterAction.BRANCH -> {
+                // 反馈/分支后续实现，本期先完成 UI
+            }
+        }
     }
 
     private fun messageActionsItems(): ObservableList<DshMessageActionItem> {
