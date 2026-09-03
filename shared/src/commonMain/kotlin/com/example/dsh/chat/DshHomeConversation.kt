@@ -440,28 +440,63 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-        // 提问流程面板：Host 向用户提问/选择时弹出
-        vif({
+        // 提问流程面板：Host 向用户提问/选择时弹出。
+        // 宽屏（>=720dp）沿用在输入条上方内联渲染，与 dsh Web 一致；
+        // 窄屏（手机）改为独立浮动卡片覆盖输入框，而非像聊天消息一样插入会话流。
+        val questionInit: DshQuestionFlowView.() -> Unit = {
+            attr {
+                question = pendingQuestion()
+                val options = ObservableList<DshPendingQuestionOption>()
+                pendingQuestion()?.questions?.getOrNull(questionIndex())?.options?.let(options::addAll)
+                this.options = options
+                selected = selectedQuestionOptions()
+                custom = questionCustom()
+                index = questionIndex()
+                error = questionError()
+                busy = interactionBusy()
+                onToggleOption = onToggleQuestionOption
+                onCustomChange = onQuestionCustomChange
+                onNavigate = onQuestionNavigate
+                onSkip = onQuestionSkip
+                onSubmit = onSubmitQuestion
+            }
+        }
+        val questionActive = {
             isWebTimeline() &&
                 pendingApproval() == null &&
                 pendingQuestion()?.sessionId == activeConversationId()
-        }) {
-            DshQuestionFlow {
+        }
+        vif({ availableWidth >= 720f && questionActive() }) {
+            DshQuestionFlow(questionInit)
+        }
+        vif({ availableWidth < 720f && questionActive() }) {
+            // 全屏轻遮罩层：点击只收起键盘不穿透，背景隐约可见
+            View {
                 attr {
-                    question = pendingQuestion()
-                    val options = ObservableList<DshPendingQuestionOption>()
-                    pendingQuestion()?.questions?.getOrNull(questionIndex())?.options?.let(options::addAll)
-                    this.options = options
-                    selected = selectedQuestionOptions()
-                    custom = questionCustom()
-                    index = questionIndex()
-                    error = questionError()
-                    busy = interactionBusy()
-                    onToggleOption = onToggleQuestionOption
-                    onCustomChange = onQuestionCustomChange
-                    onNavigate = onQuestionNavigate
-                    onSkip = onQuestionSkip
-                    onSubmit = onSubmitQuestion
+                    absolutePositionAllZero()
+                    zIndex(50)
+                    flexDirectionColumn()
+                    justifyContentFlexEnd()
+                }
+                event { click { onDismissKeyboard() } }
+                // 半透明暗化遮罩
+                View {
+                    attr {
+                        absolutePositionAllZero()
+                        backgroundColor(Color(0x26000000))
+                    }
+                }
+                // 底部浮动卡片：覆盖输入框区域，圆角 + 弥散阴影，与消息操作菜单视觉一致
+                View {
+                    attr {
+                        width((availableWidth - 24f).coerceAtLeast(0f))
+                        marginTop(12f)
+                        marginBottom(14f)
+                        borderRadius(20f)
+                        backgroundColor(Color.WHITE)
+                        boxShadow(BoxShadow(0f, 8f, 26f, Color(0x33000000)))
+                    }
+                    DshQuestionFlow(questionInit)
                 }
             }
         }
@@ -985,7 +1020,10 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         val summary = remoteTool?.summary?.takeUnless { it.dshLooksLikeJson() }
             ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "已完成" else
                 toolBody.lineSequence().firstOrNull().orEmpty().takeUnless { it.dshLooksLikeJson() }.orEmpty()
-        // 工具调用卡片：Bash/Read/Search 等，JSON 结果可折叠展开
+        // 搜索类工具（联网 WEB 与文件 glob/grep）采用 think 风格：单行箭头、无卡片，可展开
+        val isSearchStyle = remoteTool?.kind == DshRemoteToolKind.SEARCH ||
+            remoteTool?.kind == DshRemoteToolKind.WEB
+        // 工具调用卡片：Bash/Read 等，JSON 结果可折叠展开
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
@@ -1007,7 +1045,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     maxBodyLines = 8
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
-                    chrome = true
+                    chrome = !isSearchStyle
                     running = message.toolRunning
                 }
             }

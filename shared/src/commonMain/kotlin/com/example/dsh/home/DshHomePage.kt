@@ -1100,8 +1100,13 @@ internal class DshHomePage : BasePager() {
                 if (sessionId == activeSessionId) {
                     when (key) {
                         "title" -> {
-                            val title = value.trim().removeSurrounding("\"")
-                            if (title.isNotEmpty()) connectionLabel = title
+                            val newTitle = value.trim().removeSurrounding("\"")
+                            if (newTitle.isNotEmpty()) {
+                                val idx = sessions.indexOfFirst { it.id == sessionId }
+                                if (idx >= 0) {
+                                    sessions[idx] = sessions[idx].copy(title = newTitle)
+                                }
+                            }
                         }
                         "goal" -> goalSnapshot = parseGoalProjection(value)
                     }
@@ -1996,8 +2001,11 @@ internal class DshHomePage : BasePager() {
         }
         val repository = repository as? DshRemoteRepository ?: return
         val (approval, question) = repository.pendingInteractions(activeSessionId)
+        val hadInteraction = pendingApproval != null || pendingQuestion != null
         pendingApproval = approval
         pendingQuestion = question
+        // 授权/提问交互刚出现时收起键盘，让底部提问卡片覆盖输入框，而非浮在键盘上方
+        if (!hadInteraction && (approval != null || question != null)) dismissKeyboard()
         questionIndex = questionIndex.coerceIn(0, (question?.questions?.size ?: 1) - 1)
         loadQuestionDraft(questionIndex)
         DshStreamLog.question(
@@ -2088,7 +2096,12 @@ internal class DshHomePage : BasePager() {
             DshStreamLog.question("submit.abort no-pending-question")
             return
         }
-        questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
+        // 保留已跳过的草稿：skipQuestion 已把当前题标记为 skipped=true，不能再被未作答草稿覆盖，
+        // 否则“跳过最后一题/单题”时会被下方的未作答校验拦下。其余路径的草稿在交互时已写入。
+        val currentDraft = questionDrafts[questionIndex]
+        if (currentDraft?.skipped != true) {
+            questionDrafts[questionIndex] = DshQuestionDraft(selectedQuestionOptions.toList(), questionCustom)
+        }
         val missing = question.questions.indexOfFirst { item ->
             val draft = questionDrafts[question.questions.indexOf(item)] ?: DshQuestionDraft()
             draft.selected.isEmpty() && draft.custom.isBlank() && !draft.skipped
