@@ -33,7 +33,6 @@ import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
-import com.tencent.kuikly.core.views.SelectionType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -210,18 +209,12 @@ internal class DshHomePage : BasePager() {
     private var questionIndex by observable(0)
     private var questionError by observable("")
     private var messageActionsMessage by observable<DshMessage?>(null)
-    private var messageActionsContent by observable("")
     private var messageActionsX by observable(0f)
     private var messageActionsY by observable(0f)
-    // 长按时相对助手消息内容容器的触点，作为「选择文本」的选区锚点；NaN 表示无有效锚点
-    private var messageActionsSelectionX by observable(Float.NaN)
-    private var messageActionsSelectionY by observable(Float.NaN)
     private var menuBlurUri by observable("")
-    // 文本原生选区：refs 指向助手消息内容容器，选区事件驱动浮动复制条位置
-    private val selectionRowRefs = mutableMapOf<String, ViewRef<com.tencent.kuikly.core.views.DivView>>()
-    private var selectionBarMessageId by observable("")
-    private var selectionBarX by observable(0f)
-    private var selectionBarY by observable(0f)
+    // 「选择文本」弹窗：以单个可选中文本节点承载完整正文，供原生选区复制
+    private var selectTextModalVisible by observable(false)
+    private var selectTextModalContent by observable("")
     private val questionDrafts = mutableMapOf<Int, DshQuestionDraft>()
 
     /** connectionLabel 变化时更新胶囊可见性，就绪态延迟 3s 后淡出隐藏 */
@@ -421,27 +414,10 @@ internal class DshHomePage : BasePager() {
                                     ctx.bridgeModule.toast("已复制")
                                 },
                                 onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
-                                onMessageLongPress = { msg, content, sx, sy, px, py ->
-                                    ctx.openMessageActions(msg, content, sx, sy, px, py)
+                                onMessageLongPress = { msg, content, px, py ->
+                                    ctx.openMessageActions(msg, content, px, py)
                                 },
                                 onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
-                                selectionRef = { messageId, ref ->
-                                    val selKey = ctx.messageRowKey(ctx.activeSessionId, messageId)
-                                    ctx.selectionRowRefs[selKey] = ref
-                                    DshStreamLog.i("selectionRef registered key=$selKey view=${ref.view}")
-                                },
-                                selectionBarMessageId = { ctx.selectionBarMessageId },
-                                selectionBarX = { ctx.selectionBarX },
-                                selectionBarY = { ctx.selectionBarY },
-                                onSelectionBar = { messageId, x, y ->
-                                    ctx.selectionBarMessageId = messageId
-                                    ctx.selectionBarX = x
-                                    ctx.selectionBarY = y
-                                },
-                                onSelectionCancel = { messageId ->
-                                    if (ctx.selectionBarMessageId == messageId) ctx.selectionBarMessageId = ""
-                                },
-                                onCopySelection = { messageId -> ctx.copySelectedText(messageId) },
                                  attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                                  queueItems = { ctx.queueItems },
                                  jobItems = { ctx.jobItems },
@@ -486,7 +462,6 @@ internal class DshHomePage : BasePager() {
                                 onQuestionSkip = { ctx.skipQuestion() },
                                 onSubmitQuestion = { ctx.submitQuestion() },
                                 availableWidth = centerWidth,
-                                pageViewWidth = ctx.pagerData.pageViewWidth,
                                 connectionLabel = { ctx.connectionLabel },
                                 connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
                                 connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
@@ -568,27 +543,10 @@ internal class DshHomePage : BasePager() {
                                 ctx.bridgeModule.toast("已复制")
                             },
                             onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
-                            onMessageLongPress = { msg, content, sx, sy, px, py ->
-                                ctx.openMessageActions(msg, content, sx, sy, px, py)
+                            onMessageLongPress = { msg, content, px, py ->
+                                ctx.openMessageActions(msg, content, px, py)
                             },
                                 onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
-                                selectionRef = { messageId, ref ->
-                                    val selKey = ctx.messageRowKey(ctx.activeSessionId, messageId)
-                                    ctx.selectionRowRefs[selKey] = ref
-                                    DshStreamLog.i("selectionRef registered key=$selKey view=${ref.view}")
-                                },
-                                selectionBarMessageId = { ctx.selectionBarMessageId },
-                                selectionBarX = { ctx.selectionBarX },
-                                selectionBarY = { ctx.selectionBarY },
-                                onSelectionBar = { messageId, x, y ->
-                                    ctx.selectionBarMessageId = messageId
-                                    ctx.selectionBarX = x
-                                    ctx.selectionBarY = y
-                                },
-                                onSelectionCancel = { messageId ->
-                                    if (ctx.selectionBarMessageId == messageId) ctx.selectionBarMessageId = ""
-                                },
-                                onCopySelection = { messageId -> ctx.copySelectedText(messageId) },
                              attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                              queueItems = { ctx.queueItems },
                              jobItems = { ctx.jobItems },
@@ -633,7 +591,6 @@ internal class DshHomePage : BasePager() {
                             onQuestionSkip = { ctx.skipQuestion() },
                             onSubmitQuestion = { ctx.submitQuestion() },
                             availableWidth = ctx.pagerData.pageViewWidth,
-                            pageViewWidth = ctx.pagerData.pageViewWidth,
                             connectionLabel = { ctx.connectionLabel },
                             connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
                             connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
@@ -924,6 +881,14 @@ internal class DshHomePage : BasePager() {
                     y = { ctx.messageActionsY },
                     onDismiss = { ctx.closeMessageActions() },
                 )
+                // ===== 选择文本弹窗 =====
+                // 「选择文本」以单个可选中文本节点承载完整正文，供原生选区复制。
+                DshSelectTextModal(
+                    visible = { ctx.selectTextModalVisible },
+                    content = { ctx.selectTextModalContent },
+                    onCopyAll = { ctx.copySelectTextModalAll() },
+                    onClose = { ctx.closeSelectTextModal() },
+                )
             }
         }
     }
@@ -946,6 +911,7 @@ internal class DshHomePage : BasePager() {
         // 抽屉是独立 Modal 窗口，菜单的透明捕获层够不着它；打开抽屉前先关闭长按菜单，
         // 否则切换会话后菜单仍会残留。
         closeMessageActions()
+        closeSelectTextModal()
         // Mount transparent first, then start drawer and mask on the same frame.
         sessionDrawerMaskAnimation = Animation.easeInOut(0.24f)
         sessionDrawerMaskAnimated = false
@@ -2603,6 +2569,7 @@ internal class DshHomePage : BasePager() {
         if (id == activeSessionId) return
         // 切换会话时兜底关闭长按菜单，覆盖所有切换路径（抽屉/会话栏/新建会话等）。
         closeMessageActions()
+        closeSelectTextModal()
         perfLog("switch.$traceId.mounted.begin", startedAt)
         refreshSessionRenderTree(id)
         cancelStreamingForSessionSwitch()
@@ -3125,8 +3092,6 @@ internal class DshHomePage : BasePager() {
     private fun openMessageActions(
         message: DshMessage,
         content: String,
-        selX: Float,
-        selY: Float,
         x: Float,
         y: Float,
     ) {
@@ -3134,16 +3099,8 @@ internal class DshHomePage : BasePager() {
         if (messageActionsMessage != null) return
         bridgeModule.log("openMessageActions id=${message.id} role=${message.role} x=$x y=$y")
         dismissKeyboard()
-        // 已有原生选区时先退出，避免菜单与选区手柄同时出现
-        if (selectionBarMessageId.isNotEmpty()) {
-            selectionRowRefs[messageRowKey(activeSessionId, selectionBarMessageId)]?.view?.clearSelection()
-            selectionBarMessageId = ""
-        }
-        messageActionsSelectionX = selX
-        messageActionsSelectionY = selY
         messageActionsX = x
         messageActionsY = y
-        messageActionsContent = content
         menuBlurUri = ""
         // 菜单是页面内覆盖层，必须先截图模糊再显示菜单，否则模糊图会包含菜单自身
         blurModule.captureBlur(24) { uri ->
@@ -3154,10 +3111,7 @@ internal class DshHomePage : BasePager() {
 
     private fun closeMessageActions() {
         messageActionsMessage = null
-        messageActionsContent = ""
         menuBlurUri = ""
-        messageActionsSelectionX = Float.NaN
-        messageActionsSelectionY = Float.NaN
     }
 
     /** 复制整个回合的完整正文：锚点消息所在回合的所有助手正文段（跨工具调用） */
@@ -3184,47 +3138,40 @@ internal class DshHomePage : BasePager() {
         copyFullTurnText(message)
     }
 
-    /** 「选择文本」：在长按触点处自动选中一个词，用户直接在输出上拖动选区手柄调整范围 */
+    /** 「选择文本」：打开弹窗，以单个可选中文本节点承载完整正文，供原生选区复制 */
     private fun selectMessageActionsText() {
         val message = messageActionsMessage ?: return
-        val content = messageActionsContent.ifEmpty { message.content.orEmpty() }
-        val anchorX = messageActionsSelectionX
-        val anchorY = messageActionsSelectionY
         closeMessageActions()
-        if (content.isEmpty()) {
-            bridgeModule.toast("内容为空")
-            return
-        }
         if (streaming && streamingAssistantId == message.id) {
             bridgeModule.toast("内容生成中，请稍候")
             return
         }
-        val ref = selectionRowRefs[messageRowKey(activeSessionId, message.id)]?.view
-        if (ref == null) {
-            bridgeModule.toast("暂无法选择文本")
+        val text = dshTurnBodyText(sessionMessageState(activeSessionId), message.id) { m ->
+            if (streaming && streamingAssistantId == m.id && streamingAssistantContent.isNotEmpty()) {
+                streamingAssistantContent
+            } else {
+                m.content
+            }
+        }
+        if (text.isEmpty()) {
+            bridgeModule.toast("没有可复制的内容")
             return
         }
-        if (anchorX.isNaN() || anchorY.isNaN()) {
-            ref.createSelectionAll()
-        } else {
-            ref.createSelection(anchorX, anchorY, SelectionType.WORD)
-        }
+        selectTextModalContent = text
+        selectTextModalVisible = true
     }
 
-    /** 浮动复制条：读取当前选区内容并复制，随后退出选区 */
-    private fun copySelectedText(messageId: String) {
-        val ref = selectionRowRefs[messageRowKey(activeSessionId, messageId)]?.view ?: return
-        ref.getSelection { result ->
-            val text = result.joinToString("")
-            if (text.isEmpty()) {
-                bridgeModule.toast("未选中文本")
-            } else {
-                bridgeModule.copyToPasteboard(text)
-                bridgeModule.toast("已复制")
-            }
-            ref.clearSelection()
-            selectionBarMessageId = ""
-        }
+    private fun closeSelectTextModal() {
+        selectTextModalVisible = false
+        selectTextModalContent = ""
+    }
+
+    /** 弹窗内「复制全部」：复制弹窗当前展示的完整正文 */
+    private fun copySelectTextModalAll() {
+        if (selectTextModalContent.isEmpty()) return
+        bridgeModule.copyToPasteboard(selectTextModalContent)
+        bridgeModule.toast("已复制")
+        closeSelectTextModal()
     }
 
     private fun onMessageFooterAction(message: DshMessage, action: DshMessageFooterAction) {

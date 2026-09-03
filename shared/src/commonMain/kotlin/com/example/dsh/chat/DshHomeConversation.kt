@@ -18,7 +18,6 @@ import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.layout.FlexWrap
-import com.tencent.kuikly.core.layout.Frame
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
@@ -27,7 +26,6 @@ import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
-import com.tencent.kuikly.core.views.SelectableOption
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
@@ -73,25 +71,6 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
 
 internal const val TURN_STATUS_BLUE = 0xFF4D6BFE
 internal const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
-
-// 文本选区浮动复制条的尺寸与定位（坐标相对消息内容容器）
-private const val SELECTION_BAR_WIDTH = 64f
-private const val SELECTION_BAR_HEIGHT = 32f
-private const val SELECTION_BAR_GAP = 8f
-
-private fun selectionBarX(containerWidth: Float, frame: Frame): Float {
-    val x = frame.x + frame.width / 2f - SELECTION_BAR_WIDTH / 2f
-    return x.coerceIn(SELECTION_BAR_GAP, (containerWidth - SELECTION_BAR_WIDTH - SELECTION_BAR_GAP).coerceAtLeast(SELECTION_BAR_GAP))
-}
-
-private fun selectionBarY(frame: Frame): Float {
-    val above = frame.y - SELECTION_BAR_HEIGHT - SELECTION_BAR_GAP
-    return if (above >= 0f) above else frame.y + frame.height + SELECTION_BAR_GAP
-}
-
-/** 助手消息内容容器宽度，与 DshMessageRow 内容容器 attr.width 保持一致，供选区复制条定位 */
-private fun selectionBarContainerWidth(pageViewWidth: Float): Float =
-    (pageViewWidth - 36f).coerceAtMost(620f).coerceAtLeast(0f)
 
 // 空白会话首页：无消息时的占位引导（logo + 标语 + 预览版徽标）
 internal fun ViewContainer<*, *>.DshNewSessionHome() {
@@ -200,16 +179,9 @@ internal fun ViewContainer<*, *>.DshConversation(
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
     onCopyMessageContent: (DshMessage) -> Unit = {},
-    // 参数：message, renderedContent, 相对内容容器的锚点 x/y, 页面坐标 x/y
-    onMessageLongPress: (DshMessage, String, Float, Float, Float, Float) -> Unit = { _, _, _, _, _, _ -> },
+    // 参数：message, renderedContent, 页面坐标 x/y
+    onMessageLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
-    selectionRef: (String, ViewRef<com.tencent.kuikly.core.views.DivView>) -> Unit = { _, _ -> },
-    selectionBarMessageId: () -> String = { "" },
-    selectionBarX: () -> Float = { 0f },
-    selectionBarY: () -> Float = { 0f },
-    onSelectionBar: (String, Float, Float) -> Unit = { _, _, _ -> },
-    onSelectionCancel: (String) -> Unit = {},
-    onCopySelection: (String) -> Unit = {},
     attachmentDataUrl: (String) -> String?,
     queueItems: () -> ObservableList<DshQueueItem>,
     jobItems: () -> ObservableList<DshJobItem>,
@@ -254,7 +226,6 @@ internal fun ViewContainer<*, *>.DshConversation(
     onQuestionSkip: () -> Unit,
     onSubmitQuestion: () -> Unit,
     availableWidth: Float,
-    pageViewWidth: Float,
     connectionLabel: () -> String,
     connectionCapsuleVisible: () -> Boolean,
     connectionCapsuleFadeOut: () -> Boolean,
@@ -347,7 +318,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                     streamingMessageId() == message.id
                                             },
                                             isWebTimeline = isWebTimeline(),
-                                            pageViewWidth = pageViewWidth,
                                             isExpanded = { isDisclosureExpanded(message.id) },
                                             onToggle = {
                                                 onToggleDisclosure(message.id)
@@ -360,17 +330,10 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             onCopyMessageContent = { onCopyMessageContent(it) },
-                                            onLongPress = { msg, content, sx, sy, px, py ->
-                                                onMessageLongPress(msg, content, sx, sy, px, py)
+                                            onLongPress = { msg, content, px, py ->
+                                                onMessageLongPress(msg, content, px, py)
                                             },
                                             onFooterAction = { msg, action -> onFooterAction(msg, action) },
-                                            selectionRef = selectionRef,
-                                            selectionBarMessageId = selectionBarMessageId,
-                                            selectionBarX = selectionBarX,
-                                            selectionBarY = selectionBarY,
-                                            onSelectionBar = onSelectionBar,
-                                            onSelectionCancel = onSelectionCancel,
-                                            onCopySelection = onCopySelection,
                                             // footer 只渲染"当前回合（最近一条 user 之后）最后一段
                                             // 已结算 assistant"，中间的过渡文本/分段不会重复渲染
                                             isTurnTail = {
@@ -889,7 +852,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     message: DshMessage,
     pageStreaming: () -> Boolean,
     isWebTimeline: Boolean,
-    pageViewWidth: Float,
     isExpanded: () -> Boolean,
     onToggle: () -> Unit,
     isBodyExpanded: () -> Boolean = { false },
@@ -898,14 +860,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
     onCopyMessageContent: (DshMessage) -> Unit = {},
-    onLongPress: (DshMessage, String, Float, Float, Float, Float) -> Unit = { _, _, _, _, _, _ -> },
-    selectionRef: (String, ViewRef<com.tencent.kuikly.core.views.DivView>) -> Unit = { _, _ -> },
-    selectionBarMessageId: () -> String = { "" },
-    selectionBarX: () -> Float = { 0f },
-    selectionBarY: () -> Float = { 0f },
-    onSelectionBar: (String, Float, Float) -> Unit = { _, _, _ -> },
-    onSelectionCancel: (String) -> Unit = {},
-    onCopySelection: (String) -> Unit = {},
+    onLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     isTurnTail: () -> Boolean = { true },
     attachmentDataUrl: (String) -> String? = { null },
@@ -1133,15 +1088,11 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 marginBottom(5f)
             }
         }
-        // 消息内容容器：用户/错误为气泡底色，助手为纯文本。
-        // 助手消息开启原生文本选择（selectable），长按弹菜单，菜单「选择文本」进入选区模式。
+        // 消息内容容器：用户/错误为气泡底色，助手为纯文本。长按助手内容弹操作菜单。
         View {
-            ref { if (!isUser && !isError) selectionRef(message.id, it) }
             attr {
                 if (!isUser && !isError) {
                     width((pagerData.pageViewWidth - 36f).coerceAtMost(620f).coerceAtLeast(0f))
-                    selectable(SelectableOption.ENABLE)
-                    selectionColor(Color(0xFF4D6BFE))
                 }
                 maxWidth(620f)
                 padding(if (isUser) 10f else 0f, if (isUser) 14f else 0f, if (isUser) 10f else 0f, if (isUser) 14f else 0f)
@@ -1156,23 +1107,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             }
             event {
                 if (!isUser && !isError) {
-                    // 长按弹菜单；it.x/it.y 相对本内容容器，作为「选择文本」的选区锚点
                     longPress {
                         DshStreamLog.i("longpress fired role=${message.role} id=${message.id}")
-                        onLongPress(message, renderedContent, it.x, it.y, it.pageX, it.pageY)
-                    }
-                    // 选区状态变化时同步浮动复制条位置（坐标相对本容器）
-                    selectStart { frame ->
-                        onSelectionBar(message.id, selectionBarX(selectionBarContainerWidth(pageViewWidth), frame), selectionBarY(frame))
-                    }
-                    selectChange { frame ->
-                        onSelectionBar(message.id, selectionBarX(selectionBarContainerWidth(pageViewWidth), frame), selectionBarY(frame))
-                    }
-                    selectEnd { frame ->
-                        onSelectionBar(message.id, selectionBarX(selectionBarContainerWidth(pageViewWidth), frame), selectionBarY(frame))
-                    }
-                    selectCancel {
-                        onSelectionCancel(message.id)
+                        onLongPress(message, renderedContent, it.pageX, it.pageY)
                     }
                 }
                 register("touchDown", {
@@ -1214,39 +1151,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                                 color(Color(0xFF4176E6))
                                 marginTop(2f)
                             }
-                        }
-                    }
-                }
-            }
-            // 选区浮动复制条：跟随选区位置，半透明白毛玻璃胶囊；复制成功后由页面层清除选区
-            vif({
-                !isUser && !isError &&
-                    selectionBarMessageId() == message.id
-            }) {
-                View {
-                    attr {
-                        positionAbsolute()
-                        left(selectionBarX())
-                        top(selectionBarY())
-                        width(SELECTION_BAR_WIDTH)
-                        height(SELECTION_BAR_HEIGHT)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        justifyContentCenter()
-                        borderRadius(17f)
-                        backgroundColor(Color(0xF2FFFFFF))
-                        boxShadow(BoxShadow(0f, 2f, 12f, Color(0x33000000)))
-                        selectable(SelectableOption.DISABLE)
-                    }
-                    event {
-                        click { onCopySelection(message.id) }
-                    }
-                    Text {
-                        attr {
-                            text("复制")
-                            fontSize(13f)
-                            fontWeightBold()
-                            color(Color(0xFF1F2933))
                         }
                     }
                 }
