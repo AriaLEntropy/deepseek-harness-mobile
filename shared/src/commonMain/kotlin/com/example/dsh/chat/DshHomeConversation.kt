@@ -325,18 +325,11 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             onLongPress = { msg, px, py -> onMessageLongPress(msg, px, py) },
                                             onFooterAction = { msg, action -> onFooterAction(msg, action) },
-                                            // 同一轮回答被切成多段（root[-segment-N]），
-                                            // footer 只在最后一段已结算的 assistant 上渲染一次
+                                            // footer 只渲染"当前回合（最近一条 user 之后）最后一段
+                                            // 已结算 assistant"，中间的过渡文本/分段不会重复渲染
                                             isTurnTail = {
-                                                val root = message.id.substringBefore("-segment-")
-                                                messagesForSession(sessionId)
-                                                    .lastOrNull {
-                                                        it.role == DshMessageRole.ASSISTANT &&
-                                                            !it.streaming &&
-                                                            !it.isReasoning &&
-                                                            !it.isContextInjection &&
-                                                            it.id.substringBefore("-segment-") == root
-                                                    }?.id == message.id
+                                                val tailId = dshTurnTailAssistant(messagesForSession(sessionId))?.id
+                                                tailId != null && tailId == message.id
                                             },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {

@@ -328,6 +328,24 @@ internal fun dshDisplayedAssistantContent(
 }
 
 /**
+ * The last settled assistant text of the current turn (after the latest user
+ * message). Unlike [dshAssistantTailForCurrentTurn], this is the turn-tail
+ * semantic used by footer rendering: it excludes streaming/reasoning/context
+ * rows, and only one message per turn can match, so intermediate assistant
+ * text that precedes a tool call never becomes a footer tail.
+ */
+internal fun dshTurnTailAssistant(messages: List<DshMessage>): DshMessage? {
+    val lastUserIndex = messages.indexOfLast { it.role == DshMessageRole.USER }
+    return messages.withIndex().lastOrNull { (index, it) ->
+        index > lastUserIndex &&
+            it.role == DshMessageRole.ASSISTANT &&
+            !it.streaming &&
+            !it.isReasoning &&
+            !it.isContextInjection
+    }?.value
+}
+
+/**
  * Assistant text that belongs to the in-progress turn sits after the latest
  * user message. A completed previous reply is before that user and must not
  * be reused as the live streaming target.
