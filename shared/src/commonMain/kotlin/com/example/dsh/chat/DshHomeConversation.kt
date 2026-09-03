@@ -333,6 +333,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                     .lastOrNull {
                                                         it.role == DshMessageRole.ASSISTANT &&
                                                             !it.streaming &&
+                                                            !it.isReasoning &&
+                                                            !it.isContextInjection &&
                                                             it.id.substringBefore("-segment-") == root
                                                     }?.id == message.id
                                             },
