@@ -3613,7 +3613,7 @@ internal class DshHomePage : BasePager() {
         private const val ANIMATION_DURATION_MS = 240
         private const val ANIMATION_DURATION_S = 0.24f
         private const val STREAM_FLUSH_INTERVAL_MS = 16
-        private const val CONNECTION_CAPSULE_HOLD_MS = 3_000
+        private const val CONNECTION_CAPSULE_HOLD_MS = 1_500
         private const val CONNECTION_CAPSULE_FADE_MS = 300
     }
 }
