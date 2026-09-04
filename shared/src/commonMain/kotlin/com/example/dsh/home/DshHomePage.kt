@@ -127,7 +127,7 @@ internal class DshHomePage : BasePager() {
     private var agentModePickerVisible by observable(false)
     private var agentModeValue by observable("standard")
     private var agentModeLabel by observable("标准模式")
-    private var attachmentMenuVisible by observable(false)
+    private var commandSheetVisible by observable(false)
     private var voiceActive by observable(false)
     private var topBarRef: ViewRef<com.tencent.kuikly.core.views.DivView>? = null
     private var inputView: InputView? = null
@@ -383,13 +383,12 @@ internal class DshHomePage : BasePager() {
                                 onDismissKeyboard = { ctx.dismissKeyboard() },
                                 onUserListScroll = { ctx.onConversationUserScroll(it) },
                                 modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
-                                attachmentMenuVisible = { ctx.attachmentMenuVisible },
+                                commandSheetVisible = { ctx.commandSheetVisible },
                                 voiceActive = { ctx.voiceActive },
                                 onOpenModels = { ctx.openModelPicker() },
-                                onToggleAttachments = {
-                                    ctx.dismissKeyboard()
-                                    ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
-                                },
+                                onToggleCommandSheet = { ctx.toggleCommandSheet() },
+                                onPickCommand = { ctx.insertCommand(it) },
+                                onAttachmentTile = { ctx.bridgeModule.toast("附件功能待实现") },
                                 onToggleVoice = { ctx.toggleVoice() },
                                 folderLabel = { ctx.composerFolderLabel() },
                                 onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
@@ -512,7 +511,7 @@ internal class DshHomePage : BasePager() {
                             onDismissKeyboard = { ctx.dismissKeyboard() },
                             onUserListScroll = { ctx.onConversationUserScroll(it) },
                             modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
-                            attachmentMenuVisible = { ctx.attachmentMenuVisible },
+                            commandSheetVisible = { ctx.commandSheetVisible },
                             voiceActive = { ctx.voiceActive },
                             onOpenModels = { ctx.openModelPicker() },
                             permissionValue = { ctx.permissionValue },
@@ -520,10 +519,9 @@ internal class DshHomePage : BasePager() {
                             onOpenPermissions = { ctx.permissionPickerVisible = true },
                             agentModeLabel = { ctx.agentModeLabel },
                             onOpenAgentModes = { ctx.agentModePickerVisible = true },
-                            onToggleAttachments = {
-                                ctx.dismissKeyboard()
-                                ctx.attachmentMenuVisible = !ctx.attachmentMenuVisible
-                            },
+                            onToggleCommandSheet = { ctx.toggleCommandSheet() },
+                            onPickCommand = { ctx.insertCommand(it) },
+                            onAttachmentTile = { ctx.bridgeModule.toast("附件功能待实现") },
                             onToggleVoice = { ctx.toggleVoice() },
                             folderLabel = { ctx.composerFolderLabel() },
                             onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
@@ -1315,7 +1313,7 @@ internal class DshHomePage : BasePager() {
 
     private fun openCredentialSettings() {
         dismissKeyboard()
-        attachmentMenuVisible = false
+        commandSheetVisible = false
         //closeSessionDrawer()
         credentialSetupTitle = if (sshMode) "修改电脑端 DSH 的 API Key" else "设置 DeepSeek API Key"
         credentialSetupError = ""
@@ -1325,7 +1323,7 @@ internal class DshHomePage : BasePager() {
 
     private fun openConnectionSettings(preserveError: Boolean = false) {
         dismissKeyboard()
-        attachmentMenuVisible = false
+        commandSheetVisible = false
         if (!preserveError) sshSettingsError = ""
         updateSshSettingsVisibility(true)
     }
@@ -3230,7 +3228,7 @@ internal class DshHomePage : BasePager() {
     private fun openModelPicker() {
         if (sessions.isEmpty()) return
         dismissKeyboard()
-        attachmentMenuVisible = false
+        commandSheetVisible = false
         modelPickerVisible = true
         modelPickerBusy = true
         modelPickerError = ""
@@ -3293,9 +3291,23 @@ internal class DshHomePage : BasePager() {
 
     private fun toggleVoice() {
         dismissKeyboard()
-        attachmentMenuVisible = false
+        commandSheetVisible = false
         voiceActive = !voiceActive
         connectionLabel = if (voiceActive) "正在聆听" else "已连接"
+    }
+
+    /** 切换「+」命令半屏面板；打开时收起键盘 */
+    private fun toggleCommandSheet() {
+        dismissKeyboard()
+        commandSheetVisible = !commandSheetVisible
+    }
+
+    /** 点击命令：把 "/命令 " 写入输入框（补全草稿 + 原生输入框文本），并关闭面板 */
+    private fun insertCommand(command: DshCommand) {
+        val text = "/${command.name} "
+        draft = text
+        inputView?.setText(text)
+        commandSheetVisible = false
     }
 
     private fun queueAssistantDelta(id: String, delta: String) {

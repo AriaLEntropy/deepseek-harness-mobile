@@ -15,9 +15,11 @@ import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.layout.FlexWrap
+import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
@@ -26,6 +28,7 @@ import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
+import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
@@ -158,10 +161,12 @@ internal fun ViewContainer<*, *>.DshConversation(
     onDismissKeyboard: () -> Unit,
     onUserListScroll: (ScrollParams) -> Unit,
     modelLabel: () -> String,
-    attachmentMenuVisible: () -> Boolean,
+    commandSheetVisible: () -> Boolean,
     voiceActive: () -> Boolean,
     onOpenModels: () -> Unit,
-    onToggleAttachments: () -> Unit,
+    onToggleCommandSheet: () -> Unit,
+    onPickCommand: (DshCommand) -> Unit,
+    onAttachmentTile: (DshCommandSheetTile) -> Unit,
     onToggleVoice: () -> Unit,
     folderLabel: () -> String,
     onOpenFolderBrowser: () -> Unit,
@@ -596,55 +601,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                         border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
-                    // 技能建议列表：输入 / 开头时展示匹配的技能供点选
-                    vif({
-                        isWebTimeline() && draft().startsWith("/") &&
-                                visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
-                    }) {
-                        View {
-                            attr {
-                                marginLeft(16f)
-                                marginRight(12f)
-                                maxHeight(132f)
-                                marginBottom(6f)
-                                flexDirectionColumn()
-                                backgroundColor(Color(0xFFF7F9FB))
-                                borderRadius(8f)
-                                border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
-                            }
-                            // 单个技能建议行：/技能名 + 描述，点击选用
-                            vfor({ visibleSkillList(skills(), draft().removePrefix("/")) }) { skill ->
-                                View {
-                                    attr {
-                                        height(32f)
-                                        flexDirectionRow()
-                                        alignItemsCenter()
-                                        paddingLeft(8f)
-                                        paddingRight(8f)
-                                    }
-                                    event { click { onPickSkill(skill.name) } }
-                                    Text {
-                                        attr {
-                                            text("/${skill.name}")
-                                            width(110f)
-                                            fontSize(13f)
-                                            fontWeightMedium()
-                                            color(Color(0xFF2F6F4F))
-                                        }
-                                    }
-                                    Text {
-                                        attr {
-                                            text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
-                                            flex(1f)
-                                            lines(1)
-                                            fontSize(11f)
-                                            color(Color(0xFF727D84))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                     // 输入框：与 DSH Web 一致的 padding 和光标色
                     Input {
                         ref { inputRef(it) }
@@ -701,7 +657,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     allCenter()
                                 }
                                 Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
-                                DshHitButton { onToggleAttachments() }
+                                DshHitButton { onToggleCommandSheet() }
                             }
                             // 权限 chip：dsh 语义 —— 当前权限态盾牌图标 + 下箭头，会话开始前可选（仅图标，文字在弹窗内）
                             vif({ isBlankConversation() }) {
@@ -795,46 +751,141 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
 
-                    // 附件菜单：点击附件按钮展开（图片/文件两个选项）
-                    vif({ attachmentMenuVisible() }) {
-                        View {
+                }
+
+        }
+        // 命令 / 技能建议浮层：absolute 悬浮在输入框上方，命令在上技能在下，白卡圆角阴影，不参与流式布局
+        vif({
+            draft().startsWith("/") && (
+                dshCommandsMatching(dshCommandPrefixFromDraft(draft()).removePrefix("/")).isNotEmpty() ||
+                    visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
+            )
+        }) {
+            val prefix = dshCommandPrefixFromDraft(draft()).removePrefix("/")
+            val commandList = dshCommandsMatching(prefix)
+            val skillList = visibleSkillList(skills(), draft().removePrefix("/"))
+            View {
+                attr {
+                    positionAbsolute()
+                    left(16f)
+                    right(12f)
+                    // 底部对齐「选择文件夹与模式」工具条上方：输入区被 marginBottom(keyboardHeight) 顶起，
+                    // 故组件底需叠加键盘高度并上移到真实输入卡顶(~120)之上留间隙，避免与输入框重合
+                    bottom(keyboardHeight() + 130f)
+                    height(336f)
+                    flexDirectionColumn()
+                    backgroundColor(Color(0xFFFFFFFF))
+                    borderRadius(14f)
+                    boxShadow(BoxShadow(0f, 4f, 12f, Color(0x1A000000)))
+                    zIndex(12)
+                }
+                Scroller {
+                    attr {
+                        flex(1f)
+                        flexDirectionColumn()
+                    }
+                    // 「命令」分组标题：只有命中命令时显示
+                vif({ commandList.isNotEmpty() }) {
+                    View {
+                        attr {
+                            paddingLeft(16f)
+                            paddingTop(10f)
+                            paddingBottom(6f)
+                            flexDirectionColumn()
+                        }
+                        Text {
                             attr {
-                                marginLeft(16f)
-                                marginRight(12f)
-                                marginBottom(8f)
-                                flexDirectionColumn()
-                                padding(8f)
-                                borderRadius(10f)
-                                backgroundColor(Color(0xFFF5F6F7))
-                            }
-                            // 附件菜单 - 图片选项行
-                            View {
-                                attr {
-                                    height(32f)
-                                    flexDirectionRow()
-                                    alignItemsCenter()
-                                    paddingLeft(8f)
-                                }
-                                Text { attr { text("图片"); fontSize(14f); color(Color(0xFF3B4147)) } }
-                                View { attr { flex(1f) } }
-                                Text { attr { text("PNG / JPG / WebP / GIF"); fontSize(11f); color(Color(0xFF9098A0)) } }
-                            }
-                            // 附件菜单 - 文件选项行
-                            View {
-                                attr {
-                                    height(32f)
-                                    flexDirectionRow()
-                                    alignItemsCenter()
-                                    paddingLeft(8f)
-                                }
-                                Text { attr { text("文件"); fontSize(14f); color(Color(0xFF3B4147)) } }
-                                View { attr { flex(1f) } }
-                                Text { attr { text("选择本地文件"); fontSize(11f); color(Color(0xFF9098A0)) } }
+                                text("命令")
+                                fontSize(12f)
+                                color(Color(0xFF9AA3AB))
                             }
                         }
                     }
                 }
-
+                vfor({ ObservableList<DshCommand>().apply { addAll(commandList) } }) { command ->
+                    View {
+                        attr {
+                            height(40f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingLeft(16f)
+                            paddingRight(12f)
+                        }
+                        event { click { onPickCommand(command) } }
+                        Text {
+                            attr {
+                                text("/${command.name}")
+                                maxWidth(110f)
+                                marginRight(10f)
+                                lines(1)
+                                fontSize(14f)
+                                fontWeightMedium()
+                                color(Color(0xFF28323C))
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(command.description)
+                                flex(1f)
+                                lines(1)
+                                fontSize(13f)
+                                color(Color(0xFF727D84))
+                            }
+                        }
+                    }
+                }
+                // 「技能」分组标题：只有命中技能时显示
+                vif({ skillList.isNotEmpty() }) {
+                    View {
+                        attr {
+                            paddingLeft(16f)
+                            paddingTop(8f)
+                            paddingBottom(6f)
+                            flexDirectionColumn()
+                        }
+                        Text {
+                            attr {
+                                text("技能")
+                                fontSize(12f)
+                                color(Color(0xFF9AA3AB))
+                            }
+                        }
+                    }
+                }
+                vfor({ skillList }) { skill ->
+                    View {
+                        attr {
+                            height(40f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingLeft(16f)
+                            paddingRight(12f)
+                        }
+                        event { click { onPickSkill(skill.name) } }
+                        Text {
+                            attr {
+                                text("/${skill.name}")
+                                maxWidth(110f)
+                                marginRight(10f)
+                                lines(1)
+                                fontSize(14f)
+                                fontWeightMedium()
+                                color(Color(0xFF28323C))
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
+                                flex(1f)
+                                lines(1)
+                                fontSize(13f)
+                                color(Color(0xFF727D84))
+                            }
+                        }
+                    }
+                }
+            }
+            }
         }
         // 连接状态胶囊：浮在输入卡上方，仅非已连接时显示，不参与流式布局
         DshConnectionStatusCapsule(
@@ -844,6 +895,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                     fadeOut = { connectionCapsuleFadeOut() },
                     fadeOutAnimation = { connectionCapsuleFadeOutAnimation() },
                 )
+
+        // 「+」命令半屏面板：三个附件方块 + 原版命令列表，点击命令写入输入框
+        DshCommandSheet(
+            visible = commandSheetVisible,
+            onClose = onToggleCommandSheet,
+            onPickCommand = onPickCommand,
+            onPickTile = onAttachmentTile,
+        )
 
     }
 }
