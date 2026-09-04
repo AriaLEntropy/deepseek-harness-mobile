@@ -22,9 +22,9 @@ import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.KeyboardParams
+import com.tencent.kuikly.core.views.TextArea
+import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
@@ -152,7 +152,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
-    inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
+    inputRef: (com.tencent.kuikly.core.base.ViewRef<TextAreaView>) -> Unit,
     onInputFocusChange: (Boolean) -> Unit,
     onDraftChange: (String) -> Unit,
     onKeyboardHeightChange: (KeyboardParams) -> Unit,
@@ -601,13 +601,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                         border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
-                    // 输入框：与 DSH Web 一致的 padding 和光标色
-                    Input {
+                    // 输入框：DSH Web 风格，内容自适应高度（单行起），达 maxHeight 后随输入内部滚动
+                    TextArea {
                         ref { inputRef(it) }
                         attr {
                             marginLeft(16f)
                             marginRight(12f)
-                            height(46f)
+                            minHeight(46f)
+                            maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
                             color(Color(0xFF28323C))
@@ -618,7 +619,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 },
                             )
                             placeholderColor(Color(0xFFADB2B8))
-                            returnKeyTypeSend()
                             editable(!voiceActive())
                         }
                         event {
@@ -629,7 +629,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 onInputFocusChange(false)
                                 onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
                             }
-                            inputReturn { onSend() }
                         }
                     }
 
