@@ -136,15 +136,27 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             }
                         }
                         vif({ ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
-                            DshLongText {
-                                attr {
-                                    content = ctx.attr.body
-                                    expanded = ctx.attr.bodyExpanded
-                                    maxLines = ctx.attr.maxBodyLines
-                                    error = ctx.attr.errorSummary
-                                    this.onToggle = {
-                                        ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
-                                        ctx.attr.onToggleBody()
+                            if (ctx.attr.plainBody) {
+                                Text {
+                                    attr {
+                                        text(ctx.attr.body)
+                                        fontSize(13f)
+                                        lineHeight(20f)
+                                        color(Color(0xFF727B83))
+                                        marginTop(6f)
+                                    }
+                                }
+                            } else {
+                                DshLongText {
+                                    attr {
+                                        content = ctx.attr.body
+                                        expanded = ctx.attr.bodyExpanded
+                                        maxLines = ctx.attr.maxBodyLines
+                                        error = ctx.attr.errorSummary
+                                        this.onToggle = {
+                                            ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
+                                            ctx.attr.onToggleBody()
+                                        }
                                     }
                                 }
                             }
@@ -183,6 +195,7 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var onToggleJsonNode: (String) -> Unit by observable({})
     var chrome: Boolean by observable(false)
     var running: Boolean by observable(false)
+    var plainBody: Boolean by observable(false)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */
@@ -802,6 +815,10 @@ internal fun dshOrderedJobs(jobs: List<DshJobItem>): List<DshJobItem> {
             .thenByDescending { it.finishedAt ?: it.startedAt },
     )
 }
+
+/** Bottom jobs UI only represents work that can still change. */
+internal fun dshLiveJobs(jobs: List<DshJobItem>): List<DshJobItem> =
+    dshOrderedJobs(jobs.filter { it.status == "running" || it.status == "stopping" })
 
 private fun dshJobStatusLabel(status: String): String = when (status) {
     "running" -> "运行中"

@@ -328,6 +328,56 @@ internal fun dshDisplayedAssistantContent(
 }
 
 /**
+ * The last settled assistant text of the current turn (after the latest user
+ * message). Unlike [dshAssistantTailForCurrentTurn], this is the turn-tail
+ * semantic used by footer rendering: it excludes streaming/reasoning/context
+ * rows, and only one message per turn can match, so intermediate assistant
+ * text that precedes a tool call never becomes a footer tail.
+ */
+internal fun dshTurnTailAssistant(messages: List<DshMessage>): DshMessage? {
+    val lastUserIndex = messages.indexOfLast { it.role == DshMessageRole.USER }
+    return messages.withIndex().lastOrNull { (index, it) ->
+        index > lastUserIndex &&
+            it.role == DshMessageRole.ASSISTANT &&
+            !it.streaming &&
+            !it.isReasoning &&
+            !it.isContextInjection
+    }?.value
+}
+
+/**
+ * 以 [anchorId] 为锚点聚合整个回合的完整助手正文。
+ *
+ * 回合边界：锚点前最后一个 `USER` 消息之后、锚点后第一个 `USER` 消息之前。
+ * 期间所有助手正文段（排除推理/上下文注入/附件卡片）按顺序以空行拼接，
+ * 因此即使正文被工具调用切分成多段，复制结果也是完整的。
+ *
+ * [contentFor] 可覆盖某条消息的取值（例如流式中的实时内容）。
+ */
+internal fun dshTurnBodyText(
+    messages: List<DshMessage>,
+    anchorId: String,
+    contentFor: (DshMessage) -> String = { it.content },
+): String {
+    val anchorIndex = messages.indexOfFirst { it.id == anchorId }
+    if (anchorIndex < 0) return ""
+    val lastUserIndex = messages.take(anchorIndex).indexOfLast { it.role == DshMessageRole.USER }
+    val nextUserIndex = messages.withIndex()
+        .firstOrNull { it.index > anchorIndex && it.value.role == DshMessageRole.USER }
+        ?.index ?: messages.size
+    val parts = messages.subList(lastUserIndex + 1, nextUserIndex)
+        .filter {
+            it.role == DshMessageRole.ASSISTANT &&
+                !it.isReasoning &&
+                !it.isContextInjection &&
+                it.attachmentId == null
+        }
+        .map(contentFor)
+        .filter { it.isNotEmpty() }
+    return parts.joinToString("\n\n")
+}
+
+/**
  * Assistant text that belongs to the in-progress turn sits after the latest
  * user message. A completed previous reply is before that user and must not
  * be reused as the live streaming target.

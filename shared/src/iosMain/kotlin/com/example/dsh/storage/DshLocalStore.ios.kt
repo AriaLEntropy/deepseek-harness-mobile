@@ -124,14 +124,29 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
     }
 
     override fun loadMessages(scopeId: String, sessionId: String): List<DshMessage> = query(
-        "SELECT id, role, content, streaming, tool_name, hidden FROM dsh_messages WHERE scope_id = ? AND session_id = ? ORDER BY seq ASC", listOf(scopeId, sessionId),
-    ) { s -> DshMessage(s.getColumnString(0), DshMessageRole.valueOf(s.getColumnString(1)), s.getColumnString(2), s.getColumnLong(3) != 0L, nullableString(s, 4), s.getColumnLong(5) != 0L) }
+        "SELECT id, role, content, streaming, tool_name, hidden, is_reasoning, is_context_injection, tool_card_type, tool_running, tool_error, context_form, context_body, context_relay_sender, attachment_id, tool_call_id, extra_json FROM dsh_messages WHERE scope_id = ? AND session_id = ? ORDER BY seq ASC", listOf(scopeId, sessionId),
+    ) { s ->
+        val id = s.getColumnString(0)
+        val base = DshMessage(id, DshMessageRole.valueOf(s.getColumnString(1)), s.getColumnString(2), s.getColumnLong(3) != 0L, nullableString(s, 4), s.getColumnLong(5) != 0L,
+            toolCardType = runCatching { DshToolCardType.valueOf(nullableString(s, 8).orEmpty()) }.getOrDefault(DshToolCardType.GENERIC),
+            toolRunning = s.getColumnLong(9) != 0L,
+            toolError = s.getColumnLong(10) != 0L,
+            isContextInjection = s.getColumnLong(7) != 0L || id.startsWith("context-"),
+            contextForm = nullableString(s, 11).orEmpty(),
+            contextBody = nullableString(s, 12).orEmpty(),
+            contextRelaySender = nullableString(s, 13).orEmpty(),
+            isReasoning = s.getColumnLong(6) != 0L || id.startsWith("reasoning-"),
+            attachmentId = nullableString(s, 14),
+            toolCallId = nullableString(s, 15).orEmpty(),
+        )
+        DshMessageExtraCodec.decode(base, nullableString(s, 16))
+    }
 
     override fun replaceMessages(scopeId: String, sessionId: String, messages: List<DshMessage>) {
         driver.transaction {
             execute("DELETE FROM dsh_messages WHERE scope_id = ? AND session_id = ?", listOf(scopeId, sessionId))
             messages.forEachIndexed { index, m ->
-                execute("INSERT OR REPLACE INTO dsh_messages (scope_id, id, session_id, role, content, streaming, tool_name, hidden, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", listOf(scopeId, m.id, sessionId, m.role.name, m.content, if (m.streaming) "1" else "0", m.toolName, if (m.hidden) "1" else "0", index.toString()))
+                execute("INSERT OR REPLACE INTO dsh_messages (scope_id, id, session_id, role, content, streaming, tool_name, hidden, seq, is_reasoning, is_context_injection, tool_card_type, tool_running, tool_error, context_form, context_body, context_relay_sender, attachment_id, tool_call_id, extra_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", listOf(scopeId, m.id, sessionId, m.role.name, m.content, if (m.streaming) "1" else "0", m.toolName, if (m.hidden) "1" else "0", index.toString(), if (m.isReasoning) "1" else "0", if (m.isContextInjection) "1" else "0", m.toolCardType.name, if (m.toolRunning) "1" else "0", if (m.toolError) "1" else "0", m.contextForm, m.contextBody, m.contextRelaySender, m.attachmentId, m.toolCallId, DshMessageExtraCodec.encode(m)))
             }
         }
     }
@@ -159,7 +174,7 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
 }
 
 private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : SqlSchema {
-    override val version: Int = 5
+    override val version: Int = 6
 
     override fun create(driver: SqlDriver) {
         driver.execute("CREATE TABLE IF NOT EXISTS dsh_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -180,6 +195,24 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
             writeLegacyProfile(driver)
         }
         if (oldVersion < 5) migrateToV5(driver)
+        if (oldVersion < 6) migrateToV6(driver)
+    }
+
+    private fun migrateToV6(driver: SqlDriver) {
+        // Preserve existing cached sessions: add the identity columns without dropping.
+        listOf(
+            "ALTER TABLE dsh_messages ADD COLUMN is_reasoning INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE dsh_messages ADD COLUMN is_context_injection INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE dsh_messages ADD COLUMN tool_card_type TEXT",
+            "ALTER TABLE dsh_messages ADD COLUMN tool_running INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE dsh_messages ADD COLUMN tool_error INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE dsh_messages ADD COLUMN context_form TEXT",
+            "ALTER TABLE dsh_messages ADD COLUMN context_body TEXT",
+            "ALTER TABLE dsh_messages ADD COLUMN context_relay_sender TEXT",
+            "ALTER TABLE dsh_messages ADD COLUMN attachment_id TEXT",
+            "ALTER TABLE dsh_messages ADD COLUMN tool_call_id TEXT",
+            "ALTER TABLE dsh_messages ADD COLUMN extra_json TEXT",
+        ).forEach { driver.execute(it) }
     }
 
     private fun migrateToV5(driver: SqlDriver) {
@@ -217,7 +250,7 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
 
     private fun createScopedTables(driver: SqlDriver) {
         driver.execute("CREATE TABLE IF NOT EXISTS dsh_sessions (scope_id TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, workspace TEXT NOT NULL, updated_label TEXT NOT NULL, running INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (scope_id, id))")
-        driver.execute("CREATE TABLE IF NOT EXISTS dsh_messages (scope_id TEXT NOT NULL, id TEXT NOT NULL, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, streaming INTEGER NOT NULL, tool_name TEXT, hidden INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (scope_id, session_id, id))")
+        driver.execute("CREATE TABLE IF NOT EXISTS dsh_messages (scope_id TEXT NOT NULL, id TEXT NOT NULL, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, streaming INTEGER NOT NULL, tool_name TEXT, hidden INTEGER NOT NULL, seq INTEGER NOT NULL, is_reasoning INTEGER NOT NULL DEFAULT 0, is_context_injection INTEGER NOT NULL DEFAULT 0, tool_card_type TEXT, tool_running INTEGER NOT NULL DEFAULT 0, tool_error INTEGER NOT NULL DEFAULT 0, context_form TEXT, context_body TEXT, context_relay_sender TEXT, attachment_id TEXT, tool_call_id TEXT, extra_json TEXT, PRIMARY KEY (scope_id, session_id, id))")
         driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_messages_session ON dsh_messages(scope_id, session_id, seq)")
     }
 

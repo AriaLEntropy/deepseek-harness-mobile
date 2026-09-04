@@ -43,3 +43,8 @@ Kotlin-js-store
 .claude/
 agent/skills/
 skills-lock.json
+
+## Local test artifacts (screenshots, build logs, ad-hoc captures)
+*.log
+/*.png
+/*.apk

@@ -122,4 +122,37 @@ class DshStreamingTurnTest {
             dshDisplayedAssistantContent(stored = "abc", live = "abcdef", isLiveRow = false),
         )
     }
+
+    @Test
+    fun toolPrecedingTextIsNotTheTurnTail() {
+        val messages = listOf(
+            DshMessage("user-3", DshMessageRole.USER, "diaoyongwentigongju"),
+            DshMessage("text-1428-1", DshMessageRole.ASSISTANT, "明白了——您想让我调用提问工具。好的，我来问："),
+            DshMessage("tool-1429", DshMessageRole.TOOL, "正在执行 ask_user_question", toolName = "ask_user_question"),
+            DshMessage("text-1646-1", DshMessageRole.ASSISTANT, "提问工具已经正常调用了一次，但这次没有收到您的选择或文字回复。"),
+        )
+        assertEquals("text-1646-1", dshTurnTailAssistant(messages)?.id)
+    }
+
+    @Test
+    fun onlyLastSegmentOfSplitAnswerIsTheTurnTail() {
+        val messages = listOf(
+            DshMessage("user-1", DshMessageRole.USER, "介绍一下"),
+            DshMessage("assistant-7", DshMessageRole.ASSISTANT, "第一段"),
+            DshMessage("assistant-7-segment-1", DshMessageRole.ASSISTANT, "第二段"),
+            DshMessage("assistant-7-segment-2", DshMessageRole.ASSISTANT, "第三段"),
+        )
+        assertEquals("assistant-7-segment-2", dshTurnTailAssistant(messages)?.id)
+    }
+
+    @Test
+    fun reasoningAndContextAndStreamingAreNotTurnTails() {
+        val messages = listOf(
+            DshMessage("user-1", DshMessageRole.USER, "继续"),
+            DshMessage("think-1", DshMessageRole.ASSISTANT, "thinking", isReasoning = true),
+            DshMessage("ctx-1", DshMessageRole.TOOL, "剧本文本", isContextInjection = true),
+            DshMessage("assistant-8", DshMessageRole.ASSISTANT, "还在生成", streaming = true),
+        )
+        assertNull(dshTurnTailAssistant(messages))
+    }
 }
