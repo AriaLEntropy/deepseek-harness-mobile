@@ -371,7 +371,7 @@ internal class DshHomePage : BasePager() {
                                 },
                                 draft = { ctx.draft },
                                 skills = { ctx.skills },
-                                onPickSkill = { ctx.draft = "/$it " },
+                                onPickSkill = { ctx.insertDraftText("/$it ") },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
                                 inputRef = { ctx.inputView = it.view },
@@ -499,7 +499,7 @@ internal class DshHomePage : BasePager() {
                             },
                             draft = { ctx.draft },
                             skills = { ctx.skills },
-                            onPickSkill = { ctx.draft = "/$it " },
+                            onPickSkill = { ctx.insertDraftText("/$it ") },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
                             inputRef = { ctx.inputView = it.view },
@@ -3305,10 +3305,14 @@ internal class DshHomePage : BasePager() {
 
     /** 点击命令：把 "/命令 " 写入输入框（补全草稿 + 原生输入框文本），并关闭面板 */
     private fun insertCommand(command: DshCommand) {
-        val text = "/${command.name} "
+        insertDraftText("/${command.name} ")
+        commandSheetVisible = false
+    }
+
+    /** 把文本写入 draft 状态，并同步到原生输入框（draft observable 不会自动回流到 TextArea）。 */
+    private fun insertDraftText(text: String) {
         draft = text
         inputView?.setText(text)
-        commandSheetVisible = false
     }
 
     private fun queueAssistantDelta(id: String, delta: String) {

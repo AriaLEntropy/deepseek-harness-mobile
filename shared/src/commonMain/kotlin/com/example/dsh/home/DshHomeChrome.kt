@@ -768,11 +768,11 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
             attr {
                 flexDirectionColumn()
                 padding(18f)
-                borderRadius(20f)
                 backgroundColor(Color.WHITE)
+                borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
             }
             View {
-                attr { height(40f); flexDirectionRow(); alignItemsCenter() }
+                attr { height(40f); flexDirectionRow(); alignItemsCenter(); }
                 Text {
                     attr {
                         text("选择权限")
