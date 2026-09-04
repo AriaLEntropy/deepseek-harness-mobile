@@ -1032,6 +1032,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     bodyExpanded = isBodyExpanded()
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
+                    plainBody = true
                 }
             }
         }
@@ -1058,7 +1059,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     bodyExpanded = isBodyExpanded()
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
-                    chrome = true
                     running = message.toolRunning
                 }
             }
@@ -1093,10 +1093,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         val summary = remoteTool?.summary?.takeUnless { it.dshLooksLikeJson() }
             ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "已完成" else
                 toolBody.lineSequence().firstOrNull().orEmpty().takeUnless { it.dshLooksLikeJson() }.orEmpty()
-        // 搜索类工具（联网 WEB 与文件 glob/grep）采用 think 风格：单行箭头、无卡片，可展开
-        val isSearchStyle = remoteTool?.kind == DshRemoteToolKind.SEARCH ||
-            remoteTool?.kind == DshRemoteToolKind.WEB
-        // 工具调用卡片：Bash/Read 等，JSON 结果可折叠展开
+        // 工具调用行：Bash/Read 等，JSON 结果可折叠展开
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
@@ -1118,7 +1115,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     maxBodyLines = 8
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
-                    chrome = !isSearchStyle
                     running = message.toolRunning
                 }
             }
