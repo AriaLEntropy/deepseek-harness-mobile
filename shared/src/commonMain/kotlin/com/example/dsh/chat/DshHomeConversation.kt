@@ -499,6 +499,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     zIndex(50)
                     flexDirectionColumn()
                     justifyContentFlexEnd()
+                    paddingTop(58f)
                 }
                 event { click { onDismissKeyboard() } }
                 // 底部间距容器：卡片左右边距

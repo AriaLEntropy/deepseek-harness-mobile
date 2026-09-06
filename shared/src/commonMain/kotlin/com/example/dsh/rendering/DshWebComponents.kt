@@ -29,6 +29,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Input
+import com.tencent.kuikly.core.views.TextArea
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
@@ -1177,7 +1178,9 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         borderRadius(20f)
                         backgroundColor(Color.WHITE)
                         boxShadow(BoxShadow(0f, 8f, 30f, Color(0x26000000)))
-                        // 卡片设最大高度上限；选项少时内容自然撑开无空白，选项多时由 Scroller 固定高度滚动
+                        // 选项少时卡片 wrap content（maxHeight 上限，无空白）；选项多时 flex(1f) 占满覆盖层，
+                        // 键盘弹出覆盖层收缩时卡片自动收缩，防止顶部顶到 topbar
+                        if (ctx.attr.options.size > 4) flex(1f)
                         maxHeight(560f)
                     }
                     // ===== 标题栏：左侧标签+标题，右侧收起+关闭 =====
@@ -1273,6 +1276,8 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         vfor({ ctx.attr.options }) { option ->
                             val selected = ctx.attr.selected.contains(option.label)
                             val optionIndex = ctx.attr.options.indexOf(option) + 1
+                            val isRecommended = option.label.contains("（推荐）") || option.label.contains("(Recommended)", ignoreCase = true)
+                            val displayLabel = option.label.replace("（推荐）", "").replace(Regex("\\(Recommended\\)", RegexOption.IGNORE_CASE), "").trim()
                             View {
                                 attr {
                                     marginTop(10f)
@@ -1313,12 +1318,37 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         marginLeft(10f)
                                         flexDirectionColumn()
                                     }
-                                    Text {
+                                    // 标题 + 推荐徽章
+                                    View {
                                         attr {
-                                            text(option.label)
-                                            fontSize(14f)
-                                            fontWeightMedium()
-                                            color(Color(0xFF1F2933))
+                                            flexDirectionRow()
+                                            alignItemsCenter()
+                                        }
+                                        Text {
+                                            attr {
+                                                text(displayLabel)
+                                                fontSize(14f)
+                                                fontWeightMedium()
+                                                color(Color(0xFF1F2933))
+                                            }
+                                        }
+                                        vif({ isRecommended }) {
+                                            View {
+                                                attr {
+                                                    marginLeft(6f)
+                                                    padding(2f, 6f, 2f, 6f)
+                                                    borderRadius(4f)
+                                                    backgroundColor(Color(0xFF4176E6))
+                                                }
+                                                Text {
+                                                    attr {
+                                                        text("推荐")
+                                                        fontSize(10f)
+                                                        fontWeightMedium()
+                                                        color(Color.WHITE)
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                     vif({ option.description.isNotEmpty() }) {
@@ -1339,10 +1369,12 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         }
                         vif({ ctx.attr.options.size > 4 }) {
                         Scroller {
-                        attr { height(320f) }
+                        attr { flex(1f) }
                         vfor({ ctx.attr.options }) { option ->
                             val selected = ctx.attr.selected.contains(option.label)
                             val optionIndex = ctx.attr.options.indexOf(option) + 1
+                            val isRecommended = option.label.contains("（推荐）") || option.label.contains("(Recommended)", ignoreCase = true)
+                            val displayLabel = option.label.replace("（推荐）", "").replace(Regex("\\(Recommended\\)", RegexOption.IGNORE_CASE), "").trim()
                             View {
                                 attr {
                                     marginTop(10f)
@@ -1383,12 +1415,37 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         marginLeft(10f)
                                         flexDirectionColumn()
                                     }
-                                    Text {
+                                    // 标题 + 推荐徽章
+                                    View {
                                         attr {
-                                            text(option.label)
-                                            fontSize(14f)
-                                            fontWeightMedium()
-                                            color(Color(0xFF1F2933))
+                                            flexDirectionRow()
+                                            alignItemsCenter()
+                                        }
+                                        Text {
+                                            attr {
+                                                text(displayLabel)
+                                                fontSize(14f)
+                                                fontWeightMedium()
+                                                color(Color(0xFF1F2933))
+                                            }
+                                        }
+                                        vif({ isRecommended }) {
+                                            View {
+                                                attr {
+                                                    marginLeft(6f)
+                                                    padding(2f, 6f, 2f, 6f)
+                                                    borderRadius(4f)
+                                                    backgroundColor(Color(0xFF4176E6))
+                                                }
+                                                Text {
+                                                    attr {
+                                                        text("推荐")
+                                                        fontSize(10f)
+                                                        fontWeightMedium()
+                                                        color(Color.WHITE)
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                     vif({ option.description.isNotEmpty() }) {
@@ -1408,36 +1465,39 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         }
                         }
                         }
-                        // 自定义答案输入框：铅笔图标 + 输入框
+                        // 自定义答案输入框：铅笔图标 + TextArea（支持换行，minHeight 起 maxHeight 后内部滚动）
                         View {
                             attr {
-                                height(42f)
+                                minHeight(42f)
                                 marginTop(10f)
                                 paddingLeft(12f)
                                 paddingRight(12f)
+                                paddingTop(6f)
+                                paddingBottom(6f)
                                 borderRadius(12f)
                                 backgroundColor(Color(0xFFF7F9FB))
                                 border(Border(1f, BorderStyle.SOLID, Color(0xFFE8EDF2)))
                                 flexDirectionRow()
-                                alignItemsCenter()
+                                alignItemsFlexStart()
                             }
                             Image {
                                 attr {
                                     src(ImageUri.commonAssets("tool-ask.svg"))
                                     size(18f, 18f)
+                                    marginTop(4f)
                                 }
                             }
-                            Input {
+                            TextArea {
                                 ref { it.view?.setText(ctx.attr.custom) }
                                 attr {
                                     flex(1f)
-                                    height(38f)
+                                    minHeight(30f)
+                                    maxHeight(90f)
                                     marginLeft(8f)
                                     placeholder("输入你的答案")
                                     placeholderColor(Color(0xFF9AA6B2))
                                     fontSize(13f)
                                     color(Color(0xFF243140))
-                                    text(ctx.attr.custom)
                                     backgroundColor(Color(0x00000000))
                                 }
                                 event {
