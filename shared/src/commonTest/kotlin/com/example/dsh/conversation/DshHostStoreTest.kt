@@ -139,6 +139,28 @@ class DshHostStoreTest {
     }
 
     @Test
+    fun liveJobsExcludeSettledSnapshotsAndKeepRunningStates() {
+        val jobs = listOf(
+            DshJobItem("done", "bash", "done", "completed", "", 1_000, 2_000),
+            DshJobItem("failed", "bash", "failed", "failed", "", 2_000, 3_000),
+            DshJobItem("running", "bash", "running", "running", "", 3_000, null),
+            DshJobItem("stopping", "bash", "stopping", "stopping", "", 4_000, null),
+        )
+
+        assertEquals(listOf("running", "stopping"), dshLiveJobs(jobs).map { it.id })
+    }
+
+    @Test
+    fun liveJobsAreEmptyWhenOnlyHistoricalJobsRemain() {
+        val jobs = listOf(
+            DshJobItem("done", "bash", "done", "completed", "", 1_000, 2_000),
+            DshJobItem("cancelled", "bash", "cancelled", "killed", "", 2_000, 3_000),
+        )
+
+        assertTrue(dshLiveJobs(jobs).isEmpty())
+    }
+
+    @Test
     fun liveJobDurationUsesClientClockWhileSettledUsesHostFinishTime() {
         val live = DshJobItem("live", "bash", "live", "running", "", 1_000, null)
         val done = DshJobItem("done", "bash", "done", "completed", "", 1_000, 4_000)

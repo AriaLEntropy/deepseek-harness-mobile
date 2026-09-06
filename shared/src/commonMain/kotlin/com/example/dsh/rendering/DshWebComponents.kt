@@ -1,4 +1,4 @@
-package com.example.dsh.rendering
+﻿package com.example.dsh.rendering
 
 import com.example.dsh.base.*
 import com.example.dsh.chat.*
@@ -17,6 +17,7 @@ import com.tencent.kuikly.core.base.ComposeEvent
 import com.tencent.kuikly.core.base.ComposeView
 import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.base.ViewContainer
+import com.tencent.kuikly.core.base.BoxShadow
 import com.tencent.kuikly.core.base.Rotate
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
@@ -136,15 +137,27 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             }
                         }
                         vif({ ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
-                            DshLongText {
-                                attr {
-                                    content = ctx.attr.body
-                                    expanded = ctx.attr.bodyExpanded
-                                    maxLines = ctx.attr.maxBodyLines
-                                    error = ctx.attr.errorSummary
-                                    this.onToggle = {
-                                        ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
-                                        ctx.attr.onToggleBody()
+                            if (ctx.attr.plainBody) {
+                                Text {
+                                    attr {
+                                        text(ctx.attr.body)
+                                        fontSize(13f)
+                                        lineHeight(20f)
+                                        color(Color(0xFF727B83))
+                                        marginTop(6f)
+                                    }
+                                }
+                            } else {
+                                DshLongText {
+                                    attr {
+                                        content = ctx.attr.body
+                                        expanded = ctx.attr.bodyExpanded
+                                        maxLines = ctx.attr.maxBodyLines
+                                        error = ctx.attr.errorSummary
+                                        this.onToggle = {
+                                            ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
+                                            ctx.attr.onToggleBody()
+                                        }
                                     }
                                 }
                             }
@@ -183,6 +196,7 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var onToggleJsonNode: (String) -> Unit by observable({})
     var chrome: Boolean by observable(false)
     var running: Boolean by observable(false)
+    var plainBody: Boolean by observable(false)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */
@@ -803,6 +817,10 @@ internal fun dshOrderedJobs(jobs: List<DshJobItem>): List<DshJobItem> {
     )
 }
 
+/** Bottom jobs UI only represents work that can still change. */
+internal fun dshLiveJobs(jobs: List<DshJobItem>): List<DshJobItem> =
+    dshOrderedJobs(jobs.filter { it.status == "running" || it.status == "stopping" })
+
 private fun dshJobStatusLabel(status: String): String = when (status) {
     "running" -> "运行中"
     "stopping" -> "正在停止"
@@ -1025,7 +1043,6 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                     attr {
                         marginLeft(4f)
                         marginRight(4f)
-                        marginBottom(10f)
                         flexDirectionColumn()
                         padding(14f, 14f, 14f, 14f)
                         borderRadius(16f)
@@ -1141,237 +1158,342 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
     override fun createAttr(): DshQuestionFlowAttr = DshQuestionFlowAttr()
     override fun createEvent(): ComposeEvent = ComposeEvent()
 
+    // 内部 UI 状态：卡片是否收起（只显示标题栏）
+    private var collapsed by observable(false)
+
     override fun body(): ViewBuilder {
         val ctx = this
         val item = ctx.attr.question?.questions?.getOrNull(ctx.attr.index)
         return {
             vif({ item != null }) {
                 val current = item ?: return@vif
+                val total = ctx.attr.question?.questions?.size ?: 1
                 View {
                     attr {
                         marginLeft(4f)
                         marginRight(4f)
-                        marginBottom(10f)
                         flexDirectionColumn()
-                        padding(14f, 14f, 14f, 14f)
-                        borderRadius(16f)
+                        padding(14f, 16f, 12f, 16f)
+                        borderRadius(20f)
                         backgroundColor(Color.WHITE)
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE6EAF0)))
+                        boxShadow(BoxShadow(0f, 8f, 30f, Color(0x26000000)))
+                        // 长列表场景：固定卡片最大高度，选项区超出时内部滚动，底部工具栏不被挤出屏幕
+                        maxHeight(580f)
                     }
+                    // ===== 标题栏：左侧标签+标题，右侧收起+关闭 =====
                     View {
                         attr {
-                            alignSelfFlexStart()
-                            padding(3f, 8f, 3f, 8f)
-                            borderRadius(6f)
-                            backgroundColor(Color(0xFFEEF3FA))
+                            flexDirectionRow()
+                            alignItemsFlexStart()
+                            justifyContentSpaceBetween()
                         }
-                        Text {
-                            attr {
-                                text(current.header.ifEmpty { "需要你选择" })
-                                fontSize(11f)
-                                fontWeightMedium()
-                                color(Color(0xFF5B6B82))
-                            }
-                        }
-                    }
-                    Text {
-                        attr {
-                            text(current.question)
-                            marginTop(10f)
-                            fontSize(16f)
-                            fontWeightMedium()
-                            lineHeight(23f)
-                            color(Color(0xFF1F2933))
-                        }
-                    }
-                    vif({ current.detail.isNotEmpty() }) {
-                        Text {
-                            attr {
-                                text(current.detail)
-                                marginTop(6f)
-                                fontSize(13f)
-                                lineHeight(19f)
-                                color(Color(0xFF6B7785))
-                            }
-                        }
-                    }
-                    vfor({ ctx.attr.options }) { option ->
-                        val selected = ctx.attr.selected.contains(option.label)
+                        // 左侧：标签 + 标题
                         View {
                             attr {
-                                marginTop(8f)
-                                flexDirectionRow()
-                                alignItemsFlexStart()
-                                padding(10f, 12f, 10f, 12f)
-                                borderRadius(12f)
-                                backgroundColor(Color(if (selected) 0xFFEFF5FF else 0xFFF7F9FB))
-                                border(Border(
-                                    1f,
-                                    BorderStyle.SOLID,
-                                    Color(if (selected) 0xFFB7D0F5 else 0xFFE8EDF2),
-                                ))
+                                flex(1f)
+                                flexDirectionColumn()
+                                marginRight(12f)
                             }
+                            Text {
+                                attr {
+                                    text(current.header.ifEmpty { "确认意图" })
+                                    fontSize(12f)
+                                    color(Color(0xFF8A96A3))
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text(current.question)
+                                    marginTop(6f)
+                                    fontSize(17f)
+                                    fontWeightMedium()
+                                    lineHeight(24f)
+                                    color(Color(0xFF1A1D21))
+                                }
+                            }
+                        }
+                        // 右侧：收起按钮 + 关闭按钮
+                        View {
+                            attr {
+                                flexDirectionRow()
+                                alignItemsCenter()
+                            }
+                            // 收起/展开按钮
+                            View {
+                                attr {
+                                    size(32f, 32f)
+                                    borderRadius(16f)
+                                    justifyContentCenter()
+                                    alignItemsCenter()
+                                }
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("chevron-down.svg"))
+                                        size(18f, 18f)
+                                        transform(Rotate(if (ctx.collapsed) 0f else 180f))
+                                    }
+                                }
+                                DshTapTarget { ctx.collapsed = !ctx.collapsed }
+                            }
+                            // 关闭按钮（取消提问）
+                            View {
+                                attr {
+                                    size(32f, 32f)
+                                    marginLeft(4f)
+                                    borderRadius(16f)
+                                    justifyContentCenter()
+                                    alignItemsCenter()
+                                }
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("x.svg"))
+                                        size(16f, 16f)
+                                    }
+                                }
+                                DshTapTarget { ctx.attr.onDismiss() }
+                            }
+                        }
+                    }
+                    // ===== 展开内容 =====
+                    vif({ !ctx.collapsed }) {
+                        // 问题描述
+                        vif({ current.detail.isNotEmpty() }) {
+                            Text {
+                                attr {
+                                    text(current.detail)
+                                    marginTop(10f)
+                                    fontSize(13f)
+                                    lineHeight(19f)
+                                    color(Color(0xFF6B7785))
+                                }
+                            }
+                        }
+                        // 选项列表：编号 + 标题 + 描述（长列表时在 Scroller 内滚动，底部工具栏固定）
+                        Scroller {
+                        attr { height(320f) }
+                        vfor({ ctx.attr.options }) { option ->
+                            val selected = ctx.attr.selected.contains(option.label)
+                            val optionIndex = ctx.attr.options.indexOf(option) + 1
+                            View {
+                                attr {
+                                    marginTop(10f)
+                                    flexDirectionRow()
+                                    alignItemsFlexStart()
+                                    padding(12f, 14f, 12f, 14f)
+                                    borderRadius(12f)
+                                    backgroundColor(Color(if (selected) 0xFFEFF5FF else 0xFFF7F9FB))
+                                    border(Border(
+                                        1f,
+                                        BorderStyle.SOLID,
+                                        Color(if (selected) 0xFFB7D0F5 else 0xFFE8EDF2),
+                                    ))
+                                }
+                                // 编号方块
                                 View {
                                     attr {
-                                        size(18f, 18f)
-                                        marginTop(2f)
-                                        borderRadius(9f)
-                                        border(Border(
-                                            1.5f,
-                                            BorderStyle.SOLID,
-                                            Color(if (selected) 0xFF4176E6 else 0xFFC5CDD6),
-                                        ))
-                                        backgroundColor(Color(if (selected) 0xFF4176E6 else 0x00FFFFFF))
+                                        size(22f, 22f)
+                                        marginTop(1f)
+                                        borderRadius(6f)
+                                        backgroundColor(Color(if (selected) 0xFF4176E6 else 0xFFEEF1F5))
                                         justifyContentCenter()
                                         alignItemsCenter()
                                     }
-                                    View {
+                                    Text {
                                         attr {
-                                            size(if (selected) 6f else 0f, if (selected) 6f else 0f)
-                                            borderRadius(3f)
-                                            backgroundColor(Color.WHITE)
+                                            text("$optionIndex")
+                                            fontSize(12f)
+                                            fontWeightMedium()
+                                            color(Color(if (selected) 0xFFFFFFFF else 0xFF7A8494))
                                         }
                                     }
                                 }
-                            View {
+                                // 标题 + 描述
+                                View {
+                                    attr {
+                                        flex(1f)
+                                        marginLeft(10f)
+                                        flexDirectionColumn()
+                                    }
+                                    Text {
+                                        attr {
+                                            text(option.label)
+                                            fontSize(14f)
+                                            fontWeightMedium()
+                                            color(Color(0xFF1F2933))
+                                        }
+                                    }
+                                    vif({ option.description.isNotEmpty() }) {
+                                        Text {
+                                            attr {
+                                                text(option.description)
+                                                marginTop(3f)
+                                                fontSize(12f)
+                                                lineHeight(17f)
+                                                color(Color(0xFF6B7785))
+                                            }
+                                        }
+                                    }
+                                }
+                                DshTapTarget { ctx.attr.onToggleOption(option.label) }
+                            }
+                        }
+                        }
+                        // 自定义答案输入框：铅笔图标 + 输入框
+                        View {
+                            attr {
+                                height(42f)
+                                marginTop(10f)
+                                paddingLeft(12f)
+                                paddingRight(12f)
+                                borderRadius(12f)
+                                backgroundColor(Color(0xFFF7F9FB))
+                                border(Border(1f, BorderStyle.SOLID, Color(0xFFE8EDF2)))
+                                flexDirectionRow()
+                                alignItemsCenter()
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("tool-ask.svg"))
+                                    size(18f, 18f)
+                                }
+                            }
+                            Input {
+                                ref { it.view?.setText(ctx.attr.custom) }
                                 attr {
                                     flex(1f)
-                                    marginLeft(10f)
-                                    flexDirectionColumn()
+                                    height(38f)
+                                    marginLeft(8f)
+                                    placeholder("输入你的答案")
+                                    placeholderColor(Color(0xFF9AA6B2))
+                                    fontSize(13f)
+                                    color(Color(0xFF243140))
+                                    text(ctx.attr.custom)
+                                    backgroundColor(Color(0x00000000))
+                                }
+                                event { textDidChange { ctx.attr.onCustomChange(it.text) } }
+                            }
+                        }
+                        // 错误提示
+                        vif({ ctx.attr.error.isNotEmpty() }) {
+                            Text {
+                                attr {
+                                    text(ctx.attr.error)
+                                    marginTop(8f)
+                                    fontSize(12f)
+                                    color(Color(0xFFC23B3B))
+                                }
+                            }
+                        }
+                        // ===== 底部栏：分页 + 跳过 + 提交 =====
+                        View {
+                            attr {
+                                marginTop(16f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                            }
+                            // 分页：左箭头 + 1/1 + 右箭头
+                            View {
+                                attr {
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                }
+                                // 左箭头
+                                View {
+                                    attr {
+                                        size(28f, 28f)
+                                        borderRadius(14f)
+                                        justifyContentCenter()
+                                        alignItemsCenter()
+                                        opacity(if (ctx.attr.index > 0) 1f else 0.3f)
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("chevron-left.svg"))
+                                            size(16f, 16f)
+                                        }
+                                    }
+                                    vif({ ctx.attr.index > 0 }) {
+                                        DshTapTarget { ctx.attr.onNavigate(-1) }
+                                    }
                                 }
                                 Text {
                                     attr {
-                                        text(option.label)
-                                        fontSize(14f)
-                                        fontWeightMedium()
-                                        color(Color(0xFF243140))
+                                        text("${ctx.attr.index + 1} / $total")
+                                        marginLeft(6f)
+                                        marginRight(6f)
+                                        fontSize(13f)
+                                        color(Color(0xFF8A96A3))
                                     }
                                 }
-                                vif({ option.description.isNotEmpty() }) {
-                                    Text {
+                                // 右箭头
+                                View {
+                                    attr {
+                                        size(28f, 28f)
+                                        borderRadius(14f)
+                                        justifyContentCenter()
+                                        alignItemsCenter()
+                                        opacity(if (ctx.attr.index < total - 1) 1f else 0.3f)
+                                    }
+                                    Image {
                                         attr {
-                                            text(option.description)
-                                            marginTop(3f)
-                                            fontSize(12f)
-                                            lineHeight(17f)
-                                            color(Color(0xFF6B7785))
+                                            src(ImageUri.commonAssets("chevron-right.svg"))
+                                            size(16f, 16f)
                                         }
                                     }
+                                    vif({ ctx.attr.index < total - 1 }) {
+                                        DshTapTarget { ctx.attr.onNavigate(1) }
+                                    }
                                 }
                             }
-                            DshTapTarget { ctx.attr.onToggleOption(option.label) }
-                        }
-                    }
-                    View {
-                        attr {
-                            height(40f)
-                            marginTop(10f)
-                            paddingLeft(12f)
-                            paddingRight(12f)
-                            borderRadius(10f)
-                            backgroundColor(Color(0xFFF7F9FB))
-                            border(Border(1f, BorderStyle.SOLID, Color(0xFFE8EDF2)))
-                            justifyContentCenter()
-                        }
-                        Input {
-                            ref { it.view?.setText(ctx.attr.custom) }
-                            attr {
-                                height(36f)
-                                placeholder("也可以自己写答案")
-                                placeholderColor(Color(0xFF9AA6B2))
-                                fontSize(13f)
-                                color(Color(0xFF243140))
-                                text(ctx.attr.custom)
-                            }
-                            event { textDidChange { ctx.attr.onCustomChange(it.text) } }
-                        }
-                    }
-                    vif({ ctx.attr.error.isNotEmpty() }) {
-                        Text {
-                            attr {
-                                text(ctx.attr.error)
-                                marginTop(8f)
-                                fontSize(12f)
-                                color(Color(0xFFC23B3B))
-                            }
-                        }
-                    }
-                    View {
-                        attr {
-                            height(40f)
-                            marginTop(12f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            zIndex(2)
-                        }
-                        Text {
-                            attr {
-                                text("${ctx.attr.index + 1} / ${ctx.attr.question?.questions?.size ?: 1}")
-                                flex(1f)
-                                fontSize(12f)
-                                color(Color(0xFF8A96A3))
-                            }
-                        }
-                        vif({ ctx.attr.index > 0 }) {
-                            Text {
+                            // 占位撑开
+                            View { attr { flex(1f) } }
+                            // 跳过本题按钮：白底 + 边框
+                            View {
                                 attr {
-                                    text("上一题")
-                                    marginRight(12f)
-                                    fontSize(13f)
-                                    color(Color(0xFF4176E6))
+                                    height(36f)
+                                    paddingLeft(16f)
+                                    paddingRight(16f)
+                                    marginRight(10f)
+                                    borderRadius(18f)
+                                    backgroundColor(Color.WHITE)
+                                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE0E4E8)))
+                                    justifyContentCenter()
+                                    alignItemsCenter()
                                 }
-                                event { click { ctx.attr.onNavigate(-1) } }
+                                Text {
+                                    attr {
+                                        text("跳过本题")
+                                        fontSize(13f)
+                                        color(Color(0xFF5B6B82))
+                                    }
+                                }
+                                DshTapTarget { if (!ctx.attr.busy) ctx.attr.onSkip() }
                             }
-                        }
-                        vif({ ctx.attr.index < (ctx.attr.question?.questions?.size ?: 1) - 1 }) {
-                            Text {
+                            // 提交按钮：品牌蓝（有选择时）/ 灰色（无选择时）
+                            View {
                                 attr {
-                                    text("下一题")
-                                    marginRight(12f)
-                                    fontSize(13f)
-                                    color(Color(0xFF4176E6))
+                                    height(36f)
+                                    paddingLeft(20f)
+                                    paddingRight(20f)
+                                    borderRadius(18f)
+                                    backgroundColor(Color(
+                                        if (ctx.attr.busy) 0xFFB7C8FE
+                                        else if (ctx.attr.hasSelection) 0xFF4176E6
+                                        else 0xFFD0D5DD
+                                    ))
+                                    justifyContentCenter()
+                                    alignItemsCenter()
                                 }
-                                event { click { ctx.attr.onNavigate(1) } }
-                            }
-                        }
-                        View {
-                            attr {
-                                height(32f)
-                                paddingLeft(12f)
-                                paddingRight(12f)
-                                marginRight(8f)
-                                borderRadius(8f)
-                                justifyContentCenter()
-                                alignItemsCenter()
-                            }
-                            Text {
-                                attr {
-                                    text("跳过")
-                                    fontSize(13f)
-                                    color(Color(0xFF7A838A))
+                                Text {
+                                    attr {
+                                        text(if (ctx.attr.busy) "提交中" else "提交")
+                                        fontSize(13f)
+                                        fontWeightMedium()
+                                        color(Color.WHITE)
+                                    }
                                 }
+                                DshTapTarget { if (!ctx.attr.busy && ctx.attr.hasSelection) ctx.attr.onSubmit() }
                             }
-                            DshTapTarget { if (!ctx.attr.busy) ctx.attr.onSkip() }
-                        }
-                        View {
-                            attr {
-                                height(32f)
-                                paddingLeft(16f)
-                                paddingRight(16f)
-                                borderRadius(8f)
-                                backgroundColor(Color(if (ctx.attr.busy) 0xFFB7C8FE else 0xFF4176E6))
-                                justifyContentCenter()
-                                alignItemsCenter()
-                            }
-                            Text {
-                                attr {
-                                    text(if (ctx.attr.busy) "提交中" else "提交")
-                                    fontSize(13f)
-                                    fontWeightMedium()
-                                    color(Color.WHITE)
-                                }
-                            }
-                            DshTapTarget { if (!ctx.attr.busy) ctx.attr.onSubmit() }
                         }
                     }
                 }
@@ -1390,6 +1512,7 @@ internal class DshQuestionFlowAttr : ComposeAttr() {
         com.tencent.kuikly.core.reactive.collection.ObservableList(),
     )
     var custom: String by observable("")
+    var hasSelection: Boolean by observable(false)
     var error: String by observable("")
     var busy: Boolean by observable(false)
     var onToggleOption: (String) -> Unit by observable({})
@@ -1397,6 +1520,7 @@ internal class DshQuestionFlowAttr : ComposeAttr() {
     var onNavigate: (Int) -> Unit by observable({})
     var onSkip: () -> Unit by observable({})
     var onSubmit: () -> Unit by observable({})
+    var onDismiss: () -> Unit by observable({})
 }
 
 internal fun ViewContainer<*, *>.DshQuestionFlow(init: DshQuestionFlowView.() -> Unit) {

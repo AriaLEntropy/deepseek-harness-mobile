@@ -2,6 +2,7 @@ package com.example.dsh.base
 
 import com.tencent.kuikly.core.base.IPagerId
 import com.tencent.kuikly.core.base.pagerId
+import com.tencent.kuikly.core.manager.PagerManager
 
 /**
  * 老的方式:，需要显式传递 pagerId
@@ -16,6 +17,10 @@ import com.tencent.kuikly.core.base.pagerId
  */
 internal val IPagerId.bridgeModule: BridgeModule by pagerId {
     Utils.bridgeModule(it)
+}
+
+internal val IPagerId.blurModule: DshBlurModule by pagerId {
+    PagerManager.getPager(it).acquireModule<DshBlurModule>(DshBlurModule.MODULE_NAME)
 }
 
 internal fun IPagerId.setTimeout(delay: Int, callback: () -> Unit): String {

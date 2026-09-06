@@ -27,4 +27,5 @@ private object EmptyDshLocalStore : DshLocalStore {
     override fun loadMessages(connectionId: String, sessionId: String): List<DshMessage> = emptyList()
     override fun replaceMessages(connectionId: String, sessionId: String, messages: List<DshMessage>) = Unit
     override fun clearScope(scopeId: String) = Unit
+    override fun deleteSession(scopeId: String, sessionId: String) = Unit
 }

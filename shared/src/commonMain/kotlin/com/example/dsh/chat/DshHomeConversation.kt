@@ -15,18 +15,25 @@ import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
+import com.tencent.kuikly.core.layout.FlexWrap
+import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.KeyboardParams
+import com.tencent.kuikly.core.views.TextArea
+import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
+import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+
+// AI 回答下方横向操作容器（footer）的可用操作项，对齐 dsh 原版 IconActions 行
+internal enum class DshMessageFooterAction { COPY, GOOD, BAD, BRANCH }
 
 internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
@@ -145,7 +152,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
-    inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
+    inputRef: (com.tencent.kuikly.core.base.ViewRef<TextAreaView>) -> Unit,
     onInputFocusChange: (Boolean) -> Unit,
     onDraftChange: (String) -> Unit,
     onKeyboardHeightChange: (KeyboardParams) -> Unit,
@@ -154,13 +161,20 @@ internal fun ViewContainer<*, *>.DshConversation(
     onDismissKeyboard: () -> Unit,
     onUserListScroll: (ScrollParams) -> Unit,
     modelLabel: () -> String,
-    attachmentMenuVisible: () -> Boolean,
+    commandSheetVisible: () -> Boolean,
     voiceActive: () -> Boolean,
     onOpenModels: () -> Unit,
-    onToggleAttachments: () -> Unit,
+    onToggleCommandSheet: () -> Unit,
+    onPickCommand: (DshCommand) -> Unit,
+    onAttachmentTile: (DshCommandSheetTile) -> Unit,
     onToggleVoice: () -> Unit,
     folderLabel: () -> String,
     onOpenFolderBrowser: () -> Unit,
+    permissionValue: () -> String,
+    permissionLabel: () -> String,
+    onOpenPermissions: () -> Unit,
+    agentModeLabel: () -> String,
+    onOpenAgentModes: () -> Unit,
     isWebTimeline: () -> Boolean,
     isDisclosureExpanded: (String) -> Boolean,
     onToggleDisclosure: (String) -> Unit,
@@ -169,9 +183,14 @@ internal fun ViewContainer<*, *>.DshConversation(
     isJsonNodeExpanded: (String, String) -> Boolean,
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
+    onCopyMessageContent: (DshMessage) -> Unit = {},
+    // 参数：message, renderedContent, 页面坐标 x/y
+    onMessageLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
+    onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     attachmentDataUrl: (String) -> String?,
     queueItems: () -> ObservableList<DshQueueItem>,
     jobItems: () -> ObservableList<DshJobItem>,
+    liveJobItems: () -> ObservableList<DshJobItem>,
     goal: () -> DshGoalSnapshot?,
     goalActionBusy: () -> Boolean,
     goalActionError: () -> String,
@@ -205,13 +224,19 @@ internal fun ViewContainer<*, *>.DshConversation(
     questionCustom: () -> String,
     questionIndex: () -> Int,
     questionError: () -> String,
+    questionHasSelection: () -> Boolean,
     onAnswerApproval: (String) -> Unit,
     onToggleQuestionOption: (String) -> Unit,
     onQuestionCustomChange: (String) -> Unit,
     onQuestionNavigate: (Int) -> Unit,
     onQuestionSkip: () -> Unit,
     onSubmitQuestion: () -> Unit,
+    onDismissQuestion: () -> Unit,
     availableWidth: Float,
+    connectionLabel: () -> String,
+    connectionCapsuleVisible: () -> Boolean,
+    connectionCapsuleFadeOut: () -> Boolean,
+    connectionCapsuleFadeOutAnimation: () -> Animation,
 ) {
     // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
@@ -220,6 +245,13 @@ internal fun ViewContainer<*, *>.DshConversation(
             width(availableWidth)
             flexDirectionColumn()
             backgroundColor(Color.WHITE)
+            // 底部预留在输入卡之下渲染工具调用轮次状态区的高度（移动端该状态区暂不常驻
+            // 渲染，但需要预留其高度让输入条不贴底、与原版对齐）。
+            // 取值= 状态区单行高 26f 偏大，视觉仍显远，收敛到紧凑间距 20f。
+            // 页面是 immersive（LAYOUT_FULLSCREEN + STABLE，无 LAYOUT_HIDE_NAVIGATION），
+            // 系统已将内容区停在虚拟导航栏上方、pageViewHeight 已扣除导航栏高度，
+            // 此时 safeAreaInsets.bottom 仍返回导航栏高度，若再加会双重 padding 把输入条抬高一个导航栏。
+            paddingBottom(20f)
         }
         // 消息视口容器：消息列表区域，随键盘高度向上收缩，输入条自然浮在键盘上方
         View {
@@ -304,6 +336,26 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
+                                            onCopyMessageContent = { onCopyMessageContent(it) },
+                                            onLongPress = { msg, content, px, py ->
+                                                onMessageLongPress(msg, content, px, py)
+                                            },
+                                            onFooterAction = { msg, action -> onFooterAction(msg, action) },
+                                            // footer 只渲染"当前回合（最近一条 user 之后）最后一段
+                                            // 已结算 assistant"，中间的过渡文本/分段不会重复渲染。
+                                            // 有待处理的提问/授权交互时整个 turn 尚未结束（与 DSH 原版一致），
+                                            // 提问之间的中间输出段不显示 footer，避免每段都重复渲染操作栏
+                                            isTurnTail = {
+                                                val hasInteraction =
+                                                    pendingQuestion()?.sessionId == sessionId ||
+                                                        pendingApproval()?.sessionId == sessionId
+                                                if (hasInteraction) {
+                                                    false
+                                                } else {
+                                                    val tailId = dshTurnTailAssistant(messagesForSession(sessionId))?.id
+                                                    tailId != null && tailId == message.id
+                                                }
+                                            },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {
                                                 val stored = messagesForSession(sessionId)
@@ -372,10 +424,10 @@ internal fun ViewContainer<*, *>.DshConversation(
             }
         }
         // 任务面板（Web 时间线）：展示后台任务进度
-        vif({ isWebTimeline() && jobItems().isNotEmpty() }) {
+        vif({ isWebTimeline() && liveJobItems().isNotEmpty() }) {
             DshJobsPanel {
                 attr {
-                    jobs = jobItems()
+                    jobs = liveJobItems()
                     expanded = jobsPanelExpanded()
                     now = jobsNow()
                     onToggle = onToggleJobsPanel
@@ -406,95 +458,163 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
-        // 提问流程面板：Host 向用户提问/选择时弹出
-        vif({
+        // 提问流程面板：Host 向用户提问/选择时弹出。
+        // 宽屏（>=720dp）沿用在输入条上方内联渲染，与 dsh Web 一致；
+        // 窄屏（手机）改为独立浮动卡片覆盖输入框，而非像聊天消息一样插入会话流。
+        val questionInit: DshQuestionFlowView.() -> Unit = {
+            attr {
+                question = pendingQuestion()
+                val options = ObservableList<DshPendingQuestionOption>()
+                pendingQuestion()?.questions?.getOrNull(questionIndex())?.options?.let(options::addAll)
+                this.options = options
+                selected = selectedQuestionOptions()
+                custom = questionCustom()
+                hasSelection = questionHasSelection()
+                index = questionIndex()
+                error = questionError()
+                busy = interactionBusy()
+                onToggleOption = onToggleQuestionOption
+                onCustomChange = onQuestionCustomChange
+                onNavigate = onQuestionNavigate
+                onSkip = onQuestionSkip
+                onSubmit = onSubmitQuestion
+                onDismiss = onDismissQuestion
+            }
+        }
+        val questionActive = {
             isWebTimeline() &&
                 pendingApproval() == null &&
                 pendingQuestion()?.sessionId == activeConversationId()
-        }) {
-            DshQuestionFlow {
+        }
+        vif({ availableWidth >= 720f && questionActive() }) {
+            DshQuestionFlow(questionInit)
+        }
+        vif({ availableWidth < 720f && questionActive() }) {
+            // 全屏覆盖层：点击收起键盘，无背景遮罩色，卡片底部与输入框底部对齐
+            View {
                 attr {
-                    question = pendingQuestion()
-                    val options = ObservableList<DshPendingQuestionOption>()
-                    pendingQuestion()?.questions?.getOrNull(questionIndex())?.options?.let(options::addAll)
-                    this.options = options
-                    selected = selectedQuestionOptions()
-                    custom = questionCustom()
-                    index = questionIndex()
-                    error = questionError()
-                    busy = interactionBusy()
-                    onToggleOption = onToggleQuestionOption
-                    onCustomChange = onQuestionCustomChange
-                    onNavigate = onQuestionNavigate
-                    onSkip = onQuestionSkip
-                    onSubmit = onSubmitQuestion
+                    absolutePositionAllZero()
+                    zIndex(50)
+                    flexDirectionColumn()
+                    justifyContentFlexEnd()
+                }
+                event { click { onDismissKeyboard() } }
+                // 底部间距容器：absolutePositionAllZero 已相对于根容器 padding box（扣除 paddingBottom 20f），
+                // 覆盖层底部即输入框底部位置，此处不再额外加 marginBottom，避免双重间距把卡片推高
+                View {
+                    attr {
+                        marginLeft(12f)
+                        marginRight(12f)
+                        marginTop(12f)
+                    }
+                    DshQuestionFlow(questionInit)
                 }
             }
         }
 
-                // 输入条容器：顶部工具行 + 输入框 + 底部文件夹，总高 COMPOSER_HEIGHT
-                View {
-                    attr {
-                        height(COMPOSER_HEIGHT)
-                        width(availableWidth)
-                        flexDirectionColumn()
-                        padding(10f, 12f, 10f, 12f)
-                        backgroundColor(Color.WHITE)
-                        borderRadius(22f)
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
-                    }
-                    // 技能建议列表：输入 / 开头时展示匹配的技能供点选
-                    vif({
-                        isWebTimeline() && draft().startsWith("/") &&
-                                visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
-                    }) {
+                // Hero 配置区：文件夹 chip + 模式 chip，在输入卡上方，仅空白会话（未开始）时显示
+                vif({ isBlankConversation() }) {
+                    View {
+                        attr {
+                            width((availableWidth - 24f).coerceAtLeast(0f))
+                            marginLeft(12f)
+                            marginRight(12f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            marginBottom(8f)
+                        }
+                        // 文件夹 chip（工作区选择器）：透明药丸，与 DSH Web HeroShell.workspace 一致（无边框，r16，primary 色）
                         View {
                             attr {
-                                maxHeight(132f)
-                                marginBottom(6f)
-                                flexDirectionColumn()
-                                backgroundColor(Color(0xFFF7F9FB))
-                                borderRadius(8f)
-                                border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                                height(28f)
+                                paddingLeft(8f)
+                                paddingRight(8f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                borderRadius(16f)
                             }
-                            // 单个技能建议行：/技能名 + 描述，点击选用
-                            vfor({ visibleSkillList(skills(), draft().removePrefix("/")) }) { skill ->
-                                View {
-                                    attr {
-                                        height(32f)
-                                        flexDirectionRow()
-                                        alignItemsCenter()
-                                        paddingLeft(8f)
-                                        paddingRight(8f)
-                                    }
-                                    event { click { onPickSkill(skill.name) } }
-                                    Text {
-                                        attr {
-                                            text("/${skill.name}")
-                                            width(110f)
-                                            fontSize(13f)
-                                            fontWeightMedium()
-                                            color(Color(0xFF2F6F4F))
-                                        }
-                                    }
-                                    Text {
-                                        attr {
-                                            text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
-                                            flex(1f)
-                                            lines(1)
-                                            fontSize(11f)
-                                            color(Color(0xFF727D84))
-                                        }
-                                    }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("folder.svg"))
+                                    size(16f, 16f)
                                 }
                             }
+                            Text {
+                                attr {
+                                    text(folderLabel())
+                                    marginLeft(4f)
+                                    fontSize(13f)
+                                    color(Color(0xFF1B1F24))
+                                }
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(12f, 12f)
+                                }
+                            }
+                            DshHitButton(onOpenFolderBrowser)
+                        }
+                        // 模式 chip：透明药丸，dsh 语义 —— 图标 + 模式名 + 下箭头，点击打开模式选择弹窗
+                        View {
+                            attr {
+                                height(28f)
+                                marginLeft(8f)
+                                paddingLeft(8f)
+                                paddingRight(4f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                borderRadius(24f)
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("agent-preset.svg"))
+                                    size(16f, 16f)
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text(agentModeLabel())
+                                    marginLeft(4f)
+                                    fontSize(13f)
+                                    color(Color(0xFF81858C))
+                                }
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(12f, 12f)
+                                }
+                            }
+                            DshHitButton(onOpenAgentModes)
                         }
                     }
-                    // 输入框：消息/按住说话，回车发送，键盘高度变化通知外层
-                    Input {
+                }
+
+                // 输入卡：DSH Web 风格，细描边 + 弥散阴影，10px 顶部内边距。
+                // 左右对称 margin 出 clearance（各 12px），宽度扣减 24 避免右侧溢出截断。
+                // 弹出提问流程面板时隐藏输入框（与 DSH 原版一致），由浮动卡片接管底部交互区
+                vif({ !questionActive() }) {
+                View {
+                    attr {
+                        width((availableWidth - 24f).coerceAtLeast(0f))
+                        marginLeft(12f)
+                        marginRight(12f)
+                        flexDirectionColumn()
+                        paddingTop(10f)
+                        backgroundColor(Color.WHITE)
+                        borderRadius(22f)
+                        border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
+                        boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
+                    }
+                    // 输入框：DSH Web 风格，内容自适应高度（单行起），达 maxHeight 后随输入内部滚动
+                    TextArea {
                         ref { inputRef(it) }
                         attr {
-                            height(46f)
+                            marginLeft(16f)
+                            marginRight(12f)
+                            minHeight(46f)
+                            maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
                             color(Color(0xFF28323C))
@@ -504,8 +624,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     else -> "发消息或按住说话，让电脑继续工作..."
                                 },
                             )
-                            placeholderColor(Color(0xFF91A0AA))
-                            returnKeyTypeSend()
+                            placeholderColor(Color(0xFFADB2B8))
                             editable(!voiceActive())
                         }
                         event {
@@ -516,168 +635,281 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 onInputFocusChange(false)
                                 onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
                             }
-                            inputReturn { onSend() }
                         }
                     }
 
-                    // 顶部工具行：模型选择 + 附件(+) + 语音/发送
+                    // 底部工具栏：flex wrap 布局，与 DSH Web 一致（左侧 + 按钮，右侧 模型 chip + 发送按钮）
+                    View {
+                        attr {
+                            flexDirectionRow()
+                            flexWrap(FlexWrap.WRAP)
+                            alignItemsCenter()
+                            justifyContentSpaceBetween()
+                            padding(2f, 8f, 6f, 8f)
+                        }
+                        // 左侧功能区：+ 按钮
+                        View {
+                            attr {
+                                flexDirectionRow()
+                                alignItemsCenter()
+                            }
+                            // + 按钮：28px 圆，浅灰背景，与 DSH Web 一致
+                            View {
+                                attr {
+                                    size(28f, 28f)
+                                    borderRadius(999f)
+                                    backgroundColor(Color(0xFFF5F6F7))
+                                    allCenter()
+                                }
+                                Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
+                                DshHitButton { onToggleCommandSheet() }
+                            }
+                            // 权限 chip：dsh 语义 —— 当前权限态盾牌图标 + 下箭头，会话开始前可选（仅图标，文字在弹窗内）
+                            vif({ isBlankConversation() }) {
+                                View {
+                                    attr {
+                                        marginLeft(6f)
+                                        height(28f)
+                                        paddingLeft(13f)
+                                        paddingRight(4f)
+                                        flexDirectionRow()
+                                        alignItemsCenter()
+                                        borderRadius(24f)
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets(dshPermissionIcon(permissionValue())))
+                                            size(16f, 16f)
+                                        }
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("chevron-down.svg"))
+                                            size(12f, 12f)
+                                        }
+                                    }
+                                    DshHitButton(onOpenPermissions)
+                                }
+                            }
+                        }
+                        // 右侧功能区：模型 chip + 停止/发送按钮
+                        View {
+                            attr {
+                                flexDirectionRow()
+                                alignItemsCenter()
+                            }
+                            // 模型 chip：与 DSH Web 一致的透明药丸样式
+                            View {
+                                attr {
+                                    maxWidth(220f)
+                                    height(28f)
+                                    paddingLeft(8f)
+                                    paddingRight(20f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    borderRadius(8f)
+                                }
+                                Text {
+                                    attr {
+                                        text(modelLabel())
+                                        fontSize(13f)
+                                        color(Color(0xFF81858C))
+                                    }
+                                }
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("chevron-down.svg"))
+                                        size(12f, 12f)
+                                    }
+                                }
+                                DshHitButton(onOpenModels)
+                            }
+                            // 停止/发送按钮：34px 蓝色圆钮，白↑箭头，与 DSH Web 一致
+                            View {
+                                attr {
+                                    size(34f, 34f)
+                                    borderRadius(999f)
+                                    allCenter()
+                                    backgroundColor(Color(
+                                        if (stopButtonVisible()) 0xFFE05252
+                                        else 0xFF3964FE
+                                    ))
+                                    opacity(
+                                        if (stopButtonVisible() || draft().trim().isNotEmpty()) 1f
+                                        else 0.4f
+                                    )
+                                    transform(translate = Translate(percentageX = 0f, percentageY = 0f, offsetY = -2f))
+                                }
+                                vif({ stopButtonVisible() }) {
+                                    Image { attr { src(ImageUri.commonAssets("square.svg")); size(16f, 16f) } }
+                                }
+                                velse {
+                                    Image { attr { src(ImageUri.commonAssets("arrow-up.svg")); size(16f, 16f) } }
+                                }
+                                DshHitButton {
+                                    when {
+                                        stopButtonVisible() -> onStop()
+                                        draft().trim().isNotEmpty() -> onSend()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                }
+                }
+
+        }
+        // 命令 / 技能建议浮层：absolute 悬浮在输入框上方，命令在上技能在下，白卡圆角阴影，不参与流式布局
+        vif({
+            draft().startsWith("/") && (
+                dshCommandsMatching(dshCommandPrefixFromDraft(draft()).removePrefix("/")).isNotEmpty() ||
+                    visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
+            )
+        }) {
+            val prefix = dshCommandPrefixFromDraft(draft()).removePrefix("/")
+            val commandList = dshCommandsMatching(prefix)
+            val skillList = visibleSkillList(skills(), draft().removePrefix("/"))
+            View {
+                attr {
+                    positionAbsolute()
+                    left(16f)
+                    right(12f)
+                    // 底部对齐「选择文件夹与模式」工具条上方：输入区被 marginBottom(keyboardHeight) 顶起，
+                    // 故组件底需叠加键盘高度并上移到真实输入卡顶(~120)之上留间隙，避免与输入框重合
+                    bottom(keyboardHeight() + 130f)
+                    height(336f)
+                    flexDirectionColumn()
+                    backgroundColor(Color(0xFFFFFFFF))
+                    borderRadius(14f)
+                    boxShadow(BoxShadow(0f, 4f, 12f, Color(0x1A000000)))
+                    zIndex(12)
+                }
+                Scroller {
+                    attr {
+                        flex(1f)
+                        flexDirectionColumn()
+                    }
+                    // 「命令」分组标题：只有命中命令时显示
+                vif({ commandList.isNotEmpty() }) {
+                    View {
+                        attr {
+                            paddingLeft(16f)
+                            paddingTop(10f)
+                            paddingBottom(6f)
+                            flexDirectionColumn()
+                        }
+                        Text {
+                            attr {
+                                text("命令")
+                                fontSize(12f)
+                                color(Color(0xFF9AA3AB))
+                            }
+                        }
+                    }
+                }
+                vfor({ ObservableList<DshCommand>().apply { addAll(commandList) } }) { command ->
                     View {
                         attr {
                             height(40f)
                             flexDirectionRow()
                             alignItemsCenter()
+                            paddingLeft(16f)
+                            paddingRight(12f)
                         }
-                        // 模型选择 chip：显示当前模型名，点击弹出模型列表
-                        View {
+                        event { click { onPickCommand(command) } }
+                        Text {
                             attr {
-                                height(32f)
-                                paddingLeft(10f)
-                                paddingRight(8f)
-                                flexDirectionRow()
-                                alignItemsCenter()
-                                borderRadius(16f)
-                                backgroundColor(Color(0xFFF1F3F5))
+                                text("/${command.name}")
+                                maxWidth(110f)
+                                marginRight(10f)
+                                lines(1)
+                                fontSize(14f)
+                                fontWeightMedium()
+                                color(Color(0xFF28323C))
                             }
-                            Text {
-                                attr {
-                                    text(modelLabel())
-                                    flex(1f)
-                                    lines(1)
-                                    fontSize(13f)
-                                    color(Color(0xFF31363B))
-                                }
-                            }
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("chevron-down.svg"))
-                                    size(16f, 16f)
-                                }
-                            }
-                            DshHitButton(onOpenModels)
                         }
-                        // 附件按钮：加号，点击展开图片/文件选择菜单
-                        View { attr { flex(1f) } }
-                        View {
-                            attr { size(34f, 34f); allCenter() }
-                            Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f) } }
-                            DshHitButton { onToggleAttachments() }
-                        }
-                        // 语音/发送/停止按钮：停止时红色方块，有文字时发送，否则按住说话
-                        View {
+                        Text {
                             attr {
-                                size(40f, 40f)
-                                marginLeft(6f)
-                                borderRadius(20f)
-                                allCenter()
-                                backgroundColor(Color(
-                                    when {
-                                        stopButtonVisible() -> 0xFFE05252
-                                        voiceActive() -> 0xFF679EFE
-                                        else -> 0xFF4176E6
-                                    },
-                                ))
-                            }
-                            vif({ stopButtonVisible() }) {
-                                Image { attr { src(ImageUri.commonAssets("square.svg")); size(21f, 21f) } }
-                            }
-                            velse {
-                                Image {
-                                    attr {
-                                        src(ImageUri.commonAssets(if (draft().isEmpty()) "mic.svg" else "send.svg"))
-                                        size(21f, 21f)
-                                    }
-                                }
-                            }
-                            DshHitButton {
-                                when {
-                                    stopButtonVisible() -> onStop()
-                                    draft().isNotEmpty() -> onSend()
-                                    else -> onToggleVoice()
-                                }
+                                text(command.description)
+                                flex(1f)
+                                lines(1)
+                                fontSize(13f)
+                                color(Color(0xFF727D84))
                             }
                         }
-                    }
-
-                    // 附件菜单：点击附件按钮展开（图片/文件两个选项）
-                    vif({ attachmentMenuVisible() }) {
-                        View {
-                            attr {
-                                height(82f)
-                                marginBottom(8f)
-                                flexDirectionColumn()
-                                padding(8f)
-                                borderRadius(10f)
-                                backgroundColor(Color(0xFFF5F6F7))
-                            }
-                            // 附件菜单 - 图片选项行
-                            View {
-                                attr {
-                                    height(32f)
-                                    flexDirectionRow()
-                                    alignItemsCenter()
-                                    paddingLeft(8f)
-                                }
-                                Text { attr { text("图片"); fontSize(14f); color(Color(0xFF3B4147)) } }
-                                View { attr { flex(1f) } }
-                                Text { attr { text("PNG / JPG / WebP / GIF"); fontSize(11f); color(Color(0xFF9098A0)) } }
-                            }
-                            // 附件菜单 - 文件选项行
-                            View {
-                                attr {
-                                    height(32f)
-                                    flexDirectionRow()
-                                    alignItemsCenter()
-                                    paddingLeft(8f)
-                                }
-                                Text { attr { text("文件"); fontSize(14f); color(Color(0xFF3B4147)) } }
-                                View { attr { flex(1f) } }
-                                Text { attr { text("选择本地文件"); fontSize(11f); color(Color(0xFF9098A0)) } }
-                            }
-                        }
-                    }
-
-                    // 底部工具行：文件夹（沟通文件系统）
-                    View {
-                        attr {
-                            height(38f)
-                            marginTop(4f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                        }
-                        // 文件夹 chip：显示当前工作目录，点击打开文件系统浏览器
-                        View {
-                            attr {
-                                height(30f)
-                                paddingLeft(10f)
-                                paddingRight(8f)
-                                flexDirectionRow()
-                                alignItemsCenter()
-                                borderRadius(15f)
-                                backgroundColor(Color(0xFFF3F5F7))
-                            }
-                            Text {
-                                attr {
-                                    text(folderLabel())
-                                    flex(1f)
-                                    lines(1)
-                                    fontSize(12f)
-                                    color(Color(0xFF4F565C))
-                                }
-                            }
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("chevron-down.svg"))
-                                    size(14f, 14f)
-                                }
-                            }
-                            DshHitButton(onOpenFolderBrowser)
-                        }
-                        View { attr { flex(1f) } }
                     }
                 }
-
-
+                // 「技能」分组标题：只有命中技能时显示
+                vif({ skillList.isNotEmpty() }) {
+                    View {
+                        attr {
+                            paddingLeft(16f)
+                            paddingTop(8f)
+                            paddingBottom(6f)
+                            flexDirectionColumn()
+                        }
+                        Text {
+                            attr {
+                                text("技能")
+                                fontSize(12f)
+                                color(Color(0xFF9AA3AB))
+                            }
+                        }
+                    }
+                }
+                vfor({ skillList }) { skill ->
+                    View {
+                        attr {
+                            height(40f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingLeft(16f)
+                            paddingRight(12f)
+                        }
+                        event { click { onPickSkill(skill.name) } }
+                        Text {
+                            attr {
+                                text("/${skill.name}")
+                                maxWidth(110f)
+                                marginRight(10f)
+                                lines(1)
+                                fontSize(14f)
+                                fontWeightMedium()
+                                color(Color(0xFF28323C))
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(if (skill.modelInvocable) skill.description else "用户专用 · ${skill.description}")
+                                flex(1f)
+                                lines(1)
+                                fontSize(13f)
+                                color(Color(0xFF727D84))
+                            }
+                        }
+                    }
+                }
+            }
+            }
         }
+        // 连接状态胶囊：浮在输入卡上方，仅非已连接时显示，不参与流式布局
+        DshConnectionStatusCapsule(
+                    visible = { connectionCapsuleVisible() },
+                    connectionLabel = connectionLabel,
+                    isBlankConversation = isBlankConversation,
+                    fadeOut = { connectionCapsuleFadeOut() },
+                    fadeOutAnimation = { connectionCapsuleFadeOutAnimation() },
+                )
+
+        // 「+」命令半屏面板：三个附件方块 + 原版命令列表，点击命令写入输入框
+        DshCommandSheet(
+            visible = commandSheetVisible,
+            onClose = onToggleCommandSheet,
+            onPickCommand = onPickCommand,
+            onPickTile = onAttachmentTile,
+        )
+
     }
 }
 
@@ -692,12 +924,17 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     isJsonNodeExpanded: (String) -> Boolean = { false },
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
+    onCopyMessageContent: (DshMessage) -> Unit = {},
+    onLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
+    onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
+    isTurnTail: () -> Boolean = { true },
     attachmentDataUrl: (String) -> String? = { null },
     contentProvider: (() -> String)? = null,
 ) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
+    DshStreamLog.i("row role=${message.role} id=${message.id} contentChars=${message.content.length}")
     val renderedContent = contentProvider?.invoke() ?: message.content
     if (
         message.role == DshMessageRole.ASSISTANT &&
@@ -802,6 +1039,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     bodyExpanded = isBodyExpanded()
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
+                    plainBody = true
                 }
             }
         }
@@ -828,7 +1066,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     bodyExpanded = isBodyExpanded()
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
-                    chrome = true
                     running = message.toolRunning
                 }
             }
@@ -863,7 +1100,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         val summary = remoteTool?.summary?.takeUnless { it.dshLooksLikeJson() }
             ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "已完成" else
                 toolBody.lineSequence().firstOrNull().orEmpty().takeUnless { it.dshLooksLikeJson() }.orEmpty()
-        // 工具调用卡片：Bash/Read/Search 等，JSON 结果可折叠展开
+        // 工具调用行：Bash/Read 等，JSON 结果可折叠展开
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
@@ -885,7 +1122,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     maxBodyLines = 8
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
-                    chrome = true
                     running = message.toolRunning
                 }
             }
@@ -898,7 +1134,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 flexDirectionColumn()
                 alignItems(if (isUser) FlexAlign.FLEX_END else FlexAlign.FLEX_START)
                 marginBottom(18f)
-        }
+            }
         // 消息角色标签：你 / DeepSeek / 工具 / 错误
         Text {
             attr {
@@ -913,7 +1149,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 marginBottom(5f)
             }
         }
-        // 消息内容容器：用户/错误为气泡底色，助手为纯文本
+        // 消息内容容器：用户/错误为气泡底色，助手为纯文本。长按助手内容弹操作菜单。
         View {
             attr {
                 if (!isUser && !isError) {
@@ -929,6 +1165,17 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         else -> 0x00FFFFFF
                     },
                 ))
+            }
+            event {
+                if (!isUser && !isError) {
+                    longPress {
+                        DshStreamLog.i("longpress fired role=${message.role} id=${message.id}")
+                        onLongPress(message, renderedContent, it.pageX, it.pageY)
+                    }
+                }
+                register("touchDown", {
+                    DshStreamLog.i("touchdown on msg role=${message.role} id=${message.id}")
+                })
             }
             if (isUser || isError) {
                 Text {
@@ -968,6 +1215,59 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         }
                     }
                 }
+            }
+        }
+        // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
+        // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
+        if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
+            DshMessageFooter { action ->
+                // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
+                if (action == DshMessageFooterAction.COPY) {
+                    onCopyMessageContent(message)
+                } else {
+                    onFooterAction(message, action)
+                }
+            }
+        }
+    }
+}
+
+// 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
+internal fun ViewContainer<*, *>.DshMessageFooter(
+    onAction: (DshMessageFooterAction) -> Unit,
+) {
+    View {
+        attr {
+            width(128f)
+            height(24f)
+            marginTop(2f)
+            flexDirectionRow()
+            alignItemsCenter()
+        }
+        DshFooterActionIcon("copy.svg", DshMessageFooterAction.COPY, onAction)
+        DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction)
+        DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction)
+        DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction)
+    }
+}
+
+// 单个操作图标按钮：32x24 紧凑热区，16px 图标居中
+internal fun ViewContainer<*, *>.DshFooterActionIcon(
+    asset: String,
+    action: DshMessageFooterAction,
+    onAction: (DshMessageFooterAction) -> Unit,
+) {
+    View {
+        attr {
+            width(32f)
+            height(24f)
+            allCenter()
+        }
+        event { click { onAction(action) } }
+        Image {
+            attr {
+                src(ImageUri.commonAssets(asset))
+                size(16f, 16f)
             }
         }
     }

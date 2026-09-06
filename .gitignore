@@ -38,3 +38,22 @@ Kotlin-js-store
 *.xcscmblueprint
 *.xcbkptlist
 *.pyc
+## Agent skills (tool-generated, not part of product code)
+.agents/
+.claude/
+agent/skills/
+skills-lock.json
+
+## Local test artifacts (screenshots, build logs, ad-hoc captures)
+*.log
+/*.png
+/*.apk
+
+# === agent scratch / verification artifacts ===
+ui*.xml
+dsh-pull*.db
+dsh-pull*.db-wal
+inspect_*.py
+read_sessions.py
+session-list-*.json
+verify-*.png
