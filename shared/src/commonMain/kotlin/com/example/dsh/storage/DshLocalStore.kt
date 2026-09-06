@@ -29,6 +29,13 @@ internal interface DshLocalStore {
     fun replaceMessages(scopeId: String, sessionId: String, messages: List<DshMessage>)
 
     fun clearScope(scopeId: String)
+
+    /**
+     * 永久删除一个会话及其所有消息。
+     * 与 archive 不同，此操作不可恢复。
+     * 如果 sessionId 不存在，静默成功（幂等）。
+     */
+    fun deleteSession(scopeId: String, sessionId: String)
 }
 
 internal expect fun createDshLocalStore(

@@ -959,6 +959,8 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
 
 internal fun ViewContainer<*, *>.DshTopBar(
     title: () -> String,
+    onOpenDrawer: () -> Unit,
+    onOpenOverflow: () -> Unit,
 ) {
     View {
         attr {
@@ -970,7 +972,7 @@ internal fun ViewContainer<*, *>.DshTopBar(
             backgroundColor(Color.WHITE)
             borderBottom(Border(1f, BorderStyle.SOLID, Color(0xFFEBEEF2)))
         }
-//        菜单图标
+//        左侧菜单图标：点击打开会话抽屉
         View {
             attr { size(38f, 38f); allCenter() }
             Image {
@@ -979,8 +981,9 @@ internal fun ViewContainer<*, *>.DshTopBar(
                     size(26f, 26f)
                 }
             }
+            DshHitButton(onOpenDrawer)
         }
-//        会话标题
+//        会话标题：点击也打开会话抽屉
         Text {
             attr {
                 text(title())
@@ -991,6 +994,18 @@ internal fun ViewContainer<*, *>.DshTopBar(
                 color(Color(0xFF0F1115))
                 lines(1)
             }
+            event { click { onOpenDrawer() } }
+        }
+//        右上角 overflow menu：日志/重命名/归档/删除
+        View {
+            attr { size(38f, 38f); allCenter() }
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("more.svg"))
+                    size(22f, 22f)
+                }
+            }
+            DshHitButton(onOpenOverflow)
         }
     }
 }

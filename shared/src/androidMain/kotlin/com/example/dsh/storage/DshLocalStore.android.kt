@@ -96,8 +96,8 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
     }
 
     override fun loadSessions(scopeId: String): List<DshSession> = query(
-        "SELECT id, title, workspace, updated_label, running FROM dsh_sessions WHERE scope_id = ? ORDER BY updated_at DESC", listOf(scopeId),
-    ) { s -> DshSession(s.getColumnString(0), s.getColumnString(1), s.getColumnString(2), s.getColumnString(3), s.getColumnLong(4) != 0L) }
+        "SELECT id, title, workspace, updated_label, running, updated_at FROM dsh_sessions WHERE scope_id = ? ORDER BY updated_at DESC", listOf(scopeId),
+    ) { s -> DshSession(s.getColumnString(0), s.getColumnString(1), s.getColumnString(2), s.getColumnString(3), updatedAt = s.getColumnLong(5), running = s.getColumnLong(4) != 0L) }
 
     override fun replaceSessions(scopeId: String, sessions: List<DshSession>) {
         val now = System.currentTimeMillis()
@@ -113,7 +113,7 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
             }
             execute("DELETE FROM dsh_sessions WHERE scope_id = ?", listOf(scopeId))
             sessions.forEachIndexed { index, s ->
-                execute("INSERT OR REPLACE INTO dsh_sessions (scope_id, id, title, workspace, updated_label, running, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", listOf(scopeId, s.id, s.title, s.workspace, s.updatedLabel, if (s.running) "1" else "0", (now - index).toString()))
+                execute("INSERT OR REPLACE INTO dsh_sessions (scope_id, id, title, workspace, updated_label, running, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", listOf(scopeId, s.id, s.title, s.workspace, s.updatedLabel, if (s.running) "1" else "0", s.updatedAt.takeIf { it > 0L }?.toString() ?: (now - index).toString()))
             }
         }
     }
@@ -153,6 +153,13 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
         }
     }
 
+    override fun deleteSession(scopeId: String, sessionId: String) {
+        driver.transaction {
+            execute("DELETE FROM dsh_messages WHERE scope_id = ? AND session_id = ?", listOf(scopeId, sessionId))
+            execute("DELETE FROM dsh_sessions WHERE scope_id = ? AND id = ?", listOf(scopeId, sessionId))
+        }
+    }
+
     private fun execute(sql: String, args: List<String?>) {
         val s = driver.prepare(sql)
         try { bind(s, args); s.step() } finally { s.close() }
@@ -169,13 +176,14 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
 }
 
 private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : SqlSchema {
-    override val version: Int = 6
+    override val version: Int = 7
 
     override fun create(driver: SqlDriver) {
         driver.execute("CREATE TABLE IF NOT EXISTS dsh_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         createScopedTables(driver)
         createProfileTable(driver)
         createRelayTable(driver)
+        createLogTable(driver)
         writeLegacyProfile(driver)
     }
 
@@ -191,6 +199,7 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
         }
         if (oldVersion < 5) migrateToV5(driver)
         if (oldVersion < 6) migrateToV6(driver)
+        if (oldVersion < 7) createLogTable(driver)
     }
 
     private fun migrateToV6(driver: SqlDriver) {
@@ -255,5 +264,11 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
 
     private fun createRelayTable(driver: SqlDriver) {
         driver.execute("CREATE TABLE IF NOT EXISTS dsh_relay_profiles (host_id TEXT PRIMARY KEY, host_name TEXT NOT NULL, relay_origin TEXT NOT NULL, paired_at INTEGER NOT NULL)")
+    }
+
+    private fun createLogTable(driver: SqlDriver) {
+        driver.execute("CREATE TABLE IF NOT EXISTS dsh_log_events (seq INTEGER PRIMARY KEY, time INTEGER NOT NULL, level INTEGER NOT NULL, type TEXT NOT NULL, session_id TEXT, rpc_id TEXT, message TEXT NOT NULL, size INTEGER NOT NULL)")
+        driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_log_time ON dsh_log_events(time)")
+        driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_log_type ON dsh_log_events(type)")
     }
 }
