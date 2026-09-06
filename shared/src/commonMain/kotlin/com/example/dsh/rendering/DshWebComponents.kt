@@ -1177,8 +1177,8 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         borderRadius(20f)
                         backgroundColor(Color.WHITE)
                         boxShadow(BoxShadow(0f, 8f, 30f, Color(0x26000000)))
-                        // 长列表场景：卡片固定高度，选项区 flex(1f) 占满剩余空间并滚动，底部工具栏固定可见
-                        height(560f)
+                        // 卡片设最大高度上限；选项少时内容自然撑开无空白，选项多时由 Scroller 固定高度滚动
+                        maxHeight(560f)
                     }
                     // ===== 标题栏：左侧标签+标题，右侧收起+关闭 =====
                     View {
@@ -1268,9 +1268,8 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 }
                             }
                         }
-                        // 选项列表：编号 + 标题 + 描述（长列表时在 Scroller 内滚动，底部工具栏固定）
-                        Scroller {
-                        attr { flex(1f) }
+                        // 选项列表：≤4个直接渲染（卡片自然撑开无空白），>4个用 Scroller 固定高度滚动
+                        vif({ ctx.attr.options.size <= 4 }) {
                         vfor({ ctx.attr.options }) { option ->
                             val selected = ctx.attr.selected.contains(option.label)
                             val optionIndex = ctx.attr.options.indexOf(option) + 1
@@ -1336,6 +1335,77 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 }
                                 DshTapTarget { ctx.attr.onToggleOption(option.label) }
                             }
+                        }
+                        }
+                        vif({ ctx.attr.options.size > 4 }) {
+                        Scroller {
+                        attr { height(320f) }
+                        vfor({ ctx.attr.options }) { option ->
+                            val selected = ctx.attr.selected.contains(option.label)
+                            val optionIndex = ctx.attr.options.indexOf(option) + 1
+                            View {
+                                attr {
+                                    marginTop(10f)
+                                    flexDirectionRow()
+                                    alignItemsFlexStart()
+                                    padding(12f, 14f, 12f, 14f)
+                                    borderRadius(12f)
+                                    backgroundColor(Color(if (selected) 0xFFEFF5FF else 0xFFF7F9FB))
+                                    border(Border(
+                                        1f,
+                                        BorderStyle.SOLID,
+                                        Color(if (selected) 0xFFB7D0F5 else 0xFFE8EDF2),
+                                    ))
+                                }
+                                // 编号方块
+                                View {
+                                    attr {
+                                        size(22f, 22f)
+                                        marginTop(1f)
+                                        borderRadius(6f)
+                                        backgroundColor(Color(if (selected) 0xFF4176E6 else 0xFFEEF1F5))
+                                        justifyContentCenter()
+                                        alignItemsCenter()
+                                    }
+                                    Text {
+                                        attr {
+                                            text("$optionIndex")
+                                            fontSize(12f)
+                                            fontWeightMedium()
+                                            color(Color(if (selected) 0xFFFFFFFF else 0xFF7A8494))
+                                        }
+                                    }
+                                }
+                                // 标题 + 描述
+                                View {
+                                    attr {
+                                        flex(1f)
+                                        marginLeft(10f)
+                                        flexDirectionColumn()
+                                    }
+                                    Text {
+                                        attr {
+                                            text(option.label)
+                                            fontSize(14f)
+                                            fontWeightMedium()
+                                            color(Color(0xFF1F2933))
+                                        }
+                                    }
+                                    vif({ option.description.isNotEmpty() }) {
+                                        Text {
+                                            attr {
+                                                text(option.description)
+                                                marginTop(3f)
+                                                fontSize(12f)
+                                                lineHeight(17f)
+                                                color(Color(0xFF6B7785))
+                                            }
+                                        }
+                                    }
+                                }
+                                DshTapTarget { ctx.attr.onToggleOption(option.label) }
+                            }
+                        }
                         }
                         }
                         // 自定义答案输入框：铅笔图标 + 输入框
