@@ -479,6 +479,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 onSkip = onQuestionSkip
                 onSubmit = onSubmitQuestion
                 onDismiss = onDismissQuestion
+                this.onKeyboardHeightChange = onKeyboardHeightChange
             }
         }
         val questionActive = {
@@ -491,6 +492,7 @@ internal fun ViewContainer<*, *>.DshConversation(
         }
         vif({ availableWidth < 720f && questionActive() }) {
             // 全屏覆盖层：点击收起键盘，无背景遮罩色，卡片底部与输入框底部对齐
+            // ADJUST_RESIZE 模式下键盘弹出时窗口自动收缩，覆盖层底部自然落在键盘上方
             View {
                 attr {
                     absolutePositionAllZero()
@@ -499,8 +501,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     justifyContentFlexEnd()
                 }
                 event { click { onDismissKeyboard() } }
-                // 底部间距容器：absolutePositionAllZero 已相对于根容器 padding box（扣除 paddingBottom 20f），
-                // 覆盖层底部即输入框底部位置，此处不再额外加 marginBottom，避免双重间距把卡片推高
+                // 底部间距容器：卡片左右边距
                 View {
                     attr {
                         marginLeft(12f)

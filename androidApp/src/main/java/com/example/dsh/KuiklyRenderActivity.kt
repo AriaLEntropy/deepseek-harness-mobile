@@ -58,7 +58,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         kuiklyRenderViewDelegator.onAttach(hrContainerView, "", pageName, createPageData())
     }
 
-    override fun softInputMode(): Int? = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+    override fun softInputMode(): Int? = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
 
     override fun onDestroy() {
         super.onDestroy()

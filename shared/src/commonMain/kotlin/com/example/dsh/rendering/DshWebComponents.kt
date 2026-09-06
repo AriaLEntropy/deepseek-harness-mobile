@@ -1440,7 +1440,10 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     text(ctx.attr.custom)
                                     backgroundColor(Color(0x00000000))
                                 }
-                                event { textDidChange { ctx.attr.onCustomChange(it.text) } }
+                                event {
+                                    textDidChange { ctx.attr.onCustomChange(it.text) }
+                                    keyboardHeightChange { ctx.attr.onKeyboardHeightChange(it) }
+                                }
                             }
                         }
                         // 错误提示
@@ -1591,6 +1594,7 @@ internal class DshQuestionFlowAttr : ComposeAttr() {
     var onSkip: () -> Unit by observable({})
     var onSubmit: () -> Unit by observable({})
     var onDismiss: () -> Unit by observable({})
+    var onKeyboardHeightChange: (com.tencent.kuikly.core.views.KeyboardParams) -> Unit by observable({})
 }
 
 internal fun ViewContainer<*, *>.DshQuestionFlow(init: DshQuestionFlowView.() -> Unit) {
