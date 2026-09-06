@@ -172,7 +172,7 @@ internal class DshHostRepository(
                     val projections = item.optJSONObject("projections")?.optJSONObject("values")
                     val title = projections?.optString("title")?.takeIf { it.isNotEmpty() }
                         ?: cwd.substringAfterLast('/').ifEmpty { id }
-                    add(DshSession(id, title, cwd.substringAfterLast('/').ifEmpty { "Host" }, "", running = item.optBoolean("running"), cwd = cwd))
+                    add(DshSession(id, title, cwd.substringAfterLast('/').ifEmpty { "Host" }, "", updatedAt = item.optLong("updatedAt"), running = item.optBoolean("running"), cwd = cwd))
                 }
             }
             onSuccess(sessions)

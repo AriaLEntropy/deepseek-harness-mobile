@@ -680,6 +680,50 @@ internal class DshHostConnectionRuntime(
         onState(DshHostRuntimeState(phase, generation, muxOpen, hostOpen, message))
     }
 
+    /**
+     * 调用 DSH 插件 HTTP 端点。
+     * 插件端点不在标准 RPC 路径 /api/{method} 下，所以不走 call() 方法，
+     * 而是直接发 HTTP POST 到插件注册的端点。
+     */
+    fun callPlugin(
+        endpoint: String,
+        payload: JSONObject,
+        callback: (JSONObject?, DshRpcError?) -> Unit,
+    ) {
+        if (stopped) {
+            callback(null, DshRpcError("connection-expired", "Connection is closed"))
+            return
+        }
+        val myGeneration = generation
+        val url = "${connection.baseUrl.trimEnd('/')}/api/session-manager/$endpoint"
+        val headers = JSONObject().apply {
+            put("Content-Type", "application/json")
+            if (connection.token.isNotEmpty()) put("Authorization", "Bearer ${connection.token}")
+        }
+        network.httpRequest(url, true, payload, headers, null, REQUEST_TIMEOUT_SECONDS) { data, success, errorMsg, _ ->
+            if (stopped || myGeneration != generation) {
+                callback(null, DshRpcError("generation-cancelled", "Connection generation changed"))
+                return@httpRequest
+            }
+            if (!success) {
+                callback(null, DshRpcError("network-error", "Plugin request failed: $errorMsg"))
+                return@httpRequest
+            }
+            try {
+                if (data?.optBoolean("ok", false) == true) {
+                    callback(data, null)
+                } else {
+                    val err = data?.optJSONObject("error")
+                    val code = err?.optString("code", "unknown") ?: "unknown"
+                    val message = err?.optString("message", "Unknown error") ?: "Unknown error"
+                    callback(null, DshRpcError(code, message))
+                }
+            } catch (e: Exception) {
+                callback(null, DshRpcError("parse-error", "Failed to parse plugin response: ${e.message}"))
+            }
+        }
+    }
+
     private companion object {
         const val REQUEST_TIMEOUT_SECONDS = 30
         const val RECONNECT_DELAY_MS = 1_000
@@ -927,6 +971,13 @@ internal class DshRemoteHostRepository(
         }
     }
 
+    /** 会话产生新消息时刷新其 updatedAt（消息时间），供抽屉 workspaceGroups 实时重排。 */
+    fun touchSessionActivity(sessionId: String, updatedAt: Long) {
+        val current = store.sessions[sessionId] ?: return
+        if (current.updatedAt >= updatedAt) return
+        store.sessions[sessionId] = current.copy(updatedAt = updatedAt)
+    }
+
     private fun parseSessions(value: JSONObject): List<DshSession> {
         val items = value.optJSONArray("items") ?: JSONArray()
         return buildList {
@@ -940,6 +991,7 @@ internal class DshRemoteHostRepository(
                     title = projections?.optString("title")?.takeIf { it.isNotEmpty() } ?: "尚无标题",
                     workspace = "Host",
                     updatedLabel = item.optLong("updatedAt").takeIf { it > 0 }?.toString().orEmpty(),
+                    updatedAt = item.optLong("updatedAt"),
                     running = item.optBoolean("running"), blank = item.optBoolean("blank"), cwd = item.optString("cwd"),
                     parentSessionId = item.optString("parentSessionId").takeIf { it.isNotEmpty() },
                     origin = item.optString("origin").takeIf { it.isNotEmpty() },
@@ -1164,7 +1216,7 @@ internal class DshRemoteHostRepository(
                 val sessionId = sessionIds.optString(sessionIndex)
                 sessionId?.takeIf { it.isNotEmpty() }?.let(grouped::add)
                 sessionById[sessionId]
-            }
+            }.sortedByDescending { it.updatedAt }
             DshWorkspaceGroup(
                 workspaceId = workspaceId,
                 title = workspace.optString("title").ifEmpty { workspaceId },
@@ -1172,7 +1224,7 @@ internal class DshRemoteHostRepository(
                 sessions = sessions,
             )
         }
-        val ungrouped = sessionById.values.filterNot { grouped.contains(it.id) }
+        val ungrouped = sessionById.values.filterNot { grouped.contains(it.id) }.sortedByDescending { it.updatedAt }
         return if (ungrouped.isEmpty()) groups else groups + DshWorkspaceGroup(
             workspaceId = "",
             title = "未归类",
@@ -1434,7 +1486,7 @@ internal class DshRemoteHostRepository(
             }
         }
         activeStreams[call.rpcId] = ActiveStream(sessionId, call.rpcId, onDelta, onComplete, onError)
-        DshStreamLog.i("prompt.start session=$sessionId rpcId=${call.rpcId} promptChars=${prompt.length} prompt='${DshStreamLog.preview(prompt)}'")
+        DshStreamLog.log(LogLevel.INFO, "prompt.start", "prompt.start session=$sessionId rpcId=${call.rpcId} promptChars=${prompt.length}", sessionId, call.rpcId)
         return object : DshStreamHandle {
             private var cancelled = false
             override fun cancel() {
@@ -1484,23 +1536,17 @@ internal class DshRemoteHostRepository(
     private fun handleFrame(frame: DshDownlinkFrame) {
         val envelope = runCatching { JSONObject(frame.raw) }.getOrNull()
         if (envelope == null) {
-            DshStreamLog.i(
-                "host.frame stream=${frame.stream.name.lowercase()} parse-error chars=${frame.raw.length} raw='${DshStreamLog.preview(frame.raw, 240)}'",
-            )
+            DshStreamLog.log(LogLevel.WARN, "host.frame.parse-error", "host.frame stream=${frame.stream.name.lowercase()} parse-error chars=${frame.raw.length}", null, null)
             return
         }
         val payload = envelope.optJSONObject("payload")
         if (payload == null) {
-            DshStreamLog.i(
-                "host.frame stream=${frame.stream.name.lowercase()} no-payload envelopeType=${envelope.optString("type")} raw='${DshStreamLog.preview(frame.raw, 240)}'",
-            )
+            DshStreamLog.log(LogLevel.INFO, "host.frame.no-payload", "host.frame stream=${frame.stream.name.lowercase()} no-payload envelopeType=${envelope.optString("type")} chars=${frame.raw.length}", null, null)
             return
         }
         val frameType = payload.optString("type")
         val inboundEvent = payload.optJSONObject("event")
-        DshStreamLog.i(
-            "host.frame stream=${frame.stream.name.lowercase()} type=$frameType session=${payload.optString("sessionId")} event=${inboundEvent?.optString("type").orEmpty()} seq=${inboundEvent?.optInt("seq", -1) ?: -1} chars=${frame.raw.length} payload='${DshStreamLog.preview(payload.toString(), 400)}'",
-        )
+        DshStreamLog.log(LogLevel.INFO, "host.frame", "host.frame stream=${frame.stream.name.lowercase()} type=$frameType session=${payload.optString("sessionId")} event=${inboundEvent?.optString("type").orEmpty()} seq=${inboundEvent?.optInt("seq", -1) ?: -1} chars=${frame.raw.length}", payload.optString("sessionId").takeIf { it.isNotEmpty() }, null)
         if (frame.stream == DshEventStream.HOST) {
             handleHostFrame(payload)
             return
@@ -1585,9 +1631,7 @@ internal class DshRemoteHostRepository(
                 val chunk = data.optJSONObject("chunk") ?: return
                 val chunkType = chunk.optString("type")
                 val text = chunk.optString("text").ifEmpty { chunk.optString("delta") }
-                DshStreamLog.i(
-                    "mux.chunk session=$sessionId rpcId=${active.promptRpcId} type=$chunkType deltaChars=${text.length} delta='${DshStreamLog.preview(text)}' acc=${active.accumulated.length}",
-                )
+                DshStreamLog.log(LogLevel.INFO, "mux.chunk", "mux.chunk session=$sessionId rpcId=${active.promptRpcId} type=$chunkType deltaChars=${text.length} acc=${active.accumulated.length}", sessionId, active.promptRpcId)
                 when (chunkType) {
                     "text-delta", "text_delta", "text" -> text.takeIf { it.isNotEmpty() }?.let {
                         active.observed = true
@@ -1650,6 +1694,7 @@ internal class DshRemoteHostRepository(
                     title = "尚无标题",
                     workspace = "Host",
                     updatedLabel = "",
+                    updatedAt = payload.optLong("updatedAt"),
                     blank = true,
                     cwd = payload.optString("cwd"),
                     parentSessionId = payload.optString("parentSessionId").takeIf { it.isNotEmpty() },
@@ -1845,6 +1890,15 @@ internal class DshRemoteHostRepository(
             }
         }
     }
+
+    /**
+     * 调用 DSH 插件 HTTP 端点，转发到当前连接 runtime。
+     */
+    fun callPlugin(
+        endpoint: String,
+        payload: JSONObject,
+        callback: (JSONObject?, DshRpcError?) -> Unit,
+    ) = runtime.callPlugin(endpoint, payload, callback)
 
     private companion object {
         const val DEEPSEEK_PROVIDER = "deepseek-official"

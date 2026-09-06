@@ -48,3 +48,12 @@ skills-lock.json
 *.log
 /*.png
 /*.apk
+
+# === agent scratch / verification artifacts ===
+ui*.xml
+dsh-pull*.db
+dsh-pull*.db-wal
+inspect_*.py
+read_sessions.py
+session-list-*.json
+verify-*.png

@@ -66,6 +66,9 @@ internal class DshRemoteRepository(
 
     fun clearPending(rpcId: String) = delegate.clearPending(rpcId)
 
+    /** 会话产生新消息时刷新其 updatedAt（消息时间），供抽屉 workspaceGroups 实时重排。 */
+    fun touchSessionActivity(sessionId: String, updatedAt: Long) = delegate.touchSessionActivity(sessionId, updatedAt)
+
     fun loadWebTimeline(
         sessionId: String,
         onSuccess: (List<DshWebTimelineItem>) -> Unit,
@@ -217,4 +220,14 @@ internal class DshRemoteRepository(
         onComplete: (String) -> Unit,
         onError: (String) -> Unit,
     ): DshStreamHandle = delegate.streamReply(pagerId, sessionId, prompt, onDelta, onComplete, onError)
+
+    /**
+     * 调用 DSH 插件 HTTP 端点。
+     * 插件端点不在标准 RPC 路径下，通过 HTTP POST 直接调用。
+     */
+    fun callPlugin(
+        endpoint: String,
+        payload: JSONObject,
+        callback: (JSONObject?, DshRpcError?) -> Unit,
+    ) = delegate.callPlugin(endpoint, payload, callback)
 }

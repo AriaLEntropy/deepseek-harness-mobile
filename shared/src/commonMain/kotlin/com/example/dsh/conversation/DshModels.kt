@@ -261,6 +261,8 @@ internal data class DshSession(
     val title: String,
     val workspace: String,
     val updatedLabel: String,
+    /** Host 会话项的 updatedAt（毫秒时间戳），用于按消息时间排序会话列表。 */
+    val updatedAt: Long = 0L,
     val running: Boolean = false,
     val blank: Boolean = false,
     val cwd: String = "",
