@@ -224,12 +224,14 @@ internal fun ViewContainer<*, *>.DshConversation(
     questionCustom: () -> String,
     questionIndex: () -> Int,
     questionError: () -> String,
+    questionHasSelection: () -> Boolean,
     onAnswerApproval: (String) -> Unit,
     onToggleQuestionOption: (String) -> Unit,
     onQuestionCustomChange: (String) -> Unit,
     onQuestionNavigate: (Int) -> Unit,
     onQuestionSkip: () -> Unit,
     onSubmitQuestion: () -> Unit,
+    onDismissQuestion: () -> Unit,
     availableWidth: Float,
     connectionLabel: () -> String,
     connectionCapsuleVisible: () -> Boolean,
@@ -340,10 +342,19 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             },
                                             onFooterAction = { msg, action -> onFooterAction(msg, action) },
                                             // footer 只渲染"当前回合（最近一条 user 之后）最后一段
-                                            // 已结算 assistant"，中间的过渡文本/分段不会重复渲染
+                                            // 已结算 assistant"，中间的过渡文本/分段不会重复渲染。
+                                            // 有待处理的提问/授权交互时整个 turn 尚未结束（与 DSH 原版一致），
+                                            // 提问之间的中间输出段不显示 footer，避免每段都重复渲染操作栏
                                             isTurnTail = {
-                                                val tailId = dshTurnTailAssistant(messagesForSession(sessionId))?.id
-                                                tailId != null && tailId == message.id
+                                                val hasInteraction =
+                                                    pendingQuestion()?.sessionId == sessionId ||
+                                                        pendingApproval()?.sessionId == sessionId
+                                                if (hasInteraction) {
+                                                    false
+                                                } else {
+                                                    val tailId = dshTurnTailAssistant(messagesForSession(sessionId))?.id
+                                                    tailId != null && tailId == message.id
+                                                }
                                             },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {
@@ -458,6 +469,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 this.options = options
                 selected = selectedQuestionOptions()
                 custom = questionCustom()
+                hasSelection = questionHasSelection()
                 index = questionIndex()
                 error = questionError()
                 busy = interactionBusy()
@@ -466,6 +478,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 onNavigate = onQuestionNavigate
                 onSkip = onQuestionSkip
                 onSubmit = onSubmitQuestion
+                onDismiss = onDismissQuestion
             }
         }
         val questionActive = {
@@ -477,7 +490,7 @@ internal fun ViewContainer<*, *>.DshConversation(
             DshQuestionFlow(questionInit)
         }
         vif({ availableWidth < 720f && questionActive() }) {
-            // 全屏轻遮罩层：点击只收起键盘不穿透，背景隐约可见
+            // 全屏覆盖层：点击收起键盘，无背景遮罩色，卡片底部与输入框底部对齐
             View {
                 attr {
                     absolutePositionAllZero()
@@ -486,22 +499,13 @@ internal fun ViewContainer<*, *>.DshConversation(
                     justifyContentFlexEnd()
                 }
                 event { click { onDismissKeyboard() } }
-                // 半透明暗化遮罩
+                // 底部间距容器：absolutePositionAllZero 已相对于根容器 padding box（扣除 paddingBottom 20f），
+                // 覆盖层底部即输入框底部位置，此处不再额外加 marginBottom，避免双重间距把卡片推高
                 View {
                     attr {
-                        absolutePositionAllZero()
-                        backgroundColor(Color(0x26000000))
-                    }
-                }
-                // 底部浮动卡片：覆盖输入框区域，圆角 + 弥散阴影，与消息操作菜单视觉一致
-                View {
-                    attr {
-                        width((availableWidth - 24f).coerceAtLeast(0f))
+                        marginLeft(12f)
+                        marginRight(12f)
                         marginTop(12f)
-                        marginBottom(14f)
-                        borderRadius(20f)
-                        backgroundColor(Color.WHITE)
-                        boxShadow(BoxShadow(0f, 8f, 26f, Color(0x33000000)))
                     }
                     DshQuestionFlow(questionInit)
                 }
@@ -589,6 +593,8 @@ internal fun ViewContainer<*, *>.DshConversation(
 
                 // 输入卡：DSH Web 风格，细描边 + 弥散阴影，10px 顶部内边距。
                 // 左右对称 margin 出 clearance（各 12px），宽度扣减 24 避免右侧溢出截断。
+                // 弹出提问流程面板时隐藏输入框（与 DSH 原版一致），由浮动卡片接管底部交互区
+                vif({ !questionActive() }) {
                 View {
                     attr {
                         width((availableWidth - 24f).coerceAtLeast(0f))
@@ -750,6 +756,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
 
+                }
                 }
 
         }
@@ -927,7 +934,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
-    DshStreamLog.i("row role=${message.role} id=${message.id} content='${DshStreamLog.preview(message.content, 40)}'")
+    DshStreamLog.i("row role=${message.role} id=${message.id} contentChars=${message.content.length}")
     val renderedContent = contentProvider?.invoke() ?: message.content
     if (
         message.role == DshMessageRole.ASSISTANT &&
