@@ -1177,8 +1177,8 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         borderRadius(20f)
                         backgroundColor(Color.WHITE)
                         boxShadow(BoxShadow(0f, 8f, 30f, Color(0x26000000)))
-                        // 长列表场景：固定卡片最大高度，选项区超出时内部滚动，底部工具栏不被挤出屏幕
-                        maxHeight(580f)
+                        // 长列表场景：卡片固定高度，选项区 flex(1f) 占满剩余空间并滚动，底部工具栏固定可见
+                        height(560f)
                     }
                     // ===== 标题栏：左侧标签+标题，右侧收起+关闭 =====
                     View {
@@ -1270,7 +1270,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         }
                         // 选项列表：编号 + 标题 + 描述（长列表时在 Scroller 内滚动，底部工具栏固定）
                         Scroller {
-                        attr { height(320f) }
+                        attr { flex(1f) }
                         vfor({ ctx.attr.options }) { option ->
                             val selected = ctx.attr.selected.contains(option.label)
                             val optionIndex = ctx.attr.options.indexOf(option) + 1
