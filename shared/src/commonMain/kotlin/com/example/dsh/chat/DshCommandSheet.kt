@@ -36,6 +36,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
     onClose: () -> Unit,
     onPickCommand: (DshCommand) -> Unit,
     onPickTile: (DshCommandSheetTile) -> Unit = {},
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         val pageData = getPager().pageData
@@ -53,7 +54,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                     bottom(0f)
                     flexDirectionColumn()
                     borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
-                    backgroundColor(Color.WHITE)
+                    backgroundColor(colors().bgLayer1)
                 }
                 // 头部：标题居中，右上角关闭
                 View {
@@ -69,7 +70,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                             lines(1)
                             fontSize(17f)
                             fontWeightBold()
-                            color(Color(0xFF000000))
+                            color(colors().labelPrimary)
                         }
                     }
                     View {
@@ -86,11 +87,11 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                         paddingRight(20f)
                         marginTop(4f)
                     }
-                    DshCommandSheetTileRow(DshCommandSheetTile.CAMERA) { onPickTile(it) }
+                    DshCommandSheetTileRow(DshCommandSheetTile.CAMERA, onClick = { onPickTile(it) }, colors = colors)
                     View { attr { width(12f) } }
-                    DshCommandSheetTileRow(DshCommandSheetTile.GALLERY) { onPickTile(it) }
+                    DshCommandSheetTileRow(DshCommandSheetTile.GALLERY, onClick = { onPickTile(it) }, colors = colors)
                     View { attr { width(12f) } }
-                    DshCommandSheetTileRow(DshCommandSheetTile.FILE) { onPickTile(it) }
+                    DshCommandSheetTileRow(DshCommandSheetTile.FILE, onClick = { onPickTile(it) }, colors = colors)
                 }
                 // 命令列表：左命令名 + 右描述，点击写入输入框
                 View {
@@ -115,7 +116,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                                     width(110f)
                                     fontSize(15f)
                                     fontWeightMedium()
-                                    color(Color(0xFF1F2933))
+                                    color(colors().labelPrimary)
                                 }
                             }
                             Text {
@@ -124,7 +125,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                                     flex(1f)
                                     lines(1)
                                     fontSize(12f)
-                                    color(Color(0xFF9098A0))
+                                    color(colors().labelTertiary)
                                 }
                             }
                             DshHitButton { onPickCommand(command) }
@@ -136,7 +137,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                                         right(20f)
                                         bottom(0f)
                                         height(0.5f)
-                                        backgroundColor(Color(0x14000000))
+                                        backgroundColor(colors().borderL2)
                                     }
                                 }
                             }
@@ -152,6 +153,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
 internal fun ViewContainer<*, *>.DshCommandSheetTileRow(
     tile: DshCommandSheetTile,
     onClick: (DshCommandSheetTile) -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     View {
         attr {
@@ -161,7 +163,7 @@ internal fun ViewContainer<*, *>.DshCommandSheetTileRow(
             paddingTop(16f)
             paddingBottom(16f)
             borderRadius(14f)
-            backgroundColor(Color(0xFFF5F6F7))
+            backgroundColor(colors().specificSelector)
         }
         Image {
             attr {
@@ -174,7 +176,7 @@ internal fun ViewContainer<*, *>.DshCommandSheetTileRow(
                 text(tile.label)
                 marginTop(8f)
                 fontSize(13f)
-                color(Color(0xFF3B4147))
+                color(colors().labelSecondary)
             }
         }
         DshHitButton { onClick(tile) }

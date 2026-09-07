@@ -1,4 +1,4 @@
-﻿package com.example.dsh.home
+package com.example.dsh.home
 
 import com.example.dsh.base.*
 import com.example.dsh.chat.*
@@ -17,8 +17,7 @@ import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.scrollToPosition
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.log.KLog
-import com.tencent.kuikly.core.reactive.handler.observable
-import com.tencent.kuikly.core.reactive.handler.observableList
+import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.InputView
@@ -27,6 +26,7 @@ import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.module.NetworkModule
+import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
@@ -95,10 +95,6 @@ internal class DshHomePage : BasePager() {
     private var stopButtonVisible by observable(false)
     private var streamingAssistantContent by observable("")
     private var copiedMessageId by observable("")
-    private val themeController = DshThemeController()
-    /** 当前主题颜色集——提升为页面自身 observable，确保 render 能响应主题切换 */
-    private var themeColors by observable<com.example.dsh.theme.DshColorTokens>(com.example.dsh.theme.DshDefaultTheme.light)
-    private fun syncThemeColors() { themeColors = themeController.currentColors }
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var _connectionLabel by observable("本地内核启动中")
@@ -298,8 +294,6 @@ internal class DshHomePage : BasePager() {
 
     override fun created() {
         super.created()
-        themeController.systemDark = isNightMode()
-        syncThemeColors()
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
@@ -343,8 +337,6 @@ internal class DshHomePage : BasePager() {
 
     override fun themeDidChanged(data: com.tencent.kuikly.core.nvi.serialization.json.JSONObject) {
         super.themeDidChanged(data)
-        themeController.systemDark = isNightMode()
-        syncThemeColors()
     }
 
     override fun pageDidDisappear() {
@@ -390,7 +382,7 @@ internal class DshHomePage : BasePager() {
                             ctx.openSessionDrawer()
                         },
                         onOpenOverflow = { ctx.openOverflowMenu() },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -432,6 +424,7 @@ internal class DshHomePage : BasePager() {
                                         ctx.closeSessionDrawer()
                                         setTimeout(ctx.pagerId, 0) { ctx.selectSession(id) }
                                     },
+                                    colors = { this@DshHomePage.themeColors },
                                 )
                             }
                             // centerWidth：中间对话区可用宽度 = 总宽 - 左会话栏(236) - 右详情面板(280)，最小 360。
@@ -567,6 +560,7 @@ internal class DshHomePage : BasePager() {
                                     running = { ctx.sessionRunning },
                                     queueCount = { ctx.queueItems.size },
                                     jobCount = { ctx.jobItems.size },
+                                    colors = { this@DshHomePage.themeColors },
                                 )
                             }
                         }
@@ -735,6 +729,7 @@ internal class DshHomePage : BasePager() {
                                 ctx.selectSession(id)
                             }
                         },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -754,7 +749,7 @@ internal class DshHomePage : BasePager() {
                             }
                         },
                         onSelectEffort = { ctx.selectModelEffort(it) },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -779,7 +774,7 @@ internal class DshHomePage : BasePager() {
                             ctx.permissionLabel = option.label
                             ctx.permissionPickerVisible = false
                         },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -831,7 +826,7 @@ internal class DshHomePage : BasePager() {
                             ctx.agentModeLabel = option.label
                             ctx.agentModePickerVisible = false
                         },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -855,7 +850,7 @@ internal class DshHomePage : BasePager() {
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
                         onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
                         onDisconnect = { ctx.disconnectFromHost() },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -868,14 +863,14 @@ internal class DshHomePage : BasePager() {
                             when (ctx.settingsChoiceKind) {
                                 "permission" -> ctx.settingsSnapshot.permissionPreset
                                 "locale" -> ctx.settingsSnapshot.localeValue
-                                "theme" -> ctx.settingsSnapshot.themeValue
+                                "theme" -> DshThemeManager.preferenceValue
                                 else -> ""
                             }
                         },
                         busy = { ctx.settingsChoiceBusy },
                         onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
                         onSelect = { ctx.applySettingsChoice(it) },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -896,7 +891,7 @@ internal class DshHomePage : BasePager() {
                         },
                         onSave = { ctx.saveDeepSeekApiKey() },
                         onClose = { ctx.closeCredentialSettings() },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
                 // ===== 连接设置弹窗 =====
@@ -926,7 +921,7 @@ internal class DshHomePage : BasePager() {
                             ctx.updateSshSettingsVisibility(false)
                             ctx.openCredentialSettings()
                         },
-                        colors = this@DshHomePage.themeColors,
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
                 // ===== 工作区浏览器弹窗 =====
@@ -944,6 +939,7 @@ internal class DshHomePage : BasePager() {
                         onCreateDirectory = { ctx.createRemoteDirectory() },
                         onAdopt = { ctx.adoptCurrentDirectoryAsWorkspace() },
                         onClose = { ctx.workspaceBrowserVisible = false },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
                 // ===== 重命名工作区 弹窗 =====
@@ -965,29 +961,29 @@ internal class DshHomePage : BasePager() {
                                 borderRadius(16f)
                                 backgroundColor(this@DshHomePage.themeColors.bgLayer3)
                             }
-                            Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
                             Input {
                                 attr {
                                     height(38f)
                                     marginTop(14f)
                                     fontSize(14f)
                                     placeholder("工作区名称")
-                                    placeholderColor(Color(0xFF98A1A9))
+                                    placeholderColor(this@DshHomePage.themeColors.labelTertiary)
                                     text(ctx.workspaceRenameDraft)
                                 }
                                 event { textDidChange { ctx.workspaceRenameDraft = it.text } }
                             }
                             vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
                             }
                             View {
                                 attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                                 Text {
-                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(Color(0xFF7A838A)) }
+                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
                                     event { click { ctx.workspaceRenameTargetId = ""; ctx.workspaceActionError = "" } }
                                 }
                                 Text {
-                                    attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(Color(0xFF4176E6)) }
+                                    attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateBusinessPrimary) }
                                     event { click { if (!ctx.workspaceActionBusy) ctx.saveWorkspaceRename() } }
                                 }
                             }
@@ -1013,27 +1009,27 @@ internal class DshHomePage : BasePager() {
                                 borderRadius(16f)
                                 backgroundColor(this@DshHomePage.themeColors.bgLayer3)
                             }
-                            Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
                             Text {
                                 attr {
                                     text("只会从列表移除注册，不会删除目录、会话或日志。")
                                     marginTop(8f)
                                     fontSize(13f)
                                     lineHeight(20f)
-                                    color(Color(0xFF68737D))
+                                    color(this@DshHomePage.themeColors.labelSecondary)
                                 }
                             }
                             vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
                             }
                             View {
                                 attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                                 Text {
-                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(Color(0xFF7A838A)) }
+                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
                                     event { click { ctx.workspaceDeleteTargetId = ""; ctx.workspaceActionError = "" } }
                                 }
                                 Text {
-                                    attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(Color(0xFFD25A5A)) }
+                                    attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateErrorPrimary) }
                                     event { click { if (!ctx.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
                                 }
                             }
@@ -1049,6 +1045,7 @@ internal class DshHomePage : BasePager() {
                     x = { ctx.messageActionsX },
                     y = { ctx.messageActionsY },
                     onDismiss = { ctx.closeMessageActions() },
+                    colors = { this@DshHomePage.themeColors },
                 )
                 // ===== 选择文本弹窗 =====
                 // 「选择文本」以单个可选中文本节点承载完整正文，供原生选区复制。
@@ -1056,6 +1053,7 @@ internal class DshHomePage : BasePager() {
                     visible = { ctx.selectTextModalVisible },
                     content = { ctx.selectTextModalContent },
                     onClose = { ctx.closeSelectTextModal() },
+                    colors = { this@DshHomePage.themeColors },
                 )
                 // ===== 会话 topbar overflow menu 与会话管理动作 =====
                 DshOverflowMenu(
@@ -1065,7 +1063,7 @@ internal class DshHomePage : BasePager() {
                     onDismiss = { ctx.closeOverflowMenu() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = this@DshHomePage.themeColors,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionLogModal(
                     visible = { ctx.sessionLogVisible },
@@ -1094,7 +1092,7 @@ internal class DshHomePage : BasePager() {
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = this@DshHomePage.themeColors,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -1105,7 +1103,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.cancelSessionRename() },
                     onSave = { ctx.saveSessionRename() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = this@DshHomePage.themeColors,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionArchiveDialog(
                     visible = { ctx.sessionArchiveVisible },
@@ -1114,7 +1112,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" },
                     onConfirm = { ctx.confirmSessionArchive() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = this@DshHomePage.themeColors,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionDeleteDialog(
                     visible = { ctx.sessionDeleteVisible },
@@ -1123,7 +1121,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" },
                     onConfirm = { ctx.confirmSessionDelete() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = this@DshHomePage.themeColors,
+                    colors = { this@DshHomePage.themeColors },
                 )
             }
         }
@@ -1639,12 +1637,6 @@ internal class DshHomePage : BasePager() {
         repo.describeSettings({
             settingsLoading = false
             settingsSnapshot = it
-            themeController.mode = when (it.themeValue) {
-                "light" -> com.example.dsh.theme.DshThemeMode.LIGHT
-                "dark" -> com.example.dsh.theme.DshThemeMode.DARK
-                else -> com.example.dsh.theme.DshThemeMode.SYSTEM
-            }
-            syncThemeColors()
         }, {
             settingsLoading = false
             settingsError = it
@@ -1733,25 +1725,23 @@ internal class DshHomePage : BasePager() {
                     bridgeModule.toast("语言设置失败：$it")
                 },
             )
-            "theme" -> repo.updateSetting(
-                "ui-theme",
-                JSONObject().apply { put("preference", choice.value) },
-                settingsSnapshot.themeRevision,
-                {
-                    settingsChoiceBusy = false
-                    themeController.mode = when (choice.value) {
-                        "light" -> com.example.dsh.theme.DshThemeMode.LIGHT
-                        "dark" -> com.example.dsh.theme.DshThemeMode.DARK
-                        else -> com.example.dsh.theme.DshThemeMode.SYSTEM
-                    }
-                    syncThemeColors()
-                    reloadSettings()
-                },
-                {
-                    settingsChoiceBusy = false
-                    bridgeModule.toast("外观设置失败：$it")
-                },
-            )
+            "theme" -> {
+                // 移动端本地优先：立即生效并持久化，不依赖电脑端同步结果
+                settingsChoiceBusy = false
+                runCatching {
+                    acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                        .setString(DshThemeManager.PREF_KEY_THEME_MODE, choice.value)
+                }
+                DshThemeManager.applyPreference(choice.value)
+                // 顺带同步电脑端外观（失败仅提示，不影响移动端）
+                repo.updateSetting(
+                    "ui-theme",
+                    JSONObject().apply { put("preference", choice.value) },
+                    settingsSnapshot.themeRevision,
+                    { reloadSettings() },
+                    { bridgeModule.toast("外观同步电脑端失败：$it") },
+                )
+            }
             else -> settingsChoiceBusy = false
         }
     }

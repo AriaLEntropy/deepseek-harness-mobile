@@ -39,7 +39,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
     reconnecting: () -> Boolean,
     elapsedMs: () -> Long,
-    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     // 回合状态条：思考中/重连中提示 + 已耗时
     vif({ visible() }) {
@@ -56,7 +56,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
                     text(dshTurnStatusLabel(reconnecting()))
                     fontSize(14f)
                     fontWeightBold()
-                    color(colors.stateBusinessPrimary)
+                    color(colors().stateBusinessPrimary)
                 }
             }
             vif({ elapsedMs() >= TURN_STATUS_CLOCK_AFTER_MS }) {
@@ -64,7 +64,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
                     attr {
                         text(dshFormatTurnDuration(elapsedMs()))
                         fontSize(13f)
-                        color(colors.labelTertiary)
+                        color(colors().labelTertiary)
                         marginLeft(8f)
                     }
                 }
@@ -77,7 +77,7 @@ internal const val TURN_STATUS_BLUE = 0xFF4D6BFE
 internal const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
 
 // 空白会话首页：无消息时的占位引导（logo + 标语 + 预览版徽标）
-internal fun ViewContainer<*, *>.DshNewSessionHome(colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light) {
+internal fun ViewContainer<*, *>.DshNewSessionHome(colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light }) {
     View {
         attr {
             absolutePositionAllZero()
@@ -98,6 +98,7 @@ internal fun ViewContainer<*, *>.DshNewSessionHome(colors: com.example.dsh.theme
                 attr {
                     src(ImageUri.commonAssets("fish.svg"))
                     size(56f, 56f)
+                    tintColor(if (colors().isDark) Color.WHITE else null)
                 }
             }
             View {
@@ -111,7 +112,7 @@ internal fun ViewContainer<*, *>.DshNewSessionHome(colors: com.example.dsh.theme
                         text("探索未至之境")
                         fontSize(26f)
                         fontWeightBold()
-                        color(colors.labelPrimary)
+                        color(colors().labelPrimary)
                     }
                 }
                 View {
@@ -122,14 +123,14 @@ internal fun ViewContainer<*, *>.DshNewSessionHome(colors: com.example.dsh.theme
                         height(22f)
                         allCenter()
                         borderRadius(11f)
-                        backgroundColor(colors.stateBusinessTertiary)
+                        backgroundColor(colors().stateBusinessTertiary)
                     }
                     Text {
                         attr {
                             text("预览版")
                             fontSize(11f)
                             fontWeightMedium()
-                            color(colors.stateBusinessPrimary)
+                            color(colors().stateBusinessPrimary)
                         }
                     }
                 }
@@ -247,7 +248,7 @@ internal fun ViewContainer<*, *>.DshConversation(
             flex(1f)
             width(availableWidth)
             flexDirectionColumn()
-            backgroundColor(Color.WHITE)
+            backgroundColor(colors().bgBase)
             // 底部预留在输入卡之下渲染工具调用轮次状态区的高度（移动端该状态区暂不常驻
             // 渲染，但需要预留其高度让输入条不贴底、与原版对齐）。
             // 取值= 状态区单行高 26f 偏大，视觉仍显远，收敛到紧凑间距 20f。
@@ -273,7 +274,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 attr {
                 flex(1f)
                 width(availableWidth)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors().bgBase)
             }
             // 单个会话的消息页：按会话 id 叠放，仅激活会话可见可点
             vfor({ conversationIds() }) { sessionId ->
@@ -389,7 +390,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         },
                                         reconnecting = turnReconnecting,
                                         elapsedMs = turnElapsedMs,
-                                        colors = colors(),
+                                        colors = colors,
                                     )
                                 }
                             }
@@ -406,7 +407,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     !stopButtonVisible() &&
                     !sessionRunning()
             }) {
-                DshNewSessionHome(colors = colors())
+                DshNewSessionHome(colors = colors)
             }
         }
         // 队列停靠栏（Web 时间线）：展示等待执行的任务队列
@@ -557,7 +558,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     text(folderLabel())
                                     marginLeft(4f)
                                     fontSize(13f)
-                                    color(Color(0xFF1B1F24))
+                                    color(colors().labelPrimary)
                                 }
                             }
                             Image {
@@ -590,7 +591,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     text(agentModeLabel())
                                     marginLeft(4f)
                                     fontSize(13f)
-                                    color(Color(0xFF81858C))
+                                    color(colors().labelTertiary)
                                 }
                             }
                             Image {
@@ -726,7 +727,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     attr {
                                         text(modelLabel())
                                         fontSize(13f)
-                                        color(Color(0xFF81858C))
+                                        color(colors().labelTertiary)
                                     }
                                 }
                                 Image {
@@ -793,7 +794,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     bottom(keyboardHeight() + 130f)
                     height(336f)
                     flexDirectionColumn()
-                    backgroundColor(Color(0xFFFFFFFF))
+                    backgroundColor(colors().specificMenu)
                     borderRadius(14f)
                     boxShadow(BoxShadow(0f, 4f, 12f, Color(0x1A000000)))
                     zIndex(12)
@@ -816,7 +817,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                             attr {
                                 text("命令")
                                 fontSize(12f)
-                                color(Color(0xFF9AA3AB))
+                                color(colors().labelTertiary)
                             }
                         }
                     }
@@ -839,7 +840,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 lines(1)
                                 fontSize(14f)
                                 fontWeightMedium()
-                                color(Color(0xFF28323C))
+                                color(colors().labelPrimary)
                             }
                         }
                         Text {
@@ -848,7 +849,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 flex(1f)
                                 lines(1)
                                 fontSize(13f)
-                                color(Color(0xFF727D84))
+                                color(colors().labelTertiary)
                             }
                         }
                     }
@@ -866,7 +867,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                             attr {
                                 text("技能")
                                 fontSize(12f)
-                                color(Color(0xFF9AA3AB))
+                                color(colors().labelTertiary)
                             }
                         }
                     }
@@ -889,7 +890,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 lines(1)
                                 fontSize(14f)
                                 fontWeightMedium()
-                                color(Color(0xFF28323C))
+                                color(colors().labelPrimary)
                             }
                         }
                         Text {
@@ -898,7 +899,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 flex(1f)
                                 lines(1)
                                 fontSize(13f)
-                                color(Color(0xFF727D84))
+                                color(colors().labelTertiary)
                             }
                         }
                     }
@@ -913,6 +914,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     isBlankConversation = isBlankConversation,
                     fadeOut = { connectionCapsuleFadeOut() },
                     fadeOutAnimation = { connectionCapsuleFadeOutAnimation() },
+                    colors = colors,
                 )
 
         // 「+」命令半屏面板：三个附件方块 + 原版命令列表，点击命令写入输入框
@@ -921,6 +923,7 @@ internal fun ViewContainer<*, *>.DshConversation(
             onClose = onToggleCommandSheet,
             onPickCommand = onPickCommand,
             onPickTile = onAttachmentTile,
+            colors = colors,
         )
 
     }
@@ -1010,8 +1013,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 height(220f)
                 marginBottom(12f)
                 borderRadius(8f)
-                backgroundColor(Color(0xFFF6F8FA))
-                border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+                backgroundColor(colors().bgModulePlatform)
+                border(Border(1f, BorderStyle.SOLID, colors().borderL1))
                 justifyContentCenter()
                 alignItemsCenter()
             }
@@ -1029,7 +1032,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     attr {
                         text("图片加载中")
                         fontSize(12f)
-                        color(Color(0xFF7A838A))
+                        color(colors().labelTertiary)
                     }
                 }
             }
@@ -1164,7 +1167,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     DshMessageRole.ASSISTANT -> "DeepSeek"
                 })
                 fontSize(11f)
-                color(Color(if (isError) 0xFFC23B3B else 0xFF84939D))
+                color(if (isError) colors().stateErrorPrimary else colors().labelTertiary)
                 marginBottom(5f)
             }
         }
@@ -1177,13 +1180,11 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 maxWidth(620f)
                 padding(if (isUser) 10f else 0f, if (isUser) 14f else 0f, if (isUser) 10f else 0f, if (isUser) 14f else 0f)
                 borderRadius(if (isUser) 18f else 0f)
-                backgroundColor(Color(
-                    when {
-                        isUser -> 0xFFEDF3FE
-                        isError -> 0xFFFFEEEE
-                        else -> 0x00FFFFFF
-                    },
-                ))
+                backgroundColor(when {
+                        isUser -> colors().specificBubble
+                        isError -> Color(0xFFFFEEEE)
+                        else -> Color(0x00FFFFFF)
+                    })
             }
             event {
                 if (!isUser && !isError) {
@@ -1202,7 +1203,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         text(message.content)
                         lines(Int.MAX_VALUE)
                         fontSize(15f)
-                        color(Color(if (isUser) 0xFF34415B else 0xFFB53232))
+                        color(if (isUser) colors().labelPrimaryBluish else colors().stateErrorPrimary)
                     }
                 }
             // 助手回复内容：Markdown 渲染 + 流式光标
@@ -1239,7 +1240,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
         if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
-            DshMessageFooter(copied = copied(), colors = colors()) { action ->
+            DshMessageFooter(copied = copied(), colors = colors) { action ->
                 // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
                 if (action == DshMessageFooterAction.COPY) {
                     onCopyMessageContent(message)
@@ -1254,7 +1255,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
 // 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
 internal fun ViewContainer<*, *>.DshMessageFooter(
     copied: Boolean = false,
-    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     onAction: (DshMessageFooterAction) -> Unit,
 ) {
     View {
@@ -1276,7 +1277,7 @@ internal fun ViewContainer<*, *>.DshFooterActionIcon(
     asset: String,
     action: DshMessageFooterAction,
     onAction: (DshMessageFooterAction) -> Unit,
-    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     first: Boolean = false,
 ) {
     View {
@@ -1292,7 +1293,7 @@ internal fun ViewContainer<*, *>.DshFooterActionIcon(
             attr {
                 src(ImageUri.commonAssets(asset))
                 size(16f, 16f)
-                tintColor(colors.labelTertiary)
+                tintColor(colors().labelTertiary)
             }
         }
     }

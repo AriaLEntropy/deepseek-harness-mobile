@@ -47,7 +47,7 @@ internal class DshWebViewPage : BasePager() {
                 attr {
                     flex(1f)
                     flexDirectionColumn()
-                    backgroundColor(Color(0xFFF7F9FA))
+                    backgroundColor(ctx.themeColors.bgBase)
                     paddingTop(pagerData.statusBarHeight)
                 }
                 DshLinkHeader(
@@ -55,6 +55,7 @@ internal class DshWebViewPage : BasePager() {
                     progress = { ctx.progress },
                     onBack = { ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage() },
                     onReload = { ctx.webViewRef?.view?.reload() },
+                    colors = { ctx.themeColors },
                 )
                 if (ctx.url.isEmpty()) {
                     View {
@@ -67,7 +68,7 @@ internal class DshWebViewPage : BasePager() {
                             attr {
                                 text("链接为空")
                                 fontSize(15f)
-                                color(Color(0xFF68737D))
+                                color(ctx.themeColors.labelSecondary)
                             }
                         }
                     }
@@ -111,14 +112,14 @@ private class DshLinkHeader : ComposeView<DshLinkHeaderAttr, ComposeEvent>() {
                     alignItemsCenter()
                     paddingLeft(12f)
                     paddingRight(12f)
-                    backgroundColor(Color.WHITE)
-                    borderBottom(Border(1f, BorderStyle.SOLID, Color(0xFFE5E8EB)))
+                    backgroundColor(ctx.attr.colors.bgLayer1)
+                    borderBottom(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL1))
                 }
                 Text {
                     attr {
                         text("返回")
                         fontSize(14f)
-                        color(Color(0xFF4176E6))
+                        color(ctx.attr.colors.stateBusinessPrimary)
                     }
                     event { click { ctx.attr.onBack() } }
                 }
@@ -127,7 +128,7 @@ private class DshLinkHeader : ComposeView<DshLinkHeaderAttr, ComposeEvent>() {
                         text("链接")
                         marginLeft(18f)
                         fontSize(15f)
-                        color(Color(0xFF26313A))
+                        color(ctx.attr.colors.labelPrimary)
                         fontWeightBold()
                     }
                 }
@@ -136,7 +137,7 @@ private class DshLinkHeader : ComposeView<DshLinkHeaderAttr, ComposeEvent>() {
                     attr {
                         text(ctx.attr.status)
                         fontSize(12f)
-                        color(Color(0xFF7A8790))
+                        color(ctx.attr.colors.labelSecondary)
                     }
                 }
                 Text {
@@ -144,7 +145,7 @@ private class DshLinkHeader : ComposeView<DshLinkHeaderAttr, ComposeEvent>() {
                         text("刷新")
                         marginLeft(14f)
                         fontSize(14f)
-                        color(Color(0xFF4176E6))
+                        color(ctx.attr.colors.stateBusinessPrimary)
                     }
                     event { click { ctx.attr.onReload() } }
                 }
@@ -154,7 +155,7 @@ private class DshLinkHeader : ComposeView<DshLinkHeaderAttr, ComposeEvent>() {
                     attr {
                         height(2f)
                         width(ctx.attr.progress.toFloat() / 100f * pagerData.pageViewWidth)
-                        backgroundColor(Color(0xFF4176E6))
+                        backgroundColor(ctx.attr.colors.stateBusinessPrimary)
                     }
                 }
             }
@@ -163,6 +164,7 @@ private class DshLinkHeader : ComposeView<DshLinkHeaderAttr, ComposeEvent>() {
 }
 
 private class DshLinkHeaderAttr : ComposeAttr() {
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
     var status: String by observable("")
     var progress: Int by observable(0)
     var onBack: () -> Unit = {}
@@ -174,6 +176,7 @@ private fun ViewContainer<*, *>.DshLinkHeader(
     progress: () -> Int,
     onBack: () -> Unit,
     onReload: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     addChild(DshLinkHeader()) {
         attr {
@@ -181,6 +184,7 @@ private fun ViewContainer<*, *>.DshLinkHeader(
             this.progress = progress()
             this.onBack = onBack
             this.onReload = onReload
+            this.colors = colors()
         }
     }
 }
