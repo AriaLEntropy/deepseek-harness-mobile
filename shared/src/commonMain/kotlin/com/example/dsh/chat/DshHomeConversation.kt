@@ -1240,30 +1240,32 @@ internal fun ViewContainer<*, *>.DshMessageFooter(
 ) {
     View {
         attr {
-            width(128f)
-            height(24f)
+            height(28f)
             marginTop(2f)
             flexDirectionRow()
             alignItemsCenter()
         }
-        DshFooterActionIcon("copy.svg", DshMessageFooterAction.COPY, onAction)
+        DshFooterActionIcon("copy.svg", DshMessageFooterAction.COPY, onAction, first = true)
         DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction)
         DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction)
         DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction)
     }
 }
 
-// 单个操作图标按钮：32x24 紧凑热区，16px 图标居中
+// 单个操作图标按钮：28x28 圆形热区，16px 图标居中（对齐 dsh 原版 IconActions）
 internal fun ViewContainer<*, *>.DshFooterActionIcon(
     asset: String,
     action: DshMessageFooterAction,
     onAction: (DshMessageFooterAction) -> Unit,
+    first: Boolean = false,
 ) {
     View {
         attr {
-            width(32f)
-            height(24f)
+            width(28f)
+            height(28f)
             allCenter()
+            borderRadius(14f)
+            if (!first) marginLeft(6f)
         }
         event { click { onAction(action) } }
         Image {

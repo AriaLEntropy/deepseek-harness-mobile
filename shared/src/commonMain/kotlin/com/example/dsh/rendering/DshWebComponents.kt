@@ -62,9 +62,16 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                 }
                 View {
                     attr {
-                        height(36f)
+                        height(28f)
                         flexDirectionRow()
                         alignItemsCenter()
+                        if (ctx.attr.running) {
+                            backgroundColor(Color(0xFFF0F7FF))
+                            borderRadius(6f)
+                        } else if (ctx.attr.errorSummary) {
+                            backgroundColor(Color(0xFFFFF5F5))
+                            borderRadius(6f)
+                        }
                     }
                     vif({ ctx.attr.iconAsset.isNotEmpty() }) {
                         Image {
@@ -86,27 +93,27 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         attr {
                             text(ctx.attr.title)
                             marginLeft(7f)
-                            fontSize(13f)
-                            fontWeightMedium()
-                            color(Color(0xFF2F3A44))
+                            fontSize(14f)
+                            color(Color(0xFF3C4854))
                         }
                     }
                     vif({ ctx.attr.summary.isNotEmpty() }) {
-                        Text {
+                        View {
                             attr {
-                                text("·")
-                                marginLeft(7f)
-                                marginRight(7f)
-                                fontSize(13f)
-                                color(Color(0xFF9AA4AC))
+                                width(2f)
+                                height(2f)
+                                borderRadius(1f)
+                                marginLeft(8f)
+                                marginRight(8f)
+                                backgroundColor(Color(0xFF9AA4AC))
                             }
                         }
                         Text {
                             attr {
-                            text(ctx.attr.summary)
+                                text(ctx.attr.summary)
                                 flex(1f)
                                 lines(1)
-                                fontSize(13f)
+                                fontSize(14f)
                                 color(Color(if (ctx.attr.errorSummary) 0xFFB14646 else 0xFF727B83))
                             }
                         }
@@ -142,10 +149,11 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 Text {
                                     attr {
                                         text(ctx.attr.body)
-                                        fontSize(13f)
-                                        lineHeight(20f)
+                                        fontSize(14f)
+                                        lineHeight(24f)
                                         color(Color(0xFF727B83))
                                         marginTop(6f)
+                                        marginLeft(22f)
                                     }
                                 }
                             } else {
@@ -228,9 +236,9 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                     attr {
                         height(
                             when {
-                                ctx.attr.maxHeight > 0f -> ctx.attr.maxHeight.coerceAtMost(280f)
-                                expanded -> 280f
-                                else -> (ctx.attr.maxLines * 18f).coerceAtMost(280f)
+                                ctx.attr.maxHeight > 0f -> ctx.attr.maxHeight.coerceAtMost(240f)
+                                expanded -> 240f
+                                else -> (ctx.attr.maxLines * 18f).coerceAtMost(240f)
                             },
                         )
                     }
@@ -259,7 +267,6 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                             }
                         }
                         DshTapTarget {
-                            ctx.attr.expanded = true
                             ctx.attr.onToggle()
                         }
                     }
@@ -279,7 +286,6 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                             }
                         }
                         DshTapTarget {
-                            ctx.attr.expanded = false
                             ctx.attr.onToggle()
                         }
                     }
