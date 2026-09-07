@@ -185,6 +185,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     onCopyToolContent: (String) -> Unit,
     onCopyMessageContent: (DshMessage) -> Unit = {},
     copiedMessageId: () -> String = { "" },
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     // 参数：message, renderedContent, 页面坐标 x/y
     onMessageLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
@@ -339,6 +340,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             onCopyMessageContent = { onCopyMessageContent(it) },
                                             copied = { copiedMessageId() == message.id },
+                                            colors = { colors() },
                                             onLongPress = { msg, content, px, py ->
                                                 onMessageLongPress(msg, content, px, py)
                                             },
@@ -930,6 +932,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     onCopyToolContent: (String) -> Unit = {},
     onCopyMessageContent: (DshMessage) -> Unit = {},
     copied: () -> Boolean = { false },
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     onLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     isTurnTail: () -> Boolean = { true },
@@ -960,6 +963,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "上下文注入"
                     iconAsset = "context.svg"
+                    colors = colors()
                     summary = message.toolName.orEmpty()
                     body = if (message.contextCatalog.isNotEmpty()) {
                         message.contextCatalog.joinToString("\n") { "${it.name}\n${it.description}" }
@@ -1036,6 +1040,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "Think"
                     iconAsset = "think.svg"
+                    colors = colors()
                     summary = message.content.dshReasoningSummary(message.streaming)
                     body = message.content
                     open = isExpanded()
@@ -1062,6 +1067,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "Skill"
                     iconAsset = "tool-skill.svg"
+                    colors = colors()
                     summary = remoteTool.summary
                     errorSummary = message.toolError
                     body = message.content
@@ -1115,6 +1121,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = if (cardLabel.dshLooksLikeJson()) (remoteTool?.toolName ?: "工具") else cardLabel
                     iconAsset = remoteTool?.iconAsset() ?: message.toolCardType.iconAsset()
+                    colors = colors()
                     this.summary = summary
                     errorSummary = message.toolError
                     body = if (isJson) "" else toolBody

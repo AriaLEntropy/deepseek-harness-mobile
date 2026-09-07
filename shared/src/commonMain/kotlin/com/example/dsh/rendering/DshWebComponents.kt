@@ -8,6 +8,8 @@ import com.example.dsh.home.*
 import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
 import com.example.dsh.storage.*
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.web.*
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
@@ -40,6 +42,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
 
     override fun body(): ViewBuilder {
         val ctx = this
+        val c = ctx.attr.colors
         return {
             View {
                 attr {
@@ -49,15 +52,13 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         padding(8f, 10f, 8f, 10f)
                         borderRadius(8f)
                         backgroundColor(
-                            Color(
-                                when {
-                                    ctx.attr.errorSummary -> 0xFFFFF6F6
-                                    ctx.attr.running -> 0xFFF7FCFA
-                                    else -> 0xFFFCFDFE
-                                },
-                            ),
+                            when {
+                                ctx.attr.errorSummary -> c.interactiveBgHoverDanger
+                                ctx.attr.running -> c.stateBusinessTertiary
+                                else -> c.bgLayer1
+                            },
                         )
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+                        border(Border(1f, BorderStyle.SOLID, c.borderL2))
                     }
                 }
                 View {
@@ -66,10 +67,10 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         flexDirectionRow()
                         alignItemsCenter()
                         if (ctx.attr.running) {
-                            backgroundColor(Color(0xFFF0F7FF))
+                            backgroundColor(c.stateBusinessTertiary)
                             borderRadius(6f)
                         } else if (ctx.attr.errorSummary) {
-                            backgroundColor(Color(0xFFFFF5F5))
+                            backgroundColor(c.interactiveBgHoverDanger)
                             borderRadius(6f)
                         }
                     }
@@ -83,7 +84,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 attr {
                                     size(8f, 8f)
                                     borderRadius(4f)
-                                    backgroundColor(Color(0xFFC64C4C))
+                                    backgroundColor(c.stateErrorPrimary)
                                 }
                             }
                         }
@@ -109,7 +110,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             text(ctx.attr.title)
                             marginLeft(7f)
                             fontSize(14f)
-                            color(Color(0xFF3C4854))
+                            color(c.labelPrimary)
                         }
                     }
                     vif({ ctx.attr.summary.isNotEmpty() }) {
@@ -120,7 +121,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 borderRadius(1f)
                                 marginLeft(8f)
                                 marginRight(8f)
-                                backgroundColor(Color(0xFF9AA4AC))
+                                backgroundColor(c.labelTertiary)
                             }
                         }
                         Text {
@@ -129,7 +130,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 flex(1f)
                                 lines(1)
                                 fontSize(14f)
-                                color(Color(if (ctx.attr.errorSummary) 0xFFB14646 else 0xFF727B83))
+                                color(if (ctx.attr.errorSummary) c.stateErrorPrimary else c.labelSecondary)
                             }
                         }
                     }
@@ -166,7 +167,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                         text(ctx.attr.body)
                                         fontSize(14f)
                                         lineHeight(24f)
-                                        color(Color(0xFF727B83))
+                                        color(c.labelSecondary)
                                         marginTop(6f)
                                         marginLeft(22f)
                                     }
@@ -221,6 +222,7 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var chrome: Boolean by observable(false)
     var running: Boolean by observable(false)
     var plainBody: Boolean by observable(false)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */

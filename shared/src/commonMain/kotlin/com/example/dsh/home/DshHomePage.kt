@@ -8,6 +8,7 @@ import com.example.dsh.home.*
 import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
 import com.example.dsh.storage.*
+import com.example.dsh.theme.*
 import com.example.dsh.web.*
 import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
@@ -94,6 +95,7 @@ internal class DshHomePage : BasePager() {
     private var stopButtonVisible by observable(false)
     private var streamingAssistantContent by observable("")
     private var copiedMessageId by observable("")
+    private val themeController = DshThemeController()
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var _connectionLabel by observable("本地内核启动中")
@@ -291,6 +293,7 @@ internal class DshHomePage : BasePager() {
 
     override fun created() {
         super.created()
+        themeController.systemDark = isNightMode()
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
@@ -330,6 +333,11 @@ internal class DshHomePage : BasePager() {
         }
         setTimeout(pagerId, 0) { startConnection() }
         perfLog("startup.created.end", startedAt)
+    }
+
+    override fun themeDidChanged(data: com.tencent.kuikly.core.nvi.serialization.json.JSONObject) {
+        super.themeDidChanged(data)
+        themeController.systemDark = isNightMode()
     }
 
     override fun pageDidDisappear() {
@@ -484,6 +492,7 @@ internal class DshHomePage : BasePager() {
                                 },
                                 onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
                                 copiedMessageId = { ctx.copiedMessageId },
+                                colors = { ctx.themeController.currentColors },
                                 onMessageLongPress = { msg, content, px, py ->
                                     ctx.openMessageActions(msg, content, px, py)
                                 },
@@ -615,6 +624,7 @@ internal class DshHomePage : BasePager() {
                             },
                             onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
                             copiedMessageId = { ctx.copiedMessageId },
+                            colors = { ctx.themeController.currentColors },
                             onMessageLongPress = { msg, content, px, py ->
                                 ctx.openMessageActions(msg, content, px, py)
                             },
@@ -1061,6 +1071,7 @@ internal class DshHomePage : BasePager() {
                     onTypeFilter = { ctx.onLogTypeFilter(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
                     onClearFilters = { ctx.clearLogFilters() },
+                    statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                 )
                 DshSessionRenameDialog(
