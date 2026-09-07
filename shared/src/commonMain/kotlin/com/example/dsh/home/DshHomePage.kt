@@ -747,6 +747,7 @@ internal class DshHomePage : BasePager() {
                             }
                         },
                         onSelectEffort = { ctx.selectModelEffort(it) },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
 
@@ -771,6 +772,7 @@ internal class DshHomePage : BasePager() {
                             ctx.permissionLabel = option.label
                             ctx.permissionPickerVisible = false
                         },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
 
@@ -822,6 +824,7 @@ internal class DshHomePage : BasePager() {
                             ctx.agentModeLabel = option.label
                             ctx.agentModePickerVisible = false
                         },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
 

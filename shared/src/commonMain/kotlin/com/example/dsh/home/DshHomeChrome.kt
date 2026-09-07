@@ -657,6 +657,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
     onClose: () -> Unit,
     onSelect: (DshModelOption) -> Unit,
     onSelectEffort: (String) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     var showEfforts = false
     val selectedOpt: () -> DshModelOption? = { options().firstOrNull { it.selected } }
@@ -689,7 +690,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                 flexDirectionColumn()
                 padding(18f)
                 borderRadius(20f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgLayer1)
             }
             View {
                 attr { height(40f); flexDirectionRow(); alignItemsCenter() }
@@ -698,13 +699,13 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                         text(if (showEfforts) "推理等级" else "选择模型")
                         fontSize(18f)
                         fontWeightBold()
-                        color(Color(0xFF252B30))
+                        color(colors.labelPrimary)
                     }
                 }
                 View { attr { flex(1f) } }
                 View {
                     attr { size(36f, 36f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f) } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f); tintColor(colors.labelSecondary) } }
                     event { click { onClose() } }
                 }
             }
@@ -715,7 +716,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                         marginTop(6f)
                         marginBottom(6f)
                         fontSize(12f)
-                        color(Color(0xFFBF3535))
+                        color(colors.stateErrorPrimary)
                     }
                 }
             }
@@ -775,7 +776,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                             marginTop(3f)
                                             lines(1)
                                             fontSize(11f)
-                                            color(Color(0xFF8B939A))
+                                            color(colors.labelTertiary)
                                         }
                                     }
                                 }
@@ -785,7 +786,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                     attr {
                                         src(ImageUri.commonAssets("check.svg"))
                                         size(18f, 18f)
-                                        tintColor(Color(0xFF4176E6))
+                                        tintColor(colors.stateBusinessPrimary)
                                     }
                                 }
                             }
@@ -806,13 +807,13 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                             flexDirectionRow()
                             alignItemsCenter()
                             borderRadius(10f)
-                            backgroundColor(Color(0xFFF4F6FA))
+                            backgroundColor(colors.specificSelector)
                         }
                         Text {
                             attr {
                                 text("推理等级")
                                 fontSize(14f)
-                                color(Color(0xFF2C3237))
+                                color(colors.labelPrimary)
                             }
                         }
                         View { attr { flex(1f) } }
@@ -821,10 +822,10 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                 text(selectedEffortName())
                                 marginRight(4f)
                                 fontSize(13f)
-                                color(Color(0xFF8B939A))
+                                color(colors.labelTertiary)
                             }
                         }
-                        Image { attr { src(ImageUri.commonAssets("chevron-right.svg")); size(14f, 14f) } }
+                        Image { attr { src(ImageUri.commonAssets("chevron-right.svg")); size(14f, 14f); tintColor(colors.labelTertiary) } }
                         event { click { showEfforts = true } }
                     }
                 }
@@ -834,7 +835,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                             text("正在加载模型...")
                             marginTop(24f)
                             fontSize(14f)
-                            color(Color(0xFF7D858C))
+                            color(colors.labelTertiary)
                         }
                     }
                 }
@@ -849,7 +850,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                 alignItemsCenter()
                                 padding(10f, 12f, 10f, 12f)
                                 borderRadius(10f)
-                                backgroundColor(Color(if (option.selected) 0xFFF0F3FA else 0xFFF8F8F9))
+                                backgroundColor(if (option.selected) colors.stateBusinessTertiary else colors.bgBase)
                             }
                             View {
                                 attr { flex(1f); flexDirectionColumn() }
@@ -858,7 +859,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                         text(option.name)
                                         fontSize(14f)
                                         fontWeightMedium()
-                                        color(Color(0xFF2C3237))
+                                        color(colors.labelPrimary)
                                     }
                                 }
                                 Text {
@@ -867,7 +868,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                         marginTop(3f)
                                         lines(1)
                                         fontSize(11f)
-                                        color(Color(0xFF8B939A))
+                                        color(colors.labelTertiary)
                                     }
                                 }
                             }
@@ -876,7 +877,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                     attr {
                                         src(ImageUri.commonAssets("check.svg"))
                                         size(18f, 18f)
-                                        tintColor(Color(0xFF4176E6))
+                                        tintColor(colors.stateBusinessPrimary)
                                     }
                                 }
                             }
@@ -908,6 +909,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
     options: () -> ObservableList<DshPermissionOption>,
     onClose: () -> Unit,
     onSelect: (DshPermissionOption) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -924,7 +926,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
             attr {
                 flexDirectionColumn()
                 padding(18f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgLayer1)
                 borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
             }
             View {
@@ -934,13 +936,13 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                         text("选择权限")
                         fontSize(18f)
                         fontWeightBold()
-                        color(Color(0xFF252B30))
+                        color(colors.labelPrimary)
                     }
                 }
                 View { attr { flex(1f) } }
                 View {
                     attr { size(36f, 36f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f) } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f); tintColor(colors.labelSecondary) } }
                     event { click { onClose() } }
                 }
             }
@@ -963,11 +965,11 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                             border(Border(
                                 1f,
                                 BorderStyle.SOLID,
-                                Color(if (option.selected) 0xFF4176E6 else 0xFFE7EAEE),
+                                if (option.selected) colors.stateBusinessPrimary else colors.borderL2,
                             ))
-                            backgroundColor(Color(
-                                if (option.selected) 0xFFEDF3FE else 0xFFF8F8F9,
-                            ))
+                            backgroundColor(
+                                if (option.selected) colors.stateBusinessTertiary else colors.bgBase,
+                            )
                         }
                         View {
                             attr { size(22f, 22f); allCenter() }
@@ -984,7 +986,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                                 marginTop(6f)
                                 fontSize(13f)
                                 fontWeightMedium()
-                                color(Color(if (option.selected) 0xFF4176E6 else 0xFF3A4148))
+                                color(if (option.selected) colors.stateBusinessPrimary else colors.labelPrimary)
                             }
                         }
                         if (option.selected) {
@@ -994,7 +996,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                                     size(20f, 20f)
                                     allCenter()
                                     borderRadius(10f)
-                                    backgroundColor(Color(0xFF4176E6))
+                                    backgroundColor(colors.stateBusinessPrimary)
                                 }
                                 Image {
                                     attr {
@@ -1026,6 +1028,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
     options: () -> ObservableList<DshAgentModeOption>,
     onClose: () -> Unit,
     onSelect: (DshAgentModeOption) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -1044,7 +1047,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                 flexDirectionColumn()
                 padding(18f)
                 borderRadius(20f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgLayer1)
             }
             View {
                 attr { height(40f); flexDirectionRow(); alignItemsCenter() }
@@ -1053,13 +1056,13 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                         text("选择模式")
                         fontSize(18f)
                         fontWeightBold()
-                        color(Color(0xFF252B30))
+                        color(colors.labelPrimary)
                     }
                 }
                 View { attr { flex(1f) } }
                 View {
                     attr { size(36f, 36f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f) } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f); tintColor(colors.labelSecondary) } }
                     event { click { onClose() } }
                 }
             }
@@ -1074,7 +1077,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                             alignItemsCenter()
                             padding(10f, 12f, 10f, 12f)
                             borderRadius(10f)
-                            backgroundColor(Color(if (option.selected) 0xFFF0F3FA else 0xFFF8F8F9))
+                            backgroundColor(if (option.selected) colors.stateBusinessTertiary else colors.bgBase)
                         }
                         View {
                             attr { flex(1f); flexDirectionColumn() }
@@ -1083,7 +1086,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                                     text(option.label)
                                     fontSize(14f)
                                     fontWeightSemiBold()
-                                    color(Color(if (option.selected) 0xFF4176E6 else 0xFF2C3237))
+                                    color(if (option.selected) colors.stateBusinessPrimary else colors.labelPrimary)
                                 }
                             }
                             Text {
@@ -1092,7 +1095,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                                     marginTop(4f)
                                     fontSize(12f)
                                     lineHeight(18f)
-                                    color(Color(0xFF8B939A))
+                                    color(colors.labelTertiary)
                                 }
                             }
                         }
@@ -1101,7 +1104,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                                     attr {
                                         src(ImageUri.commonAssets("check.svg"))
                                         size(18f, 18f)
-                                        tintColor(Color(0xFF4176E6))
+                                        tintColor(colors.stateBusinessPrimary)
                                     }
                                 }
                         }
