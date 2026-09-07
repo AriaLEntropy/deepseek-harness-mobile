@@ -39,6 +39,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
     reconnecting: () -> Boolean,
     elapsedMs: () -> Long,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     // 回合状态条：思考中/重连中提示 + 已耗时
     vif({ visible() }) {
@@ -55,7 +56,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
                     text(dshTurnStatusLabel(reconnecting()))
                     fontSize(14f)
                     fontWeightBold()
-                    color(Color(TURN_STATUS_BLUE))
+                    color(colors.stateBusinessPrimary)
                 }
             }
             vif({ elapsedMs() >= TURN_STATUS_CLOCK_AFTER_MS }) {
@@ -63,7 +64,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
                     attr {
                         text(dshFormatTurnDuration(elapsedMs()))
                         fontSize(13f)
-                        color(Color(0xFF8A9399))
+                        color(colors.labelTertiary)
                         marginLeft(8f)
                     }
                 }
@@ -76,7 +77,7 @@ internal const val TURN_STATUS_BLUE = 0xFF4D6BFE
 internal const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
 
 // 空白会话首页：无消息时的占位引导（logo + 标语 + 预览版徽标）
-internal fun ViewContainer<*, *>.DshNewSessionHome() {
+internal fun ViewContainer<*, *>.DshNewSessionHome(colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light) {
     View {
         attr {
             absolutePositionAllZero()
@@ -110,7 +111,7 @@ internal fun ViewContainer<*, *>.DshNewSessionHome() {
                         text("探索未至之境")
                         fontSize(26f)
                         fontWeightBold()
-                        color(Color(0xFF1B1F24))
+                        color(colors.labelPrimary)
                     }
                 }
                 View {
@@ -121,14 +122,14 @@ internal fun ViewContainer<*, *>.DshNewSessionHome() {
                         height(22f)
                         allCenter()
                         borderRadius(11f)
-                        backgroundColor(Color(0xFFE8F1FF))
+                        backgroundColor(colors.stateBusinessTertiary)
                     }
                     Text {
                         attr {
                             text("预览版")
                             fontSize(11f)
                             fontWeightMedium()
-                            color(Color(0xFF4176E6))
+                            color(colors.stateBusinessPrimary)
                         }
                     }
                 }
@@ -184,6 +185,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
     onCopyMessageContent: (DshMessage) -> Unit = {},
+    copiedMessageId: () -> String = { "" },
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     // 参数：message, renderedContent, 页面坐标 x/y
     onMessageLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
@@ -337,6 +340,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             onCopyMessageContent = { onCopyMessageContent(it) },
+                                            copied = { copiedMessageId() == message.id },
+                                            colors = { colors() },
                                             onLongPress = { msg, content, px, py ->
                                                 onMessageLongPress(msg, content, px, py)
                                             },
@@ -384,6 +389,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         },
                                         reconnecting = turnReconnecting,
                                         elapsedMs = turnElapsedMs,
+                                        colors = colors(),
                                     )
                                 }
                             }
@@ -400,7 +406,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     !stopButtonVisible() &&
                     !sessionRunning()
             }) {
-                DshNewSessionHome()
+                DshNewSessionHome(colors = colors())
             }
         }
         // 队列停靠栏（Web 时间线）：展示等待执行的任务队列
@@ -420,6 +426,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onCancelEdit = onCancelQueueItemEdit
                     onRemove = onRemoveQueueItem
                     onSteer = onSteerQueueItem
+                    this.colors = colors()
                 }
             }
         }
@@ -431,6 +438,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     expanded = jobsPanelExpanded()
                     now = jobsNow()
                     onToggle = onToggleJobsPanel
+                    this.colors = colors()
                 }
             }
         }
@@ -445,6 +453,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onResume = onResumeGoal
                     onEdit = onEditGoal
                     onClear = onClearGoal
+                    this.colors = colors()
                 }
             }
         }
@@ -455,6 +464,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     approval = pendingApproval()
                     busy = interactionBusy()
                     onAnswer = onAnswerApproval
+                    this.colors = colors()
                 }
             }
         }
@@ -480,6 +490,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 onSubmit = onSubmitQuestion
                 onDismiss = onDismissQuestion
                 this.onKeyboardHeightChange = onKeyboardHeightChange
+                this.colors = colors()
             }
         }
         val questionActive = {
@@ -604,9 +615,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                         marginRight(12f)
                         flexDirectionColumn()
                         paddingTop(10f)
-                        backgroundColor(Color.WHITE)
+                        backgroundColor(colors().bgLayer1)
                         borderRadius(22f)
-                        border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
+                        border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
                     // 输入框：DSH Web 风格，内容自适应高度（单行起），达 maxHeight 后随输入内部滚动
@@ -619,14 +630,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            color(Color(0xFF28323C))
+                            color(colors().labelPrimary)
                             placeholder(
                                 when {
                                     voiceActive() -> "正在聆听..."
                                     else -> "发消息或按住说话，让电脑继续工作..."
                                 },
                             )
-                            placeholderColor(Color(0xFFADB2B8))
+                            placeholderColor(colors().labelTertiary)
                             editable(!voiceActive())
                         }
                         event {
@@ -660,7 +671,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     size(28f, 28f)
                                     borderRadius(999f)
-                                    backgroundColor(Color(0xFFF5F6F7))
+                                    backgroundColor(colors().specificSelector)
                                     allCenter()
                                 }
                                 Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
@@ -927,6 +938,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
     onCopyMessageContent: (DshMessage) -> Unit = {},
+    copied: () -> Boolean = { false },
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     onLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     isTurnTail: () -> Boolean = { true },
@@ -957,6 +970,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "上下文注入"
                     iconAsset = "context.svg"
+                    this.colors = colors()
                     summary = message.toolName.orEmpty()
                     body = if (message.contextCatalog.isNotEmpty()) {
                         message.contextCatalog.joinToString("\n") { "${it.name}\n${it.description}" }
@@ -1033,6 +1047,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "Think"
                     iconAsset = "think.svg"
+                    this.colors = colors()
                     summary = message.content.dshReasoningSummary(message.streaming)
                     body = message.content
                     open = isExpanded()
@@ -1059,6 +1074,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "Skill"
                     iconAsset = "tool-skill.svg"
+                    this.colors = colors()
                     summary = remoteTool.summary
                     errorSummary = message.toolError
                     body = message.content
@@ -1112,6 +1128,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = if (cardLabel.dshLooksLikeJson()) (remoteTool?.toolName ?: "工具") else cardLabel
                     iconAsset = remoteTool?.iconAsset() ?: message.toolCardType.iconAsset()
+                    this.colors = colors()
                     this.summary = summary
                     errorSummary = message.toolError
                     body = if (isJson) "" else toolBody
@@ -1203,7 +1220,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             liveContent = contentProvider
                             streamingProvider = pageStreaming
                             streaming = live
-                            darkMode = false
+                            darkMode = colors().isDark
                         }
                     }
                     vif({ pageStreaming() && (contentProvider?.invoke() ?: message.content).isNotEmpty() }) {
@@ -1211,7 +1228,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             attr {
                                 text(DshStreamingMarkdown.CURSOR)
                                 fontSize(14f)
-                                color(Color(0xFF4176E6))
+                                color(colors().stateBusinessPrimary)
                                 marginTop(2f)
                             }
                         }
@@ -1222,7 +1239,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
         if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
-            DshMessageFooter { action ->
+            DshMessageFooter(copied = copied(), colors = colors()) { action ->
                 // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
                 if (action == DshMessageFooterAction.COPY) {
                     onCopyMessageContent(message)
@@ -1236,40 +1253,46 @@ internal fun ViewContainer<*, *>.DshMessageRow(
 
 // 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
 internal fun ViewContainer<*, *>.DshMessageFooter(
+    copied: Boolean = false,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
     onAction: (DshMessageFooterAction) -> Unit,
 ) {
     View {
         attr {
-            width(128f)
-            height(24f)
+            height(28f)
             marginTop(2f)
             flexDirectionRow()
             alignItemsCenter()
         }
-        DshFooterActionIcon("copy.svg", DshMessageFooterAction.COPY, onAction)
-        DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction)
-        DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction)
-        DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction)
+        DshFooterActionIcon(if (copied) "check.svg" else "copy.svg", DshMessageFooterAction.COPY, onAction, colors = colors, first = true)
+        DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction, colors = colors)
+        DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction, colors = colors)
+        DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction, colors = colors)
     }
 }
 
-// 单个操作图标按钮：32x24 紧凑热区，16px 图标居中
+// 单个操作图标按钮：28x28 圆形热区，16px 图标居中（对齐 dsh 原版 IconActions）
 internal fun ViewContainer<*, *>.DshFooterActionIcon(
     asset: String,
     action: DshMessageFooterAction,
     onAction: (DshMessageFooterAction) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
+    first: Boolean = false,
 ) {
     View {
         attr {
-            width(32f)
-            height(24f)
+            width(28f)
+            height(28f)
             allCenter()
+            borderRadius(14f)
+            if (!first) marginLeft(6f)
         }
         event { click { onAction(action) } }
         Image {
             attr {
                 src(ImageUri.commonAssets(asset))
                 size(16f, 16f)
+                tintColor(colors.labelTertiary)
             }
         }
     }

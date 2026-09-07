@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import android.graphics.Color
 import android.os.Build
 import android.util.Log
@@ -18,6 +19,7 @@ import com.example.dsh.ssh.DshSshForegroundService
 import com.example.dsh.ssh.DshSshKeyStore
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -98,6 +100,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "deleteSshKey" -> deleteSshKey(params)
             "startSshKeepAlive" -> startSshKeepAlive()
             "stopSshKeepAlive" -> stopSshKeepAlive()
+            "shareExportFile" -> shareExportFile(params)
 
             else -> callback?.invoke(
                 mapOf(
@@ -133,6 +136,26 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             paramJSON.optString("content"),
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    private fun shareExportFile(params: String?) {
+        if (params == null) return
+        val paramJSON = JSONObject(params)
+        val path = paramJSON.optString("path")
+        if (path.isEmpty()) return
+        val ctx = context ?: KRApplication.application
+        val file = File(path)
+        if (!file.exists()) return
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(intent, "导出会话日志")
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(chooser)
     }
 
     private fun copyToPasteboard(params: String?) {

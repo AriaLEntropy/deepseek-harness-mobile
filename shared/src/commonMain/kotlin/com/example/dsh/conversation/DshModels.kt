@@ -9,6 +9,7 @@ import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
 import com.example.dsh.storage.*
 import com.example.dsh.web.*
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 internal enum class DshConnectionMode {
     LOCAL,
     RELAY,
@@ -638,6 +639,29 @@ internal interface DshRepository {
         onError: (String) -> Unit,
     )
 
+    fun loadAgentPresets(
+        onSuccess: (List<DshAgentPresetOption>) -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    fun loadHostVersion(
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    fun describeSettings(
+        onSuccess: (DshSettingsSnapshot) -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    fun updateSetting(
+        ns: String,
+        patch: JSONObject,
+        expectedRevision: Int,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    )
+
     fun loadModels(
         sessionId: String,
         onSuccess: (DshSessionModels) -> Unit,
@@ -678,3 +702,30 @@ internal interface DshRepository {
         onError: (String) -> Unit,
     ): DshStreamHandle
 }
+
+internal data class DshAgentPresetOption(
+    val id: String,
+    val name: String,
+    val description: String = "",
+    val isDefault: Boolean = false,
+)
+
+internal data class DshSettingsChoice(
+    val value: String,
+    val label: String = "",
+    val description: String = "",
+)
+
+internal data class DshSettingsSnapshot(
+    val writable: Boolean = false,
+    val permissionPreset: String = "",
+    val permissionChoices: List<DshSettingsChoice> = emptyList(),
+    val permissionRevision: Int = 0,
+    val localeValue: String = "",
+    val localeRevision: Int = 0,
+    val themeValue: String = "",
+    val themeRevision: Int = 0,
+    val defaultModelProvider: String = "",
+    val defaultModelLabel: String = "",
+    val defaultModelRevision: Int = 0,
+)
