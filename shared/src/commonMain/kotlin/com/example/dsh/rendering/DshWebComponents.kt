@@ -1207,7 +1207,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         flexDirectionColumn()
                         padding(14f, 16f, 12f, 16f)
                         borderRadius(20f)
-                        backgroundColor(Color.WHITE)
+                        backgroundColor(ctx.attr.colors.bgLayer1)
                         boxShadow(BoxShadow(0f, 8f, 30f, Color(0x26000000)))
                         // 选项少时卡片 wrap content（maxHeight 上限，无空白）；选项多时 flex(1f) 占满覆盖层，
                         // 键盘弹出覆盖层收缩时卡片自动收缩，防止顶部顶到 topbar
@@ -1232,7 +1232,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 attr {
                                     text(current.header.ifEmpty { "确认意图" })
                                     fontSize(12f)
-                                    color(Color(0xFF8A96A3))
+                                    color(ctx.attr.colors.labelTertiary)
                                 }
                             }
                             Text {
@@ -1242,7 +1242,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     fontSize(17f)
                                     fontWeightMedium()
                                     lineHeight(24f)
-                                    color(Color(0xFF1A1D21))
+                                    color(ctx.attr.colors.labelPrimary)
                                 }
                             }
                         }
@@ -1264,6 +1264,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     attr {
                                         src(ImageUri.commonAssets("chevron-down.svg"))
                                         size(18f, 18f)
+                                        tintColor(ctx.attr.colors.labelTertiary)
                                         transform(Rotate(if (ctx.collapsed) 0f else 180f))
                                     }
                                 }
@@ -1282,6 +1283,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     attr {
                                         src(ImageUri.commonAssets("x.svg"))
                                         size(16f, 16f)
+                                        tintColor(ctx.attr.colors.labelTertiary)
                                     }
                                 }
                                 DshTapTarget { ctx.attr.onDismiss() }
@@ -1686,6 +1688,7 @@ internal class DshQuestionFlowAttr : ComposeAttr() {
     var onSubmit: () -> Unit by observable({})
     var onDismiss: () -> Unit by observable({})
     var onKeyboardHeightChange: (com.tencent.kuikly.core.views.KeyboardParams) -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal fun ViewContainer<*, *>.DshQuestionFlow(init: DshQuestionFlowView.() -> Unit) {

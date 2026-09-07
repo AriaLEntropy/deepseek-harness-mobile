@@ -490,6 +490,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 onSubmit = onSubmitQuestion
                 onDismiss = onDismissQuestion
                 this.onKeyboardHeightChange = onKeyboardHeightChange
+                colors = colors
             }
         }
         val questionActive = {
