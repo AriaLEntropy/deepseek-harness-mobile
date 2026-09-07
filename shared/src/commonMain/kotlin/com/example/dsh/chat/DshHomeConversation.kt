@@ -963,7 +963,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "上下文注入"
                     iconAsset = "context.svg"
-                    colors = colors()
+                    this.colors = colors()
                     summary = message.toolName.orEmpty()
                     body = if (message.contextCatalog.isNotEmpty()) {
                         message.contextCatalog.joinToString("\n") { "${it.name}\n${it.description}" }
@@ -1040,7 +1040,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "Think"
                     iconAsset = "think.svg"
-                    colors = colors()
+                    this.colors = colors()
                     summary = message.content.dshReasoningSummary(message.streaming)
                     body = message.content
                     open = isExpanded()
@@ -1067,7 +1067,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = "Skill"
                     iconAsset = "tool-skill.svg"
-                    colors = colors()
+                    this.colors = colors()
                     summary = remoteTool.summary
                     errorSummary = message.toolError
                     body = message.content
@@ -1121,7 +1121,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 attr {
                     title = if (cardLabel.dshLooksLikeJson()) (remoteTool?.toolName ?: "工具") else cardLabel
                     iconAsset = remoteTool?.iconAsset() ?: message.toolCardType.iconAsset()
-                    colors = colors()
+                    this.colors = colors()
                     this.summary = summary
                     errorSummary = message.toolError
                     body = if (isJson) "" else toolBody
@@ -1232,7 +1232,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
         if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
-            DshMessageFooter(copied = copied()) { action ->
+            DshMessageFooter(copied = copied(), colors = colors()) { action ->
                 // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
                 if (action == DshMessageFooterAction.COPY) {
                     onCopyMessageContent(message)
@@ -1247,6 +1247,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
 // 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
 internal fun ViewContainer<*, *>.DshMessageFooter(
     copied: Boolean = false,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
     onAction: (DshMessageFooterAction) -> Unit,
 ) {
     View {
@@ -1256,10 +1257,10 @@ internal fun ViewContainer<*, *>.DshMessageFooter(
             flexDirectionRow()
             alignItemsCenter()
         }
-        DshFooterActionIcon(if (copied) "check.svg" else "copy.svg", DshMessageFooterAction.COPY, onAction, first = true)
-        DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction)
-        DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction)
-        DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction)
+        DshFooterActionIcon(if (copied) "check.svg" else "copy.svg", DshMessageFooterAction.COPY, onAction, colors = colors, first = true)
+        DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction, colors = colors)
+        DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction, colors = colors)
+        DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction, colors = colors)
     }
 }
 
@@ -1268,6 +1269,7 @@ internal fun ViewContainer<*, *>.DshFooterActionIcon(
     asset: String,
     action: DshMessageFooterAction,
     onAction: (DshMessageFooterAction) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
     first: Boolean = false,
 ) {
     View {
@@ -1283,6 +1285,7 @@ internal fun ViewContainer<*, *>.DshFooterActionIcon(
             attr {
                 src(ImageUri.commonAssets(asset))
                 size(16f, 16f)
+                tintColor(colors.labelTertiary)
             }
         }
     }

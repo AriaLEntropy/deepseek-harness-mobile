@@ -315,6 +315,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
     onOpenSettings: () -> Unit,
     onNewSession: () -> Unit,
     onSelect: (String) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -331,7 +332,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 paddingLeft(14f)
                 paddingRight(14f)
                 paddingBottom(18f)
-                backgroundColor(Color(0xFFF9FAFB))
+                backgroundColor(colors.bgBase)
                 transform(Translate(if (animated()) 0f else -1f, 0f))
                 animation(Animation.easeOut(0.24f), animated())
             }
@@ -345,7 +346,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 View { attr { flex(1f) } }
                 View {
                     attr { size(38f, 38f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(22f, 22f) } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(22f, 22f); tintColor(colors.labelSecondary) } }
                     event { click { onClose() } }
                 }
             }
@@ -358,16 +359,16 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                     paddingLeft(12f)
                     paddingRight(12f)
                     borderRadius(9f)
-                    backgroundColor(Color(0xFFF1F3F5))
+                    backgroundColor(colors.specificSelector)
                 }
-                Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f) } }
+                Image { attr { src(ImageUri.commonAssets("plus.svg")); size(20f, 20f); tintColor(colors.labelPrimary) } }
                 Text {
                     attr {
                         text("新会话")
                         marginLeft(10f)
                         fontSize(14f)
                         fontWeightMedium()
-                        color(Color(0xFF32373C))
+                        color(colors.labelPrimary)
                     }
                 }
                 event { click { onNewSession() } }
