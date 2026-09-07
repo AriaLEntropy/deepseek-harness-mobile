@@ -364,7 +364,7 @@ internal class DshHomePage : BasePager() {
                 attr {
                     flex(1f)
                     flexDirectionColumn()
-                    backgroundColor(Color(BG))
+                    backgroundColor(ctx.themeController.currentColors.bgBase)
                     paddingTop(pagerData.statusBarHeight)
                 }
 
@@ -412,7 +412,7 @@ internal class DshHomePage : BasePager() {
                             attr {
                                 flex(1f)
                                 flexDirectionRow()
-                                backgroundColor(Color(BG))
+                                backgroundColor(ctx.themeController.currentColors.bgBase)
                             }
                             // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
                             vif({ ctx.isRemoteHost }) {
@@ -947,7 +947,7 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(Color.WHITE)
+                                backgroundColor(ctx.themeController.currentColors.bgLayer3)
                             }
                             Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
                             Input {
@@ -995,7 +995,7 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(Color.WHITE)
+                                backgroundColor(ctx.themeController.currentColors.bgLayer3)
                             }
                             Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
                             Text {

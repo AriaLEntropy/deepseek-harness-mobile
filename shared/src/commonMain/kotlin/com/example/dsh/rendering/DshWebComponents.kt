@@ -179,6 +179,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                         expanded = ctx.attr.bodyExpanded
                                         maxLines = ctx.attr.maxBodyLines
                                         error = ctx.attr.errorSummary
+                                        colors = c
                                         this.onToggle = {
                                             ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
                                             ctx.attr.onToggleBody()
@@ -232,6 +233,7 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
 
     override fun body(): ViewBuilder {
         val ctx = this
+        val c = ctx.attr.colors
         val expanded = ctx.attr.expanded
         val hidden = ctx.attr.content.lineSequence().count() - ctx.attr.maxLines
         val capped = hidden > 0 && !expanded
@@ -245,8 +247,8 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                 attr {
                     flexDirectionColumn()
                     borderRadius(8f)
-                    backgroundColor(Color(0xFFF9FAFB))
-                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+                    backgroundColor(c.markdownCodeBlock)
+                    border(Border(1f, BorderStyle.SOLID, c.borderL2))
                     padding(8f)
                 }
                 Scroller {
@@ -265,7 +267,7 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                             fontSize(12f)
                             lineHeight(18f)
                             fontFamily("monospace")
-                            color(Color(if (ctx.attr.error) 0xFFB53232 else 0xFF333B42))
+                            color(if (ctx.attr.error) c.stateErrorPrimary else c.labelPrimary)
                         }
                     }
                 }
@@ -280,7 +282,7 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                             attr {
                                 text("… 其余 $hidden 行")
                                 fontSize(12f)
-                                color(Color(0xFF4176E6))
+                                color(c.stateBusinessPrimary)
                             }
                         }
                         DshTapTarget {
@@ -299,7 +301,7 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                             attr {
                                 text("收起")
                                 fontSize(12f)
-                                color(Color(0xFF4176E6))
+                                color(c.stateBusinessPrimary)
                             }
                         }
                         DshTapTarget {
@@ -319,6 +321,7 @@ internal class DshLongTextAttr : ComposeAttr() {
     var maxHeight: Float by observable(0f)
     var error: Boolean by observable(false)
     var onToggle: () -> Unit by observable({})
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
 }
 
 internal fun ViewContainer<*, *>.DshLongText(init: DshLongTextView.() -> Unit) {
