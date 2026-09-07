@@ -1452,11 +1452,12 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     onPickTheme: () -> Unit,
     onPickDefaultModel: () -> Unit,
     onDisconnect: () -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr {
             absolutePositionAllZero()
-            backgroundColor(Color.WHITE)
+            backgroundColor(colors.bgBase)
         }
         View {
             attr {
@@ -1466,10 +1467,10 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 alignItemsCenter()
                 paddingLeft(12f)
                 paddingRight(8f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgBase)
             }
             View { attr { flex(1f) } }
-            Text { attr { text("设置"); fontSize(17f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+            Text { attr { text("设置"); fontSize(17f); fontWeightBold(); color(colors.labelPrimary) } }
             View {
                 attr { flex(1f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
                 View {

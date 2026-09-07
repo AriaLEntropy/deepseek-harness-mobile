@@ -844,6 +844,7 @@ internal class DshHomePage : BasePager() {
                         onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
                         onDisconnect = { ctx.disconnectFromHost() },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
 
