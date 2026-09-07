@@ -731,8 +731,8 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                         flexDirectionColumn()
                         padding(8f)
                         borderRadius(10f)
-                        backgroundColor(Color(0xFFF8FAFB))
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFDEE5EA)))
+                        backgroundColor(ctx.attr.colors.bgBase)
+                        border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                     }
                     View {
                         attr { height(30f); flexDirectionRow(); alignItemsCenter() }
@@ -742,7 +742,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                 text(if (liveCount > 0) "后台任务 · $liveCount 运行中" else "后台任务 · ${snapshot.size}")
                                 flex(1f)
                                 fontSize(13f)
-                                color(Color(0xFF39424A))
+                                color(ctx.attr.colors.labelPrimary)
                             }
                         }
                         Image {
@@ -877,6 +877,7 @@ internal class DshJobsPanelAttr : ComposeAttr() {
     var expanded: Boolean by observable(false)
     var now: Long by observable(0L)
     var onToggle: () -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal fun ViewContainer<*, *>.DshJobsPanel(init: DshJobsPanelView.() -> Unit) {

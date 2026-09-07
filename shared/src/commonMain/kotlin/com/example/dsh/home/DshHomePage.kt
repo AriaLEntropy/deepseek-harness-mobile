@@ -230,7 +230,7 @@ internal class DshHomePage : BasePager() {
     private var sessionLogDetailRaw by observable("")
     private var sessionLogExporting by observable(false)
     private var sessionLogTimeFilter by observable(0)
-    private var sessionLogLevelFilter by observable<Set<LogLevel>>(emptySet())
+    private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
     private var sessionLogTypeFilter by observable("")
     private var sessionLogKeyword by observable("")
     private val sessionLogView by observableList<LogEvent>()
@@ -1057,6 +1057,7 @@ internal class DshHomePage : BasePager() {
                     onDismiss = { ctx.closeOverflowMenu() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = ctx.themeController.currentColors,
                 )
                 DshSessionLogModal(
                     visible = { ctx.sessionLogVisible },
@@ -2868,7 +2869,7 @@ internal class DshHomePage : BasePager() {
                 else -> true
             }
             timeOk &&
-                (levels.isEmpty() || e.level in levels) &&
+                (e.level in levels) &&
                 (typeQ.isEmpty() || e.type.contains(typeQ, ignoreCase = true)) &&
                 (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
         }
@@ -2882,9 +2883,16 @@ internal class DshHomePage : BasePager() {
     }
 
     fun onLogToggleLevel(level: LogLevel) {
-        val next = if (level in sessionLogLevelFilter) sessionLogLevelFilter - level else sessionLogLevelFilter + level
-        sessionLogLevelFilter = next
-        recomputeSessionLogView()
+        // 至少保留一个等级选中：取消最后一个时不响应
+        val next = if (level in sessionLogLevelFilter) {
+            if (sessionLogLevelFilter.size == 1) sessionLogLevelFilter else sessionLogLevelFilter - level
+        } else {
+            sessionLogLevelFilter + level
+        }
+        if (next != sessionLogLevelFilter) {
+            sessionLogLevelFilter = next
+            recomputeSessionLogView()
+        }
     }
 
     fun onLogTypeFilter(value: String) {
@@ -2899,7 +2907,7 @@ internal class DshHomePage : BasePager() {
 
     fun clearLogFilters() {
         sessionLogTimeFilter = 0
-        sessionLogLevelFilter = emptySet()
+        sessionLogLevelFilter = LogLevel.entries.toSet()
         sessionLogTypeFilter = ""
         sessionLogKeyword = ""
         recomputeSessionLogView()

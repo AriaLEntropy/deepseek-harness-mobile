@@ -437,6 +437,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     expanded = jobsPanelExpanded()
                     now = jobsNow()
                     onToggle = onToggleJobsPanel
+                    colors = colors
                 }
             }
         }

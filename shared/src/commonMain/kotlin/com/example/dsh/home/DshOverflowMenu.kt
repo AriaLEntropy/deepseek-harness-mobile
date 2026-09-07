@@ -11,6 +11,7 @@ import com.example.dsh.storage.*
 import com.example.dsh.web.*
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
+import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.collection.ObservableList
@@ -43,6 +44,7 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
     onDismiss: () -> Unit,
     statusBarHeight: Float,
     pageViewWidth: Float,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     vif({ visible() }) {
         val menuWidth = 220f
@@ -60,8 +62,8 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
                     top(menuTop)
                     width(menuWidth)
                     borderRadius(12f)
-                    border(Border(1f, BorderStyle.SOLID, Color(0xFFEBEEF2)))
-                    backgroundColor(Color(0xFFFFFFFF))
+                    border(Border(1f, BorderStyle.SOLID, colors.borderL2))
+                    backgroundColor(colors.bgLayer1)
                     boxShadow(BoxShadow(0f, 4f, 16f, Color(0x33000000)))
                     paddingTop(6f)
                     paddingBottom(6f)
@@ -82,14 +84,14 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
                             attr {
                                 text(item.label)
                                 fontSize(14f)
-                                color(Color(if (item.danger) 0xFFEC1313 else 0xFF1F2933))
+                                color(if (item.danger) colors.stateErrorPrimary else colors.labelPrimary)
                             }
                         }
                         Image {
                             attr {
                                 src(ImageUri.commonAssets(item.iconAsset))
                                 size(18f, 18f)
-                                tintColor(Color(if (item.danger) 0xFFEC1313 else 0xFF81858C))
+                                tintColor(if (item.danger) colors.stateErrorPrimary else colors.labelTertiary)
                             }
                         }
                         DshHitButton { onSelect(item.id) }
@@ -109,99 +111,279 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
 internal fun ViewContainer<*, *>.DshSessionLogModal(
     visible: () -> Boolean,
     events: () -> ObservableList<LogEvent>,
+    total: () -> Int,
     selected: () -> LogEvent?,
+    detailRaw: () -> String,
+    exporting: () -> Boolean,
+    timeFilter: () -> Int,
+    levelFilter: () -> Set<LogLevel>,
+    typeFilter: () -> String,
+    keyword: () -> String,
     onSelect: (LogEvent?) -> Unit,
     onRefresh: () -> Unit,
+    onExport: () -> Unit,
+    onCopy: (LogEvent) -> Unit,
     onClose: () -> Unit,
+    onTimeFilter: (Int) -> Unit,
+    onToggleLevel: (LogLevel) -> Unit,
+    onTypeFilter: (String) -> Unit,
+    onKeyword: (String) -> Unit,
+    onClearFilters: () -> Unit,
+    statusBarHeight: Float,
     pageViewWidth: Float,
 ) {
     vif({ visible() }) {
         Modal(inWindow = true) {
             attr {
                 absolutePositionAllZero()
-                allCenter()
-                paddingLeft(20f)
-                paddingRight(20f)
                 backgroundColor(Color(0x66000000))
             }
             View {
                 attr {
-                    width(pageViewWidth - 40f)
-                    maxWidth(560f)
-                    height(440f)
+                    width(pageViewWidth)
+                    absolutePositionAllZero()
                     flexDirectionColumn()
-                    padding(20f)
-                    borderRadius(16f)
+                    paddingTop(18f + statusBarHeight)
+                    paddingBottom(10f)
                     backgroundColor(Color.WHITE)
                 }
                 vif({ selected() == null }) {
-                    // ===== 列表 =====
+                    // ===== 列表（全屏日志页） =====
                     View {
-                        attr { flexDirectionRow(); alignItemsCenter() }
+                        attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f) }
+                        Text {
+                            attr { text("← 返回"); width(64f); height(36f); fontSize(14f); color(Color(0xFF4176E6)) }
+                            event { click { onClose() } }
+                        }
                         Text {
                             attr {
                                 text("会话日志")
-                                fontSize(18f)
+                                fontSize(17f)
                                 fontWeightBold()
                                 color(Color(0xFF1F2933))
                                 flex(1f)
+                                textAlignCenter()
                             }
                         }
                         Text {
-                            attr { text("刷新"); width(56f); height(34f); textAlignCenter(); fontSize(13f); color(Color(0xFF4176E6)) }
-                            event { click { onRefresh() } }
-                        }
-                        Text {
-                            attr { text("关闭"); width(56f); height(34f); textAlignCenter(); fontSize(13f); color(Color(0xFF7A838A)) }
-                            event { click { onClose() } }
+                            attr {
+                                text(if (exporting()) "导出中..." else "导出")
+                                width(64f)
+                                height(36f)
+                                textAlignCenter()
+                                fontSize(14f)
+                                color(Color(0xFF4176E6))
+                            }
+                            event { click { if (!exporting()) onExport() } }
                         }
                     }
-                    Text {
+                    // 筛选区（§5.3 四维常显，选值可见）
+                    View {
                         attr {
-                            text("仅显示当前会话的日志（最多 5000 条，含尚未落盘的内存日志）。点按某条查看详情。")
-                            marginTop(4f)
-                            fontSize(12f)
-                            color(Color(0xFF98A1A9))
+                            marginTop(6f)
+                            paddingLeft(12f)
+                            paddingRight(12f)
+                            paddingTop(8f)
+                            paddingBottom(4f)
+                        }
+                        // 行1：时间范围（分段控制器，选中白底深字）
+                        View {
+                            attr {
+                                marginTop(6f)
+                                flexDirectionRow()
+                                borderRadius(10f)
+                                backgroundColor(Color(0xFFEFF1F4))
+                                padding(top = 2f, left = 2f, bottom = 2f, right = 2f)
+                            }
+                            val timeLabels = listOf("全部", "10分钟", "1小时", "今天")
+                            for (i in timeLabels.indices) {
+                                vif({ timeFilter() == i }) {
+                                    View {
+                                        attr {
+                                            flex(1f); height(30f); borderRadius(8f)
+                                            alignItemsCenter(); justifyContentCenter()
+                                            backgroundColor(Color(0xFFFFFFFF))
+                                        }
+                                        event { click { onTimeFilter(i) } }
+                                        Text { attr { text(timeLabels[i]); fontSize(12f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                                    }
+                                }
+                                vif({ timeFilter() != i }) {
+                                    View {
+                                        attr {
+                                            flex(1f); height(30f); borderRadius(8f)
+                                            alignItemsCenter(); justifyContentCenter()
+                                            backgroundColor(Color(0x00000000))
+                                        }
+                                        event { click { onTimeFilter(i) } }
+                                        Text { attr { text(timeLabels[i]); fontSize(12f); fontWeightBold(); color(Color(0xFF8B939A)) } }
+                                    }
+                                }
+                            }
+                        }
+                        // 行2：等级多选（彩色色块，选中实心填充白字）
+                        View {
+                            attr { flexDirectionRow(); alignItemsCenter(); marginTop(10f) }
+                            for (lv in LogLevel.entries) {
+                                val lvColor = sessionLogLevelColor(lv)
+                                vif({ lv in levelFilter() }) {
+                                    View {
+                                        attr {
+                                            marginRight(10f); width(30f); height(30f); borderRadius(15f)
+                                            alignItemsCenter(); justifyContentCenter()
+                                            border(Border(1f, BorderStyle.SOLID, Color(lvColor)))
+                                            backgroundColor(Color(lvColor))
+                                        }
+                                        event { click { onToggleLevel(lv) } }
+                                        Text { attr { text(sessionLogLevelLabel(lv)); fontSize(13f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
+                                    }
+                                }
+                                vif({ lv !in levelFilter() }) {
+                                    View {
+                                        attr {
+                                            marginRight(10f); width(30f); height(30f); borderRadius(15f)
+                                            alignItemsCenter(); justifyContentCenter()
+                                            border(Border(1f, BorderStyle.SOLID, Color(lvColor)))
+                                            backgroundColor(Color(0x00000000))
+                                        }
+                                        event { click { onToggleLevel(lv) } }
+                                        Text { attr { text(sessionLogLevelLabel(lv)); fontSize(13f); fontWeightBold(); color(Color(lvColor)) } }
+                                    }
+                                }
+                            }
+                        }
+                        // 行3：事件类型
+                        View {
+                            attr {
+                                height(34f)
+                                marginTop(8f)
+                                paddingLeft(10f)
+                                paddingRight(10f)
+                                borderRadius(8f)
+                                border(Border(1f, BorderStyle.SOLID, Color(0x24000000)))
+                            }
+                            Input {
+                                attr {
+                                    flex(1f)
+                                    fontSize(12f)
+                                    color(Color(0xFF2C3237))
+                                    placeholder("事件类型过滤，如 turn/start")
+                                    placeholderColor(Color(0xFF98A1A9))
+                                    text(typeFilter())
+                                }
+                                event { textDidChange { onTypeFilter(it.text) } }
+                            }
+                        }
+                        // 行4：关键词
+                        View {
+                            attr {
+                                height(34f)
+                                marginTop(6f)
+                                paddingLeft(10f)
+                                paddingRight(10f)
+                                borderRadius(8f)
+                                border(Border(1f, BorderStyle.SOLID, Color(0x24000000)))
+                            }
+                            Input {
+                                attr {
+                                    flex(1f)
+                                    fontSize(12f)
+                                    color(Color(0xFF2C3237))
+                                    placeholder("搜索日志内容")
+                                    placeholderColor(Color(0xFF98A1A9))
+                                    text(keyword())
+                                }
+                                event { textDidChange { onKeyword(it.text) } }
+                            }
+                        }
+                        View { attr { height(0.5f); marginTop(10f); backgroundColor(Color(0x14000000)) } }
+                    }
+                    vif({ total() > 0 && total() <= 3 }) {
+                        Text {
+                            attr {
+                                text("仅记录本次连接期间产生的事件；在本会话发送消息或执行任务后，完整事件流将实时写入这里")
+                                marginTop(10f)
+                                marginLeft(12f)
+                                marginRight(12f)
+                                fontSize(11f)
+                                color(Color(0xFF98A1A9))
+                            }
                         }
                     }
-                    vif({ events().isEmpty() }) {
+                    vif({ total() == 0 }) {
                         Text {
                             attr {
                                 text("暂无日志")
-                                marginTop(100f)
+                                marginTop(90f)
                                 alignSelfCenter()
                                 fontSize(14f)
                                 color(Color(0xFF98A1A9))
                             }
                         }
                     }
+                    vif({ total() > 0 && events().isEmpty() }) {
+                        View {
+                            attr { flexDirectionColumn(); alignItemsCenter(); marginTop(70f) }
+                            Text {
+                                attr {
+                                    text("无匹配结果")
+                                    fontSize(14f)
+                                    color(Color(0xFF98A1A9))
+                                }
+                            }
+                            View {
+                                attr {
+                                    marginTop(12f)
+                                    padding(top = 8f, left = 18f, bottom = 8f, right = 18f)
+                                    borderRadius(16f)
+                                    border(Border(1f, BorderStyle.SOLID, Color(0xFF4176E6)))
+                                }
+                                event { click { onClearFilters() } }
+                                Text {
+                                    attr {
+                                        text("清除筛选")
+                                        fontSize(13f)
+                                        color(Color(0xFF4176E6))
+                                    }
+                                }
+                            }
+                        }
+                    }
                     vif({ events().isNotEmpty() }) {
                         Scroller {
-                            attr { flex(1f); marginTop(10f) }
+                            attr { flex(1f); marginTop(4f) }
                             vfor({ events() }) { entry ->
                                 View {
                                     attr {
                                         minHeight(44f)
                                         flexDirectionRow()
                                         alignItemsCenter()
-                                        paddingLeft(8f)
-                                        paddingRight(8f)
-                                        borderRadius(8f)
+                                        paddingLeft(12f)
+                                        paddingRight(12f)
                                     }
                                     Text {
                                         attr {
                                             text(LogExporter.formatTimestamp(entry.timestamp).substring(11, 23))
-                                            width(80f)
-                                            fontSize(12f)
+                                            width(74f)
+                                            fontSize(11f)
                                             color(Color(0xFF8B939A))
                                         }
                                     }
                                     Text {
                                         attr {
                                             text(sessionLogLevelLabel(entry.level))
-                                            width(30f)
+                                            width(28f)
                                             fontSize(12f)
                                             color(Color(sessionLogLevelColor(entry.level)))
+                                        }
+                                    }
+                                    Text {
+                                        attr {
+                                            text(entry.type)
+                                            width(96f)
+                                            fontSize(11f)
+                                            color(Color(0xFF4176E6))
+                                            lines(1)
                                         }
                                     }
                                     Text {
@@ -209,7 +391,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                             text(entry.message)
                                             flex(1f)
                                             marginLeft(6f)
-                                            fontSize(13f)
+                                            fontSize(12f)
                                             color(Color(0xFF2C3237))
                                             lines(1)
                                         }
@@ -221,43 +403,83 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                     }
                 }
                 vif({ selected() != null }) {
-                    // ===== 详情 =====
+                    // ===== 详情（Chucker 列表到详情；返回保留筛选与列表位置） =====
                     val entry = selected()!!
                     View {
-                        attr { flexDirectionRow(); alignItemsCenter() }
+                        attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f) }
                         Text {
-                            attr {
-                                text("日志详情")
-                                fontSize(18f)
-                                fontWeightBold()
-                                color(Color(0xFF1F2933))
-                                flex(1f)
-                            }
-                        }
-                        Text {
-                            attr { text("返回"); width(56f); height(34f); textAlignCenter(); fontSize(13f); color(Color(0xFF4176E6)) }
+                            attr { text("← 返回"); width(64f); height(36f); fontSize(14f); color(Color(0xFF4176E6)) }
                             event { click { onSelect(null) } }
                         }
                         Text {
-                            attr { text("关闭"); width(56f); height(34f); textAlignCenter(); fontSize(13f); color(Color(0xFF7A838A)) }
-                            event { click { onClose() } }
+                            attr {
+                                text("日志详情")
+                                fontSize(17f)
+                                fontWeightBold()
+                                color(Color(0xFF1F2933))
+                                flex(1f)
+                                textAlignCenter()
+                            }
+                        }
+                        Text {
+                            attr {
+                                text("复制")
+                                width(64f)
+                                height(36f)
+                                textAlignCenter()
+                                fontSize(14f)
+                                color(Color(0xFF4176E6))
+                            }
+                            event { click { onCopy(entry) } }
                         }
                     }
                     Scroller {
-                        attr { flex(1f); marginTop(14f) }
-                        Text { attr { text("时间：${LogExporter.formatTimestamp(entry.timestamp)}"); fontSize(13f); lineHeight(20f); color(Color(0xFF68737D)) } }
-                        Text { attr { text("级别：${entry.level.name}"); marginTop(4f); fontSize(13f); lineHeight(20f); color(Color(0xFF68737D)) } }
-                        Text { attr { text("类型：${entry.type}"); marginTop(4f); fontSize(13f); lineHeight(20f); color(Color(0xFF68737D)) } }
-                        Text { attr { text("会话：${entry.sessionId ?: "-"}"); marginTop(4f); fontSize(13f); lineHeight(20f); color(Color(0xFF68737D)) } }
-                        Text { attr { text("RPC：${entry.rpcId ?: "-"}"); marginTop(4f); fontSize(13f); lineHeight(20f); color(Color(0xFF68737D)) } }
-                        Text { attr { text("大小：${entry.size} B"); marginTop(4f); fontSize(13f); lineHeight(20f); color(Color(0xFF68737D)) } }
+                        attr { flex(1f); marginTop(8f); paddingLeft(16f); paddingRight(16f) }
+                        Text { attr { text("时间：${LogExporter.formatTimestamp(entry.timestamp)}"); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
+                        Text { attr { text("序号：${entry.seq}"); marginTop(2f); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
+                        Text { attr { text("级别：${entry.level.name}"); marginTop(2f); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
+                        Text { attr { text("类型：${entry.type}"); marginTop(2f); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
+                        Text { attr { text("会话：${entry.sessionId ?: "-"}"); marginTop(2f); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
+                        Text { attr { text("RPC：${entry.rpcId ?: "-"}"); marginTop(2f); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
+                        Text { attr { text("大小：${entry.size} B"); marginTop(2f); fontSize(13f); lineHeight(22f); color(Color(0xFF68737D)) } }
                         Text {
                             attr {
                                 text("消息：${entry.message}")
-                                marginTop(14f)
+                                marginTop(10f)
                                 fontSize(13f)
                                 lineHeight(20f)
                                 color(Color(0xFF2C3237))
+                            }
+                        }
+                        vif({ detailRaw().isNotEmpty() }) {
+                            Text {
+                                attr {
+                                    text("原文（已脱敏）")
+                                    marginTop(16f)
+                                    fontSize(13f)
+                                    fontWeightMedium()
+                                    color(Color(0xFF68737D))
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text(detailRaw())
+                                    marginTop(6f)
+                                    fontSize(12f)
+                                    lineHeight(18f)
+                                    color(Color(0xFF2C3237))
+                                }
+                            }
+                        }
+                        vif({ detailRaw().isEmpty() && entry.sessionId != null }) {
+                            Text {
+                                attr {
+                                    text("原文不可用：会话事件流仅内存保留，重连或重启后缺失。")
+                                    marginTop(14f)
+                                    fontSize(12f)
+                                    lineHeight(18f)
+                                    color(Color(0xFF8B939A))
+                                }
                             }
                         }
                     }
