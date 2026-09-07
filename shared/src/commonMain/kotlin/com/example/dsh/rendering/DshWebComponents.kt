@@ -757,6 +757,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                             attr {
                                 src(ImageUri.commonAssets("chevron-down.svg"))
                                 size(14f, 14f)
+                                tintColor(ctx.attr.colors.labelTertiary)
                                 transform(Rotate(if (ctx.attr.expanded) 0f else -90f))
                             }
                         }
@@ -770,7 +771,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                 flexDirectionColumn()
                                 padding(6f)
                                 borderRadius(8f)
-                                backgroundColor(Color(0xFFF1F5F8))
+                                backgroundColor(ctx.attr.colors.bgBase)
                             }
                             View {
                                 attr { flexDirectionRow(); alignItemsCenter() }
@@ -778,15 +779,15 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                     attr {
                                         size(7f, 7f)
                                         borderRadius(4f)
-                                        backgroundColor(Color(
+                                        backgroundColor(
                                             when (job.status) {
-                                                "running" -> 0xFF2F9E63
-                                                "stopping" -> 0xFFD99A20
-                                                "completed" -> 0xFF77848C
-                                                "failed" -> 0xFFC64C4C
-                                                else -> 0xFF879198
+                                                "running" -> ctx.attr.colors.stateSuccessPrimary
+                                                "stopping" -> ctx.attr.colors.stateWarnPrimary
+                                                "completed" -> ctx.attr.colors.labelTertiary
+                                                "failed" -> ctx.attr.colors.stateErrorPrimary
+                                                else -> ctx.attr.colors.labelTertiary
                                             },
-                                        ))
+                                        )
                                     }
                                 }
                                 Text {
@@ -795,7 +796,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                         marginLeft(7f)
                                         fontSize(12f)
                                         fontWeightMedium()
-                                        color(Color(0xFF3C4854))
+                                        color(ctx.attr.colors.labelPrimary)
                                     }
                                 }
                                 Text {
@@ -803,7 +804,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                         text(job.detail.ifEmpty { dshJobStatusLabel(job.status) })
                                         marginLeft(8f)
                                         fontSize(11f)
-                                        color(Color(0xFF6A757D))
+                                        color(ctx.attr.colors.labelSecondary)
                                     }
                                 }
                                 Text {
@@ -811,7 +812,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                         text(dshJobDuration(job, ctx.attr.now))
                                         marginLeft(8f)
                                         fontSize(11f)
-                                        color(Color(0xFF7A838A))
+                                        color(ctx.attr.colors.labelTertiary)
                                     }
                                 }
                             }
@@ -821,7 +822,7 @@ internal class DshJobsPanelView : ComposeView<DshJobsPanelAttr, ComposeEvent>() 
                                     marginTop(3f)
                                     lines(1)
                                     fontSize(12f)
-                                    color(Color(0xFF4B5660))
+                                    color(ctx.attr.colors.labelPrimary)
                                 }
                             }
                             vif({ job.detail.isNotEmpty() }) {
