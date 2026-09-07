@@ -389,7 +389,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         },
                                         reconnecting = turnReconnecting,
                                         elapsedMs = turnElapsedMs,
-                                        colors = colors,
+                                        colors = colors(),
                                     )
                                 }
                             }
@@ -406,7 +406,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     !stopButtonVisible() &&
                     !sessionRunning()
             }) {
-                DshNewSessionHome(colors = colors)
+                DshNewSessionHome(colors = colors())
             }
         }
         // 队列停靠栏（Web 时间线）：展示等待执行的任务队列
@@ -437,7 +437,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     expanded = jobsPanelExpanded()
                     now = jobsNow()
                     onToggle = onToggleJobsPanel
-                    colors = colors
+                    this.colors = colors()
                 }
             }
         }
@@ -452,6 +452,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onResume = onResumeGoal
                     onEdit = onEditGoal
                     onClear = onClearGoal
+                    colors = colors
                 }
             }
         }
@@ -462,6 +463,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     approval = pendingApproval()
                     busy = interactionBusy()
                     onAnswer = onAnswerApproval
+                    colors = colors
                 }
             }
         }

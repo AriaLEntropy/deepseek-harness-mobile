@@ -904,8 +904,8 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                         alignItemsCenter()
                         padding(8f, 10f, 8f, 10f)
                         borderRadius(8f)
-                        backgroundColor(Color(0xFFF7F9FB))
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFDCE5EC)))
+                        backgroundColor(ctx.attr.colors.bgBase)
+                        border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                     }
                     Image {
                         attr { src(ImageUri.commonAssets("goal.svg")); size(14f, 14f) }
@@ -921,7 +921,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                             marginLeft(6f)
                             fontSize(12f)
                             fontWeightMedium()
-                            color(Color(if (goal.phase == "blocked") 0xFFC23B3B else 0xFF536777))
+                            color(if (goal.phase == "blocked") ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelSecondary)
                         }
                     }
                     vif({ !ctx.editing }) {
@@ -932,7 +932,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 marginLeft(8f)
                                 lines(2)
                                 fontSize(12f)
-                                color(Color(0xFF354653))
+                                color(ctx.attr.colors.labelPrimary)
                             }
                         }
                     }
@@ -953,7 +953,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 text(if (ctx.attr.busy) "处理中" else "保存")
                                 marginLeft(8f)
                                 fontSize(12f)
-                                color(Color(0xFF2F7D4F))
+                                color(ctx.attr.colors.stateSuccessPrimary)
                             }
                             event {
                                 click {
@@ -968,7 +968,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 text("取消")
                                 marginLeft(8f)
                                 fontSize(12f)
-                                color(Color(0xFF7A838A))
+                                color(ctx.attr.colors.labelTertiary)
                             }
                             event { click { if (!ctx.attr.busy) ctx.editing = false } }
                         }
@@ -980,7 +980,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 marginLeft(6f)
                                 lines(1)
                                 fontSize(11f)
-                                color(Color(0xFFC23B3B))
+                                color(ctx.attr.colors.stateErrorPrimary)
                             }
                         }
                     }
@@ -990,7 +990,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 text(ctx.attr.error)
                                 marginLeft(6f)
                                 fontSize(11f)
-                                color(Color(0xFFC23B3B))
+                                color(ctx.attr.colors.stateErrorPrimary)
                             }
                         }
                     }
@@ -1000,7 +1000,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 text(if (ctx.attr.busy) "处理中" else "暂停")
                                 marginLeft(8f)
                                 fontSize(12f)
-                                color(Color(0xFF667687))
+                                color(ctx.attr.colors.labelSecondary)
                             }
                             event { click { if (!ctx.attr.busy) ctx.attr.onPause() } }
                         }
@@ -1011,7 +1011,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                                 text(if (ctx.attr.busy) "处理中" else "恢复")
                                 marginLeft(8f)
                                 fontSize(12f)
-                                color(Color(0xFF2F7D4F))
+                                color(ctx.attr.colors.stateSuccessPrimary)
                             }
                             event { click { if (!ctx.attr.busy) ctx.attr.onResume() } }
                         }
@@ -1022,7 +1022,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                             text("清除")
                             marginLeft(8f)
                             fontSize(12f)
-                            color(Color(0xFFB14646))
+                            color(ctx.attr.colors.stateErrorPrimary)
                         }
                         event { click { if (!ctx.attr.busy) ctx.attr.onClear() } }
                     }
@@ -1033,7 +1033,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                             text("编辑")
                             marginLeft(8f)
                             fontSize(12f)
-                            color(Color(0xFF4176E6))
+                            color(ctx.attr.colors.stateBusinessPrimary)
                         }
                         event { click { if (!ctx.attr.busy) { ctx.draft = goal.objective; ctx.editing = true } } }
                     }
@@ -1052,6 +1052,7 @@ internal class DshGoalBarAttr : ComposeAttr() {
     var onPause: () -> Unit by observable({})
     var onResume: () -> Unit by observable({})
     var onClear: () -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal fun ViewContainer<*, *>.DshGoalBar(init: DshGoalBarView.() -> Unit) {
@@ -1074,22 +1075,22 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                         flexDirectionColumn()
                         padding(14f, 14f, 14f, 14f)
                         borderRadius(16f)
-                        backgroundColor(Color.WHITE)
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE8E1C8)))
+                        backgroundColor(ctx.attr.colors.bgLayer1)
+                        border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.stateWarnBorder))
                     }
                     View {
                         attr {
                             alignSelfFlexStart()
                             padding(3f, 8f, 3f, 8f)
                             borderRadius(6f)
-                            backgroundColor(Color(0xFFFFF4D6))
+                            backgroundColor(ctx.attr.colors.stateWarnTertiary)
                         }
                         Text {
                             attr {
                                 text("等待审批")
                                 fontSize(11f)
                                 fontWeightMedium()
-                                color(Color(0xFF8A6A16))
+                                color(ctx.attr.colors.stateWarnPrimary)
                             }
                         }
                     }
@@ -1100,7 +1101,7 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                             fontSize(16f)
                             fontWeightMedium()
                             lineHeight(23f)
-                            color(Color(0xFF1F2933))
+                            color(ctx.attr.colors.labelPrimary)
                         }
                     }
                     vif({ approval.command != null }) {
@@ -1109,7 +1110,7 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                                 marginTop(8f)
                                 padding(10f, 12f, 10f, 12f)
                                 borderRadius(10f)
-                                backgroundColor(Color(0xFFF7F9FB))
+                                backgroundColor(ctx.attr.colors.bgBase)
                             }
                             Text {
                                 attr {
@@ -1117,7 +1118,7 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                                     fontSize(12f)
                                     lineHeight(18f)
                                     fontFamily("monospace")
-                                    color(Color(0xFF5C6570))
+                                    color(ctx.attr.colors.labelSecondary)
                                 }
                             }
                         }
@@ -1143,7 +1144,7 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                                 attr {
                                     text(if (ctx.attr.busy) "处理中" else "拒绝")
                                     fontSize(13f)
-                                    color(Color(0xFFB14646))
+                                    color(ctx.attr.colors.stateErrorPrimary)
                                 }
                             }
                             DshTapTarget { if (!ctx.attr.busy) ctx.attr.onAnswer("rejected") }
@@ -1155,7 +1156,7 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                                 paddingLeft(14f)
                                 paddingRight(14f)
                                 borderRadius(8f)
-                                backgroundColor(Color(if (ctx.attr.busy) 0xFFC8D7A8 else 0xFF2F7D4F))
+                                backgroundColor(if (ctx.attr.busy) ctx.attr.colors.stateSuccessTertiary else ctx.attr.colors.stateSuccessPrimary)
                                 justifyContentCenter()
                                 alignItemsCenter()
                             }
@@ -1180,6 +1181,7 @@ internal class DshApprovalPanelAttr : ComposeAttr() {
     var approval: DshPendingApproval? by observable(null)
     var busy: Boolean by observable(false)
     var onAnswer: (String) -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEvent>() {
