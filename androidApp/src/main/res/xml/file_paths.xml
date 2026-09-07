@@ -4,4 +4,5 @@
     <database-path name="exports" path="." />
     <!-- 导出文件目录（cacheDir/exports），FileProvider canonical 匹配需真实目录 -->
     <cache-path name="exports_cache" path="exports" />
+    <external-files-path name="exports_ext" path="exports" />
 </paths>

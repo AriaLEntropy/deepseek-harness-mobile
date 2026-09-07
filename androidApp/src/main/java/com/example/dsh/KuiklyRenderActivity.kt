@@ -120,7 +120,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         param["databaseDir"] = java.io.File(KRApplication.application.filesDir.parentFile, "databases").apply {
             if (!exists()) mkdirs()
         }.absolutePath
-        param["exportDir"] = java.io.File(KRApplication.application.cacheDir, "exports").apply {
+        param["exportDir"] = java.io.File(KRApplication.application.getExternalFilesDir(null), "exports").apply {
             if (!exists()) mkdirs()
         }.absolutePath
         return param
