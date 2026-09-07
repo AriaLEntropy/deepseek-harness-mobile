@@ -1555,22 +1555,22 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             }
 
             // 账户
-            DshSettingsGroupTitle("账户")
+            DshSettingsGroupTitle("账户", colors = colors)
             DshSettingsRow("icon-link16.svg", "连接设置", connectionModeLabel(), onOpenConnection, colors = colors)
             DshSettingsRow("icon-api14.svg", "API Key", if (apiKeyConfigured()) "已配置" else "未配置", onOpenApiKey, colors = colors)
 
             // 权限
-            DshSettingsGroupTitle("权限")
+            DshSettingsGroupTitle("权限", colors = colors)
             DshSettingsRow("permission-write.svg", "工作区权限", dshSettingsPermissionLabel(snapshot()), onPickPermission, colors = colors)
 
             // 应用
-            DshSettingsGroupTitle("应用")
+            DshSettingsGroupTitle("应用", colors = colors)
             DshSettingsRow("icon-globe14.svg", "语言", dshSettingsLocaleLabel(snapshot()), onPickLocale, colors = colors)
             DshSettingsRow("icon-followsystem16.svg", "外观", dshSettingsThemeLabel(snapshot()), onPickTheme, colors = colors)
             DshSettingsRow("icon-agentpreset16.svg", "默认模型", dshSettingsDefaultModelLabel(snapshot()), onPickDefaultModel, colors = colors)
 
             // 关于
-            DshSettingsGroupTitle("关于")
+            DshSettingsGroupTitle("关于", colors = colors)
             DshSettingsRow("icon-refresh16.svg", "电脑端 DSH 版本", hostVersion(), {}, colors = colors)
             View {
                 attr {
@@ -1625,7 +1625,7 @@ internal fun dshSettingsThemeLabel(snapshot: DshSettingsSnapshot): String = when
 internal fun dshSettingsDefaultModelLabel(snapshot: DshSettingsSnapshot): String =
     snapshot.defaultModelLabel.ifEmpty { "未设置" }
 
-internal fun ViewContainer<*, *>.DshSettingsGroupTitle(title: String) {
+internal fun ViewContainer<*, *>.DshSettingsGroupTitle(title: String, colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light) {
     Text {
         attr {
             text(title)
@@ -1633,7 +1633,7 @@ internal fun ViewContainer<*, *>.DshSettingsGroupTitle(title: String) {
             marginBottom(4f)
             marginLeft(16f)
             fontSize(13f)
-            color(Color(0xFF8B9298))
+            color(colors.labelTertiary)
         }
     }
 }
