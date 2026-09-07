@@ -1306,7 +1306,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     marginTop(10f)
                                     fontSize(13f)
                                     lineHeight(19f)
-                                    color(Color(0xFF6B7785))
+                                    color(ctx.attr.colors.labelSecondary)
                                 }
                             }
                         }
@@ -1324,11 +1324,11 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     alignItemsFlexStart()
                                     padding(12f, 14f, 12f, 14f)
                                     borderRadius(12f)
-                                    backgroundColor(Color(if (selected) 0xFFEFF5FF else 0xFFF7F9FB))
+                                    backgroundColor(if (selected) ctx.attr.colors.stateBusinessTertiary else ctx.attr.colors.bgBase)
                                     border(Border(
                                         1f,
                                         BorderStyle.SOLID,
-                                        Color(if (selected) 0xFFB7D0F5 else 0xFFE8EDF2),
+                                        if (selected) ctx.attr.colors.stateBusinessPrimary else ctx.attr.colors.borderL2,
                                     ))
                                 }
                                 // 编号方块
@@ -1337,7 +1337,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         size(22f, 22f)
                                         marginTop(1f)
                                         borderRadius(6f)
-                                        backgroundColor(Color(if (selected) 0xFF4176E6 else 0xFFEEF1F5))
+                                        backgroundColor(if (selected) ctx.attr.colors.stateBusinessPrimary else ctx.attr.colors.specificSelector)
                                         justifyContentCenter()
                                         alignItemsCenter()
                                     }
@@ -1346,7 +1346,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                             text("$optionIndex")
                                             fontSize(12f)
                                             fontWeightMedium()
-                                            color(Color(if (selected) 0xFFFFFFFF else 0xFF7A8494))
+                                            color(if (selected) Color.WHITE else ctx.attr.colors.labelTertiary)
                                         }
                                     }
                                 }
@@ -1368,7 +1368,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                                 text(displayLabel)
                                                 fontSize(14f)
                                                 fontWeightMedium()
-                                                color(Color(0xFF1F2933))
+                                                color(ctx.attr.colors.labelPrimary)
                                             }
                                         }
                                         vif({ isRecommended }) {
@@ -1377,7 +1377,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                                     marginLeft(6f)
                                                     padding(2f, 6f, 2f, 6f)
                                                     borderRadius(4f)
-                                                    backgroundColor(Color(0xFF4176E6))
+                                                    backgroundColor(ctx.attr.colors.stateBusinessPrimary)
                                                 }
                                                 Text {
                                                     attr {
@@ -1397,7 +1397,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                                 marginTop(3f)
                                                 fontSize(12f)
                                                 lineHeight(17f)
-                                                color(Color(0xFF6B7785))
+                                                color(ctx.attr.colors.labelSecondary)
                                             }
                                         }
                                     }
@@ -1421,11 +1421,11 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     alignItemsFlexStart()
                                     padding(12f, 14f, 12f, 14f)
                                     borderRadius(12f)
-                                    backgroundColor(Color(if (selected) 0xFFEFF5FF else 0xFFF7F9FB))
+                                    backgroundColor(if (selected) ctx.attr.colors.stateBusinessTertiary else ctx.attr.colors.bgBase)
                                     border(Border(
                                         1f,
                                         BorderStyle.SOLID,
-                                        Color(if (selected) 0xFFB7D0F5 else 0xFFE8EDF2),
+                                        if (selected) ctx.attr.colors.stateBusinessPrimary else ctx.attr.colors.borderL2,
                                     ))
                                 }
                                 // 编号方块
@@ -1434,7 +1434,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         size(22f, 22f)
                                         marginTop(1f)
                                         borderRadius(6f)
-                                        backgroundColor(Color(if (selected) 0xFF4176E6 else 0xFFEEF1F5))
+                                        backgroundColor(if (selected) ctx.attr.colors.stateBusinessPrimary else ctx.attr.colors.specificSelector)
                                         justifyContentCenter()
                                         alignItemsCenter()
                                     }
@@ -1443,7 +1443,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                             text("$optionIndex")
                                             fontSize(12f)
                                             fontWeightMedium()
-                                            color(Color(if (selected) 0xFFFFFFFF else 0xFF7A8494))
+                                            color(if (selected) Color.WHITE else ctx.attr.colors.labelTertiary)
                                         }
                                     }
                                 }
@@ -1465,7 +1465,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                                 text(displayLabel)
                                                 fontSize(14f)
                                                 fontWeightMedium()
-                                                color(Color(0xFF1F2933))
+                                                color(ctx.attr.colors.labelPrimary)
                                             }
                                         }
                                         vif({ isRecommended }) {
@@ -1474,7 +1474,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                                     marginLeft(6f)
                                                     padding(2f, 6f, 2f, 6f)
                                                     borderRadius(4f)
-                                                    backgroundColor(Color(0xFF4176E6))
+                                                    backgroundColor(ctx.attr.colors.stateBusinessPrimary)
                                                 }
                                                 Text {
                                                     attr {
@@ -1494,7 +1494,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                                 marginTop(3f)
                                                 fontSize(12f)
                                                 lineHeight(17f)
-                                                color(Color(0xFF6B7785))
+                                                color(ctx.attr.colors.labelSecondary)
                                             }
                                         }
                                     }
@@ -1514,8 +1514,8 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 paddingTop(6f)
                                 paddingBottom(6f)
                                 borderRadius(12f)
-                                backgroundColor(Color(0xFFF7F9FB))
-                                border(Border(1f, BorderStyle.SOLID, Color(0xFFE8EDF2)))
+                                backgroundColor(ctx.attr.colors.bgBase)
+                                border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                                 flexDirectionRow()
                                 alignItemsFlexStart()
                             }
@@ -1534,9 +1534,9 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     maxHeight(90f)
                                     marginLeft(8f)
                                     placeholder("输入你的答案")
-                                    placeholderColor(Color(0xFF9AA6B2))
+                                    placeholderColor(ctx.attr.colors.labelTertiary)
                                     fontSize(13f)
-                                    color(Color(0xFF243140))
+                                    color(ctx.attr.colors.labelPrimary)
                                     backgroundColor(Color(0x00000000))
                                 }
                                 event {
@@ -1552,7 +1552,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     text(ctx.attr.error)
                                     marginTop(8f)
                                     fontSize(12f)
-                                    color(Color(0xFFC23B3B))
+                                    color(ctx.attr.colors.stateErrorPrimary)
                                 }
                             }
                         }
@@ -1582,6 +1582,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         attr {
                                             src(ImageUri.commonAssets("chevron-left.svg"))
                                             size(16f, 16f)
+                                            tintColor(ctx.attr.colors.labelSecondary)
                                         }
                                     }
                                     vif({ ctx.attr.index > 0 }) {
@@ -1594,7 +1595,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         marginLeft(6f)
                                         marginRight(6f)
                                         fontSize(13f)
-                                        color(Color(0xFF8A96A3))
+                                        color(ctx.attr.colors.labelTertiary)
                                     }
                                 }
                                 // 右箭头
@@ -1610,6 +1611,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         attr {
                                             src(ImageUri.commonAssets("chevron-right.svg"))
                                             size(16f, 16f)
+                                            tintColor(ctx.attr.colors.labelSecondary)
                                         }
                                     }
                                     vif({ ctx.attr.index < total - 1 }) {
@@ -1627,8 +1629,8 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     paddingRight(16f)
                                     marginRight(10f)
                                     borderRadius(18f)
-                                    backgroundColor(Color.WHITE)
-                                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE0E4E8)))
+                                    backgroundColor(ctx.attr.colors.bgLayer1)
+                                    border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                                     justifyContentCenter()
                                     alignItemsCenter()
                                 }
@@ -1636,7 +1638,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     attr {
                                         text("跳过本题")
                                         fontSize(13f)
-                                        color(Color(0xFF5B6B82))
+                                        color(ctx.attr.colors.labelSecondary)
                                     }
                                 }
                                 DshTapTarget { if (!ctx.attr.busy) ctx.attr.onSkip() }
@@ -1648,11 +1650,11 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     paddingLeft(20f)
                                     paddingRight(20f)
                                     borderRadius(18f)
-                                    backgroundColor(Color(
-                                        if (ctx.attr.busy) 0xFFB7C8FE
-                                        else if (ctx.attr.hasSelection) 0xFF4176E6
-                                        else 0xFFD0D5DD
-                                    ))
+                                    backgroundColor(
+                                        if (ctx.attr.busy) ctx.attr.colors.stateBusinessTertiary
+                                        else if (ctx.attr.hasSelection) ctx.attr.colors.stateBusinessPrimary
+                                        else ctx.attr.colors.borderL2
+                                    )
                                     justifyContentCenter()
                                     alignItemsCenter()
                                 }
