@@ -2,4 +2,6 @@
 <paths>
     <!-- 导出文件写入 databaseDir（{filesDir}/databases），与 dsh_logs.db 同目录 -->
     <database-path name="exports" path="." />
+    <!-- 导出文件目录（cacheDir/exports），FileProvider canonical 匹配需真实目录 -->
+    <cache-path name="exports_cache" path="exports" />
 </paths>

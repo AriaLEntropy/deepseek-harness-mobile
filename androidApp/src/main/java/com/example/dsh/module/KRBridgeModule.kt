@@ -150,16 +150,22 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         val ctx = context ?: KRApplication.application
         val file = File(path)
         if (!file.exists()) return
-        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, file.name)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(intent, "导出会话日志")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(chooser)
+        } catch (e: Exception) {
+            // FileProvider 路径未配置（如导出目录变更）时兜底，避免崩溃
+            Log.e("KRBridgeModule", "shareExportFile failed", e)
+            Toast.makeText(ctx, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
         }
-        val chooser = Intent.createChooser(intent, "导出会话日志")
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        ctx.startActivity(chooser)
     }
 
     private fun readLastCrash(params: String?): String {

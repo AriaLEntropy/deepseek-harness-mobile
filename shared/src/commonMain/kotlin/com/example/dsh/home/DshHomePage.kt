@@ -308,7 +308,7 @@ internal class DshHomePage : BasePager() {
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
-        exportDir = databaseDir
+        exportDir = pageData.params.optString("exportDir").ifEmpty { databaseDir }
         if (databaseDir.isNotEmpty()) {
             localStore = runCatching {
                 createDshLocalStore("$databaseDir/dsh.db")
@@ -1099,11 +1099,9 @@ internal class DshHomePage : BasePager() {
                     onTypeFilter = { ctx.onLogTypeFilter(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
                     onClearFilters = { ctx.clearLogFilters() },
-                    clearMenuVisible = { ctx.sessionLogClearMenuVisible },
-                    onClearMenuToggle = { ctx.sessionLogClearMenuVisible = !ctx.sessionLogClearMenuVisible },
-                    onClearMenuDismiss = { ctx.sessionLogClearMenuVisible = false },
-                    onClearRequest = { ctx.sessionLogClearMenuVisible = false; ctx.requestSessionLogClear() },
+                    onClearRequest = { ctx.requestSessionLogClear() },
                     onFeedbackPackage = { ctx.exportFeedbackPackage() },
+
                     clearDialogVisible = { ctx.sessionLogClearVisible },
                     clearing = { ctx.sessionLogClearing },
                     onClearDialogCancel = { ctx.cancelSessionLogClear() },
@@ -1120,6 +1118,7 @@ internal class DshHomePage : BasePager() {
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = { this@DshHomePage.themeColors },
                 )
+
                 DshSessionLogClearDialog(
                     visible = { ctx.sessionLogClearVisible },
                     busy = { ctx.sessionLogClearing },
@@ -2939,7 +2938,19 @@ internal class DshHomePage : BasePager() {
             events = events.filter { it.sessionId == targetId }
         }
         events = events.sortedByDescending { it.seq }
+        // 无新日志（seq 范围与条数未变）时跳过重建，避免高频 observable 变更
+        // 与渲染线程并发触发 Kuikly ReactiveObserver CME
+        val prevSize = sessionLogCache.size
+        val prevFirstSeq = sessionLogCache.firstOrNull()?.seq
+        val prevLastSeq = sessionLogCache.lastOrNull()?.seq
+        sessionLogCache.clear()
         sessionLogCache.addAll(events)
+        if (sessionLogCache.size == prevSize &&
+            sessionLogCache.firstOrNull()?.seq == prevFirstSeq &&
+            sessionLogCache.lastOrNull()?.seq == prevLastSeq
+        ) {
+            return
+        }
         recomputeSessionLogView()
     }
 

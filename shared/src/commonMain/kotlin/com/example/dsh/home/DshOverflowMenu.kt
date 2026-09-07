@@ -132,11 +132,9 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onTypeFilter: (String) -> Unit,
     onKeyword: (String) -> Unit,
     onClearFilters: () -> Unit,
-    clearMenuVisible: () -> Boolean = { false },
-    onClearMenuToggle: () -> Unit = {},
-    onClearMenuDismiss: () -> Unit = {},
     onClearRequest: () -> Unit = {},
     onFeedbackPackage: () -> Unit = {},
+
     clearDialogVisible: () -> Boolean = { false },
     clearing: () -> Boolean = { false },
     onClearDialogCancel: () -> Unit = {},
@@ -193,68 +191,28 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 textAlignCenter()
                             }
                         }
-                        // 导出 + 更多：右对齐
+                        // 导出 + 反馈包 + 清空：右对齐（Modal 内浮层菜单触摸命中失效，直接放按钮）
                         View {
-                            attr { flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter(); width(100f) }
-                            event { click { if (!exporting()) onExport() } }
-                            Text {
-                                attr { text(if (exporting()) "导出中..." else "导出"); fontSize(14f); color(colors().stateBusinessPrimary) }
-                            }
+                            attr { flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
                             View {
-                                attr { paddingLeft(10f); paddingRight(2f) }
-                                event { click { onClearMenuToggle() } }
+                                attr { paddingLeft(10f) }
+                                event { click { if (!exporting()) onExport() } }
                                 Text {
-                                    attr { text("⋯"); fontSize(18f); color(colors().labelSecondary) }
+                                    attr { text(if (exporting()) "导出中..." else "导出"); fontSize(14f); color(colors().stateBusinessPrimary) }
                                 }
                             }
-                        }
-                        // 更多菜单（清空本地日志，防误触）
-                        vif({ clearMenuVisible() }) {
                             View {
-                                attr { absolutePositionAllZero() }
-                                event { click { onClearMenuDismiss() } }
-                                View {
-                                    attr {
-                                        positionAbsolute()
-                                        right(12f)
-                                        top(18f + statusBarHeight + 44f + 4f)
-                                        width(168f)
-                                        borderRadius(12f)
-                                        border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                                        backgroundColor(colors().bgLayer1)
-                                        boxShadow(BoxShadow(0f, 4f, 16f, Color(0x33000000)))
-                                        paddingTop(6f)
-                                        paddingBottom(6f)
-                                    }
-                                    event { click { } }
-                                    View {
-                                        attr {
-                                            height(44f)
-                                            flexDirectionRow()
-                                            alignItemsCenter()
-                                            justifyContentSpaceBetween()
-                                            paddingLeft(14f)
-                                            paddingRight(12f)
-                                        }
-                                        event { click { onClearMenuDismiss(); onFeedbackPackage() } }
-                                        Text {
-                                            attr { text("生成问题反馈包"); fontSize(14f); color(colors().labelPrimary) }
-                                        }
-                                    }
-                                    View {
-                                        attr {
-                                            height(44f)
-                                            flexDirectionRow()
-                                            alignItemsCenter()
-                                            justifyContentSpaceBetween()
-                                            paddingLeft(14f)
-                                            paddingRight(12f)
-                                        }
-                                        event { click { onClearMenuDismiss(); onClearRequest() } }
-                                        Text {
-                                            attr { text("清空本地日志"); fontSize(14f); color(colors().stateErrorPrimary) }
-                                        }
-                                    }
+                                attr { paddingLeft(10f) }
+                                event { click { onFeedbackPackage() } }
+                                Text {
+                                    attr { text("反馈包"); fontSize(14f); color(colors().stateBusinessPrimary) }
+                                }
+                            }
+                            View {
+                                attr { paddingLeft(10f) }
+                                event { click { onClearRequest() } }
+                                Text {
+                                    attr { text("清空"); fontSize(14f); color(colors().stateErrorPrimary) }
                                 }
                             }
                         }
