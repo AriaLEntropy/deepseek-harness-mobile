@@ -63,6 +63,11 @@ private class DshOhosLogStore(path: String) : DshLogStore {
         emptyList(),
     ) { it.getColumnLong(0) } ?: 0L
 
+    override fun maxSeq(): Long = queryOne(
+        "SELECT COALESCE(MAX(seq), 0) FROM dsh_log_events",
+        emptyList(),
+    ) { it.getColumnLong(0) } ?: 0L
+
     override fun dropOldest(keepBytes: Long) {
         var current = sizeBytes()
         if (current <= keepBytes) return

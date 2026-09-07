@@ -8,6 +8,8 @@ import util from '@ohos.util';
 import fs from '@ohos.file.fs';
 import router from '@ohos.router';
 import { fileUri } from '@kit.CoreFileKit';
+import { systemShare } from '@kit.ShareKit';
+import { unifiedDataChannel } from '@kit.ArkData';
 import { jsonString, mapOf, moduleParams } from '../native/DshJson';
 import { DshSshKeyStore } from '../native/DshSshKeyStore';
 import { DshOhosContext, dshError } from '../native/DshOhosContext';
@@ -90,6 +92,9 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         break;
       case 'deleteSshKey':
         this.deleteSshKey(params);
+        break;
+      case 'shareExportFile':
+        this.shareExportFile(params);
         break;
       case 'closeKeyboard':
       case 'setSystemBarsDimmed':
@@ -226,3 +231,22 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
     new DshSshKeyStore().deleteKey(keyId);
   }
 }
+
+  private shareExportFile(params: KRAny): void {
+    const path = jsonString(moduleParams(params as Object), 'path');
+    if (path.length === 0) return;
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const uri = fileUri.getUriFromPath(path);
+      const data = new unifiedDataChannel.UnifiedData();
+      data.addRecord(new unifiedDataChannel.File(uri));
+      const controller = new systemShare.ShareController(context);
+      controller.show(data, (error: BusinessError) => {
+        if (error) {
+          dshError('shareExportFile failed', error);
+        }
+      });
+    } catch (error) {
+      dshError('shareExportFile failed', error as Object);
+    }
+  }

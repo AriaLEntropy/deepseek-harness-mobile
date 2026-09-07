@@ -37,6 +37,21 @@
     [DshNativeUi toast:content];
 }
 
+- (void)shareExportFile:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    NSString *path = params[@"path"];
+    if (path.length == 0) return;
+    NSURL *url = [NSURL fileURLWithPath:path];
+    UIViewController *presenter = [DshNativeUi topViewController];
+    if (!presenter) return;
+    UIActivityViewController *activityVC =
+        [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+    // iPad 需要 popover 锚点，否则会崩溃
+    activityVC.popoverPresentationController.sourceView = presenter.view;
+    activityVC.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 0, 0);
+    [presenter presentViewController:activityVC animated:YES completion:nil];
+}
+
 - (NSString *)closeKeyboard:(NSDictionary *)args {
     void (^dismissKeyboard)(void) = ^{
         [self.hr_rootView endEditing:YES];

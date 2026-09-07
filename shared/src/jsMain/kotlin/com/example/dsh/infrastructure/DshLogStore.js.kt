@@ -9,4 +9,5 @@ private object EmptyDshLogStore : DshLogStore {
     override fun clear() = Unit
     override fun sizeBytes(): Long = 0L
     override fun dropOldest(keepBytes: Long) = Unit
+    override fun maxSeq(): Long = 0L
 }
