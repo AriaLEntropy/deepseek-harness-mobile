@@ -864,6 +864,7 @@ internal class DshHomePage : BasePager() {
                         busy = { ctx.settingsChoiceBusy },
                         onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
                         onSelect = { ctx.applySettingsChoice(it) },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
 
@@ -1597,6 +1598,11 @@ internal class DshHomePage : BasePager() {
         repo.describeSettings({
             settingsLoading = false
             settingsSnapshot = it
+            themeController.mode = when (it.themeValue) {
+                "light" -> com.example.dsh.theme.DshThemeMode.LIGHT
+                "dark" -> com.example.dsh.theme.DshThemeMode.DARK
+                else -> com.example.dsh.theme.DshThemeMode.SYSTEM
+            }
         }, {
             settingsLoading = false
             settingsError = it
@@ -1691,6 +1697,11 @@ internal class DshHomePage : BasePager() {
                 settingsSnapshot.themeRevision,
                 {
                     settingsChoiceBusy = false
+                    themeController.mode = when (choice.value) {
+                        "light" -> com.example.dsh.theme.DshThemeMode.LIGHT
+                        "dark" -> com.example.dsh.theme.DshThemeMode.DARK
+                        else -> com.example.dsh.theme.DshThemeMode.SYSTEM
+                    }
                     reloadSettings()
                 },
                 {

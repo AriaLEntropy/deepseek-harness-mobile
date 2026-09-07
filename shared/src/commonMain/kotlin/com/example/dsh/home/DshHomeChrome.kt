@@ -1706,6 +1706,7 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
     busy: () -> Boolean,
     onClose: () -> Unit,
     onSelect: (DshSettingsChoice) -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -1722,7 +1723,7 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
             attr {
                 flexDirectionColumn()
                 padding(18f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgLayer1)
                 borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
             }
             View {
@@ -1732,13 +1733,13 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
                         text(title)
                         fontSize(17f)
                         fontWeightBold()
-                        color(Color(0xFF252B30))
+                        color(colors.labelPrimary)
                     }
                 }
                 View { attr { flex(1f) } }
                 View {
                     attr { size(36f, 36f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f) } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(21f, 21f); tintColor(colors.labelSecondary) } }
                     event { click { if (!busy()) onClose() } }
                 }
             }
@@ -1753,14 +1754,14 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
                         paddingLeft(14f)
                         paddingRight(14f)
                         borderRadius(9f)
-                        backgroundColor(Color(if (selected) 0xFFEDF3FE else 0x00FFFFFF))
+                        backgroundColor(if (selected) colors.stateBusinessTertiary else Color(0x00FFFFFF))
                     }
                     Text {
                         attr {
                             text(option.label.ifEmpty { option.value })
                             flex(1f)
                             fontSize(14f)
-                            color(Color(if (selected) 0xFF4176E6 else 0xFF2B3136))
+                            color(if (selected) colors.stateBusinessPrimary else colors.labelPrimary)
                         }
                     }
                     vif({ option.value == selectedValue() }) {
@@ -1768,7 +1769,7 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
                             attr {
                                 src(ImageUri.commonAssets("check.svg"))
                                 size(18f, 18f)
-                                tintColor(Color(0xFF4176E6))
+                                tintColor(colors.stateBusinessPrimary)
                             }
                         }
                     }
