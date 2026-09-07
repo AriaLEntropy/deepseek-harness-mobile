@@ -2,7 +2,7 @@
 
 > 追踪文档：深色模式下仅设置页（sheet）变深、主界面不变的问题。
 > 状态：✅ 三阶段全部完成，`:shared:compileDebugKotlinAndroid` BUILD SUCCESSFUL（2026-09-07）。
-> 待办：真机安装验证深色切换效果；遗留项见 §5。
+> 验证：✅ 真机全流程验收通过（2026-09-07，用户侧完成，三模式切换/连接跳变/重启恢复/系统跟随/浅色观感均确认）。
 
 ## 1. 现象
 
@@ -62,7 +62,7 @@
 ## 4. 验证方式
 
 1. 每阶段后编译：`JAVA_HOME=C:\Users\26012\.jdks\jdk-17.0.20.1+1 .\gradlew.bat :shared:compileDebugKotlinAndroid`（默认 JDK 25 与项目不兼容）。✅ 阶段 1/2/3 均 BUILD SUCCESSFUL。
-2. 最终验证：安装到设备，设置 → 外观 → 深色，确认主界面（顶栏/会话区/输入区/命令面板）实时变深、浅色可回切；系统暗色跟随模式下切换系统外观即时生效。
+2. 最终验证：安装到设备，设置 → 外观 → 深色，确认主界面（顶栏/会话区/输入区/命令面板）实时变深、浅色可回切；系统暗色跟随模式下切换系统外观即时生效。✅ 真机已通过（2026-09-07）。
 3. 静态复查（已完成）：值类型 `colors: DshColorTokens =` 签名残留 0；非 lambda `colors = themeColors` 调用残留 0；`this.colors = colors()`（attr 内）9 处保留为正确模式。
 
 ## 5. 遗留项（未在本轮处理）
@@ -87,7 +87,7 @@
 
 **修复**：补 `colors = { this@DshHomePage.themeColors }` / `colors = colors` 三处；`DshAgentModePicker` 经核实已传（脚本 40 行窗口误报）。暗色 token 值已核对无误（bgBase=nb950、bgLayer2=nb850、labelPrimary=nb50、specificSidebarNavItemActive=nb750）。
 
-**验证**：`:shared:compileDebugKotlinAndroid` BUILD SUCCESSFUL；全量调用点复查（80 行窗口）9 处侧边栏相关调用全部 `colors=True`。真机需复看：抽屉/远程会话栏在深色下变深、选中行高亮色正确。
+**验证**：`:shared:compileDebugKotlinAndroid` BUILD SUCCESSFUL；全量调用点复查（80 行窗口）9 处侧边栏相关调用全部 `colors=True`。真机已通过：抽屉/远程会话栏深色下变深、选中行高亮正确（2026-09-07）。
 
 ## 8. 主题偏好生命周期（后续修复，2026-09-07）
 
@@ -102,7 +102,7 @@
 - `syncThemeColors()` 加变化 guard（`themeColors !== next` 才 setValue），避免打开设置页时值未变也触发全量重绘。
 - 系统暗色实时跟随保持不变（`themeDidChanged` → `systemDark` + sync）。
 
-**验证**：BUILD SUCCESSFUL（18s）。真机需复看：冷启动后（持久化为深色、系统为浅色）主界面应直接是深色，无需进设置页；重启后偏好保持。
+**验证**：BUILD SUCCESSFUL（18s）。真机已通过：冷启动后（持久化为深色、系统为浅色）主界面直接是深色，无需进设置页；重启后偏好保持（2026-09-07）。
 
 ## 9. 主题提升至 App 级（最终方案，2026-09-07）
 
@@ -129,7 +129,7 @@
 
 **响应式链路**：系统外观变化 → 宿主 `themeDidChanged` → BasePager 更新 `DshThemeManager.systemDark` + `notifyChanged()` → 每页 `syncThemeColors()` 写页面 observable → attr 内 `colors()`/`ctx.themeColors` 读取触发依赖重放 → 全界面（home / 连接页 / 设置页 / 抽屉）同步变色。
 
-**验证**：BUILD SUCCESSFUL（17s，修复 receiver 问题后）。真机需复看：①首次打开（系统浅色）浅色、系统切深后所有页面即时变深；②连接页深色下背景/输入框/按钮正确；③设置页"应用"分组显示"外观"行，可切换跟随系统/浅色/深色且全界面即时生效；④选择持久化到 host，重启后恢复所选模式（无偏好时跟随系统）。
+**验证**：BUILD SUCCESSFUL（17s，修复 receiver 问题后）。真机已通过：①首次打开（系统浅色）浅色、系统切深后所有页面即时变深；②连接页深色下背景/输入框/按钮正确；③设置页"应用"分组显示"外观"行，可切换跟随系统/浅色/深色且全界面即时生效；④选择本地持久化，重启后恢复所选模式（2026-09-07）。
 
 ## 10. WebView 页 token 化 + 浅色白底约束（2026-09-07）
 
