@@ -578,8 +578,8 @@ internal class DshQueueDockView : ComposeView<DshQueueDockAttr, ComposeEvent>() 
                         flexDirectionColumn()
                         padding(8f)
                         borderRadius(10f)
-                        backgroundColor(Color(0xFFF7F9FB))
-                        border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                        backgroundColor(ctx.attr.colors.bgBase)
+                        border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                     }
                     vif({ items.size > 1 }) {
                         View {
@@ -594,13 +594,14 @@ internal class DshQueueDockView : ComposeView<DshQueueDockAttr, ComposeEvent>() 
                                     text("队列 · ${items.size}")
                                     flex(1f)
                                     fontSize(13f)
-                                    color(Color(0xFF39424A))
+                                    color(ctx.attr.colors.labelPrimary)
                                 }
                             }
                             Image {
                                 attr {
                                     src(ImageUri.commonAssets("chevron-down.svg"))
                                     size(14f, 14f)
+                                    tintColor(ctx.attr.colors.labelTertiary)
                                     transform(Rotate(if (expanded) 0f else -90f))
                                 }
                             }
@@ -621,7 +622,7 @@ internal class DshQueueDockView : ComposeView<DshQueueDockAttr, ComposeEvent>() 
                                             flex(1f)
                                             lines(1)
                                             fontSize(13f)
-                                            color(Color(0xFF4A545C))
+                                            color(ctx.attr.colors.labelPrimary)
                                         }
                                     }
                                     Text {
@@ -708,6 +709,7 @@ internal class DshQueueDockAttr : ComposeAttr() {
     var onCancelEdit: () -> Unit by observable({})
     var onRemove: (String) -> Unit by observable({})
     var onSteer: (String) -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal fun ViewContainer<*, *>.DshQueueDock(init: DshQueueDockView.() -> Unit) {

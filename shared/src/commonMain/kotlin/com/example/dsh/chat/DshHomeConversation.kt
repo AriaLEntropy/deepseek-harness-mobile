@@ -426,6 +426,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onCancelEdit = onCancelQueueItemEdit
                     onRemove = onRemoveQueueItem
                     onSteer = onSteerQueueItem
+                    colors = colors
                 }
             }
         }
