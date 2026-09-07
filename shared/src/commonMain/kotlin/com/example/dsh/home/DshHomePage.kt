@@ -232,6 +232,7 @@ internal class DshHomePage : BasePager() {
     private var sessionLogTimeFilter by observable(0)
     private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
     private var sessionLogTypeFilter by observable("")
+    private var sessionLogTypeOptions by observableList<String>()
     private var sessionLogKeyword by observable("")
     private val sessionLogView by observableList<LogEvent>()
     private var sessionLogTotal by observable(0)
@@ -1069,6 +1070,7 @@ internal class DshHomePage : BasePager() {
                     timeFilter = { ctx.sessionLogTimeFilter },
                     levelFilter = { ctx.sessionLogLevelFilter },
                     typeFilter = { ctx.sessionLogTypeFilter },
+                    typeOptions = { ctx.sessionLogTypeOptions },
                     keyword = { ctx.sessionLogKeyword },
                     onSelect = { ctx.sessionLogSelected = it; ctx.loadSessionLogDetail(it) },
                     onRefresh = { ctx.refreshSessionLogs() },
@@ -1082,6 +1084,7 @@ internal class DshHomePage : BasePager() {
                     onClearFilters = { ctx.clearLogFilters() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = ctx.themeController.currentColors,
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -1092,6 +1095,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.cancelSessionRename() },
                     onSave = { ctx.saveSessionRename() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = ctx.themeController.currentColors,
                 )
                 DshSessionArchiveDialog(
                     visible = { ctx.sessionArchiveVisible },
@@ -1100,6 +1104,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" },
                     onConfirm = { ctx.confirmSessionArchive() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = ctx.themeController.currentColors,
                 )
                 DshSessionDeleteDialog(
                     visible = { ctx.sessionDeleteVisible },
@@ -1108,6 +1113,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" },
                     onConfirm = { ctx.confirmSessionDelete() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = ctx.themeController.currentColors,
                 )
             }
         }
@@ -2861,6 +2867,14 @@ internal class DshHomePage : BasePager() {
         val levels = sessionLogLevelFilter
         val typeQ = sessionLogTypeFilter.trim()
         val kw = sessionLogKeyword.trim()
+        // 动态提取当前会话所有事件类型，供筛选 chip 使用
+        val types = sessionLogCache.map { it.type }.distinct().sorted()
+        sessionLogTypeOptions.clear()
+        sessionLogTypeOptions.add("全部")
+        sessionLogTypeOptions.addAll(types)
+        if (sessionLogTypeFilter.isNotEmpty() && sessionLogTypeFilter !in types) {
+            sessionLogTypeFilter = ""
+        }
         val filtered = sessionLogCache.filter { e ->
             val timeOk = when (tf) {
                 1 -> now - e.timestamp <= 600_000L
