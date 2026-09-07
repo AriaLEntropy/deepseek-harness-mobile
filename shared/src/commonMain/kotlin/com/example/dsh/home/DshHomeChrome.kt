@@ -397,6 +397,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                             pending = sessionPending(session.id),
                             onSelect = { onSelect(session.id) },
                             onOpenOverflow = { onOpenOverflowFor(session.id) },
+                            colors = colors,
                         )
                     }
                 }
@@ -560,6 +561,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
     indented: Boolean,
     onSelect: () -> Unit,
     onOpenOverflow: () -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     View {
         attr {
@@ -570,7 +572,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
             paddingLeft(if (indented) 32f else 12f)
             paddingRight(4f)
             borderRadius(9f)
-            backgroundColor(Color(if (active) 0xFFEDEFF1 else 0x00FFFFFF))
+            backgroundColor(if (active) colors.specificSidebarNavItemActive else Color(0x00FFFFFF))
         }
         // 状态点不常驻：待用户决策（琥珀）或进行中/有新消息（蓝）才显示；
         // 无状态时不留占位，文字靠左（与 ds 移动端一致）。
@@ -585,7 +587,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                         attr {
                             size(7f, 7f)
                             borderRadius(4f)
-                            backgroundColor(Color(if (pending) 0xFFF59E0B else 0xFF5686FE))
+                            backgroundColor(if (pending) colors.stateWarnPrimary else colors.stateBusinessPrimary)
                         }
                     }
                 }
@@ -603,7 +605,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                     text(title)
                     lines(1)
                     fontSize(14f)
-                    color(Color(0xFF2B3136))
+                    color(colors.labelPrimary)
                 }
             }
             vif({ subtitle.isNotEmpty() }) {
@@ -613,7 +615,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                         lines(1)
                         marginTop(2f)
                         fontSize(10f)
-                        color(Color(0xFF969DA3))
+                        color(colors.labelTertiary)
                     }
                 }
             }
@@ -624,7 +626,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                     text(dshRelativeTimeLabel(updatedAt, now))
                     marginLeft(6f)
                     fontSize(11f)
-                    color(Color(0xFF969DA3))
+                    color(colors.labelTertiary)
                 }
             }
         }
@@ -636,7 +638,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                     attr {
                         src(ImageUri.commonAssets("more.svg"))
                         size(18f, 18f)
-                        tintColor(Color(0xFF8B9298))
+                        tintColor(colors.labelTertiary)
                     }
                 }
                 DshHitButton { onOpenOverflow() }
@@ -1554,22 +1556,22 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
 
             // 账户
             DshSettingsGroupTitle("账户")
-            DshSettingsRow("icon-link16.svg", "连接设置", connectionModeLabel(), onOpenConnection)
-            DshSettingsRow("icon-api14.svg", "API Key", if (apiKeyConfigured()) "已配置" else "未配置", onOpenApiKey)
+            DshSettingsRow("icon-link16.svg", "连接设置", connectionModeLabel(), onOpenConnection, colors = colors)
+            DshSettingsRow("icon-api14.svg", "API Key", if (apiKeyConfigured()) "已配置" else "未配置", onOpenApiKey, colors = colors)
 
             // 权限
             DshSettingsGroupTitle("权限")
-            DshSettingsRow("permission-write.svg", "工作区权限", dshSettingsPermissionLabel(snapshot()), onPickPermission)
+            DshSettingsRow("permission-write.svg", "工作区权限", dshSettingsPermissionLabel(snapshot()), onPickPermission, colors = colors)
 
             // 应用
             DshSettingsGroupTitle("应用")
-            DshSettingsRow("icon-globe14.svg", "语言", dshSettingsLocaleLabel(snapshot()), onPickLocale)
-            DshSettingsRow("icon-followsystem16.svg", "外观", dshSettingsThemeLabel(snapshot()), onPickTheme)
-            DshSettingsRow("icon-agentpreset16.svg", "默认模型", dshSettingsDefaultModelLabel(snapshot()), onPickDefaultModel)
+            DshSettingsRow("icon-globe14.svg", "语言", dshSettingsLocaleLabel(snapshot()), onPickLocale, colors = colors)
+            DshSettingsRow("icon-followsystem16.svg", "外观", dshSettingsThemeLabel(snapshot()), onPickTheme, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "默认模型", dshSettingsDefaultModelLabel(snapshot()), onPickDefaultModel, colors = colors)
 
             // 关于
             DshSettingsGroupTitle("关于")
-            DshSettingsRow("icon-refresh16.svg", "电脑端 DSH 版本", hostVersion(), {})
+            DshSettingsRow("icon-refresh16.svg", "电脑端 DSH 版本", hostVersion(), {}, colors = colors)
             View {
                 attr {
                     height(52f)
@@ -1641,6 +1643,7 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
     title: String,
     value: String,
     onClick: () -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     View {
         attr {
@@ -1649,13 +1652,13 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
             alignItemsCenter()
             paddingLeft(16f)
             paddingRight(12f)
-            backgroundColor(Color.WHITE)
+            backgroundColor(colors.bgBase)
         }
         Image {
             attr {
                 src(ImageUri.commonAssets(icon))
                 size(20f, 20f)
-                tintColor(Color(0xFF555D64))
+                tintColor(colors.labelSecondary)
             }
         }
         Text {
@@ -1664,7 +1667,7 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
                 flex(1f)
                 marginLeft(12f)
                 fontSize(14f)
-                color(Color(0xFF2B3136))
+                color(colors.labelPrimary)
             }
         }
         vif({ value.isNotEmpty() }) {
@@ -1672,7 +1675,7 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
                 attr {
                     text(value)
                     fontSize(13f)
-                    color(Color(0xFF8B9298))
+                    color(colors.labelTertiary)
                 }
             }
         }
