@@ -9,6 +9,10 @@ internal object LogSanitizer {
     private val passwordRegex = Regex("password=[^&\\s]+")
     private val apiKeyRegex = Regex("apiKey=[^&\\s]+", RegexOption.IGNORE_CASE)
     private val urlQuerySecretRegex = Regex("(&|\\?)(token|secret|key|password|signature|access_token)=[^&]+", RegexOption.IGNORE_CASE)
+    private val jsonSecretValueRegex = Regex(
+        """("[^"]*(?:token|api[_-]?key|access[_-]?token|authorization|clientToken|hostToken|secret|password)[^"]*"\s*:\s*)"[^"]*"""",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun sanitize(input: String): String {
         if (input.isEmpty()) return input
@@ -24,6 +28,7 @@ internal object LogSanitizer {
                 val eq = match.value.indexOf('=')
                 match.value.substring(0, eq + 1) + "***"
             }
+            result = jsonSecretValueRegex.replace(result) { match -> "${match.groupValues[1]}\"***\"" }
             result
         } catch (_: Exception) {
             "[redacted]"

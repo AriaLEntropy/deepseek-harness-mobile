@@ -1,4 +1,4 @@
-﻿package com.example.dsh.home
+package com.example.dsh.home
 
 import com.example.dsh.base.*
 import com.example.dsh.chat.*
@@ -8,6 +8,7 @@ import com.example.dsh.home.*
 import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
 import com.example.dsh.storage.*
+import com.example.dsh.theme.*
 import com.example.dsh.web.*
 import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
@@ -16,8 +17,7 @@ import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.scrollToPosition
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.log.KLog
-import com.tencent.kuikly.core.reactive.handler.observable
-import com.tencent.kuikly.core.reactive.handler.observableList
+import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.InputView
@@ -26,6 +26,7 @@ import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.module.NetworkModule
+import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
@@ -56,6 +57,7 @@ internal class DshHomePage : BasePager() {
     private var repository: DshRepository? = null
     private var localStore: DshLocalStore? = null
     private var logStore: DshLogStore? = null
+    private var exportDir = ""
     private var engineModule: DshEngineModule? = null
     private var engineReady = false
     private var relayEngineEndpoint = ""
@@ -92,6 +94,7 @@ internal class DshHomePage : BasePager() {
     private var streaming by observable(false)
     private var stopButtonVisible by observable(false)
     private var streamingAssistantContent by observable("")
+    private var copiedMessageId by observable("")
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var _connectionLabel by observable("本地内核启动中")
@@ -117,6 +120,10 @@ internal class DshHomePage : BasePager() {
     private var sessionDrawerAnimated by observable(false)
     private var sessionDrawerMaskAnimated by observable(false)
     private var sessionDrawerMaskAnimation by observable(Animation.linear(0f))
+    // 会话抽屉：工作区文件夹的展开/收起状态（内嵌菜单，会话内记忆）
+    private val workspaceExpandedIds by observableList<String>()
+    // 会话抽屉：从会话行 ⋯ 打开的 overflow menu 目标会话；为空时回退到当前会话
+    private var overflowTargetSessionId by observable("")
     private var modelPickerVisible by observable(false)
     private var modelPickerBusy by observable(false)
     private var modelPickerError by observable("")
@@ -129,6 +136,18 @@ internal class DshHomePage : BasePager() {
     private var agentModePickerVisible by observable(false)
     private var agentModeValue by observable("standard")
     private var agentModeLabel by observable("标准模式")
+    // 电脑端 agentPreset.list 拉取的预设（空则回退本地四项）
+    private val agentPresetOptions by observableList<DshAgentPresetOption>()
+    // 设置页（ds 风格）
+    private var settingsPageVisible by observable(false)
+    private var settingsLoading by observable(false)
+    private var settingsError by observable("")
+    private var settingsSnapshot by observable(DshSettingsSnapshot())
+    private var hostVersion by observable("")
+    private var settingsChoiceTitle by observable("")
+    private var settingsChoiceKind by observable("")
+    private var settingsChoiceBusy by observable(false)
+    private val settingsChoiceOptions by observableList<DshSettingsChoice>()
     private var commandSheetVisible by observable(false)
     private var voiceActive by observable(false)
     private var inputView: TextAreaView? = null
@@ -205,8 +224,18 @@ internal class DshHomePage : BasePager() {
     // ===== 会话 topbar overflow menu 与会话管理动作 =====
     private var overflowMenuVisible by observable(false)
     private var sessionLogVisible by observable(false)
+    private var diagnosticLogAllMode by observable(false)
     private val sessionLogCache by observableList<LogEvent>()
     private var sessionLogSelected by observable<LogEvent?>(null)
+    private var sessionLogDetailRaw by observable("")
+    private var sessionLogExporting by observable(false)
+    private var sessionLogTimeFilter by observable(0)
+    private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
+    private var sessionLogTypeFilter by observable("")
+    private var sessionLogTypeOptions by observableList<String>()
+    private var sessionLogKeyword by observable("")
+    private val sessionLogView by observableList<LogEvent>()
+    private var sessionLogTotal by observable(0)
     private var sessionRenameVisible by observable(false)
     private var sessionRenameDraft by observable("")
     private var sessionRenameBusy by observable(false)
@@ -268,6 +297,7 @@ internal class DshHomePage : BasePager() {
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
+        exportDir = databaseDir
         if (databaseDir.isNotEmpty()) {
             localStore = runCatching {
                 createDshLocalStore("$databaseDir/dsh.db")
@@ -305,6 +335,10 @@ internal class DshHomePage : BasePager() {
         perfLog("startup.created.end", startedAt)
     }
 
+    override fun themeDidChanged(data: com.tencent.kuikly.core.nvi.serialization.json.JSONObject) {
+        super.themeDidChanged(data)
+    }
+
     override fun pageDidDisappear() {
         super.pageDidDisappear()
         DshStreamLog.writeBehind?.flush()
@@ -329,7 +363,7 @@ internal class DshHomePage : BasePager() {
                 attr {
                     flex(1f)
                     flexDirectionColumn()
-                    backgroundColor(Color(BG))
+                    backgroundColor(this@DshHomePage.themeColors.bgBase)
                     paddingTop(pagerData.statusBarHeight)
                 }
 
@@ -348,6 +382,7 @@ internal class DshHomePage : BasePager() {
                             ctx.openSessionDrawer()
                         },
                         onOpenOverflow = { ctx.openOverflowMenu() },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -377,7 +412,7 @@ internal class DshHomePage : BasePager() {
                             attr {
                                 flex(1f)
                                 flexDirectionRow()
-                                backgroundColor(Color(BG))
+                                backgroundColor(this@DshHomePage.themeColors.bgBase)
                             }
                             // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
                             vif({ ctx.isRemoteHost }) {
@@ -389,6 +424,7 @@ internal class DshHomePage : BasePager() {
                                         ctx.closeSessionDrawer()
                                         setTimeout(ctx.pagerId, 0) { ctx.selectSession(id) }
                                     },
+                                    colors = { this@DshHomePage.themeColors },
                                 )
                             }
                             // centerWidth：中间对话区可用宽度 = 总宽 - 左会话栏(236) - 右详情面板(280)，最小 360。
@@ -437,9 +473,9 @@ internal class DshHomePage : BasePager() {
                                 onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
                                 permissionValue = { ctx.permissionValue },
                                 permissionLabel = { ctx.permissionLabel },
-                                onOpenPermissions = { ctx.permissionPickerVisible = true },
+                                onOpenPermissions = { ctx.openSettingsPage() },
                                 agentModeLabel = { ctx.agentModeLabel },
-                                onOpenAgentModes = { ctx.agentModePickerVisible = true },
+                                onOpenAgentModes = { ctx.openAgentModePicker() },
                                 isWebTimeline = { ctx.isRemoteHost },
                                 isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                                 onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
@@ -456,6 +492,8 @@ internal class DshHomePage : BasePager() {
                                     ctx.bridgeModule.toast("已复制")
                                 },
                                 onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
+                                copiedMessageId = { ctx.copiedMessageId },
+                                colors = { this@DshHomePage.themeColors },
                                 onMessageLongPress = { msg, content, px, py ->
                                     ctx.openMessageActions(msg, content, px, py)
                                 },
@@ -522,6 +560,7 @@ internal class DshHomePage : BasePager() {
                                     running = { ctx.sessionRunning },
                                     queueCount = { ctx.queueItems.size },
                                     jobCount = { ctx.jobItems.size },
+                                    colors = { this@DshHomePage.themeColors },
                                 )
                             }
                         }
@@ -561,9 +600,9 @@ internal class DshHomePage : BasePager() {
                             onOpenModels = { ctx.openModelPicker() },
                             permissionValue = { ctx.permissionValue },
                             permissionLabel = { ctx.permissionLabel },
-                            onOpenPermissions = { ctx.permissionPickerVisible = true },
+                            onOpenPermissions = { ctx.openSettingsPage() },
                             agentModeLabel = { ctx.agentModeLabel },
-                            onOpenAgentModes = { ctx.agentModePickerVisible = true },
+                            onOpenAgentModes = { ctx.openAgentModePicker() },
                             onToggleCommandSheet = { ctx.toggleCommandSheet() },
                             onPickCommand = { ctx.insertCommand(it) },
                             onAttachmentTile = { ctx.bridgeModule.toast("附件功能待实现") },
@@ -586,6 +625,8 @@ internal class DshHomePage : BasePager() {
                                 ctx.bridgeModule.toast("已复制")
                             },
                             onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
+                            copiedMessageId = { ctx.copiedMessageId },
+                            colors = { this@DshHomePage.themeColors },
                             onMessageLongPress = { msg, content, px, py ->
                                 ctx.openMessageActions(msg, content, px, py)
                             },
@@ -668,8 +709,19 @@ internal class DshHomePage : BasePager() {
                         isWebTimeline = { ctx.isRemoteHost },
                         activeId = { ctx.activeSessionId },
                         animated = { ctx.sessionDrawerAnimated },
+                        expandedGroupIds = { ctx.workspaceExpandedIds },
+                        onToggleGroup = { ctx.toggleWorkspaceExpanded(it) },
+                        sessionPending = { ctx.sessionPending(it) },
+                        activeWorkspaceId = { ctx.activeWorkspaceId() },
+                        overflowVisible = { ctx.overflowMenuVisible },
+                        overflowActions = { ctx.overflowActions() },
+                        onOverflowSelect = { ctx.onOverflowAction(it) },
+                        onDismissOverflow = { ctx.closeOverflowMenu() },
+                        onOpenOverflowFor = { ctx.openOverflowMenuFor(it) },
+                        statusBarHeight = ctx.pagerData.statusBarHeight,
+                        pageViewWidth = ctx.pagerData.pageViewWidth,
                         onClose = { ctx.closeSessionDrawer() },
-                        onOpenSettings = { ctx.openConnectionSettings() },
+                        onOpenSettings = { ctx.openSettingsPage() },
                         onNewSession = { ctx.createSession() },
                         onSelect = { id ->
                             ctx.closeSessionDrawer()
@@ -677,6 +729,7 @@ internal class DshHomePage : BasePager() {
                                 ctx.selectSession(id)
                             }
                         },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -688,8 +741,15 @@ internal class DshHomePage : BasePager() {
                         busy = { ctx.modelPickerBusy },
                         error = { ctx.modelPickerError },
                         onClose = { ctx.modelPickerVisible = false },
-                        onSelect = { ctx.selectModel(it) },
+                        onSelect = { option ->
+                            if (ctx.settingsPageVisible) {
+                                ctx.applyDefaultModel(option)
+                            } else {
+                                ctx.selectModel(option)
+                            }
+                        },
                         onSelectEffort = { ctx.selectModelEffort(it) },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -714,6 +774,7 @@ internal class DshHomePage : BasePager() {
                             ctx.permissionLabel = option.label
                             ctx.permissionPickerVisible = false
                         },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -724,28 +785,39 @@ internal class DshHomePage : BasePager() {
                     DshAgentModePicker(
                         options = {
                             ObservableList<DshAgentModeOption>().apply {
-                                addAll(listOf(
-                                    DshAgentModeOption(
-                                        "standard", "标准模式",
-                                        "功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流",
-                                        ctx.agentModeValue == "standard",
-                                    ),
-                                    DshAgentModeOption(
-                                        "ptc", "PTC 模式",
-                                        "具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作",
-                                        ctx.agentModeValue == "ptc",
-                                    ),
-                                    DshAgentModeOption(
-                                        "minimal", "极简模式",
-                                        "仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent",
-                                        ctx.agentModeValue == "minimal",
-                                    ),
-                                    DshAgentModeOption(
-                                        "creator", "创造模式",
-                                        "用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导",
-                                        ctx.agentModeValue == "creator",
-                                    ),
-                                ))
+                                if (ctx.agentPresetOptions.isEmpty()) {
+                                    addAll(listOf(
+                                        DshAgentModeOption(
+                                            "standard", "标准模式",
+                                            "功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流",
+                                            ctx.agentModeValue == "standard",
+                                        ),
+                                        DshAgentModeOption(
+                                            "ptc", "PTC 模式",
+                                            "具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作",
+                                            ctx.agentModeValue == "ptc",
+                                        ),
+                                        DshAgentModeOption(
+                                            "minimal", "极简模式",
+                                            "仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent",
+                                            ctx.agentModeValue == "minimal",
+                                        ),
+                                        DshAgentModeOption(
+                                            "creator", "创造模式",
+                                            "用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导",
+                                            ctx.agentModeValue == "creator",
+                                        ),
+                                    ))
+                                } else {
+                                    for (preset in ctx.agentPresetOptions) {
+                                        add(DshAgentModeOption(
+                                            preset.id,
+                                            preset.name,
+                                            preset.description,
+                                            ctx.agentModeValue == preset.id,
+                                        ))
+                                    }
+                                }
                             }
                         },
                         onClose = { ctx.agentModePickerVisible = false },
@@ -754,6 +826,51 @@ internal class DshHomePage : BasePager() {
                             ctx.agentModeLabel = option.label
                             ctx.agentModePickerVisible = false
                         },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+
+                // ===== 设置页（ds 风格：顶部居中标题，账户/权限/应用/关于分组） =====
+                vif({ ctx.settingsPageVisible }) {
+                    DshSettingsPage(
+                        loading = { ctx.settingsLoading },
+                        error = { ctx.settingsError },
+                        snapshot = { ctx.settingsSnapshot },
+                        isRemoteHost = { ctx.isRemoteHost },
+                        connectionModeLabel = { ctx.connectionModeLabel() },
+                        apiKeyConfigured = { ctx.pendingApiKey.isNotEmpty() },
+                        hostVersion = { ctx.hostVersion },
+                        onClose = { ctx.closeSettingsPage() },
+                        onRetry = { ctx.reloadSettings() },
+                        onOpenConnection = { ctx.openConnectionSettings() },
+                        onOpenApiKey = { ctx.openCredentialSettings() },
+                        onPickPermission = { ctx.openSettingsChoice("permission", "工作区权限") },
+                        onPickLocale = { ctx.openSettingsChoice("locale", "语言") },
+                        onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
+                        onPickDefaultModel = { ctx.openDefaultModelPicker() },
+                        onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
+                        onDisconnect = { ctx.disconnectFromHost() },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+
+                // ===== 设置项选择器（权限预设 / 语言 / 外观） =====
+                vif({ ctx.settingsChoiceKind.isNotEmpty() }) {
+                    DshSettingsChoicePicker(
+                        title = ctx.settingsChoiceTitle,
+                        options = { ctx.settingsChoiceOptions },
+                        selectedValue = {
+                            when (ctx.settingsChoiceKind) {
+                                "permission" -> ctx.settingsSnapshot.permissionPreset
+                                "locale" -> ctx.settingsSnapshot.localeValue
+                                "theme" -> DshThemeManager.preferenceValue
+                                else -> ""
+                            }
+                        },
+                        busy = { ctx.settingsChoiceBusy },
+                        onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
+                        onSelect = { ctx.applySettingsChoice(it) },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -774,6 +891,7 @@ internal class DshHomePage : BasePager() {
                         },
                         onSave = { ctx.saveDeepSeekApiKey() },
                         onClose = { ctx.closeCredentialSettings() },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
                 // ===== 连接设置弹窗 =====
@@ -803,6 +921,7 @@ internal class DshHomePage : BasePager() {
                             ctx.updateSshSettingsVisibility(false)
                             ctx.openCredentialSettings()
                         },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
                 // ===== 工作区浏览器弹窗 =====
@@ -820,6 +939,7 @@ internal class DshHomePage : BasePager() {
                         onCreateDirectory = { ctx.createRemoteDirectory() },
                         onAdopt = { ctx.adoptCurrentDirectoryAsWorkspace() },
                         onClose = { ctx.workspaceBrowserVisible = false },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
                 // ===== 重命名工作区 弹窗 =====
@@ -839,31 +959,31 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(Color.WHITE)
+                                backgroundColor(this@DshHomePage.themeColors.bgLayer3)
                             }
-                            Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
                             Input {
                                 attr {
                                     height(38f)
                                     marginTop(14f)
                                     fontSize(14f)
                                     placeholder("工作区名称")
-                                    placeholderColor(Color(0xFF98A1A9))
+                                    placeholderColor(this@DshHomePage.themeColors.labelTertiary)
                                     text(ctx.workspaceRenameDraft)
                                 }
                                 event { textDidChange { ctx.workspaceRenameDraft = it.text } }
                             }
                             vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
                             }
                             View {
                                 attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                                 Text {
-                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(Color(0xFF7A838A)) }
+                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
                                     event { click { ctx.workspaceRenameTargetId = ""; ctx.workspaceActionError = "" } }
                                 }
                                 Text {
-                                    attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(Color(0xFF4176E6)) }
+                                    attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateBusinessPrimary) }
                                     event { click { if (!ctx.workspaceActionBusy) ctx.saveWorkspaceRename() } }
                                 }
                             }
@@ -887,29 +1007,29 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(Color.WHITE)
+                                backgroundColor(this@DshHomePage.themeColors.bgLayer3)
                             }
-                            Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
+                            Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
                             Text {
                                 attr {
                                     text("只会从列表移除注册，不会删除目录、会话或日志。")
                                     marginTop(8f)
                                     fontSize(13f)
                                     lineHeight(20f)
-                                    color(Color(0xFF68737D))
+                                    color(this@DshHomePage.themeColors.labelSecondary)
                                 }
                             }
                             vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(Color(0xFFBF3535)) } }
+                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
                             }
                             View {
                                 attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                                 Text {
-                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(Color(0xFF7A838A)) }
+                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
                                     event { click { ctx.workspaceDeleteTargetId = ""; ctx.workspaceActionError = "" } }
                                 }
                                 Text {
-                                    attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(Color(0xFFD25A5A)) }
+                                    attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateErrorPrimary) }
                                     event { click { if (!ctx.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
                                 }
                             }
@@ -925,6 +1045,7 @@ internal class DshHomePage : BasePager() {
                     x = { ctx.messageActionsX },
                     y = { ctx.messageActionsY },
                     onDismiss = { ctx.closeMessageActions() },
+                    colors = { this@DshHomePage.themeColors },
                 )
                 // ===== 选择文本弹窗 =====
                 // 「选择文本」以单个可选中文本节点承载完整正文，供原生选区复制。
@@ -932,6 +1053,7 @@ internal class DshHomePage : BasePager() {
                     visible = { ctx.selectTextModalVisible },
                     content = { ctx.selectTextModalContent },
                     onClose = { ctx.closeSelectTextModal() },
+                    colors = { this@DshHomePage.themeColors },
                 )
                 // ===== 会话 topbar overflow menu 与会话管理动作 =====
                 DshOverflowMenu(
@@ -941,15 +1063,36 @@ internal class DshHomePage : BasePager() {
                     onDismiss = { ctx.closeOverflowMenu() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionLogModal(
                     visible = { ctx.sessionLogVisible },
-                    events = { ctx.sessionLogCache },
+                    events = { ctx.sessionLogView },
+                    total = { ctx.sessionLogTotal },
                     selected = { ctx.sessionLogSelected },
-                    onSelect = { ctx.sessionLogSelected = it },
+                    detailRaw = { ctx.sessionLogDetailRaw },
+                    exporting = { ctx.sessionLogExporting },
+                    timeFilter = { ctx.sessionLogTimeFilter },
+                    levelFilter = { ctx.sessionLogLevelFilter },
+                    typeFilter = { ctx.sessionLogTypeFilter },
+                    typeOptions = { ctx.sessionLogTypeOptions },
+                    keyword = { ctx.sessionLogKeyword },
+                    onSelect = { ctx.sessionLogSelected = it; ctx.loadSessionLogDetail(it) },
                     onRefresh = { ctx.refreshSessionLogs() },
+                    onExport = { ctx.exportSessionLogs() },
+                    onCopy = { ctx.copyLogDetail(it) },
                     onClose = { ctx.closeSessionLogs() },
+                    onTimeFilter = { ctx.onLogTimeFilter(it) },
+                    onToggleLevel = { ctx.onLogToggleLevel(it) },
+                    onTypeFilter = { ctx.onLogTypeFilter(it) },
+                    onKeyword = { ctx.onLogKeyword(it) },
+                    onClearFilters = { ctx.clearLogFilters() },
+                    allMode = { ctx.diagnosticLogAllMode },
+                    onJumpToSession = { ctx.jumpToSession(it) },
+                    sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
+                    statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -960,6 +1103,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.cancelSessionRename() },
                     onSave = { ctx.saveSessionRename() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionArchiveDialog(
                     visible = { ctx.sessionArchiveVisible },
@@ -968,6 +1112,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" },
                     onConfirm = { ctx.confirmSessionArchive() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionDeleteDialog(
                     visible = { ctx.sessionDeleteVisible },
@@ -976,6 +1121,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" },
                     onConfirm = { ctx.confirmSessionDelete() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
                 )
             }
         }
@@ -1007,6 +1153,12 @@ internal class DshHomePage : BasePager() {
             sessionDrawerAnimated = true
             sessionDrawerMaskAnimated = true
         }
+        // 首次打开且未手动展开过任何文件夹时，自动展开当前会话所在工作区（与原版一致）
+        if (isRemoteHost && workspaceExpandedIds.isEmpty()) {
+            val group = workspaceGroups.firstOrNull { it.sessions.any { s -> s.id == activeSessionId } }
+                ?: workspaceGroups.firstOrNull()
+            group?.let { workspaceExpandedIds.add(it.workspaceId) }
+        }
         setTimeout(pagerId, ANIMATION_DURATION_MS) {
             warmRecentSessionCache(scrollToEndAfterLoad = false)
         }
@@ -1014,6 +1166,8 @@ internal class DshHomePage : BasePager() {
 
     private fun closeSessionDrawer() {
         if (!sessionDrawerVisible) return
+        // 关闭抽屉时清掉会话行溢出菜单的目标会话，避免残留指向已关闭的会话
+        overflowTargetSessionId = ""
         // Reverse the opening transition: fade the mask out while the drawer closes.
         sessionDrawerMaskAnimation = Animation.easeInOut(ANIMATION_DURATION_S)
         sessionDrawerMaskAnimated = false
@@ -1021,6 +1175,32 @@ internal class DshHomePage : BasePager() {
         setTimeout(pagerId, ANIMATION_DURATION_MS) {
             sessionDrawerVisible = false
         }
+    }
+
+    private fun toggleWorkspaceExpanded(workspaceId: String) {
+        if (workspaceExpandedIds.contains(workspaceId)) {
+            workspaceExpandedIds.remove(workspaceId)
+        } else {
+            workspaceExpandedIds.add(workspaceId)
+        }
+    }
+
+    /** 会话是否有待用户决策（审批/提问），供抽屉行状态点显示；本地模式恒 false。 */
+    private fun sessionPending(sessionId: String): Boolean {
+        val remote = repository as? DshRemoteRepository ?: return false
+        val (approval, question) = remote.pendingInteractions(sessionId)
+        return approval != null || question != null
+    }
+
+    /** 当前会话所在工作区；不在任何真实工作区时返回未分组键。 */
+    private fun activeWorkspaceId(): String {
+        val id = activeSessionId
+        if (id.isEmpty()) return NO_ACTIVE_WORKSPACE
+        val remote = repository as? DshRemoteRepository ?: return NO_ACTIVE_WORKSPACE
+        return remote.workspaceGroups()
+            .firstOrNull { it.sessions.any { s -> s.id == id } }
+            ?.workspaceId
+            ?: ""
     }
 
     private fun refreshVisibleSessions() {
@@ -1264,6 +1444,12 @@ internal class DshHomePage : BasePager() {
                 }
             },
             onSessionEvent = { sessionId, event ->
+                when (event.type) {
+                    "tool/call" -> DshStreamLog.log(LogLevel.INFO, "tool/call", "tool/call session=$sessionId", sessionId, null)
+                    "tool/result" -> DshStreamLog.log(LogLevel.INFO, "tool/result", "tool/result session=$sessionId", sessionId, null)
+                    "assistant/message" -> DshStreamLog.log(LogLevel.DEBUG, "assistant/chunk", "assistant/chunk session=$sessionId", sessionId, null)
+                    "turn/end" -> DshStreamLog.log(LogLevel.INFO, "turn/end", "turn/end session=$sessionId", sessionId, null)
+                }
                 if (sessionId == activeSessionId) {
                     when (event.type) {
                         "tool/call" -> showRunningTool(event)
@@ -1303,6 +1489,19 @@ internal class DshHomePage : BasePager() {
             DshHostRuntimePhase.STOPPED -> "远程 DSH 已停止"
             DshHostRuntimePhase.DISCONNECTED -> "等待远程连接"
         }
+        val connLogType = when (state.phase) {
+            DshHostRuntimePhase.CONNECTING -> "connect.connecting"
+            DshHostRuntimePhase.HOST_HANDSHAKE -> "connect.handshake"
+            DshHostRuntimePhase.SYNCING -> "connect.syncing"
+            DshHostRuntimePhase.READY -> "connect.ready"
+            DshHostRuntimePhase.RECONNECTING -> "connect.reconnecting"
+            DshHostRuntimePhase.ERROR -> "connect.error"
+            DshHostRuntimePhase.STOPPED -> "connect.stopped"
+            DshHostRuntimePhase.DISCONNECTED -> "connect.disconnected"
+        }
+        val connLogLevel = if (state.phase == DshHostRuntimePhase.ERROR) LogLevel.ERROR else LogLevel.INFO
+        val connErr = state.message.let { if (it.isNotEmpty()) " error='${DshStreamLog.preview(it)}'" else "" }
+        DshStreamLog.log(connLogLevel, connLogType, "$connLogType mode=$connectionMode$connErr", null, null)
         if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) {
             loadRepository(preferredSessionId = activeSessionId)
         }
@@ -1410,6 +1609,178 @@ internal class DshHomePage : BasePager() {
         credentialSetupError = ""
         apiKeyDraft = pendingApiKey
         updateCredentialSetupVisibility(true)
+    }
+
+    private fun openSettingsPage() {
+        dismissKeyboard()
+        commandSheetVisible = false
+        settingsPageVisible = true
+        reloadSettings()
+        loadHostVersion()
+    }
+
+    private fun closeSettingsPage() {
+        settingsPageVisible = false
+        settingsChoiceKind = ""
+        settingsChoiceBusy = false
+    }
+
+    private fun reloadSettings() {
+        settingsLoading = true
+        settingsError = ""
+        val repo = repository
+        if (repo == null) {
+            settingsLoading = false
+            settingsError = "未连接电脑端"
+            return
+        }
+        repo.describeSettings({
+            settingsLoading = false
+            settingsSnapshot = it
+        }, {
+            settingsLoading = false
+            settingsError = it
+        })
+    }
+
+    private fun loadHostVersion() {
+        val repo = repository ?: return
+        repo.loadHostVersion({ hostVersion = it }, { })
+    }
+
+    private fun connectionModeLabel(): String = when (connectionMode) {
+        DshConnectionMode.LOCAL -> "本地模式"
+        DshConnectionMode.RELAY -> "扫码连接"
+        DshConnectionMode.SSH -> "SSH 连接"
+    }
+
+    private fun openAgentModePicker() {
+        if (agentPresetOptions.isEmpty()) {
+            val repo = repository
+            repo?.loadAgentPresets({
+                agentPresetOptions.clear()
+                agentPresetOptions.addAll(it)
+                agentModePickerVisible = true
+            }, {
+                agentModePickerVisible = true
+            })
+        } else {
+            agentModePickerVisible = true
+        }
+    }
+
+    private fun openSettingsChoice(kind: String, title: String) {
+        settingsChoiceKind = kind
+        settingsChoiceTitle = title
+        settingsChoiceOptions.clear()
+        when (kind) {
+            "permission" -> settingsChoiceOptions.addAll(settingsSnapshot.permissionChoices)
+            "locale" -> {
+                settingsChoiceOptions.add(DshSettingsChoice("zh", "简体中文"))
+                settingsChoiceOptions.add(DshSettingsChoice("en", "English"))
+            }
+            "theme" -> {
+                settingsChoiceOptions.add(DshSettingsChoice("system", "跟随系统"))
+                settingsChoiceOptions.add(DshSettingsChoice("light", "浅色"))
+                settingsChoiceOptions.add(DshSettingsChoice("dark", "深色"))
+            }
+        }
+    }
+
+    private fun applySettingsChoice(choice: DshSettingsChoice) {
+        val kind = settingsChoiceKind
+        if (kind.isEmpty()) return
+        settingsChoiceKind = ""
+        settingsChoiceBusy = true
+        val repo = repository
+        if (repo == null) {
+            settingsChoiceBusy = false
+            bridgeModule.toast("未连接电脑端")
+            return
+        }
+        when (kind) {
+            "permission" -> repo.updateSetting(
+                "permission",
+                JSONObject().apply { put("defaultPreset", choice.value) },
+                settingsSnapshot.permissionRevision,
+                {
+                    settingsChoiceBusy = false
+                    reloadSettings()
+                },
+                {
+                    settingsChoiceBusy = false
+                    bridgeModule.toast("权限设置失败：$it")
+                },
+            )
+            "locale" -> repo.updateSetting(
+                "locale",
+                JSONObject().apply { put("preference", choice.value) },
+                settingsSnapshot.localeRevision,
+                {
+                    settingsChoiceBusy = false
+                    reloadSettings()
+                },
+                {
+                    settingsChoiceBusy = false
+                    bridgeModule.toast("语言设置失败：$it")
+                },
+            )
+            "theme" -> {
+                // 移动端本地优先：立即生效并持久化，不依赖电脑端同步结果
+                settingsChoiceBusy = false
+                runCatching {
+                    acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                        .setString(DshThemeManager.PREF_KEY_THEME_MODE, choice.value)
+                }
+                DshThemeManager.applyPreference(choice.value)
+                // 顺带同步电脑端外观（失败仅提示，不影响移动端）
+                repo.updateSetting(
+                    "ui-theme",
+                    JSONObject().apply { put("preference", choice.value) },
+                    settingsSnapshot.themeRevision,
+                    { reloadSettings() },
+                    { bridgeModule.toast("外观同步电脑端失败：$it") },
+                )
+            }
+            else -> settingsChoiceBusy = false
+        }
+    }
+
+    private fun openDefaultModelPicker() {
+        val sessionId = activeSessionId
+        if (sessionId.isEmpty()) return
+        val repo = repository ?: return
+        repo.loadModels(sessionId, {
+            modelOptions.clear()
+            modelOptions.addAll(it.options)
+            modelPickerError = ""
+            modelPickerVisible = true
+        }, {
+            modelPickerError = it
+        })
+    }
+
+    private fun applyDefaultModel(option: DshModelOption) {
+        val repo = repository ?: return
+        val patch = JSONObject().apply {
+            put("provider", option.provider)
+            put("model", option.model)
+            option.reasoningEffort?.let { put("reasoningEffort", it) }
+        }
+        repo.updateSetting("agent-default-model", patch, settingsSnapshot.defaultModelRevision, {
+            modelPickerVisible = false
+            reloadSettings()
+        }, {
+            modelPickerVisible = false
+            bridgeModule.toast("默认模型设置失败：$it")
+        })
+    }
+
+    private fun disconnectFromHost() {
+        DshStreamLog.log(LogLevel.INFO, "connect.disconnect", "connect.disconnect by user", null, null)
+        closeSettingsPage()
+        stopCurrentEngine()
+        bridgeModule.toast("已断开连接")
     }
 
     private fun openConnectionSettings(preserveError: Boolean = false) {
@@ -2438,6 +2809,16 @@ internal class DshHomePage : BasePager() {
         if (overflowMenuVisible) return
         closeMessageActions()
         closeSelectTextModal()
+        overflowTargetSessionId = ""
+        overflowMenuVisible = true
+    }
+
+    /** 从会话抽屉某行的 ⋯ 打开 overflow menu：锁定目标会话，抽屉保持开启。 */
+    fun openOverflowMenuFor(sessionId: String) {
+        if (overflowMenuVisible) return
+        closeMessageActions()
+        closeSelectTextModal()
+        overflowTargetSessionId = sessionId
         overflowMenuVisible = true
     }
 
@@ -2445,10 +2826,23 @@ internal class DshHomePage : BasePager() {
         overflowMenuVisible = false
     }
 
+    /** overflow menu 的目标会话：抽屉行打开时指向该行会话，否则回退到当前会话。 */
+    private fun overflowTargetId(): String = overflowTargetSessionId.ifEmpty { activeSessionId }
+
+    /** 从会话事件摘要日志的 message 中解析 evtSeq（会话事件 seq，用于反查内存原文）。 */
+    private fun dshParseLogEventSeq(message: String): Int? {
+        val idx = message.indexOf("evtSeq=")
+        if (idx < 0) return null
+        val rest = message.substring(idx + "evtSeq=".length)
+        val end = rest.indexOfFirst { it < '0' || it > '9' }.let { if (it < 0) rest.length else it }
+        if (end == 0) return null
+        return rest.substring(0, end).toIntOrNull()
+    }
+
     fun overflowActions(): ObservableList<DshOverflowAction> {
         val result = ObservableList<DshOverflowAction>()
         result.add(DshOverflowAction("log", "日志", "log.svg"))
-        val session = sessions.firstOrNull { it.id == activeSessionId }
+        val session = sessions.firstOrNull { it.id == overflowTargetId() }
         if (session?.blank != true) {
             result.add(DshOverflowAction("rename", "重命名", "rename.svg"))
             result.add(DshOverflowAction("archive", "归档", "archive.svg"))
@@ -2470,30 +2864,190 @@ internal class DshHomePage : BasePager() {
     // ===== 会话日志 =====
 
     fun openSessionLogs() {
+        diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
     }
 
+    fun openDiagnosticLogs() {
+        diagnosticLogAllMode = true
+        refreshSessionLogs()
+        sessionLogVisible = true
+    }
+
+    fun jumpToSession(sessionId: String) {
+        if (sessionId.isEmpty()) return
+        closeSessionLogs()
+        val idx = sessions.indexOfFirst { it.id == sessionId }
+        if (idx >= 0) {
+            selectSession(sessionId)
+        }
+    }
+
     fun refreshSessionLogs() {
-        val targetId = activeSessionId
+        val targetId = overflowTargetId()
         val writeBehind = DshStreamLog.writeBehind
         sessionLogCache.clear()
-        if (writeBehind == null || targetId.isEmpty()) return
-        val events = writeBehind.snapshot()
-            .filter { it.sessionId == targetId }
-            .sortedByDescending { it.seq }
+        if (writeBehind == null) return
+        var events = writeBehind.snapshot()
+        if (!diagnosticLogAllMode) {
+            if (targetId.isEmpty()) return
+            events = events.filter { it.sessionId == targetId }
+        }
+        events = events.sortedByDescending { it.seq }
         sessionLogCache.addAll(events)
+        recomputeSessionLogView()
+    }
+
+    /** 按四维筛选（时间/等级/事件类型/关键词）重算日志视图；只过滤当前会话缓存。 */
+    fun recomputeSessionLogView() {
+        sessionLogTotal = sessionLogCache.size
+        val now = currentTimeMillis()
+        val todayPrefix = LogExporter.formatTimestamp(now).substring(0, 10)
+        val tf = sessionLogTimeFilter
+        val levels = sessionLogLevelFilter
+        val typeQ = sessionLogTypeFilter.trim()
+        val kw = sessionLogKeyword.trim()
+        // 动态提取当前会话所有事件类型，供筛选 chip 使用
+        val types = sessionLogCache.map { it.type }.distinct().sorted()
+        sessionLogTypeOptions.clear()
+        sessionLogTypeOptions.add("全部")
+        sessionLogTypeOptions.addAll(types)
+        if (sessionLogTypeFilter.isNotEmpty() && sessionLogTypeFilter !in types) {
+            sessionLogTypeFilter = ""
+        }
+        val filtered = sessionLogCache.filter { e ->
+            val timeOk = when (tf) {
+                1 -> now - e.timestamp <= 600_000L
+                2 -> now - e.timestamp <= 3_600_000L
+                3 -> LogExporter.formatTimestamp(e.timestamp).startsWith(todayPrefix)
+                else -> true
+            }
+            timeOk &&
+                (e.level in levels) &&
+                (typeQ.isEmpty() || e.type.contains(typeQ, ignoreCase = true)) &&
+                (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
+        }
+        sessionLogView.clear()
+        sessionLogView.addAll(filtered)
+    }
+
+    fun onLogTimeFilter(value: Int) {
+        sessionLogTimeFilter = value
+        recomputeSessionLogView()
+    }
+
+    fun onLogToggleLevel(level: LogLevel) {
+        // 至少保留一个等级选中：取消最后一个时不响应
+        val next = if (level in sessionLogLevelFilter) {
+            if (sessionLogLevelFilter.size == 1) sessionLogLevelFilter else sessionLogLevelFilter - level
+        } else {
+            sessionLogLevelFilter + level
+        }
+        if (next != sessionLogLevelFilter) {
+            sessionLogLevelFilter = next
+            recomputeSessionLogView()
+        }
+    }
+
+    fun onLogTypeFilter(value: String) {
+        sessionLogTypeFilter = value
+        recomputeSessionLogView()
+    }
+
+    fun onLogKeyword(value: String) {
+        sessionLogKeyword = value
+        recomputeSessionLogView()
+    }
+
+    fun clearLogFilters() {
+        sessionLogTimeFilter = 0
+        sessionLogLevelFilter = LogLevel.entries.toSet()
+        sessionLogTypeFilter = ""
+        sessionLogKeyword = ""
+        recomputeSessionLogView()
+    }
+
+    /** 复制单条日志详情（全部字段 + 脱敏原文）到剪贴板。 */
+    fun copyLogDetail(entry: LogEvent) {
+        val text = buildString {
+            appendLine("DSH 日志详情")
+            appendLine("时间：${LogExporter.formatTimestamp(entry.timestamp)}")
+            appendLine("序号：${entry.seq}")
+            appendLine("级别：${entry.level.name}")
+            appendLine("类型：${entry.type}")
+            appendLine("会话：${entry.sessionId ?: "-"}")
+            appendLine("RPC：${entry.rpcId ?: "-"}")
+            appendLine("大小：${entry.size} B")
+            appendLine("消息：${entry.message}")
+            if (sessionLogDetailRaw.isNotEmpty()) {
+                appendLine("原文：${sessionLogDetailRaw}")
+            }
+        }
+        bridgeModule.copyToPasteboard(text)
+        bridgeModule.toast("已复制")
     }
 
     fun closeSessionLogs() {
         sessionLogVisible = false
         sessionLogSelected = null
+        sessionLogDetailRaw = ""
+        clearLogFilters()
+        sessionLogView.clear()
+    }
+
+    /** 详情按需取原文：从内存 sessionEvents 按摘要中的 evtSeq 反查完整事件，脱敏后展示。 */
+    fun loadSessionLogDetail(entry: LogEvent?) {
+        sessionLogDetailRaw = ""
+        if (entry == null || entry.sessionId.isNullOrEmpty()) return
+        val evtSeq = dshParseLogEventSeq(entry.message) ?: return
+        val raw = (repository as? DshRemoteRepository)?.store?.sessionEvents?.get(entry.sessionId)
+            ?.firstOrNull { it.seq == evtSeq }?.raw ?: return
+        sessionLogDetailRaw = LogSanitizer.sanitize(raw)
+    }
+
+    /** 导出全量原文：内存事件流组稿（脱敏），缺失时回退摘要；写入文件并打开系统分享。 */
+    fun exportSessionLogs() {
+        if (sessionLogExporting) return
+        val targetId = overflowTargetId()
+        if (targetId.isEmpty()) return
+        sessionLogExporting = true
+        val storeEvents = (repository as? DshRemoteRepository)?.store?.sessionEvents?.get(targetId)?.toList().orEmpty()
+        val content = buildString {
+            appendLine("DSH 会话日志导出")
+            appendLine("会话：$targetId")
+            appendLine("导出时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
+            appendLine("说明：原文来自会话活跃期的内存事件流，App 重启后可能缺失；导出内容已脱敏。")
+            appendLine("")
+            if (storeEvents.isNotEmpty()) {
+                for (e in storeEvents) {
+                    appendLine("[${e.seq}] ${e.type}")
+                    appendLine(LogSanitizer.sanitize(e.raw))
+                    appendLine("")
+                }
+            } else {
+                appendLine("（内存事件流不可用，以下为摘要日志）")
+                for (e in sessionLogCache.toList()) {
+                    appendLine("[${LogExporter.formatTimestamp(e.timestamp)}] ${e.level.name} ${e.type} ${e.message}")
+                }
+            }
+        }
+        val safeName = targetId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
+        runCatching {
+            val path = writeExportFile(exportDir, "dsh-session-$safeName-log.txt", content)
+            bridgeModule.shareExportFile(path)
+        }.onFailure {
+            sessionLogExporting = false
+            bridgeModule.copyToPasteboard(content)
+            bridgeModule.toast("导出失败，已复制到剪贴板")
+        }
+        sessionLogExporting = false
     }
 
     // ===== 重命名会话 =====
 
     fun openSessionRenameDialog() {
-        val session = sessions.firstOrNull { it.id == activeSessionId } ?: return
+        val session = sessions.firstOrNull { it.id == overflowTargetId() } ?: return
         sessionRenameDraft = session.title.takeIf { it != "尚无标题" && it != "新会话" } ?: ""
         sessionRenameError = ""
         sessionRenameVisible = true
@@ -2506,7 +3060,7 @@ internal class DshHomePage : BasePager() {
 
     fun saveSessionRename() {
         if (sessionRenameBusy) return
-        val targetId = activeSessionId
+        val targetId = overflowTargetId()
         if (targetId.isEmpty()) return
         val repository = repository as? DshRemoteRepository ?: run {
             sessionRenameError = "当前连接不支持重命名会话"
@@ -2536,7 +3090,7 @@ internal class DshHomePage : BasePager() {
 
     fun confirmSessionArchive() {
         if (sessionArchiveBusy) return
-        val targetId = activeSessionId
+        val targetId = overflowTargetId()
         if (targetId.isEmpty()) return
         val repository = repository as? DshRemoteRepository ?: run {
             sessionArchiveError = "当前连接不支持归档会话"
@@ -2562,7 +3116,7 @@ internal class DshHomePage : BasePager() {
 
     fun confirmSessionDelete() {
         if (sessionDeleteBusy) return
-        val targetId = activeSessionId
+        val targetId = overflowTargetId()
         if (targetId.isEmpty()) return
         val repository = repository as? DshRemoteRepository ?: run {
             sessionDeleteError = "当前连接不支持删除会话"
@@ -3420,6 +3974,10 @@ internal class DshHomePage : BasePager() {
         }
         bridgeModule.copyToPasteboard(text)
         bridgeModule.toast("已复制")
+        copiedMessageId = message.id
+        setTimeout(pagerId, 1500) {
+            if (copiedMessageId == message.id) copiedMessageId = ""
+        }
     }
 
     /** 复制长按菜单目标消息所在回合的完整正文 */
@@ -3966,6 +4524,8 @@ internal class DshHomePage : BasePager() {
     }
 
     companion object {
+        /** 无选中会话时返回的哨兵，确保未分组组不会被误判为激活。 */
+        private const val NO_ACTIVE_WORKSPACE = "__none__"
         private const val BG = 0xFFF7F9FA
         private const val LOCAL_ENGINE_URL = "http://127.0.0.1:3080"
         private const val ENGINE_CONNECT_RETRIES = 60

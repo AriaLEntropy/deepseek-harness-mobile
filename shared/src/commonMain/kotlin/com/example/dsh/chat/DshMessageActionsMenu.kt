@@ -43,6 +43,7 @@ internal fun ViewContainer<*, *>.DshMessageActionsMenu(
     x: () -> Float,
     y: () -> Float,
     onDismiss: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         val pageData = getPager().pageData
@@ -101,7 +102,7 @@ internal fun ViewContainer<*, *>.DshMessageActionsMenu(
                 View {
                     attr {
                         absolutePositionAllZero()
-                        backgroundColor(Color(0xCCFFFFFF))
+                        backgroundColor(colors().specificMenu)
                     }
                 }
                 // 菜单项：左文右图，项间细分割线
@@ -123,7 +124,7 @@ internal fun ViewContainer<*, *>.DshMessageActionsMenu(
                                 attr {
                                     text(item.label)
                                     fontSize(15f)
-                                    color(Color(0xFF1F2933))
+                                    color(colors().labelPrimary)
                                 }
                             }
                             Image {
@@ -140,7 +141,7 @@ internal fun ViewContainer<*, *>.DshMessageActionsMenu(
                                     height(MENU_DIVIDER_HEIGHT)
                                     marginLeft(16f)
                                     marginRight(16f)
-                                    backgroundColor(Color(0x1A000000))
+                                    backgroundColor(colors().interactiveBgHover)
                                 }
                             }
                         }

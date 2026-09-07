@@ -29,6 +29,7 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
     visible: () -> Boolean,
     content: () -> String,
     onClose: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         Modal(inWindow = true) {
@@ -45,7 +46,7 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
                     bottom(0f)
                     flexDirectionColumn()
                     borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
-                    backgroundColor(Color.WHITE)
+                    backgroundColor(colors().bgLayer1)
                 }
                 // 头部：标题居中，右上角关闭
                 View {
@@ -61,7 +62,7 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
                             lines(1)
                             fontSize(17f)
                             fontWeightBold()
-                            color(Color(0xFF000000))
+                            color(colors().labelPrimary)
                         }
                     }
                     View {
@@ -82,7 +83,7 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
                             flex(1f)
                             textAlignLeft()
                             useDpFontSizeDim()
-                            color(Color(0xFF343E47))
+                            color(colors().labelSecondary)
                             fontSize(14f)
                             lineHeight(21f)
                         }

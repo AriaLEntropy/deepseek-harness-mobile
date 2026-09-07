@@ -22,6 +22,7 @@ internal fun ViewContainer<*, *>.DshConnectionStatusCapsule(
     isBlankConversation: () -> Boolean,
     fadeOut: () -> Boolean,
     fadeOutAnimation: () -> Animation,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif(visible) {
         // 全宽锚定容器：胶囊自底向上定位，水平居中
@@ -51,7 +52,7 @@ internal fun ViewContainer<*, *>.DshConnectionStatusCapsule(
                     paddingRight(12f)
                     borderRadius(13f)
                     // 毛玻璃效果：半透明白色 + 细描边 + 弥散阴影
-                    backgroundColor(Color(0xCCFFFFFF))
+                    backgroundColor(colors().specificMenu)
                     border(Border(0.5f, BorderStyle.SOLID, Color(0x26000000)))
                     boxShadow(BoxShadow(0f, 2f, 8f, Color(0x1A000000)))
                     flexDirectionRow()
@@ -72,7 +73,7 @@ internal fun ViewContainer<*, *>.DshConnectionStatusCapsule(
                         text(topBarConnectingText(connectionLabel()))
                         fontSize(12f)
                         fontWeightMedium()
-                        color(Color(0xFF6B7785))
+                        color(colors().labelSecondary)
                         lines(1)
                     }
                 }

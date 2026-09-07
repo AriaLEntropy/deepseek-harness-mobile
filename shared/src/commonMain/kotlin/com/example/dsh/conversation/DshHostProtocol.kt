@@ -40,6 +40,7 @@ internal object DshHostProtocol {
     const val SESSION_ATTACHMENT = "session.attachment"
     const val WORKSPACE_ARCHIVE_SESSION = "workspace.archiveSession"
     const val SETTINGS_DESCRIBE = "settings.describe"
+    const val SETTINGS_UPDATE = "settings.update"
     const val CREDENTIALS_DESCRIBE = "credentials.describe"
     const val CREDENTIALS_SET = "credentials.set"
     const val LLM_PROVIDERS = "llm.providers"
@@ -55,6 +56,98 @@ internal object DshHostProtocol {
 }
 
 internal data class DshHostConnection(val baseUrl: String, val token: String = "")
+
+/** 从 schemastery schema.toJSON()（{uid, refs}）中解析 object 字段的 union 常量选项。 */
+internal fun dshParseSchemaChoices(schema: JSONObject?, field: String): List<DshSettingsChoice> {
+    if (schema == null) return emptyList()
+    val refs = schema.optJSONObject("refs") ?: return emptyList()
+    val root = refs.optJSONObject(schema.optString("uid")) ?: return emptyList()
+    val fieldRef = root.optJSONObject("dict")?.optString(field) ?: return emptyList()
+    val node = refs.optJSONObject(fieldRef) ?: return emptyList()
+    if (node.optString("type") != "union") return emptyList()
+    val list = node.optJSONArray("list") ?: return emptyList()
+    val result = mutableListOf<DshSettingsChoice>()
+    for (index in 0 until list.length()) {
+        val uid = list.optString(index) ?: continue
+        val item = refs.optJSONObject(uid) ?: continue
+        if (item.optString("type") != "const") continue
+        val value = item.optString("value")
+        if (value.isEmpty()) continue
+        val description = item.optJSONObject("meta")?.opt("description")
+        val label = when (description) {
+            is String -> description
+            is JSONObject -> description.optString("zh").ifEmpty { description.optString("") }
+            else -> value
+        }
+        result += DshSettingsChoice(value, label.ifEmpty { value })
+    }
+    return result
+}
+
+/** 会话事件摘要：type + 关键元数据（不含 delta 正文 / 工具 JSON 全文）。evtSeq 供详情反查内存原文。 */
+internal fun dshSessionEventSummary(seq: Int, type: String, data: JSONObject): String {
+    val sb = StringBuilder()
+    sb.append("evtSeq=$seq")
+    fun field(name: String) {
+        val v = data.optString(name)
+        if (v.isNotEmpty()) sb.append(" $name=$v")
+    }
+    when (type) {
+        "turn/start", "step/start", "step/end" -> {
+            field("turn")
+            field("step")
+        }
+        "turn/end" -> {
+            field("turn")
+            field("reason")
+        }
+        "user/message" -> {
+            field("turn")
+            field("step")
+            val sourceKind = data.optJSONObject("source")?.optString("kind").orEmpty()
+            if (sourceKind.isNotEmpty()) sb.append(" source=$sourceKind")
+            sb.append(" chars=${data.opt("content")?.toString()?.length ?: 0}")
+        }
+        "assistant/chunk" -> {
+            field("turn")
+            field("step")
+            sb.append(" size=${data.opt("chunk")?.toString()?.length ?: 0}")
+        }
+        "assistant/message" -> {
+            field("turn")
+            field("step")
+            field("interrupted")
+            sb.append(" chars=${data.opt("message")?.toString()?.length ?: 0}")
+            if (data.optJSONObject("usage") != null) sb.append(" usage=yes")
+        }
+        "tool/call" -> {
+            field("turn")
+            field("step")
+            field("callId")
+            field("name")
+            data.optString("arguments").takeIf { it.isNotEmpty() }?.let { sb.append(" argsChars=${it.length}") }
+        }
+        "tool/result" -> {
+            field("turn")
+            field("step")
+            field("callId")
+            sb.append(" chars=${data.opt("message")?.toString()?.length ?: 0}")
+            if (data.optJSONObject("error") != null) sb.append(" error=yes")
+        }
+        "todo/write" -> sb.append(" items=${data.optJSONArray("todos")?.length() ?: 0}")
+        "request/header" -> field("reason")
+        else -> { /* 未知类型只记 evtSeq */ }
+    }
+    return sb.toString()
+}
+
+/** 会话事件日志等级：chunk 记 DEBUG，带错误/失败记 WARN，其余 INFO。 */
+internal fun dshSessionEventLevel(type: String, data: JSONObject): LogLevel = when {
+    type == "assistant/chunk" -> LogLevel.DEBUG
+    type == "tool/result" && data.optJSONObject("error") != null -> LogLevel.WARN
+    type == "turn/end" && data.optString("reason").contains("error", ignoreCase = true) -> LogLevel.WARN
+    else -> LogLevel.INFO
+}
 
 internal object DshWebTimelineParser {
     fun parseWebTimeline(events: JSONArray): List<DshWebTimelineItem> {
@@ -891,6 +984,113 @@ internal class DshRemoteHostRepository(
         }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
     }
 
+    override fun loadAgentPresets(onSuccess: (List<DshAgentPresetOption>) -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.AGENT_PRESET_LIST, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error?.message ?: "agentPreset.list 返回为空")
+                return@call
+            }
+            val presets = value.optJSONArray("presets") ?: JSONArray()
+            val result = mutableListOf<DshAgentPresetOption>()
+            for (index in 0 until presets.length()) {
+                val preset = presets.optJSONObject(index) ?: continue
+                val id = preset.optString("id")
+                if (id.isEmpty()) continue
+                result += DshAgentPresetOption(
+                    id,
+                    preset.optString("name").ifEmpty { id },
+                    preset.optString("description"),
+                    preset.optBoolean("isDefault"),
+                )
+            }
+            onSuccess(result)
+        }
+    }
+
+    override fun loadHostVersion(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.HOST_DESCRIBE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error?.message ?: "host.describe 返回为空")
+                return@call
+            }
+            onSuccess(value.optString("version").ifEmpty { "未知版本" })
+        }
+    }
+
+    override fun describeSettings(onSuccess: (DshSettingsSnapshot) -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.SETTINGS_DESCRIBE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error?.message ?: "settings.describe 返回为空")
+                return@call
+            }
+            var writable = value.optBoolean("writable")
+            var permissionPreset = ""
+            var permissionChoices = emptyList<DshSettingsChoice>()
+            var permissionRevision = 0
+            var localeValue = ""
+            var localeRevision = 0
+            var themeValue = ""
+            var themeRevision = 0
+            var defaultModelProvider = ""
+            var defaultModelLabel = ""
+            var defaultModelRevision = 0
+            val namespaces = value.optJSONArray("namespaces") ?: JSONArray()
+            for (index in 0 until namespaces.length()) {
+                val namespace = namespaces.optJSONObject(index) ?: continue
+                val ns = namespace.optString("ns")
+                val nsValue = namespace.optJSONObject("value") ?: JSONObject()
+                when (ns) {
+                    "permission" -> {
+                        permissionPreset = nsValue.optString("defaultPreset")
+                        permissionRevision = namespace.optInt("revision")
+                        permissionChoices = dshParseSchemaChoices(namespace.optJSONObject("schema"), "defaultPreset")
+                    }
+                    "locale" -> {
+                        localeValue = nsValue.optString("preference")
+                        localeRevision = namespace.optInt("revision")
+                    }
+                    "ui-theme" -> {
+                        themeValue = nsValue.optString("preference")
+                        themeRevision = namespace.optInt("revision")
+                    }
+                    "agent-default-model" -> {
+                        defaultModelProvider = nsValue.optString("provider")
+                        val providerName = nsValue.optString("providerName").ifEmpty { defaultModelProvider }
+                        val model = nsValue.optString("model")
+                        defaultModelLabel = if (model.isEmpty()) {
+                            "未设置"
+                        } else {
+                            val effort = nsValue.optString("reasoningEffort").takeIf { it.isNotEmpty() }
+                            if (effort == null) "$providerName · $model" else "$providerName · $model · $effort"
+                        }
+                        defaultModelRevision = namespace.optInt("revision")
+                    }
+                }
+            }
+            onSuccess(DshSettingsSnapshot(
+                writable = writable,
+                permissionPreset = permissionPreset,
+                permissionChoices = permissionChoices,
+                permissionRevision = permissionRevision,
+                localeValue = localeValue,
+                localeRevision = localeRevision,
+                themeValue = themeValue,
+                themeRevision = themeRevision,
+                defaultModelProvider = defaultModelProvider,
+                defaultModelLabel = defaultModelLabel,
+                defaultModelRevision = defaultModelRevision,
+            ))
+        }
+    }
+
+    override fun updateSetting(ns: String, patch: JSONObject, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.SETTINGS_UPDATE, JSONObject().apply {
+            put("ns", ns)
+            put("patch", patch)
+            if (expectedRevision > 0) put("expectedRevision", expectedRevision)
+        }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+    }
+
     override fun loadModels(sessionId: String, onSuccess: (DshSessionModels) -> Unit, onError: (String) -> Unit) {
         call(DshHostProtocol.SESSION_MODELS, JSONObject().apply { put("sessionId", sessionId) }) { value, error ->
             if (error != null || value == null) {
@@ -1227,7 +1427,7 @@ internal class DshRemoteHostRepository(
         val ungrouped = sessionById.values.filterNot { grouped.contains(it.id) }.sortedByDescending { it.updatedAt }
         return if (ungrouped.isEmpty()) groups else groups + DshWorkspaceGroup(
             workspaceId = "",
-            title = "未归类",
+            title = "未分组",
             path = "",
             sessions = ungrouped,
         )
@@ -1613,6 +1813,16 @@ internal class DshRemoteHostRepository(
         store.applySessionEvent(sessionId, seq, type, eventEnvelope.toString())
         if (seq > -1) onSessionEventHandler(sessionId, DshRawSessionEvent(seq, type, eventEnvelope.toString()))
         val data = event.optJSONObject("data") ?: JSONObject()
+        // 会话事件摘要日志：type 用事件类型原值（turn/start、assistant/chunk…对齐 dsh session log 语义）。
+        // 只记元数据；原文仅在内存 sessionEvents 保留，详情/导出时按需组稿。
+        val evtRpcId = sessionEventSource(data)?.optString("rpcId").orEmpty().takeIf { it.isNotEmpty() }
+        DshStreamLog.log(
+            dshSessionEventLevel(type, data),
+            type,
+            dshSessionEventSummary(seq, type, data),
+            sessionId,
+            evtRpcId,
+        )
         val source = sessionEventSource(data)
         val rpcId = source?.optString("rpcId").orEmpty()
         val active = resolveActiveStream(sessionId, type, rpcId)

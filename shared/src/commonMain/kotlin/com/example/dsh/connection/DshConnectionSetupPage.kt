@@ -110,7 +110,7 @@ internal class DshConnectionSetupPage : BasePager() {
                     flex(1f)
                     flexDirectionColumn()
                     paddingTop(pagerData.statusBarHeight)
-                    backgroundColor(Color(0xFFF7F9FA))
+                    backgroundColor(ctx.themeColors.bgBase)
                 }
                 View {
                     attr {
@@ -119,10 +119,10 @@ internal class DshConnectionSetupPage : BasePager() {
                         alignItemsCenter()
                         paddingLeft(20f)
                         paddingRight(20f)
-                        backgroundColor(Color.WHITE)
-                        borderBottom(Border(1f, BorderStyle.SOLID, Color(0xFFE5E8EB)))
+                        backgroundColor(ctx.themeColors.bgLayer1)
+                        borderBottom(Border(1f, BorderStyle.SOLID, ctx.themeColors.borderL1))
                     }
-                    DshWordmark(height = 24f)
+                    DshWordmark(height = 24f, colors = { ctx.themeColors })
                 }
                 View {
                     attr {
@@ -132,54 +132,54 @@ internal class DshConnectionSetupPage : BasePager() {
                         paddingTop(40f)
                         flexDirectionColumn()
                     }
-                    Text { attr { text("连接 DSH"); fontSize(28f); fontWeightBold(); color(Color(0xFF1F2933)) } }
-                    Text { attr { text("选择电脑上的 Agent"); marginTop(10f); fontSize(15f); color(Color(0xFF68737D)) } }
+                    Text { attr { text("连接 DSH"); fontSize(28f); fontWeightBold(); color(ctx.themeColors.labelPrimary) } }
+                    Text { attr { text("选择电脑上的 Agent"); marginTop(10f); fontSize(15f); color(ctx.themeColors.labelSecondary) } }
                     View {
-                        attr { height(48f); marginTop(24f); flexDirectionRow(); padding(4f); borderRadius(10f); backgroundColor(Color(0xFFE9EDF1)) }
-                        DshSetupModeButton("扫码连接", { ctx.connectionMode == DshConnectionMode.RELAY }, { ctx.connectionMode = DshConnectionMode.RELAY; ctx.error = "" })
-                        DshSetupModeButton("SSH", { ctx.connectionMode == DshConnectionMode.SSH }, { ctx.connectionMode = DshConnectionMode.SSH; ctx.error = "" })
+                        attr { height(48f); marginTop(24f); flexDirectionRow(); padding(4f); borderRadius(10f); backgroundColor(ctx.themeColors.specificSelector) }
+                        DshSetupModeButton("扫码连接", { ctx.connectionMode == DshConnectionMode.RELAY }, { ctx.connectionMode = DshConnectionMode.RELAY; ctx.error = "" }, colors = { ctx.themeColors })
+                        DshSetupModeButton("SSH", { ctx.connectionMode == DshConnectionMode.SSH }, { ctx.connectionMode = DshConnectionMode.SSH; ctx.error = "" }, colors = { ctx.themeColors })
                     }
                     vif({ ctx.connectionMode == DshConnectionMode.RELAY }) {
                         vif({ !ctx.relayPaired }) {
-                            Text { attr { text("扫描电脑 Settings > Remote Access 中的二维码。首版只保存一台电脑。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(Color(0xFF68737D)) } }
+                            Text { attr { text("扫描电脑 Settings > Remote Access 中的二维码。首版只保存一台电脑。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(ctx.themeColors.labelSecondary) } }
                         }
                         vif({ ctx.relayPaired }) {
-                            Text { attr { text(ctx.relayHostName.ifEmpty { "已配对电脑" }); marginTop(16f); fontSize(16f); fontWeightBold(); color(Color(0xFF1F2933)) } }
-                            Text { attr { text(ctx.relayOrigin); marginTop(6f); fontSize(13f); color(Color(0xFF68737D)) } }
-                            Text { attr { text(ctx.relayMessage.ifEmpty { "已保存配对，连接后进入聊天" }); marginTop(8f); fontSize(13f); color(Color(0xFF4F565C)) } }
+                            Text { attr { text(ctx.relayHostName.ifEmpty { "已配对电脑" }); marginTop(16f); fontSize(16f); fontWeightBold(); color(ctx.themeColors.labelPrimary) } }
+                            Text { attr { text(ctx.relayOrigin); marginTop(6f); fontSize(13f); color(ctx.themeColors.labelSecondary) } }
+                            Text { attr { text(ctx.relayMessage.ifEmpty { "已保存配对，连接后进入聊天" }); marginTop(8f); fontSize(13f); color(ctx.themeColors.labelSecondary) } }
                         }
                         View {
-                            attr { height(46f); marginTop(16f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); borderRadius(8f); backgroundColor(Color(0xFF4176E6)) }
+                            attr { height(46f); marginTop(16f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); borderRadius(8f); backgroundColor(ctx.themeColors.stateBusinessPrimary) }
                             Text { attr { text(if (ctx.busy) "处理中..." else if (ctx.relayPaired) "重新扫码" else "扫描电脑二维码"); fontSize(15f); color(Color.WHITE) } }
                             event { click { if (!ctx.busy) ctx.scanRelayQr() } }
                         }
                         vif({ ctx.relayPaired }) {
                             Text {
-                                attr { text("移除这台电脑"); marginTop(12f); fontSize(14f); color(Color(0xFFBF3535)) }
+                                attr { text("移除这台电脑"); marginTop(12f); fontSize(14f); color(ctx.themeColors.stateErrorPrimary) }
                                 event { click { if (!ctx.busy) ctx.forgetRelay() } }
                             }
                         }
                     }
                     vif({ ctx.connectionMode == DshConnectionMode.SSH }) {
-                        DshSetupInput("SSH 主机", { ctx.host }, "例如 Tailscale IP 或域名") { ctx.host = it; ctx.error = "" }
-                        DshSetupInput("SSH 用户名", { ctx.user }, "例如 alex") { ctx.user = it; ctx.error = "" }
+                        DshSetupInput("SSH 主机", { ctx.host }, "例如 Tailscale IP 或域名", colors = { ctx.themeColors }) { ctx.host = it; ctx.error = "" }
+                        DshSetupInput("SSH 用户名", { ctx.user }, "例如 alex", colors = { ctx.themeColors }) { ctx.user = it; ctx.error = "" }
                         View {
                             attr { flexDirectionRow(); marginTop(4f) }
-                            DshSetupInput("SSH 端口", { ctx.sshPort }, "22", 0.5f) { ctx.sshPort = it; ctx.error = "" }
-                            DshSetupInput("远程 DSH 端口", { ctx.dshPort }, "3080", 0.5f, 12f) { ctx.dshPort = it; ctx.error = "" }
+                            DshSetupInput("SSH 端口", { ctx.sshPort }, "22", 0.5f, colors = { ctx.themeColors }) { ctx.sshPort = it; ctx.error = "" }
+                            DshSetupInput("远程 DSH 端口", { ctx.dshPort }, "3080", 0.5f, 12f, colors = { ctx.themeColors }) { ctx.dshPort = it; ctx.error = "" }
                         }
                         View {
-                            attr { height(46f); marginTop(12f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f); borderRadius(8f); backgroundColor(Color.WHITE); border(Border(1f, BorderStyle.SOLID, Color(0xFFD9DEE3))) }
-                            Text { attr { text(ctx.keyLabel); flex(1f); fontSize(14f); color(Color(0xFF4F565C)) } }
-                            Text { attr { text(if (ctx.busy) "导入中..." else "导入私钥"); fontSize(14f); color(Color(0xFF4176E6)) }; event { click { if (!ctx.busy) ctx.pickKey() } } }
+                            attr { height(46f); marginTop(12f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f); borderRadius(8f); backgroundColor(ctx.themeColors.bgLayer1); border(Border(1f, BorderStyle.SOLID, ctx.themeColors.borderL1)) }
+                            Text { attr { text(ctx.keyLabel); flex(1f); fontSize(14f); color(ctx.themeColors.labelSecondary) } }
+                            Text { attr { text(if (ctx.busy) "导入中..." else "导入私钥"); fontSize(14f); color(ctx.themeColors.stateBusinessPrimary) }; event { click { if (!ctx.busy) ctx.pickKey() } } }
                         }
                     }
                     vif({ ctx.error.isNotEmpty() }) {
-                        Text { attr { text(ctx.error); marginTop(12f); fontSize(13f); lineHeight(19f); color(Color(0xFFBF3535)) } }
+                        Text { attr { text(ctx.error); marginTop(12f); fontSize(13f); lineHeight(19f); color(ctx.themeColors.stateErrorPrimary) } }
                     }
                     vif({ ctx.fingerprintPending.isNotEmpty() }) {
                         Text {
-                            attr { text("确认并继续使用此 SSH 主机指纹"); marginTop(10f); fontSize(13f); color(Color(0xFF4176E6)) }
+                            attr { text("确认并继续使用此 SSH 主机指纹"); marginTop(10f); fontSize(13f); color(ctx.themeColors.stateBusinessPrimary) }
                             event { click { if (!ctx.busy) ctx.trustFingerprint() } }
                         }
                     }
@@ -189,7 +189,7 @@ internal class DshConnectionSetupPage : BasePager() {
                             height(48f)
                             marginBottom(24f)
                             borderRadius(10f)
-                            backgroundColor(Color(if (ctx.busy) 0xFFB7C8FE else 0xFF4176E6))
+                            backgroundColor(if (ctx.busy) ctx.themeColors.stateBusinessTertiary else ctx.themeColors.stateBusinessPrimary)
                             titleAttr { text(when (ctx.connectionMode) {
                                 DshConnectionMode.SSH -> "保存并连接电脑"
                                 DshConnectionMode.RELAY -> if (ctx.relayPaired) "连接已配对电脑" else "请先扫码"
@@ -438,10 +438,10 @@ internal class DshConnectionSetupPage : BasePager() {
     }
 }
 
-private fun ViewContainer<*, *>.DshSetupModeButton(label: String, selected: () -> Boolean, onClick: () -> Unit) {
+private fun ViewContainer<*, *>.DshSetupModeButton(label: String, selected: () -> Boolean, onClick: () -> Unit, colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light }) {
     View {
-        attr { flex(1f); height(40f); flexDirectionRow(); justifyContentCenter(); alignItemsCenter(); borderRadius(7f); backgroundColor(Color(if (selected()) 0xFFFFFFFF else 0x00FFFFFF)) }
-        Text { attr { text(label); fontSize(14f); color(Color(if (selected()) 0xFF4176E6 else 0xFF68737D)) } }
+        attr { flex(1f); height(40f); flexDirectionRow(); justifyContentCenter(); alignItemsCenter(); borderRadius(7f); backgroundColor(if (selected()) colors().bgLayer1 else Color(0x00FFFFFF)) }
+        Text { attr { text(label); fontSize(14f); color(if (selected()) colors().stateBusinessPrimary else colors().labelSecondary) } }
         event { click { onClick() } }
     }
 }
@@ -452,16 +452,17 @@ private fun ViewContainer<*, *>.DshSetupInput(
     hint: String,
     flexValue: Float = 1f,
     marginLeft: Float = 0f,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
     onChange: (String) -> Unit,
 ) {
     View {
         attr { flex(flexValue); marginLeft(marginLeft); flexDirectionColumn(); marginTop(12f) }
-        Text { attr { text(label); fontSize(12f); color(Color(0xFF68737D)) } }
+        Text { attr { text(label); fontSize(12f); color(colors().labelSecondary) } }
         View {
-            attr { height(42f); marginTop(5f); paddingLeft(10f); paddingRight(10f); borderRadius(8f); backgroundColor(Color.WHITE); border(Border(1f, BorderStyle.SOLID, Color(0xFFD9DEE3))) }
+            attr { height(42f); marginTop(5f); paddingLeft(10f); paddingRight(10f); borderRadius(8f); backgroundColor(colors().bgLayer1); border(Border(1f, BorderStyle.SOLID, colors().borderL1)) }
             Input {
                 ref { it.view?.setText(value()) }
-                attr { flex(1f); fontSize(14f); color(Color(0xFF222C35)); placeholder(hint); placeholderColor(Color(0xFF98A1A9)); returnKeyTypeDone() }
+                attr { flex(1f); fontSize(14f); color(colors().labelPrimary); placeholder(hint); placeholderColor(colors().labelTertiary); returnKeyTypeDone() }
                 event { textDidChange { onChange(it.text) } }
             }
         }
