@@ -39,6 +39,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
     reconnecting: () -> Boolean,
     elapsedMs: () -> Long,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     // 回合状态条：思考中/重连中提示 + 已耗时
     vif({ visible() }) {
@@ -55,7 +56,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
                     text(dshTurnStatusLabel(reconnecting()))
                     fontSize(14f)
                     fontWeightBold()
-                    color(Color(TURN_STATUS_BLUE))
+                    color(colors.stateBusinessPrimary)
                 }
             }
             vif({ elapsedMs() >= TURN_STATUS_CLOCK_AFTER_MS }) {
@@ -63,7 +64,7 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
                     attr {
                         text(dshFormatTurnDuration(elapsedMs()))
                         fontSize(13f)
-                        color(Color(0xFF8A9399))
+                        color(colors.labelTertiary)
                         marginLeft(8f)
                     }
                 }
@@ -76,7 +77,7 @@ internal const val TURN_STATUS_BLUE = 0xFF4D6BFE
 internal const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
 
 // 空白会话首页：无消息时的占位引导（logo + 标语 + 预览版徽标）
-internal fun ViewContainer<*, *>.DshNewSessionHome() {
+internal fun ViewContainer<*, *>.DshNewSessionHome(colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light) {
     View {
         attr {
             absolutePositionAllZero()
@@ -110,7 +111,7 @@ internal fun ViewContainer<*, *>.DshNewSessionHome() {
                         text("探索未至之境")
                         fontSize(26f)
                         fontWeightBold()
-                        color(Color(0xFF1B1F24))
+                        color(colors.labelPrimary)
                     }
                 }
                 View {
@@ -121,14 +122,14 @@ internal fun ViewContainer<*, *>.DshNewSessionHome() {
                         height(22f)
                         allCenter()
                         borderRadius(11f)
-                        backgroundColor(Color(0xFFE8F1FF))
+                        backgroundColor(colors.stateBusinessTertiary)
                     }
                     Text {
                         attr {
                             text("预览版")
                             fontSize(11f)
                             fontWeightMedium()
-                            color(Color(0xFF4176E6))
+                            color(colors.stateBusinessPrimary)
                         }
                     }
                 }
@@ -388,6 +389,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         },
                                         reconnecting = turnReconnecting,
                                         elapsedMs = turnElapsedMs,
+                                        colors = colors,
                                     )
                                 }
                             }
@@ -404,7 +406,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     !stopButtonVisible() &&
                     !sessionRunning()
             }) {
-                DshNewSessionHome()
+                DshNewSessionHome(colors = colors)
             }
         }
         // 队列停靠栏（Web 时间线）：展示等待执行的任务队列
@@ -608,9 +610,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                         marginRight(12f)
                         flexDirectionColumn()
                         paddingTop(10f)
-                        backgroundColor(colors.bgLayer1)
+                        backgroundColor(colors().bgLayer1)
                         borderRadius(22f)
-                        border(Border(1f, BorderStyle.SOLID, colors.borderL2))
+                        border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
                     // 输入框：DSH Web 风格，内容自适应高度（单行起），达 maxHeight 后随输入内部滚动
@@ -623,14 +625,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            color(colors.labelPrimary)
+                            color(colors().labelPrimary)
                             placeholder(
                                 when {
                                     voiceActive() -> "正在聆听..."
                                     else -> "发消息或按住说话，让电脑继续工作..."
                                 },
                             )
-                            placeholderColor(colors.labelTertiary)
+                            placeholderColor(colors().labelTertiary)
                             editable(!voiceActive())
                         }
                         event {
@@ -664,7 +666,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     size(28f, 28f)
                                     borderRadius(999f)
-                                    backgroundColor(colors.specificSelector)
+                                    backgroundColor(colors().specificSelector)
                                     allCenter()
                                 }
                                 Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
@@ -1213,7 +1215,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             liveContent = contentProvider
                             streamingProvider = pageStreaming
                             streaming = live
-                            darkMode = colors.isDark
+                            darkMode = colors().isDark
                         }
                     }
                     vif({ pageStreaming() && (contentProvider?.invoke() ?: message.content).isNotEmpty() }) {
@@ -1221,7 +1223,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             attr {
                                 text(DshStreamingMarkdown.CURSOR)
                                 fontSize(14f)
-                                color(colors.stateBusinessPrimary)
+                                color(colors().stateBusinessPrimary)
                                 marginTop(2f)
                             }
                         }
