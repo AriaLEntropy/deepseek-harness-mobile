@@ -885,6 +885,7 @@ internal class DshHomePage : BasePager() {
                         },
                         onSave = { ctx.saveDeepSeekApiKey() },
                         onClose = { ctx.closeCredentialSettings() },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
                 // ===== 连接设置弹窗 =====
@@ -914,6 +915,7 @@ internal class DshHomePage : BasePager() {
                             ctx.updateSshSettingsVisibility(false)
                             ctx.openCredentialSettings()
                         },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
                 // ===== 工作区浏览器弹窗 =====

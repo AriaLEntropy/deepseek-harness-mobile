@@ -46,6 +46,7 @@ internal fun ViewContainer<*, *>.DshConnectionSettingsModal(
     onSave: () -> Unit,
     onClose: () -> Unit,
     onOpenApiKey: () -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr { absolutePositionAllZero(); allCenter(); backgroundColor(Color(0x66000000)); padding(20f) }
@@ -56,55 +57,55 @@ internal fun ViewContainer<*, *>.DshConnectionSettingsModal(
                 flexDirectionColumn()
                 padding(22f)
                 borderRadius(16f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgLayer1)
             }
             View {
                 attr { height(32f); flexDirectionRow(); alignItemsCenter() }
-                Text { attr { text("连接设置"); flex(1f); fontSize(20f); fontWeightBold(); color(Color(0xFF1F2933)) } }
-                View { attr { size(32f, 32f); allCenter() }; Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f) } }; DshHitButton { if (!busy()) onClose() } }
+                Text { attr { text("连接设置"); flex(1f); fontSize(20f); fontWeightBold(); color(colors.labelPrimary) } }
+                View { attr { size(32f, 32f); allCenter() }; Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors.labelSecondary) } }; DshHitButton { if (!busy()) onClose() } }
             }
-            Text { attr { text("选择 Agent 运行位置"); marginTop(16f); fontSize(13f); color(Color(0xFF68737D)) } }
+            Text { attr { text("选择 Agent 运行位置"); marginTop(16f); fontSize(13f); color(colors.labelSecondary) } }
             View {
-                attr { height(42f); marginTop(8f); flexDirectionRow(); borderRadius(8f); backgroundColor(Color(0xFFF1F3F5)); padding(4f) }
+                attr { height(42f); marginTop(8f); flexDirectionRow(); borderRadius(8f); backgroundColor(colors.specificSelector); padding(4f) }
                 View {
-                    attr { flex(1f); height(34f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); backgroundColor(Color(if (!sshMode()) 0xFFFFFFFF else 0x00FFFFFF)); borderRadius(6f) }
-                    Text { attr { text("扫码连接"); fontSize(13f); color(Color(if (!sshMode()) 0xFF4176E6 else 0xFF68737D)) } }
+                    attr { flex(1f); height(34f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); backgroundColor(if (!sshMode()) colors.bgLayer1 else Color(0x00FFFFFF)); borderRadius(6f) }
+                    Text { attr { text("扫码连接"); fontSize(13f); color(if (!sshMode()) colors.stateBusinessPrimary else colors.labelSecondary) } }
                     event { click { onModeChange(false) } }
                 }
                 View {
-                    attr { flex(1f); height(34f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); backgroundColor(Color(if (sshMode()) 0xFFFFFFFF else 0x00FFFFFF)); borderRadius(6f) }
-                    Text { attr { text("SSH 连接电脑"); fontSize(13f); color(Color(if (sshMode()) 0xFF4176E6 else 0xFF68737D)) } }
+                    attr { flex(1f); height(34f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter(); backgroundColor(if (sshMode()) colors.bgLayer1 else Color(0x00FFFFFF)); borderRadius(6f) }
+                    Text { attr { text("SSH 连接电脑"); fontSize(13f); color(if (sshMode()) colors.stateBusinessPrimary else colors.labelSecondary) } }
                     event { click { onModeChange(true) } }
                 }
             }
             vif({ !sshMode() }) {
-                Text { attr { text("扫码模式连接电脑上的 DSH。返回连接页可重新扫码或更换电脑。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(Color(0xFF68737D)) } }
+                Text { attr { text("扫码模式连接电脑上的 DSH。返回连接页可重新扫码或更换电脑。"); marginTop(16f); fontSize(14f); lineHeight(21f); color(colors.labelSecondary) } }
                 View {
                     attr { height(40f); marginTop(16f); flexDirectionRow(); justifyContentFlexEnd() }
-                    Button { attr { width(132f); height(40f); borderRadius(8f); backgroundColor(Color(0xFF4176E6)); titleAttr { text("返回连接页"); fontSize(14f); color(Color.WHITE) } }; event { click { if (!busy()) onSave() } } }
+                    Button { attr { width(132f); height(40f); borderRadius(8f); backgroundColor(colors.stateBusinessPrimary); titleAttr { text("返回连接页"); fontSize(14f); color(Color.WHITE) } }; event { click { if (!busy()) onSave() } } }
                 }
             }
             velse {
-                DshConnectionInput("SSH 主机", host, "例如 100.86.12.34 或 computer.example.com", onHostChange)
-                DshConnectionInput("SSH 用户名", user, "例如 alex", onUserChange)
-                View { attr { flexDirectionRow(); marginTop(12f) }; DshConnectionInput("SSH 端口", port, "22", onPortChange, 0.5f); DshConnectionInput("远程 DSH 端口", dshPort, "3080", onDshPortChange, 0.5f, 10f) }
+                DshConnectionInput("SSH 主机", host, "例如 100.86.12.34 或 computer.example.com", onHostChange, colors = colors)
+                DshConnectionInput("SSH 用户名", user, "例如 alex", onUserChange, colors = colors)
+                View { attr { flexDirectionRow(); marginTop(12f) }; DshConnectionInput("SSH 端口", port, "22", onPortChange, 0.5f, colors = colors); DshConnectionInput("远程 DSH 端口", dshPort, "3080", onDshPortChange, 0.5f, 10f, colors = colors) }
                 View {
-                    attr { height(44f); marginTop(12f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(10f); borderRadius(8f); backgroundColor(Color(0xFFF1F3F5)) }
-                    Text { attr { text(keyLabel()); flex(1f); fontSize(13f); color(Color(0xFF4F565C)) } }
-                    Text { attr { text(if (busy()) "导入中..." else "选择私钥"); fontSize(13f); color(Color(0xFF4176E6)) }; event { click { if (!busy()) onPickKey() } } }
+                    attr { height(44f); marginTop(12f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(10f); borderRadius(8f); backgroundColor(colors.specificSelector) }
+                    Text { attr { text(keyLabel()); flex(1f); fontSize(13f); color(colors.labelPrimary) } }
+                    Text { attr { text(if (busy()) "导入中..." else "选择私钥"); fontSize(13f); color(colors.stateBusinessPrimary) }; event { click { if (!busy()) onPickKey() } } }
                 }
-                DshConnectionInput("私钥口令（如有）", keyPassphrase, "仅本次连接使用", onPassphraseChange, password = true)
+                DshConnectionInput("私钥口令（如有）", keyPassphrase, "仅本次连接使用", onPassphraseChange, password = true, colors = colors)
                 vif({ error().startsWith("首次连接需要确认主机指纹：") }) {
                     View {
-                        attr { marginTop(10f); padding(10f); borderRadius(8f); backgroundColor(Color(0xFFFFF7E6)) }
-                        Text { attr { text("请确认这是你电脑的 SSH 主机指纹。确认后会保存，指纹变化时连接将被拒绝。"); fontSize(12f); lineHeight(18f); color(Color(0xFF7A5B16)) } }
-                        Text { attr { text("信任此指纹并连接"); marginTop(8f); fontSize(13f); color(Color(0xFF4176E6)) }; event { click { if (!busy()) onTrustFingerprint() } } }
+                        attr { marginTop(10f); padding(10f); borderRadius(8f); backgroundColor(colors.stateWarnTertiary) }
+                        Text { attr { text("请确认这是你电脑的 SSH 主机指纹。确认后会保存，指纹变化时连接将被拒绝。"); fontSize(12f); lineHeight(18f); color(colors.stateWarnPrimary) } }
+                        Text { attr { text("信任此指纹并连接"); marginTop(8f); fontSize(13f); color(colors.stateBusinessPrimary) }; event { click { if (!busy()) onTrustFingerprint() } } }
                     }
                 }
                 vif({ error().isNotEmpty() && !error().startsWith("首次连接需要确认主机指纹：") }) {
-                    Text { attr { text(error()); marginTop(8f); fontSize(12f); lineHeight(18f); color(Color(0xFFBF3535)) } }
+                    Text { attr { text(error()); marginTop(8f); fontSize(12f); lineHeight(18f); color(colors.stateErrorPrimary) } }
                 }
-                View { attr { marginTop(18f); height(40f); flexDirectionRow(); justifyContentFlexEnd() }; Button { attr { width(132f); height(40f); borderRadius(8f); backgroundColor(Color(if (busy()) 0xFFB7C8FE else 0xFF4176E6)); titleAttr { text(if (busy()) "连接中..." else "保存并连接"); fontSize(14f); color(Color.WHITE) } }; event { click { if (!busy()) onSave() } } } }
+                View { attr { marginTop(18f); height(40f); flexDirectionRow(); justifyContentFlexEnd() }; Button { attr { width(132f); height(40f); borderRadius(8f); backgroundColor(if (busy()) colors.stateBusinessTertiary else colors.stateBusinessPrimary); titleAttr { text(if (busy()) "连接中..." else "保存并连接"); fontSize(14f); color(Color.WHITE) } }; event { click { if (!busy()) onSave() } } } }
             }
         }
     }
@@ -118,15 +119,16 @@ internal fun ViewContainer<*, *>.DshConnectionInput(
     flexValue: Float = 1f,
     marginLeft: Float = 0f,
     password: Boolean = false,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     View {
         attr { flex(flexValue); marginLeft(marginLeft); flexDirectionColumn() }
-        Text { attr { text(title); marginTop(10f); fontSize(12f); color(Color(0xFF68737D)) } }
+        Text { attr { text(title); marginTop(10f); fontSize(12f); color(colors.labelSecondary) } }
         View {
-            attr { height(40f); marginTop(5f); borderRadius(8f); border(Border(1f, BorderStyle.SOLID, Color(0xFFD9DEE3))); backgroundColor(Color(0xFFF9FAFB)); paddingLeft(10f); paddingRight(10f) }
+            attr { height(40f); marginTop(5f); borderRadius(8f); border(Border(1f, BorderStyle.SOLID, colors.borderL2)); backgroundColor(colors.bgBase); paddingLeft(10f); paddingRight(10f) }
             Input {
                 ref { it.view?.setText(value()) }
-                attr { flex(1f); fontSize(14f); color(Color(0xFF222C35)); placeholder(hint); placeholderColor(Color(0xFF98A1A9)); returnKeyTypeDone(); if (password) keyboardTypePassword() }
+                attr { flex(1f); fontSize(14f); color(colors.labelPrimary); placeholder(hint); placeholderColor(colors.labelTertiary); returnKeyTypeDone(); if (password) keyboardTypePassword() }
                 event { textDidChange { onChange(it.text) } }
             }
         }
@@ -141,6 +143,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
     onApiKeyChange: (String) -> Unit,
     onSave: () -> Unit,
     onClose: () -> Unit,
+    colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -157,7 +160,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                 flexDirectionColumn()
                 padding(24f)
                 borderRadius(18f)
-                backgroundColor(Color.WHITE)
+                backgroundColor(colors.bgLayer1)
             }
             View {
                 attr {
@@ -171,7 +174,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                         flex(1f)
                         fontSize(20f)
                         fontWeightBold()
-                        color(Color(0xFF1F2933))
+                        color(colors.labelPrimary)
                     }
                 }
                 View {
@@ -183,6 +186,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                         attr {
                             src(ImageUri.commonAssets("x.svg"))
                             size(20f, 20f)
+                            tintColor(colors.labelSecondary)
                         }
                     }
                     DshHitButton { if (!busy()) onClose() }
@@ -194,7 +198,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                     marginTop(8f)
                     fontSize(14f)
                     lineHeight(21f)
-                    color(Color(0xFF6B7680))
+                    color(colors.labelSecondary)
                 }
             }
             Text {
@@ -203,7 +207,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                     marginTop(22f)
                     fontSize(13f)
                     fontWeightMedium()
-                    color(Color(0xFF343E47))
+                    color(colors.labelPrimary)
                 }
             }
             View {
@@ -211,10 +215,8 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                     height(46f)
                     marginTop(8f)
                     borderRadius(8f)
-                    border(Border(1f, BorderStyle.SOLID, Color(
-                        if (error().isEmpty()) 0xFFD9DEE3 else 0xFFD44949,
-                    )))
-                    backgroundColor(Color(0xFFF9FAFB))
+                    border(Border(1f, BorderStyle.SOLID, if (error().isEmpty()) colors.borderL2 else colors.stateErrorPrimary))
+                    backgroundColor(colors.bgBase)
                     paddingLeft(12f)
                     paddingRight(12f)
                 }
@@ -223,9 +225,9 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                     attr {
                         flex(1f)
                         fontSize(15f)
-                        color(Color(0xFF222C35))
+                        color(colors.labelPrimary)
                         placeholder("输入 DeepSeek API Key")
-                        placeholderColor(Color(0xFF98A1A9))
+                        placeholderColor(colors.labelTertiary)
                         keyboardTypePassword()
                         returnKeyTypeDone()
                         autofocus(true)
@@ -244,7 +246,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                         marginTop(8f)
                         fontSize(12f)
                         lineHeight(18f)
-                        color(Color(0xFFBF3535))
+                        color(colors.stateErrorPrimary)
                     }
                 }
             }
@@ -260,7 +262,7 @@ internal fun ViewContainer<*, *>.DshCredentialSetupModal(
                         width(132f)
                         height(40f)
                         borderRadius(8f)
-                        backgroundColor(Color(if (busy()) 0xFFB7C8FE else 0xFF4176E6))
+                        backgroundColor(if (busy()) colors.stateBusinessTertiary else colors.stateBusinessPrimary)
                         titleAttr {
                             text(if (busy()) "保存中..." else "保存并继续")
                             fontSize(14f)
