@@ -608,9 +608,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                         marginRight(12f)
                         flexDirectionColumn()
                         paddingTop(10f)
-                        backgroundColor(Color.WHITE)
+                        backgroundColor(colors.bgLayer1)
                         borderRadius(22f)
-                        border(Border(1f, BorderStyle.SOLID, Color(0x1A000000)))
+                        border(Border(1f, BorderStyle.SOLID, colors.borderL2))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
                     // 输入框：DSH Web 风格，内容自适应高度（单行起），达 maxHeight 后随输入内部滚动
@@ -623,14 +623,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            color(Color(0xFF28323C))
+                            color(colors.labelPrimary)
                             placeholder(
                                 when {
                                     voiceActive() -> "正在聆听..."
                                     else -> "发消息或按住说话，让电脑继续工作..."
                                 },
                             )
-                            placeholderColor(Color(0xFFADB2B8))
+                            placeholderColor(colors.labelTertiary)
                             editable(!voiceActive())
                         }
                         event {
@@ -664,7 +664,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     size(28f, 28f)
                                     borderRadius(999f)
-                                    backgroundColor(Color(0xFFF5F6F7))
+                                    backgroundColor(colors.specificSelector)
                                     allCenter()
                                 }
                                 Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
@@ -1213,7 +1213,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             liveContent = contentProvider
                             streamingProvider = pageStreaming
                             streaming = live
-                            darkMode = false
+                            darkMode = colors.isDark
                         }
                     }
                     vif({ pageStreaming() && (contentProvider?.invoke() ?: message.content).isNotEmpty() }) {
@@ -1221,7 +1221,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             attr {
                                 text(DshStreamingMarkdown.CURSOR)
                                 fontSize(14f)
-                                color(Color(0xFF4176E6))
+                                color(colors.stateBusinessPrimary)
                                 marginTop(2f)
                             }
                         }

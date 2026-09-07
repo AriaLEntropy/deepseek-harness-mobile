@@ -183,6 +183,8 @@ object DshDefaultPalette : DshStaticPalette {
  * 亮色和暗色各有一套实现，换主题只需替换实现对象。
  */
 interface DshColorTokens {
+    /** 是否为暗色主题，用于需要特殊处理的组件（如 Markdown 代码高亮） */
+    val isDark: Boolean
     // Background
     val bgBase: Color
     val bgLayer1: Color
@@ -272,6 +274,7 @@ interface DshColorTokens {
  */
 object DshDefaultLightTokens : DshColorTokens {
     private val p = DshDefaultPalette
+    override val isDark = false
     override val bgBase = p.nb00
     override val bgLayer1 = p.nb00
     override val bgLayer2 = p.nb00
@@ -350,6 +353,7 @@ object DshDefaultLightTokens : DshColorTokens {
  */
 object DshDefaultDarkTokens : DshColorTokens {
     private val p = DshDefaultPalette
+    override val isDark = true
     override val bgBase = p.nb950
     override val bgLayer1 = p.nb875
     override val bgLayer2 = p.nb850

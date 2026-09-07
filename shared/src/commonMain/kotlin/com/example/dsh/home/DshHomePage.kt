@@ -383,6 +383,7 @@ internal class DshHomePage : BasePager() {
                             ctx.openSessionDrawer()
                         },
                         onOpenOverflow = { ctx.openOverflowMenu() },
+                        colors = ctx.themeController.currentColors,
                     )
                 }
 
