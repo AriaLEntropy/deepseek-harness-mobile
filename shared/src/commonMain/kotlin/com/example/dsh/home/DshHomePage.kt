@@ -96,6 +96,9 @@ internal class DshHomePage : BasePager() {
     private var streamingAssistantContent by observable("")
     private var copiedMessageId by observable("")
     private val themeController = DshThemeController()
+    /** 当前主题颜色集——提升为页面自身 observable，确保 render 能响应主题切换 */
+    private var currentColors by observable<com.example.dsh.theme.DshColorTokens>(com.example.dsh.theme.DshDefaultTheme.light)
+    private fun syncThemeColors() { currentColors = themeController.currentColors }
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var _connectionLabel by observable("本地内核启动中")
@@ -296,6 +299,7 @@ internal class DshHomePage : BasePager() {
     override fun created() {
         super.created()
         themeController.systemDark = isNightMode()
+        syncThemeColors()
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
@@ -340,6 +344,7 @@ internal class DshHomePage : BasePager() {
     override fun themeDidChanged(data: com.tencent.kuikly.core.nvi.serialization.json.JSONObject) {
         super.themeDidChanged(data)
         themeController.systemDark = isNightMode()
+        syncThemeColors()
     }
 
     override fun pageDidDisappear() {
@@ -360,16 +365,13 @@ internal class DshHomePage : BasePager() {
         val wide = pagerData.pageViewWidth >= 720f
         return {
             ctx.perfLog("body.builder.begin")
-            // 强制建立对主题模式的响应式依赖：mode/systemDark 变化时触发整页重渲染
-            val _themeMode = ctx.themeController.mode
-            val _systemDark = ctx.themeController.systemDark
             // ===== 根容器 =====
             // 整页的根 View：纵向布局撑满剩余空间，背景色 BG，顶部留出系统状态栏高度。
             View {
                 attr {
                     flex(1f)
                     flexDirectionColumn()
-                    backgroundColor(ctx.themeController.currentColors.bgBase)
+                    backgroundColor(currentColors.bgBase)
                     paddingTop(pagerData.statusBarHeight)
                 }
 
@@ -388,7 +390,7 @@ internal class DshHomePage : BasePager() {
                             ctx.openSessionDrawer()
                         },
                         onOpenOverflow = { ctx.openOverflowMenu() },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
 
@@ -418,7 +420,7 @@ internal class DshHomePage : BasePager() {
                             attr {
                                 flex(1f)
                                 flexDirectionRow()
-                                backgroundColor(ctx.themeController.currentColors.bgBase)
+                                backgroundColor(currentColors.bgBase)
                             }
                             // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
                             vif({ ctx.isRemoteHost }) {
@@ -498,7 +500,7 @@ internal class DshHomePage : BasePager() {
                                 },
                                 onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
                                 copiedMessageId = { ctx.copiedMessageId },
-                                colors = { ctx.themeController.currentColors },
+                                colors = { currentColors },
                                 onMessageLongPress = { msg, content, px, py ->
                                     ctx.openMessageActions(msg, content, px, py)
                                 },
@@ -630,7 +632,7 @@ internal class DshHomePage : BasePager() {
                             },
                             onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
                             copiedMessageId = { ctx.copiedMessageId },
-                            colors = { ctx.themeController.currentColors },
+                            colors = { currentColors },
                             onMessageLongPress = { msg, content, px, py ->
                                 ctx.openMessageActions(msg, content, px, py)
                             },
@@ -752,7 +754,7 @@ internal class DshHomePage : BasePager() {
                             }
                         },
                         onSelectEffort = { ctx.selectModelEffort(it) },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
 
@@ -777,7 +779,7 @@ internal class DshHomePage : BasePager() {
                             ctx.permissionLabel = option.label
                             ctx.permissionPickerVisible = false
                         },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
 
@@ -829,7 +831,7 @@ internal class DshHomePage : BasePager() {
                             ctx.agentModeLabel = option.label
                             ctx.agentModePickerVisible = false
                         },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
 
@@ -853,7 +855,7 @@ internal class DshHomePage : BasePager() {
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
                         onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
                         onDisconnect = { ctx.disconnectFromHost() },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
 
@@ -873,7 +875,7 @@ internal class DshHomePage : BasePager() {
                         busy = { ctx.settingsChoiceBusy },
                         onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
                         onSelect = { ctx.applySettingsChoice(it) },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
 
@@ -894,7 +896,7 @@ internal class DshHomePage : BasePager() {
                         },
                         onSave = { ctx.saveDeepSeekApiKey() },
                         onClose = { ctx.closeCredentialSettings() },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
                 // ===== 连接设置弹窗 =====
@@ -924,7 +926,7 @@ internal class DshHomePage : BasePager() {
                             ctx.updateSshSettingsVisibility(false)
                             ctx.openCredentialSettings()
                         },
-                        colors = ctx.themeController.currentColors,
+                        colors = currentColors,
                     )
                 }
                 // ===== 工作区浏览器弹窗 =====
@@ -961,7 +963,7 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(ctx.themeController.currentColors.bgLayer3)
+                                backgroundColor(currentColors.bgLayer3)
                             }
                             Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
                             Input {
@@ -1009,7 +1011,7 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(ctx.themeController.currentColors.bgLayer3)
+                                backgroundColor(currentColors.bgLayer3)
                             }
                             Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
                             Text {
@@ -1063,7 +1065,7 @@ internal class DshHomePage : BasePager() {
                     onDismiss = { ctx.closeOverflowMenu() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = ctx.themeController.currentColors,
+                    colors = currentColors,
                 )
                 DshSessionLogModal(
                     visible = { ctx.sessionLogVisible },
@@ -1092,7 +1094,7 @@ internal class DshHomePage : BasePager() {
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = ctx.themeController.currentColors,
+                    colors = currentColors,
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -1103,7 +1105,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.cancelSessionRename() },
                     onSave = { ctx.saveSessionRename() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = ctx.themeController.currentColors,
+                    colors = currentColors,
                 )
                 DshSessionArchiveDialog(
                     visible = { ctx.sessionArchiveVisible },
@@ -1112,7 +1114,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" },
                     onConfirm = { ctx.confirmSessionArchive() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = ctx.themeController.currentColors,
+                    colors = currentColors,
                 )
                 DshSessionDeleteDialog(
                     visible = { ctx.sessionDeleteVisible },
@@ -1121,7 +1123,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" },
                     onConfirm = { ctx.confirmSessionDelete() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = ctx.themeController.currentColors,
+                    colors = currentColors,
                 )
             }
         }
@@ -1642,6 +1644,7 @@ internal class DshHomePage : BasePager() {
                 "dark" -> com.example.dsh.theme.DshThemeMode.DARK
                 else -> com.example.dsh.theme.DshThemeMode.SYSTEM
             }
+            syncThemeColors()
         }, {
             settingsLoading = false
             settingsError = it
@@ -1741,6 +1744,7 @@ internal class DshHomePage : BasePager() {
                         "dark" -> com.example.dsh.theme.DshThemeMode.DARK
                         else -> com.example.dsh.theme.DshThemeMode.SYSTEM
                     }
+                    syncThemeColors()
                     reloadSettings()
                 },
                 {
