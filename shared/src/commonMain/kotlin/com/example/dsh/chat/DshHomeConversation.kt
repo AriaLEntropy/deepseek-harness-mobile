@@ -184,6 +184,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
     onCopyMessageContent: (DshMessage) -> Unit = {},
+    copiedMessageId: () -> String = { "" },
     // 参数：message, renderedContent, 页面坐标 x/y
     onMessageLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
@@ -337,6 +338,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             onCopyMessageContent = { onCopyMessageContent(it) },
+                                            copied = { copiedMessageId() == message.id },
                                             onLongPress = { msg, content, px, py ->
                                                 onMessageLongPress(msg, content, px, py)
                                             },
@@ -927,6 +929,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
     onCopyMessageContent: (DshMessage) -> Unit = {},
+    copied: () -> Boolean = { false },
     onLongPress: (DshMessage, String, Float, Float) -> Unit = { _, _, _, _ -> },
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     isTurnTail: () -> Boolean = { true },
@@ -1222,7 +1225,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
         if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
-            DshMessageFooter { action ->
+            DshMessageFooter(copied = copied()) { action ->
                 // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
                 if (action == DshMessageFooterAction.COPY) {
                     onCopyMessageContent(message)
@@ -1236,6 +1239,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
 
 // 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
 internal fun ViewContainer<*, *>.DshMessageFooter(
+    copied: Boolean = false,
     onAction: (DshMessageFooterAction) -> Unit,
 ) {
     View {
@@ -1245,7 +1249,7 @@ internal fun ViewContainer<*, *>.DshMessageFooter(
             flexDirectionRow()
             alignItemsCenter()
         }
-        DshFooterActionIcon("copy.svg", DshMessageFooterAction.COPY, onAction, first = true)
+        DshFooterActionIcon(if (copied) "check.svg" else "copy.svg", DshMessageFooterAction.COPY, onAction, first = true)
         DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction)
         DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction)
         DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction)

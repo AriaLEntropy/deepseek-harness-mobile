@@ -73,7 +73,22 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             borderRadius(6f)
                         }
                     }
-                    vif({ ctx.attr.iconAsset.isNotEmpty() }) {
+                    vif({ ctx.attr.errorSummary }) {
+                        View {
+                            attr {
+                                size(14f, 14f)
+                                allCenter()
+                            }
+                            View {
+                                attr {
+                                    size(8f, 8f)
+                                    borderRadius(4f)
+                                    backgroundColor(Color(0xFFC64C4C))
+                                }
+                            }
+                        }
+                    }
+                    vif({ !ctx.attr.errorSummary && ctx.attr.iconAsset.isNotEmpty() }) {
                         Image {
                             attr {
                                 src(ImageUri.commonAssets(ctx.attr.iconAsset))
