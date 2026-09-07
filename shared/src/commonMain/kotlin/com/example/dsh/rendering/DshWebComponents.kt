@@ -157,6 +157,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                     content = ctx.attr.jsonContent
                                     this.isExpanded = ctx.attr.isJsonNodeExpanded
                                     this.onToggle = ctx.attr.onToggleJsonNode
+                                    colors = ctx.attr.colors
                                 }
                             }
                         }
@@ -436,8 +437,8 @@ internal class DshJsonTreeView : ComposeView<DshJsonTreeAttr, ComposeEvent>() {
                     flexDirectionColumn()
                     padding(8f)
                     borderRadius(8f)
-                    backgroundColor(Color(0xFFF9FAFB))
-                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE4E8EC)))
+                    backgroundColor(ctx.attr.colors.markdownCodeBlock)
+                    border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                 }
                 val parsed = dshParseJsonTree(ctx.attr.content)
                 vif({ parsed != null }) {
@@ -451,6 +452,7 @@ internal class DshJsonTreeView : ComposeView<DshJsonTreeAttr, ComposeEvent>() {
                                 isNodeExpanded = ctx.attr.isExpanded
                                 onToggle = { ctx.attr.onToggle(node.key) }
                                 onToggleNode = ctx.attr.onToggle
+                                colors = ctx.attr.colors
                             }
                         }
                     }
@@ -461,7 +463,7 @@ internal class DshJsonTreeView : ComposeView<DshJsonTreeAttr, ComposeEvent>() {
                             text(ctx.attr.content)
                             fontSize(12f)
                             fontFamily("monospace")
-                            color(Color(0xFF333B42))
+                            color(ctx.attr.colors.labelPrimary)
                         }
                     }
                 }
@@ -474,6 +476,7 @@ internal class DshJsonTreeAttr : ComposeAttr() {
     var content: String by observable("")
     var isExpanded: (String) -> Boolean by observable({ false })
     var onToggle: (String) -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent>() {
@@ -495,6 +498,7 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                             attr {
                                 src(ImageUri.commonAssets("chevron-down.svg"))
                                 size(12f, 12f)
+                                tintColor(ctx.attr.colors.labelTertiary)
                                 transform(Rotate(if (ctx.attr.expanded) 0f else -90f))
                             }
                         }
@@ -505,7 +509,7 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                             marginLeft(6f)
                             fontSize(12f)
                             fontFamily("monospace")
-                            color(Color(0xFF333B42))
+                            color(ctx.attr.colors.labelPrimary)
                         }
                     }
                     Text {
@@ -516,7 +520,7 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                             lines(1)
                             fontSize(11f)
                             fontFamily("monospace")
-                            color(Color(0xFF7A838A))
+                            color(ctx.attr.colors.labelTertiary)
                         }
                     }
                     vif({ ctx.attr.node.children.isNotEmpty() }) {
@@ -537,6 +541,7 @@ internal class DshJsonNodeRowView : ComposeView<DshJsonNodeRowAttr, ComposeEvent
                                 isNodeExpanded = ctx.attr.isNodeExpanded
                                 onToggle = { ctx.attr.onToggleNode(child.key) }
                                 onToggleNode = ctx.attr.onToggleNode
+                                colors = ctx.attr.colors
                             }
                         }
                     }
@@ -552,6 +557,7 @@ internal class DshJsonNodeRowAttr : ComposeAttr() {
     var onToggle: () -> Unit by observable({})
     var isNodeExpanded: (String) -> Boolean by observable({ false })
     var onToggleNode: (String) -> Unit by observable({})
+    var colors: com.example.dsh.theme.DshColorTokens by observable(com.example.dsh.theme.DshDefaultTheme.light)
 }
 
 internal fun ViewContainer<*, *>.DshJsonTree(init: DshJsonTreeView.() -> Unit) {
@@ -1078,7 +1084,7 @@ internal class DshApprovalPanelView : ComposeView<DshApprovalPanelAttr, ComposeE
                         padding(14f, 14f, 14f, 14f)
                         borderRadius(16f)
                         backgroundColor(ctx.attr.colors.bgLayer1)
-                        border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.stateWarnBorder))
+                        border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.stateWarnSecondary))
                     }
                     View {
                         attr {
