@@ -18,6 +18,8 @@ import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.Modal
+import com.tencent.kuikly.core.views.ScrollParams
+import com.tencent.kuikly.core.views.ScrollerView
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
@@ -130,6 +132,19 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onTypeFilter: (String) -> Unit,
     onKeyword: (String) -> Unit,
     onClearFilters: () -> Unit,
+    clearMenuVisible: () -> Boolean = { false },
+    onClearMenuToggle: () -> Unit = {},
+    onClearMenuDismiss: () -> Unit = {},
+    onClearRequest: () -> Unit = {},
+    clearDialogVisible: () -> Boolean = { false },
+    clearing: () -> Boolean = { false },
+    onClearDialogCancel: () -> Unit = {},
+    onClearDialogConfirm: () -> Unit = {},
+    scrollerRef: (com.tencent.kuikly.core.base.ViewRef<ScrollerView<*, *>>) -> Unit = {},
+    onLogScroll: (ScrollParams) -> Unit = {},
+    newCount: () -> Int = { 0 },
+    followBottom: () -> Boolean = { true },
+    onJumpToBottom: () -> Unit = {},
     allMode: () -> Boolean = { false },
     onJumpToSession: (String) -> Unit = {},
     sessionTitleProvider: (String) -> String = { it },
@@ -177,12 +192,55 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 textAlignCenter()
                             }
                         }
-                        // 导出：右对齐
+                        // 导出 + 更多：右对齐
                         View {
-                            attr { flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter(); width(72f) }
+                            attr { flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter(); width(100f) }
                             event { click { if (!exporting()) onExport() } }
                             Text {
                                 attr { text(if (exporting()) "导出中..." else "导出"); fontSize(14f); color(colors().stateBusinessPrimary) }
+                            }
+                            View {
+                                attr { paddingLeft(10f); paddingRight(2f) }
+                                event { click { onClearMenuToggle() } }
+                                Text {
+                                    attr { text("⋯"); fontSize(18f); color(colors().labelSecondary) }
+                                }
+                            }
+                        }
+                        // 更多菜单（清空本地日志，防误触）
+                        vif({ clearMenuVisible() }) {
+                            View {
+                                attr { absolutePositionAllZero() }
+                                event { click { onClearMenuDismiss() } }
+                                View {
+                                    attr {
+                                        positionAbsolute()
+                                        right(12f)
+                                        top(18f + statusBarHeight + 44f + 4f)
+                                        width(168f)
+                                        borderRadius(12f)
+                                        border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                                        backgroundColor(colors().bgLayer1)
+                                        boxShadow(BoxShadow(0f, 4f, 16f, Color(0x33000000)))
+                                        paddingTop(6f)
+                                        paddingBottom(6f)
+                                    }
+                                    event { click { } }
+                                    View {
+                                        attr {
+                                            height(44f)
+                                            flexDirectionRow()
+                                            alignItemsCenter()
+                                            justifyContentSpaceBetween()
+                                            paddingLeft(14f)
+                                            paddingRight(12f)
+                                        }
+                                        event { click { onClearMenuDismiss(); onClearRequest() } }
+                                        Text {
+                                            attr { text("清空本地日志"); fontSize(14f); color(colors().stateErrorPrimary) }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -371,9 +429,15 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         }
                     }
                     vif({ events().isNotEmpty() }) {
-                        Scroller {
+                        View {
                             attr { flex(1f); marginTop(4f) }
-                            vfor({ events() }) { entry ->
+                            Scroller {
+                                attr { absolutePositionAllZero() }
+                                ref { scrollerRef(it) }
+                                event {
+                                    scroll { params -> onLogScroll(params) }
+                                }
+                                vfor({ events() }) { entry ->
                                 View {
                                     attr {
                                         minHeight(44f)
@@ -432,7 +496,33 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 }
                             }
                         }
+                        vif({ !followBottom() && newCount() > 0 }) {
+                            View {
+                                attr {
+                                    positionAbsolute()
+                                    right(12f)
+                                    bottom(14f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    padding(left = 12f, right = 12f)
+                                    height(32f)
+                                    borderRadius(16f)
+                                    backgroundColor(colors().stateBusinessPrimary)
+                                    boxShadow(BoxShadow(0f, 2f, 8f, Color(0x33000000)))
+                                }
+                                event { click { onJumpToBottom() } }
+                                Text {
+                                    attr {
+                                        text("↓ 新日志 " + newCount())
+                                        fontSize(12f)
+                                        fontWeightBold()
+                                        color(Color(0xFFFFFFFF))
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
                 }
                 vif({ selected() != null }) {
                     // ===== 详情（Chucker 列表到详情；返回保留筛选与列表位置） =====
@@ -540,6 +630,58 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 清空本地诊断日志 确认弹窗：只清 dsh_log_events 与内存 pending，不影响会话。 */
+internal fun ViewContainer<*, *>.DshSessionLogClearDialog(
+    visible: () -> Boolean,
+    busy: () -> Boolean,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+    pageViewWidth: Float,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    vif({ visible() }) {
+        Modal(inWindow = true) {
+            attr {
+                absolutePositionAllZero()
+                allCenter()
+                paddingLeft(20f)
+                paddingRight(20f)
+                backgroundColor(Color(0x66000000))
+            }
+            View {
+                attr {
+                    width(pageViewWidth - 40f)
+                    maxWidth(420f)
+                    padding(20f)
+                    borderRadius(16f)
+                    backgroundColor(colors().bgLayer1)
+                }
+                Text { attr { text("清空本地诊断日志"); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
+                Text {
+                    attr {
+                        text("将删除手机上的全部本地诊断日志（含所有会话与移动端日志），不影响会话消息、附件和 Host 侧历史。此操作不可恢复。")
+                        marginTop(8f)
+                        fontSize(13f)
+                        lineHeight(20f)
+                        color(colors().labelSecondary)
+                    }
+                }
+                View {
+                    attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                    Text {
+                        attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(colors().labelTertiary) }
+                        event { click { onCancel() } }
+                    }
+                    Text {
+                        attr { text(if (busy()) "清空中..." else "清空日志"); width(104f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(colors().stateErrorPrimary) }
+                        event { click { if (!busy()) onConfirm() } }
                     }
                 }
             }

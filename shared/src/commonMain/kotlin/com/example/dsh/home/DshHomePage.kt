@@ -35,6 +35,7 @@ import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
+import com.tencent.kuikly.core.views.ScrollerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -236,6 +237,15 @@ internal class DshHomePage : BasePager() {
     private var sessionLogKeyword by observable("")
     private val sessionLogView by observableList<LogEvent>()
     private var sessionLogTotal by observable(0)
+    private var sessionLogClearMenuVisible by observable(false)
+    private var sessionLogClearVisible by observable(false)
+    private var sessionLogClearing by observable(false)
+    private var sessionLogScrollerRef: ViewRef<ScrollerView<*, *>>? = null
+    private var sessionLogFollowBottom by observable(true)
+    private var sessionLogNewCount by observable(0)
+    private var sessionLogLastMaxSeq = 0L
+    private var sessionLogPolling = false
+    private val sessionLogPollIntervalMs = 1000
     private var sessionRenameVisible by observable(false)
     private var sessionRenameDraft by observable("")
     private var sessionRenameBusy by observable(false)
@@ -1087,12 +1097,32 @@ internal class DshHomePage : BasePager() {
                     onTypeFilter = { ctx.onLogTypeFilter(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
                     onClearFilters = { ctx.clearLogFilters() },
+                    clearMenuVisible = { ctx.sessionLogClearMenuVisible },
+                    onClearMenuToggle = { ctx.sessionLogClearMenuVisible = !ctx.sessionLogClearMenuVisible },
+                    onClearMenuDismiss = { ctx.sessionLogClearMenuVisible = false },
+                    onClearRequest = { ctx.sessionLogClearMenuVisible = false; ctx.requestSessionLogClear() },
+                    clearDialogVisible = { ctx.sessionLogClearVisible },
+                    clearing = { ctx.sessionLogClearing },
+                    onClearDialogCancel = { ctx.cancelSessionLogClear() },
+                    onClearDialogConfirm = { ctx.confirmSessionLogClear() },
+                    scrollerRef = { ctx.sessionLogScrollerRef = it },
+                    onLogScroll = { ctx.onSessionLogScroll(it) },
+                    newCount = { ctx.sessionLogNewCount },
+                    followBottom = { ctx.sessionLogFollowBottom },
+                    onJumpToBottom = { ctx.onSessionLogJumpToBottom() },
                     allMode = { ctx.diagnosticLogAllMode },
                     onJumpToSession = { ctx.jumpToSession(it) },
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = { this@DshHomePage.themeColors },
+                )
+                DshSessionLogClearDialog(
+                    visible = { ctx.sessionLogClearVisible },
+                    busy = { ctx.sessionLogClearing },
+                    onCancel = { ctx.cancelSessionLogClear() },
+                    onConfirm = { ctx.confirmSessionLogClear() },
+                    pageViewWidth = ctx.pagerData.pageViewWidth,
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -2867,12 +2897,14 @@ internal class DshHomePage : BasePager() {
         diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
+        startSessionLogFollow()
     }
 
     fun openDiagnosticLogs() {
         diagnosticLogAllMode = true
         refreshSessionLogs()
         sessionLogVisible = true
+        startSessionLogFollow()
     }
 
     fun jumpToSession(sessionId: String) {
@@ -2990,10 +3022,81 @@ internal class DshHomePage : BasePager() {
 
     fun closeSessionLogs() {
         sessionLogVisible = false
+        sessionLogPolling = false
         sessionLogSelected = null
         sessionLogDetailRaw = ""
         clearLogFilters()
         sessionLogView.clear()
+        sessionLogScrollerRef = null
+    }
+
+    // ===== 日志实时跟随（§5.2） =====
+
+    private fun startSessionLogFollow() {
+        sessionLogPolling = false
+        sessionLogFollowBottom = true
+        sessionLogNewCount = 0
+        sessionLogLastMaxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
+        sessionLogPolling = true
+        setTimeout(pagerId, sessionLogPollIntervalMs) { pollSessionLogs() }
+    }
+
+    private fun pollSessionLogs() {
+        if (!sessionLogPolling || !sessionLogVisible) return
+        refreshSessionLogs()
+        val maxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
+        if (maxSeq > sessionLogLastMaxSeq) {
+            sessionLogNewCount += sessionLogView.count { it.seq > sessionLogLastMaxSeq }
+            sessionLogLastMaxSeq = maxSeq
+        }
+        if (sessionLogFollowBottom && sessionLogNewCount > 0) {
+            scrollSessionLogToBottom()
+            sessionLogNewCount = 0
+        }
+        setTimeout(pagerId, sessionLogPollIntervalMs) { pollSessionLogs() }
+    }
+
+    private fun scrollSessionLogToBottom() {
+        val scroller = sessionLogScrollerRef?.view ?: return
+        val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
+        val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
+        scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
+    }
+
+    fun onSessionLogScroll(params: ScrollParams) {
+        val atBottom = params.offsetY + params.viewHeight >= params.contentHeight - 8f
+        sessionLogFollowBottom = atBottom
+        if (atBottom) sessionLogNewCount = 0
+    }
+
+    fun onSessionLogJumpToBottom() {
+        sessionLogFollowBottom = true
+        sessionLogNewCount = 0
+        scrollSessionLogToBottom()
+    }
+
+    // ===== 清空本地诊断日志（§5.5） =====
+
+    fun requestSessionLogClear() {
+        sessionLogClearVisible = true
+    }
+
+    fun cancelSessionLogClear() {
+        sessionLogClearVisible = false
+        sessionLogClearing = false
+    }
+
+    fun confirmSessionLogClear() {
+        if (sessionLogClearing) return
+        sessionLogClearing = true
+        DshStreamLog.writeBehind?.clear()
+        sessionLogClearing = false
+        sessionLogClearVisible = false
+        refreshSessionLogs()
+        sessionLogFollowBottom = true
+        sessionLogNewCount = 0
+        sessionLogLastMaxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
+        bridgeModule.toast("已清空本地诊断日志")
     }
 
     /** 详情按需取原文：从内存 sessionEvents 按摘要中的 evtSeq 反查完整事件，脱敏后展示。 */
