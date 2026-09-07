@@ -97,8 +97,8 @@ internal class DshHomePage : BasePager() {
     private var copiedMessageId by observable("")
     private val themeController = DshThemeController()
     /** 当前主题颜色集——提升为页面自身 observable，确保 render 能响应主题切换 */
-    private var currentColors by observable<com.example.dsh.theme.DshColorTokens>(com.example.dsh.theme.DshDefaultTheme.light)
-    private fun syncThemeColors() { currentColors = themeController.currentColors }
+    private var themeColors by observable<com.example.dsh.theme.DshColorTokens>(com.example.dsh.theme.DshDefaultTheme.light)
+    private fun syncThemeColors() { themeColors = themeController.currentColors }
     private var keyboardHeight by observable(0f)
     private var keyboardAnimation by observable(Animation.easeInOut(ANIMATION_DURATION_S))
     private var _connectionLabel by observable("本地内核启动中")
@@ -371,7 +371,7 @@ internal class DshHomePage : BasePager() {
                 attr {
                     flex(1f)
                     flexDirectionColumn()
-                    backgroundColor(currentColors.bgBase)
+                    backgroundColor(themeColors.bgBase)
                     paddingTop(pagerData.statusBarHeight)
                 }
 
@@ -390,7 +390,7 @@ internal class DshHomePage : BasePager() {
                             ctx.openSessionDrawer()
                         },
                         onOpenOverflow = { ctx.openOverflowMenu() },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
 
@@ -420,7 +420,7 @@ internal class DshHomePage : BasePager() {
                             attr {
                                 flex(1f)
                                 flexDirectionRow()
-                                backgroundColor(currentColors.bgBase)
+                                backgroundColor(themeColors.bgBase)
                             }
                             // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
                             vif({ ctx.isRemoteHost }) {
@@ -500,7 +500,7 @@ internal class DshHomePage : BasePager() {
                                 },
                                 onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
                                 copiedMessageId = { ctx.copiedMessageId },
-                                colors = { currentColors },
+                                colors = { themeColors },
                                 onMessageLongPress = { msg, content, px, py ->
                                     ctx.openMessageActions(msg, content, px, py)
                                 },
@@ -632,7 +632,7 @@ internal class DshHomePage : BasePager() {
                             },
                             onCopyMessageContent = { msg -> ctx.copyFullTurnText(msg) },
                             copiedMessageId = { ctx.copiedMessageId },
-                            colors = { currentColors },
+                            colors = { themeColors },
                             onMessageLongPress = { msg, content, px, py ->
                                 ctx.openMessageActions(msg, content, px, py)
                             },
@@ -754,7 +754,7 @@ internal class DshHomePage : BasePager() {
                             }
                         },
                         onSelectEffort = { ctx.selectModelEffort(it) },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
 
@@ -779,7 +779,7 @@ internal class DshHomePage : BasePager() {
                             ctx.permissionLabel = option.label
                             ctx.permissionPickerVisible = false
                         },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
 
@@ -831,7 +831,7 @@ internal class DshHomePage : BasePager() {
                             ctx.agentModeLabel = option.label
                             ctx.agentModePickerVisible = false
                         },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
 
@@ -855,7 +855,7 @@ internal class DshHomePage : BasePager() {
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
                         onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
                         onDisconnect = { ctx.disconnectFromHost() },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
 
@@ -875,7 +875,7 @@ internal class DshHomePage : BasePager() {
                         busy = { ctx.settingsChoiceBusy },
                         onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
                         onSelect = { ctx.applySettingsChoice(it) },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
 
@@ -896,7 +896,7 @@ internal class DshHomePage : BasePager() {
                         },
                         onSave = { ctx.saveDeepSeekApiKey() },
                         onClose = { ctx.closeCredentialSettings() },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
                 // ===== 连接设置弹窗 =====
@@ -926,7 +926,7 @@ internal class DshHomePage : BasePager() {
                             ctx.updateSshSettingsVisibility(false)
                             ctx.openCredentialSettings()
                         },
-                        colors = currentColors,
+                        colors = themeColors,
                     )
                 }
                 // ===== 工作区浏览器弹窗 =====
@@ -963,7 +963,7 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(currentColors.bgLayer3)
+                                backgroundColor(themeColors.bgLayer3)
                             }
                             Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
                             Input {
@@ -1011,7 +1011,7 @@ internal class DshHomePage : BasePager() {
                                 maxWidth(420f)
                                 padding(20f)
                                 borderRadius(16f)
-                                backgroundColor(currentColors.bgLayer3)
+                                backgroundColor(themeColors.bgLayer3)
                             }
                             Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(Color(0xFF1F2933)) } }
                             Text {
@@ -1065,7 +1065,7 @@ internal class DshHomePage : BasePager() {
                     onDismiss = { ctx.closeOverflowMenu() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = currentColors,
+                    colors = themeColors,
                 )
                 DshSessionLogModal(
                     visible = { ctx.sessionLogVisible },
@@ -1094,7 +1094,7 @@ internal class DshHomePage : BasePager() {
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = currentColors,
+                    colors = themeColors,
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -1105,7 +1105,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.cancelSessionRename() },
                     onSave = { ctx.saveSessionRename() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = currentColors,
+                    colors = themeColors,
                 )
                 DshSessionArchiveDialog(
                     visible = { ctx.sessionArchiveVisible },
@@ -1114,7 +1114,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" },
                     onConfirm = { ctx.confirmSessionArchive() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = currentColors,
+                    colors = themeColors,
                 )
                 DshSessionDeleteDialog(
                     visible = { ctx.sessionDeleteVisible },
@@ -1123,7 +1123,7 @@ internal class DshHomePage : BasePager() {
                     onCancel = { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" },
                     onConfirm = { ctx.confirmSessionDelete() },
                     pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = currentColors,
+                    colors = themeColors,
                 )
             }
         }
