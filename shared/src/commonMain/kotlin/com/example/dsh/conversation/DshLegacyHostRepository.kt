@@ -83,6 +83,113 @@ internal class DshHostRepository(
         }) { _, error -> if (error == null) onSuccess() else onError(error) }
     }
 
+    override fun loadAgentPresets(onSuccess: (List<DshAgentPresetOption>) -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.AGENT_PRESET_LIST, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error ?: "agentPreset.list 返回为空")
+                return@request
+            }
+            val presets = value.optJSONArray("presets") ?: JSONArray()
+            val result = mutableListOf<DshAgentPresetOption>()
+            for (index in 0 until presets.length()) {
+                val preset = presets.optJSONObject(index) ?: continue
+                val id = preset.optString("id")
+                if (id.isEmpty()) continue
+                result += DshAgentPresetOption(
+                    id,
+                    preset.optString("name").ifEmpty { id },
+                    preset.optString("description"),
+                    preset.optBoolean("isDefault"),
+                )
+            }
+            onSuccess(result)
+        }
+    }
+
+    override fun loadHostVersion(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.HOST_DESCRIBE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error ?: "host.describe 返回为空")
+                return@request
+            }
+            onSuccess(value.optString("version").ifEmpty { "未知版本" })
+        }
+    }
+
+    override fun describeSettings(onSuccess: (DshSettingsSnapshot) -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.SETTINGS_DESCRIBE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error ?: "settings.describe 返回为空")
+                return@request
+            }
+            var writable = value.optBoolean("writable")
+            var permissionPreset = ""
+            var permissionChoices = emptyList<DshSettingsChoice>()
+            var permissionRevision = 0
+            var localeValue = ""
+            var localeRevision = 0
+            var themeValue = ""
+            var themeRevision = 0
+            var defaultModelProvider = ""
+            var defaultModelLabel = ""
+            var defaultModelRevision = 0
+            val namespaces = value.optJSONArray("namespaces") ?: JSONArray()
+            for (index in 0 until namespaces.length()) {
+                val namespace = namespaces.optJSONObject(index) ?: continue
+                val ns = namespace.optString("ns")
+                val nsValue = namespace.optJSONObject("value") ?: JSONObject()
+                when (ns) {
+                    "permission" -> {
+                        permissionPreset = nsValue.optString("defaultPreset")
+                        permissionRevision = namespace.optInt("revision")
+                        permissionChoices = dshParseSchemaChoices(namespace.optJSONObject("schema"), "defaultPreset")
+                    }
+                    "locale" -> {
+                        localeValue = nsValue.optString("preference")
+                        localeRevision = namespace.optInt("revision")
+                    }
+                    "ui-theme" -> {
+                        themeValue = nsValue.optString("preference")
+                        themeRevision = namespace.optInt("revision")
+                    }
+                    "agent-default-model" -> {
+                        defaultModelProvider = nsValue.optString("provider")
+                        val providerName = nsValue.optString("providerName").ifEmpty { defaultModelProvider }
+                        val model = nsValue.optString("model")
+                        defaultModelLabel = if (model.isEmpty()) {
+                            "未设置"
+                        } else {
+                            val effort = nsValue.optString("reasoningEffort").takeIf { it.isNotEmpty() }
+                            if (effort == null) "$providerName · $model" else "$providerName · $model · $effort"
+                        }
+                        defaultModelRevision = namespace.optInt("revision")
+                    }
+                }
+            }
+            onSuccess(DshSettingsSnapshot(
+                writable = writable,
+                permissionPreset = permissionPreset,
+                permissionChoices = permissionChoices,
+                permissionRevision = permissionRevision,
+                localeValue = localeValue,
+                localeRevision = localeRevision,
+                themeValue = themeValue,
+                themeRevision = themeRevision,
+                defaultModelProvider = defaultModelProvider,
+                defaultModelLabel = defaultModelLabel,
+                defaultModelRevision = defaultModelRevision,
+            ))
+        }
+    }
+
+    override fun updateSetting(ns: String, patch: JSONObject, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.SETTINGS_UPDATE, JSONObject().apply {
+            put("ns", ns)
+            put("patch", patch)
+            if (expectedRevision > 0) put("expectedRevision", expectedRevision)
+        }) { _, error -> if (error == null) onSuccess() else onError(error ?: "settings.update 失败") }
+    }
+
     override fun loadModels(sessionId: String, onSuccess: (DshSessionModels) -> Unit, onError: (String) -> Unit) {
         request(DshHostProtocol.SESSION_MODELS, JSONObject().apply { put("sessionId", sessionId) }) { value, error ->
             if (error != null || value == null) {

@@ -1458,6 +1458,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     onPickLocale: () -> Unit,
     onPickTheme: () -> Unit,
     onPickDefaultModel: () -> Unit,
+    onOpenDiagnosticLogs: () -> Unit,
     onDisconnect: () -> Unit,
     colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
 ) {
@@ -1573,6 +1574,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             DshSettingsRow("icon-globe14.svg", "语言", dshSettingsLocaleLabel(snapshot()), onPickLocale, colors = colors)
             DshSettingsRow("icon-followsystem16.svg", "外观", dshSettingsThemeLabel(snapshot()), onPickTheme, colors = colors)
             DshSettingsRow("icon-agentpreset16.svg", "默认模型", dshSettingsDefaultModelLabel(snapshot()), onPickDefaultModel, colors = colors)
+            DshSettingsRow("icon-refresh16.svg", "诊断日志", "", onOpenDiagnosticLogs, colors = colors)
 
             // 关于
             DshSettingsGroupTitle("关于", colors = colors)

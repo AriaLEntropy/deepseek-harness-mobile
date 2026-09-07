@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 导出文件写入 databaseDir（{filesDir}/databases），与 dsh_logs.db 同目录 -->
+    <database-path name="exports" path="." />
+</paths>

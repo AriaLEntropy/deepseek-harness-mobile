@@ -1,6 +1,6 @@
 package com.example.dsh.theme
 
-import com.tencent.kuikly.core.views.Color
+import com.tencent.kuikly.core.base.Color
 
 /**
  * 主题模式：亮色 / 暗色 / 跟随系统

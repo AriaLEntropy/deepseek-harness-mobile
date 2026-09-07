@@ -35,10 +35,6 @@ class DshThemeController {
     val isDark: Boolean
         get() = currentColors === theme.dark
 
-    fun setMode(m: DshThemeMode) {
-        mode = m
-    }
-
     fun cycleMode() {
         mode = when (mode) {
             DshThemeMode.LIGHT -> DshThemeMode.DARK

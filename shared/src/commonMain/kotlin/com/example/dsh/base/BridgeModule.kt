@@ -30,6 +30,13 @@ internal class BridgeModule : Module() {
         callNativeMethod("copyToPasteboard", methodArgs, null)
     }
 
+    /** 打开系统分享面板分享导出文件（Android 已实现；iOS 接入后同名校名）。 */
+    fun shareExportFile(path: String) {
+        val methodArgs = JSONObject()
+        methodArgs.put("path", path)
+        callNativeMethod("shareExportFile", methodArgs, null)
+    }
+
     fun showAlert(
         title: String?,
         message: String?,

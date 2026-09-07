@@ -225,6 +225,7 @@ internal class DshHomePage : BasePager() {
     // ===== 会话 topbar overflow menu 与会话管理动作 =====
     private var overflowMenuVisible by observable(false)
     private var sessionLogVisible by observable(false)
+    private var diagnosticLogAllMode by observable(false)
     private val sessionLogCache by observableList<LogEvent>()
     private var sessionLogSelected by observable<LogEvent?>(null)
     private var sessionLogDetailRaw by observable("")
@@ -847,6 +848,7 @@ internal class DshHomePage : BasePager() {
                         onPickLocale = { ctx.openSettingsChoice("locale", "语言") },
                         onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
+                        onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
                         onDisconnect = { ctx.disconnectFromHost() },
                         colors = ctx.themeController.currentColors,
                     )
@@ -1082,6 +1084,9 @@ internal class DshHomePage : BasePager() {
                     onTypeFilter = { ctx.onLogTypeFilter(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
                     onClearFilters = { ctx.clearLogFilters() },
+                    allMode = { ctx.diagnosticLogAllMode },
+                    onJumpToSession = { ctx.jumpToSession(it) },
+                    sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = ctx.themeController.currentColors,
@@ -1436,6 +1441,12 @@ internal class DshHomePage : BasePager() {
                 }
             },
             onSessionEvent = { sessionId, event ->
+                when (event.type) {
+                    "tool/call" -> DshStreamLog.log(LogLevel.INFO, "tool/call", "tool/call session=$sessionId", sessionId, null)
+                    "tool/result" -> DshStreamLog.log(LogLevel.INFO, "tool/result", "tool/result session=$sessionId", sessionId, null)
+                    "assistant/message" -> DshStreamLog.log(LogLevel.DEBUG, "assistant/chunk", "assistant/chunk session=$sessionId", sessionId, null)
+                    "turn/end" -> DshStreamLog.log(LogLevel.INFO, "turn/end", "turn/end session=$sessionId", sessionId, null)
+                }
                 if (sessionId == activeSessionId) {
                     when (event.type) {
                         "tool/call" -> showRunningTool(event)
@@ -1475,6 +1486,19 @@ internal class DshHomePage : BasePager() {
             DshHostRuntimePhase.STOPPED -> "远程 DSH 已停止"
             DshHostRuntimePhase.DISCONNECTED -> "等待远程连接"
         }
+        val connLogType = when (state.phase) {
+            DshHostRuntimePhase.CONNECTING -> "connect.connecting"
+            DshHostRuntimePhase.HOST_HANDSHAKE -> "connect.handshake"
+            DshHostRuntimePhase.SYNCING -> "connect.syncing"
+            DshHostRuntimePhase.READY -> "connect.ready"
+            DshHostRuntimePhase.RECONNECTING -> "connect.reconnecting"
+            DshHostRuntimePhase.ERROR -> "connect.error"
+            DshHostRuntimePhase.STOPPED -> "connect.stopped"
+            DshHostRuntimePhase.DISCONNECTED -> "connect.disconnected"
+        }
+        val connLogLevel = if (state.phase == DshHostRuntimePhase.ERROR) LogLevel.ERROR else LogLevel.INFO
+        val connErr = state.message.let { if (it.isNotEmpty()) " error='${DshStreamLog.preview(it)}'" else "" }
+        DshStreamLog.log(connLogLevel, connLogType, "$connLogType mode=$connectionMode$connErr", null, null)
         if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) {
             loadRepository(preferredSessionId = activeSessionId)
         }
@@ -1756,6 +1780,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun disconnectFromHost() {
+        DshStreamLog.log(LogLevel.INFO, "connect.disconnect", "connect.disconnect by user", null, null)
         closeSettingsPage()
         stopCurrentEngine()
         bridgeModule.toast("已断开连接")
@@ -2842,18 +2867,37 @@ internal class DshHomePage : BasePager() {
     // ===== 会话日志 =====
 
     fun openSessionLogs() {
+        diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
+    }
+
+    fun openDiagnosticLogs() {
+        diagnosticLogAllMode = true
+        refreshSessionLogs()
+        sessionLogVisible = true
+    }
+
+    fun jumpToSession(sessionId: String) {
+        if (sessionId.isEmpty()) return
+        closeSessionLogs()
+        val idx = sessions.indexOfFirst { it.id == sessionId }
+        if (idx >= 0) {
+            selectSession(sessionId)
+        }
     }
 
     fun refreshSessionLogs() {
         val targetId = overflowTargetId()
         val writeBehind = DshStreamLog.writeBehind
         sessionLogCache.clear()
-        if (writeBehind == null || targetId.isEmpty()) return
-        val events = writeBehind.snapshot()
-            .filter { it.sessionId == targetId }
-            .sortedByDescending { it.seq }
+        if (writeBehind == null) return
+        var events = writeBehind.snapshot()
+        if (!diagnosticLogAllMode) {
+            if (targetId.isEmpty()) return
+            events = events.filter { it.sessionId == targetId }
+        }
+        events = events.sortedByDescending { it.seq }
         sessionLogCache.addAll(events)
         recomputeSessionLogView()
     }

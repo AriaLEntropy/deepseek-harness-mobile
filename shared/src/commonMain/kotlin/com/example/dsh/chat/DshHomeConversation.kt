@@ -426,7 +426,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onCancelEdit = onCancelQueueItemEdit
                     onRemove = onRemoveQueueItem
                     onSteer = onSteerQueueItem
-                    colors = colors
+                    this.colors = colors()
                 }
             }
         }
@@ -453,7 +453,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onResume = onResumeGoal
                     onEdit = onEditGoal
                     onClear = onClearGoal
-                    colors = colors
+                    this.colors = colors()
                 }
             }
         }
@@ -464,7 +464,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     approval = pendingApproval()
                     busy = interactionBusy()
                     onAnswer = onAnswerApproval
-                    colors = colors
+                    this.colors = colors()
                 }
             }
         }
@@ -490,7 +490,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                 onSubmit = onSubmitQuestion
                 onDismiss = onDismissQuestion
                 this.onKeyboardHeightChange = onKeyboardHeightChange
-                colors = colors
+                this.colors = colors()
             }
         }
         val questionActive = {

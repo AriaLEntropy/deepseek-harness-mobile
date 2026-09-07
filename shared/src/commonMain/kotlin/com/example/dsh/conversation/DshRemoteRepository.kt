@@ -47,6 +47,18 @@ internal class DshRemoteRepository(
     )
     internal val store get() = delegate.store
 
+    override fun loadAgentPresets(onSuccess: (List<DshAgentPresetOption>) -> Unit, onError: (String) -> Unit) =
+        delegate.loadAgentPresets(onSuccess, onError)
+
+    override fun loadHostVersion(onSuccess: (String) -> Unit, onError: (String) -> Unit) =
+        delegate.loadHostVersion(onSuccess, onError)
+
+    override fun describeSettings(onSuccess: (DshSettingsSnapshot) -> Unit, onError: (String) -> Unit) =
+        delegate.describeSettings(onSuccess, onError)
+
+    override fun updateSetting(ns: String, patch: JSONObject, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.updateSetting(ns, patch, expectedRevision, onSuccess, onError)
+
     fun isProductReady(): Boolean = delegate.isProductReady()
     fun stop() = delegate.stop()
     fun respondApproval(

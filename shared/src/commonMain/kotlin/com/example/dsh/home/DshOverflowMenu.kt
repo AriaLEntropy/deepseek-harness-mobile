@@ -130,6 +130,9 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onTypeFilter: (String) -> Unit,
     onKeyword: (String) -> Unit,
     onClearFilters: () -> Unit,
+    allMode: () -> Boolean = { false },
+    onJumpToSession: (String) -> Unit = {},
+    sessionTitleProvider: (String) -> String = { it },
     statusBarHeight: Float,
     pageViewWidth: Float,
     colors: com.example.dsh.theme.DshColorTokens = com.example.dsh.theme.DshDefaultTheme.light,
@@ -262,28 +265,32 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         Scroller {
                             attr { flexDirectionRow(); marginTop(8f); paddingLeft(12f); paddingRight(12f) }
                             vfor({ typeOptions() }) { type ->
-                                val sel = if (type == "全部") typeFilter().isEmpty() else typeFilter() == type
-                                vif({ sel }) {
-                                    View {
-                                        attr {
-                                            marginRight(8f); padding(left = 12f, right = 12f); height(30f)
-                                            borderRadius(15f); alignItemsCenter(); justifyContentCenter()
-                                            backgroundColor(colors.stateBusinessPrimary)
+                                // vfor itemCreator 只能有一个孩子，外层 View 包裹双 vif
+                                View {
+                                    attr { marginRight(8f); flexDirectionRow(); alignItemsCenter() }
+                                    val sel = if (type == "全部") typeFilter().isEmpty() else typeFilter() == type
+                                    vif({ sel }) {
+                                        View {
+                                            attr {
+                                                padding(left = 12f, right = 12f); height(30f)
+                                                borderRadius(15f); alignItemsCenter(); justifyContentCenter()
+                                                backgroundColor(colors.stateBusinessPrimary)
+                                            }
+                                            event { click { onTypeFilter(if (type == "全部") "" else type) } }
+                                            Text { attr { text(type); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
                                         }
-                                        event { click { onTypeFilter(if (type == "全部") "" else type) } }
-                                        Text { attr { text(type); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
                                     }
-                                }
-                                vif({ !sel }) {
-                                    View {
-                                        attr {
-                                            marginRight(8f); padding(left = 12f, right = 12f); height(30f)
-                                            borderRadius(15f); alignItemsCenter(); justifyContentCenter()
-                                            border(Border(1f, BorderStyle.SOLID, colors.borderL2))
-                                            backgroundColor(Color(0x00000000))
+                                    vif({ !sel }) {
+                                        View {
+                                            attr {
+                                                padding(left = 12f, right = 12f); height(30f)
+                                                borderRadius(15f); alignItemsCenter(); justifyContentCenter()
+                                                border(Border(1f, BorderStyle.SOLID, colors.borderL2))
+                                                backgroundColor(Color(0x00000000))
+                                            }
+                                            event { click { onTypeFilter(if (type == "全部") "" else type) } }
+                                            Text { attr { text(type); fontSize(12f); color(colors.labelSecondary) } }
                                         }
-                                        event { click { onTypeFilter(if (type == "全部") "" else type) } }
-                                        Text { attr { text(type); fontSize(12f); color(colors.labelSecondary) } }
                                     }
                                 }
                             }
@@ -400,6 +407,17 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                             lines(1)
                                         }
                                     }
+                                    vif({ allMode() }) {
+                                        Text {
+                                            attr {
+                                                text(if (entry.sessionId.isNullOrEmpty()) "移动端" else sessionTitleProvider(entry.sessionId))
+                                                width(80f)
+                                                fontSize(10f)
+                                                color(colors.labelTertiary)
+                                                lines(1)
+                                            }
+                                        }
+                                    }
                                     Text {
                                         attr {
                                             text(entry.message)
@@ -467,6 +485,28 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 fontSize(13f)
                                 lineHeight(20f)
                                 color(colors.labelPrimary)
+                            }
+                        }
+                        vif({ allMode() && !entry.sessionId.isNullOrEmpty() }) {
+                            View {
+                                attr {
+                                    marginTop(16f)
+                                    height(40f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    justifyContentCenter()
+                                    borderRadius(8f)
+                                    backgroundColor(colors.stateBusinessPrimary)
+                                }
+                                event { click { onJumpToSession(entry.sessionId!!) } }
+                                Text {
+                                    attr {
+                                        text("跳回该会话")
+                                        fontSize(14f)
+                                        fontWeightBold()
+                                        color(Color(0xFFFFFFFF))
+                                    }
+                                }
                             }
                         }
                         vif({ detailRaw().isNotEmpty() }) {
