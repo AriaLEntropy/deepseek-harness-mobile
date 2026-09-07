@@ -360,6 +360,9 @@ internal class DshHomePage : BasePager() {
         val wide = pagerData.pageViewWidth >= 720f
         return {
             ctx.perfLog("body.builder.begin")
+            // 强制建立对主题模式的响应式依赖：mode/systemDark 变化时触发整页重渲染
+            val _themeMode = ctx.themeController.mode
+            val _systemDark = ctx.themeController.systemDark
             // ===== 根容器 =====
             // 整页的根 View：纵向布局撑满剩余空间，背景色 BG，顶部留出系统状态栏高度。
             View {
