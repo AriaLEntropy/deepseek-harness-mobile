@@ -240,6 +240,7 @@ internal class DshHomePage : BasePager() {
     private var sessionLogClearMenuVisible by observable(false)
     private var sessionLogClearVisible by observable(false)
     private var sessionLogClearing by observable(false)
+    private var sessionLogFeedbackExporting by observable(false)
     private var sessionLogScrollerRef: ViewRef<ScrollerView<*, *>>? = null
     private var sessionLogFollowBottom by observable(true)
     private var sessionLogNewCount by observable(0)
@@ -321,6 +322,7 @@ internal class DshHomePage : BasePager() {
                 DshStreamLog.writeBehind = wb
             }
         }
+        reportLastCrashIfAny()
         connectionMode = when (pageData.params.optString("connectionMode")) {
             "relay" -> DshConnectionMode.RELAY
             "ssh", "remote" -> DshConnectionMode.SSH
@@ -1101,6 +1103,7 @@ internal class DshHomePage : BasePager() {
                     onClearMenuToggle = { ctx.sessionLogClearMenuVisible = !ctx.sessionLogClearMenuVisible },
                     onClearMenuDismiss = { ctx.sessionLogClearMenuVisible = false },
                     onClearRequest = { ctx.sessionLogClearMenuVisible = false; ctx.requestSessionLogClear() },
+                    onFeedbackPackage = { ctx.exportFeedbackPackage() },
                     clearDialogVisible = { ctx.sessionLogClearVisible },
                     clearing = { ctx.sessionLogClearing },
                     onClearDialogCancel = { ctx.cancelSessionLogClear() },
@@ -2916,6 +2919,15 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    /** 读取上次崩溃记录：写入日志中心（type=crash）并提示，然后清除。 */
+    private fun reportLastCrashIfAny() {
+        val raw = bridgeModule.readLastCrash()
+        if (raw.isEmpty()) return
+        bridgeModule.clearLastCrash()
+        DshStreamLog.log(LogLevel.ERROR, "crash", "上次异常退出：${LogSanitizer.sanitize(raw.take(2000))}", null, null)
+        bridgeModule.toast("检测到上次异常退出，崩溃栈已记录到日志")
+    }
+
     fun refreshSessionLogs() {
         val targetId = overflowTargetId()
         val writeBehind = DshStreamLog.writeBehind
@@ -3145,6 +3157,34 @@ internal class DshHomePage : BasePager() {
             bridgeModule.toast("导出失败，已复制到剪贴板")
         }
         sessionLogExporting = false
+    }
+
+    /** 生成问题反馈包：全量日志（脱敏）+ 连接模式 + App 版本 + 设备型号，写入文件并分享。 */
+    fun exportFeedbackPackage() {
+        if (sessionLogFeedbackExporting) return
+        sessionLogFeedbackExporting = true
+        val events = DshStreamLog.writeBehind?.snapshot().orEmpty()
+        val device = bridgeModule.getDeviceInfo()
+        val stamp = LogExporter.formatTimestamp(currentTimeMillis()).replace(Regex("[^0-9]"), "")
+        val content = buildString {
+            appendLine("DSH 问题反馈包")
+            appendLine("生成时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
+            appendLine("连接模式：${connectionModeLabel()}")
+            appendLine("App 版本：${device?.optString("version").orEmpty().ifEmpty { "未知" }}")
+            appendLine("设备：${device?.optString("model").orEmpty().ifEmpty { "未知" }}（${device?.optString("os").orEmpty()}）")
+            appendLine("日志条数：${events.size}")
+            appendLine("说明：包含全部本地诊断日志，内容已脱敏。")
+            appendLine("")
+            append(LogExporter.toText(events))
+        }
+        runCatching {
+            val path = writeExportFile(exportDir, "dsh-feedback-$stamp.txt", content)
+            bridgeModule.shareExportFile(path)
+        }.onFailure {
+            bridgeModule.copyToPasteboard(content)
+            bridgeModule.toast("反馈包生成失败，已复制到剪贴板")
+        }
+        sessionLogFeedbackExporting = false
     }
 
     // ===== 重命名会话 =====

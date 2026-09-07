@@ -1,4 +1,5 @@
-import { common } from '@kit.AbilityKit';
+import { common, bundleManager } from '@kit.AbilityKit';
+import { deviceInfo } from '@kit.DeviceInfoKit';
 import { BusinessError, pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 import { KRAny } from '@kuikly-open/render';
@@ -96,6 +97,13 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       case 'shareExportFile':
         this.shareExportFile(params);
         break;
+      case 'readLastCrash':
+        return this.readLastCrash();
+      case 'clearLastCrash':
+        this.clearLastCrash();
+        break;
+      case 'getDeviceInfo':
+        return this.getDeviceInfo();
       case 'closeKeyboard':
       case 'setSystemBarsDimmed':
       case 'startSshKeepAlive':
@@ -248,5 +256,28 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       });
     } catch (error) {
       dshError('shareExportFile failed', error as Object);
+    }
+  }
+
+  // 崩溃捕获：OHOS 侧由应用层（Ability onError / errorManager）负责写盘，此处读取文件；暂未接入时返回空。
+  private readLastCrash(): string {
+    // TODO(ohos): 接入应用异常管理后从沙箱文件读取
+    return '';
+  }
+
+  private clearLastCrash(): void {
+    // TODO(ohos): 与应用层崩溃写盘配套
+  }
+
+  private getDeviceInfo(): string {
+    try {
+      const bundleInfo = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      const version = bundleInfo.versionName;
+      const model = deviceInfo.marketName ?? deviceInfo.model ?? '';
+      const os = `HarmonyOS ${deviceInfo.displayVersion}`;
+      return JSON.stringify({ version: version, model: model, os: os });
+    } catch (error) {
+      dshError('getDeviceInfo failed', error as Object);
+      return '';
     }
   }

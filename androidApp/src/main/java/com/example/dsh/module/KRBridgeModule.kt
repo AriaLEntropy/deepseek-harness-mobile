@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
+import com.example.dsh.BuildConfig
 import com.example.dsh.KRApplication
 import com.example.dsh.KuiklyRenderActivity
 import com.example.dsh.ssh.DshSshForegroundService
@@ -101,6 +102,9 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "startSshKeepAlive" -> startSshKeepAlive()
             "stopSshKeepAlive" -> stopSshKeepAlive()
             "shareExportFile" -> shareExportFile(params)
+            "readLastCrash" -> readLastCrash(params)
+            "clearLastCrash" -> clearLastCrash(params)
+            "getDeviceInfo" -> getDeviceInfo(params)
 
             else -> callback?.invoke(
                 mapOf(
@@ -156,6 +160,24 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         val chooser = Intent.createChooser(intent, "导出会话日志")
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ctx.startActivity(chooser)
+    }
+
+    private fun readLastCrash(params: String?): String {
+        val file = File(KRApplication.application.filesDir, "last_crash.txt")
+        return if (file.exists()) file.readText() else ""
+    }
+
+    private fun clearLastCrash(params: String?): Any? {
+        File(KRApplication.application.filesDir, "last_crash.txt").delete()
+        return null
+    }
+
+    private fun getDeviceInfo(params: String?): String {
+        return JSONObject().apply {
+            put("version", BuildConfig.VERSION_NAME)
+            put("model", " ")
+            put("os", "Android ")
+        }.toString()
     }
 
     private fun copyToPasteboard(params: String?) {

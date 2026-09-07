@@ -136,6 +136,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onClearMenuToggle: () -> Unit = {},
     onClearMenuDismiss: () -> Unit = {},
     onClearRequest: () -> Unit = {},
+    onFeedbackPackage: () -> Unit = {},
     clearDialogVisible: () -> Boolean = { false },
     clearing: () -> Boolean = { false },
     onClearDialogCancel: () -> Unit = {},
@@ -226,6 +227,20 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                         paddingBottom(6f)
                                     }
                                     event { click { } }
+                                    View {
+                                        attr {
+                                            height(44f)
+                                            flexDirectionRow()
+                                            alignItemsCenter()
+                                            justifyContentSpaceBetween()
+                                            paddingLeft(14f)
+                                            paddingRight(12f)
+                                        }
+                                        event { click { onClearMenuDismiss(); onFeedbackPackage() } }
+                                        Text {
+                                            attr { text("生成问题反馈包"); fontSize(14f); color(colors().labelPrimary) }
+                                        }
+                                    }
                                     View {
                                         attr {
                                             height(44f)
