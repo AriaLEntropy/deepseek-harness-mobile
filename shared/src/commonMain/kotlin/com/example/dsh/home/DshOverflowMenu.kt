@@ -220,22 +220,22 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             View {
                                 attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
                                 event { click { onSetSearchExpanded(true) } }
-                                Text { attr { text("🔍"); fontSize(16f); color(colors().labelSecondary) } }
+                                Image { attr { src(ImageUri.commonAssets("tool-search.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } }
                             }
                             View {
                                 attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
                                 event { click { if (!exporting()) onExport() } }
-                                Text { attr { text(if (exporting()) "…" else "↗"); fontSize(16f); color(colors().labelSecondary) } }
+                                vif({ exporting() }) { Text { attr { text("…"); fontSize(16f); color(colors().labelSecondary) } } }
+                                vif({ !exporting() }) { Image { attr { src(ImageUri.commonAssets("share.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } } }
                             }
                             View {
                                 attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
                                 event { click { onClearRequest() } }
-                                Text { attr { text("🗑"); fontSize(15f); color(colors().labelSecondary) } }
+                                Image { attr { src(ImageUri.commonAssets("delete.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } }
                             }
                         }
-                    }
                 }
-
+                }
                 // ===== 顶部栏（搜索态：SearchView） =====
                 vif({ searchExpanded() }) {
                     View {
@@ -257,9 +257,9 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             attr {
                                 flex(1f); height(34f); flexDirectionRow(); alignItemsCenter()
                                 backgroundColor(Color(0xFFFFFFFF)); borderRadius(17f); border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                                paddingLeft(12f); paddingRight(12f); marginLeft(4f); marginRight(4f)
-                            }
-                            Text { attr { text("🔍"); fontSize(13f); color(colors().labelTertiary); marginRight(6f) } }
+                                paddingLeft(12f); paddingRight(12f); marginLeft(4f); marginRight(4f) }
+                            Image { attr { src(ImageUri.commonAssets("tool-search.svg")); size(14f, 14f); tintColor(colors().labelTertiary); marginRight(6f) } }
+
                             Input {
                                 ref { searchInputRef = it; if (searchOpening) it.view?.setText(keyword()) }
                                 attr {
