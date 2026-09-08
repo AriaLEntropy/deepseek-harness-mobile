@@ -17,6 +17,9 @@ internal interface DshLogStore {
     fun clear()
     fun sizeBytes(): Long
     fun dropOldest(keepBytes: Long)
+
+    /** 当前库内最大 seq；空库返回 0。用于初始化写入序号，避免与已有记录重复。 */
+    fun maxSeq(): Long
 }
 
 internal expect fun createDshLogStore(path: String): DshLogStore

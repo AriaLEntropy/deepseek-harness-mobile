@@ -80,6 +80,16 @@ internal object LogExporter {
         intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 
     private fun pad(value: Int, width: Int): String = value.toString().padStart(width, '0')
+
+    /** 灏?y/m/d h:m 缁勮鍏嬩负 epoch 姣锛堢函绠楁湳锛屼笌 formatTimestamp 浜掗€嗭級銆?*/
+    fun parseEpoch(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long {
+        var days = 0
+        for (y in 1970 until year) days += if (isLeapYear(y)) 366 else 365
+        val md = monthDays(year)
+        for (i in 0 until month - 1) days += md[i]
+        days += day - 1
+        return (days * 86400L + hour * 3600L + minute * 60L) * 1000L
+    }
 }
 
 internal expect fun writeExportFile(dir: String, filename: String, content: String): String

@@ -21,6 +21,7 @@ import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.InputView
+import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
@@ -33,8 +34,8 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.ListContentView
-import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
+import com.tencent.kuikly.core.views.ScrollerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -162,6 +163,7 @@ internal class DshHomePage : BasePager() {
     private val sessionMessageReady = mutableSetOf<String>()
     private val pendingSessionSelections = mutableSetOf<String>()
     private val localReadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val pendingLocalMessageReads = mutableSetOf<String>()
     private val sessionCacheStates = mutableMapOf<String, DshSessionCacheState>()
     private var inputFocused = false
@@ -230,12 +232,31 @@ internal class DshHomePage : BasePager() {
     private var sessionLogDetailRaw by observable("")
     private var sessionLogExporting by observable(false)
     private var sessionLogTimeFilter by observable(0)
+    private var sessionLogCustomStartMs by observable<Long?>(null)
+    private var sessionLogCustomEndMs by observable<Long?>(null)
+    private var sessionLogTimePickerVisible by observable(false)
+    private var sessionLogTimePickerTargetStart by observable(true)
+    private var sessionLogPkYear by observable(0)
+    private var sessionLogPkMonth by observable(1)
+    private var sessionLogPkDay by observable(1)
+    private var sessionLogPkHour by observable(0)
+    private var sessionLogPkMinute by observable(0)
     private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
     private var sessionLogTypeFilter by observable("")
     private var sessionLogTypeOptions by observableList<String>()
     private var sessionLogKeyword by observable("")
     private val sessionLogView by observableList<LogEvent>()
     private var sessionLogTotal by observable(0)
+    private var sessionLogClearMenuVisible by observable(false)
+    private var sessionLogClearVisible by observable(false)
+    private var sessionLogClearing by observable(false)
+    private var sessionLogFeedbackExporting by observable(false)
+    private var sessionLogScrollerRef: ViewRef<ListView<*, *>>? = null
+    private var sessionLogFollowBottom by observable(true)
+    private var sessionLogNewCount by observable(0)
+    private var sessionLogLastMaxSeq = 0L
+    private var sessionLogPolling = false
+    private val sessionLogPollIntervalMs = 1000
     private var sessionRenameVisible by observable(false)
     private var sessionRenameDraft by observable("")
     private var sessionRenameBusy by observable(false)
@@ -297,7 +318,7 @@ internal class DshHomePage : BasePager() {
         val startedAt = TimeSource.Monotonic.markNow()
         perfLog("startup.created.begin", startedAt)
         val databaseDir = pageData.params.optString("databaseDir")
-        exportDir = databaseDir
+        exportDir = pageData.params.optString("exportDir").ifEmpty { databaseDir }
         if (databaseDir.isNotEmpty()) {
             localStore = runCatching {
                 createDshLocalStore("$databaseDir/dsh.db")
@@ -311,6 +332,7 @@ internal class DshHomePage : BasePager() {
                 DshStreamLog.writeBehind = wb
             }
         }
+        reportLastCrashIfAny()
         connectionMode = when (pageData.params.optString("connectionMode")) {
             "relay" -> DshConnectionMode.RELAY
             "ssh", "remote" -> DshConnectionMode.SSH
@@ -1069,8 +1091,6 @@ internal class DshHomePage : BasePager() {
                     visible = { ctx.sessionLogVisible },
                     events = { ctx.sessionLogView },
                     total = { ctx.sessionLogTotal },
-                    selected = { ctx.sessionLogSelected },
-                    detailRaw = { ctx.sessionLogDetailRaw },
                     exporting = { ctx.sessionLogExporting },
                     timeFilter = { ctx.sessionLogTimeFilter },
                     levelFilter = { ctx.sessionLogLevelFilter },
@@ -1080,19 +1100,80 @@ internal class DshHomePage : BasePager() {
                     onSelect = { ctx.sessionLogSelected = it; ctx.loadSessionLogDetail(it) },
                     onRefresh = { ctx.refreshSessionLogs() },
                     onExport = { ctx.exportSessionLogs() },
-                    onCopy = { ctx.copyLogDetail(it) },
                     onClose = { ctx.closeSessionLogs() },
                     onTimeFilter = { ctx.onLogTimeFilter(it) },
+                    customStartMs = { ctx.sessionLogCustomStartMs },
+                    customEndMs = { ctx.sessionLogCustomEndMs },
+                    onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
+                    onOpenTimePicker = { target -> ctx.openLogTimePicker(target) },
                     onToggleLevel = { ctx.onLogToggleLevel(it) },
                     onTypeFilter = { ctx.onLogTypeFilter(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
                     onClearFilters = { ctx.clearLogFilters() },
+                    onClearRequest = { ctx.requestSessionLogClear() },
+                    onFeedbackPackage = { ctx.exportFeedbackPackage() },
+
+                    clearDialogVisible = { ctx.sessionLogClearVisible },
+                    clearing = { ctx.sessionLogClearing },
+                    onClearDialogCancel = { ctx.cancelSessionLogClear() },
+                    onClearDialogConfirm = { ctx.confirmSessionLogClear() },
+                    scrollerRef = { ctx.sessionLogScrollerRef = it },
+                    onLogScroll = { ctx.onSessionLogScroll(it) },
+                    newCount = { ctx.sessionLogNewCount },
+                    followBottom = { ctx.sessionLogFollowBottom },
+                    onJumpToBottom = { ctx.onSessionLogJumpToBottom() },
                     allMode = { ctx.diagnosticLogAllMode },
-                    onJumpToSession = { ctx.jumpToSession(it) },
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = { this@DshHomePage.themeColors },
+                )
+
+                DshLogTimePickerModal(
+                    visible = { ctx.sessionLogTimePickerVisible },
+                    targetStart = { ctx.sessionLogTimePickerTargetStart },
+                    pkYear = { ctx.sessionLogPkYear },
+                    pkMonth = { ctx.sessionLogPkMonth },
+                    pkDay = { ctx.sessionLogPkDay },
+                    pkHour = { ctx.sessionLogPkHour },
+                    pkMinute = { ctx.sessionLogPkMinute },
+                    customStartMs = { ctx.sessionLogCustomStartMs },
+                    customEndMs = { ctx.sessionLogCustomEndMs },
+                    onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
+                    onSetVisible = { ctx.sessionLogTimePickerVisible = it },
+                    onSetTargetStart = { ctx.sessionLogTimePickerTargetStart = it },
+                    onSetPkValue = { field, value ->
+                        when (field) {
+                            0 -> ctx.sessionLogPkYear = value
+                            1 -> ctx.sessionLogPkMonth = value
+                            2 -> ctx.sessionLogPkDay = value
+                            3 -> ctx.sessionLogPkHour = value
+                            else -> ctx.sessionLogPkMinute = value
+                        }
+                    },
+                    colors = { this@DshHomePage.themeColors },
+                    pageViewWidth = { ctx.pagerData.pageViewWidth },
+                )
+
+                DshLogDetailModal(
+                    visible = { ctx.sessionLogSelected != null },
+                    entry = { ctx.sessionLogSelected },
+                    detailRaw = { ctx.sessionLogDetailRaw },
+                    allMode = { ctx.diagnosticLogAllMode },
+                    onClose = { ctx.sessionLogSelected = null },
+                    onCopy = { ctx.copyLogDetail(it) },
+                    onJumpToSession = { ctx.jumpToSession(it) },
+                    statusBarHeight = ctx.pagerData.statusBarHeight,
+                    pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
+                )
+
+                DshSessionLogClearDialog(
+                    visible = { ctx.sessionLogClearVisible },
+                    busy = { ctx.sessionLogClearing },
+                    onCancel = { ctx.cancelSessionLogClear() },
+                    onConfirm = { ctx.confirmSessionLogClear() },
+                    pageViewWidth = ctx.pagerData.pageViewWidth,
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -2867,12 +2948,14 @@ internal class DshHomePage : BasePager() {
         diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
+        startSessionLogFollow()
     }
 
     fun openDiagnosticLogs() {
         diagnosticLogAllMode = true
         refreshSessionLogs()
         sessionLogVisible = true
+        startSessionLogFollow()
     }
 
     fun jumpToSession(sessionId: String) {
@@ -2882,6 +2965,15 @@ internal class DshHomePage : BasePager() {
         if (idx >= 0) {
             selectSession(sessionId)
         }
+    }
+
+    /** 读取上次崩溃记录：写入日志中心（type=crash）并提示，然后清除。 */
+    private fun reportLastCrashIfAny() {
+        val raw = bridgeModule.readLastCrash()
+        if (raw.isEmpty()) return
+        bridgeModule.clearLastCrash()
+        DshStreamLog.log(LogLevel.ERROR, "crash", "上次异常退出：${LogSanitizer.sanitize(raw.take(2000))}", null, null)
+        bridgeModule.toast("检测到上次异常退出，崩溃栈已记录到日志")
     }
 
     fun refreshSessionLogs() {
@@ -2895,7 +2987,19 @@ internal class DshHomePage : BasePager() {
             events = events.filter { it.sessionId == targetId }
         }
         events = events.sortedByDescending { it.seq }
+        // 无新日志（seq 范围与条数未变）时跳过重建，避免高频 observable 变更
+        // 与渲染线程并发触发 Kuikly ReactiveObserver CME
+        val prevSize = sessionLogCache.size
+        val prevFirstSeq = sessionLogCache.firstOrNull()?.seq
+        val prevLastSeq = sessionLogCache.lastOrNull()?.seq
+        sessionLogCache.clear()
         sessionLogCache.addAll(events)
+        if (sessionLogCache.size == prevSize &&
+            sessionLogCache.firstOrNull()?.seq == prevFirstSeq &&
+            sessionLogCache.lastOrNull()?.seq == prevLastSeq
+        ) {
+            return
+        }
         recomputeSessionLogView()
     }
 
@@ -2910,31 +3014,76 @@ internal class DshHomePage : BasePager() {
         val kw = sessionLogKeyword.trim()
         // 动态提取当前会话所有事件类型，供筛选 chip 使用
         val types = sessionLogCache.map { it.type }.distinct().sorted()
-        sessionLogTypeOptions.clear()
-        sessionLogTypeOptions.add("全部")
-        sessionLogTypeOptions.addAll(types)
-        if (sessionLogTypeFilter.isNotEmpty() && sessionLogTypeFilter !in types) {
-            sessionLogTypeFilter = ""
+        // 仅在实际变化时重建 chips，避免输入过程每键触发 observable 重建
+        val newOptions = listOf("全部") + types
+        val changed = sessionLogTypeOptions.size != newOptions.size ||
+            sessionLogTypeOptions.indices.any { sessionLogTypeOptions[it] != newOptions[it] }
+        if (changed) {
+            sessionLogTypeOptions.clear()
+            sessionLogTypeOptions.addAll(newOptions)
         }
         val filtered = sessionLogCache.filter { e ->
             val timeOk = when (tf) {
                 1 -> now - e.timestamp <= 600_000L
                 2 -> now - e.timestamp <= 3_600_000L
                 3 -> LogExporter.formatTimestamp(e.timestamp).startsWith(todayPrefix)
+                4 -> {
+                    val start = sessionLogCustomStartMs
+                    val end = sessionLogCustomEndMs
+                    (start == null || e.timestamp >= start) && (end == null || e.timestamp <= end)
+                }
                 else -> true
             }
             timeOk &&
                 (e.level in levels) &&
-                (typeQ.isEmpty() || e.type.contains(typeQ, ignoreCase = true)) &&
+                (typeQ.isEmpty() || matchesLogType(e.type, typeQ)) &&
                 (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
         }
-        sessionLogView.clear()
-        sessionLogView.addAll(filtered)
+        // 最小差异更新：Myers diff 只增删改变化行，避免全量 clear+addAll 导致列表重建、
+        // 输入框失焦与删除时焦点循环跳动（列表未变化时 diff 为空，天然去抖）
+        sessionLogView.diffUpdate(filtered) { old, new -> old.seq == new.seq }
+    }
+
+    /** 事件类型匹配：`connect.*` 按前缀通配，其余子串匹配（忽略大小写）。 */
+    private fun matchesLogType(actual: String, query: String): Boolean {
+        val q = query.trim()
+        if (q.isEmpty()) return true
+        return if (q.endsWith(".*")) {
+            actual.startsWith(q.removeSuffix(".*"), ignoreCase = true)
+        } else {
+            actual.contains(q, ignoreCase = true)
+        }
     }
 
     fun onLogTimeFilter(value: Int) {
         sessionLogTimeFilter = value
+        if (value == 4) {
+            // 杩涘叆鑷畾涔夋椂闂磋寖鍥达細榛樿鏈€杩?1 灏忔椂锛堝彧鍦ㄥ皻鏃犲€兼椂鍒濆鍖栵級
+            val now = currentTimeMillis()
+            if (sessionLogCustomStartMs == null) sessionLogCustomStartMs = now - 3_600_000L
+            if (sessionLogCustomEndMs == null) sessionLogCustomEndMs = now
+        }
         recomputeSessionLogView()
+    }
+
+    /** 鑷畾涔夎捣姝㈡椂闂存洿鏂帮細null 浠ｈ〃涓嶉檺銆?*/
+    fun onLogCustomTime(startMs: Long?, endMs: Long?) {
+        sessionLogCustomStartMs = startMs
+        sessionLogCustomEndMs = endMs
+        recomputeSessionLogView()
+    }
+
+    fun openLogTimePicker(targetStart: Boolean) {
+        val target = if (targetStart) sessionLogCustomStartMs else sessionLogCustomEndMs
+        val ms = target ?: currentTimeMillis()
+        val s = LogExporter.formatTimestamp(ms)
+        sessionLogPkYear = s.substring(0, 4).toInt()
+        sessionLogPkMonth = s.substring(5, 7).toInt()
+        sessionLogPkDay = s.substring(8, 10).toInt()
+        sessionLogPkHour = s.substring(11, 13).toInt()
+        sessionLogPkMinute = s.substring(14, 16).toInt()
+        sessionLogTimePickerTargetStart = targetStart
+        sessionLogTimePickerVisible = true
     }
 
     fun onLogToggleLevel(level: LogLevel) {
@@ -2990,10 +3139,81 @@ internal class DshHomePage : BasePager() {
 
     fun closeSessionLogs() {
         sessionLogVisible = false
+        sessionLogPolling = false
         sessionLogSelected = null
         sessionLogDetailRaw = ""
         clearLogFilters()
         sessionLogView.clear()
+        sessionLogScrollerRef = null
+    }
+
+    // ===== 日志实时跟随（§5.2） =====
+
+    private fun startSessionLogFollow() {
+        sessionLogPolling = false
+        sessionLogFollowBottom = true
+        sessionLogNewCount = 0
+        sessionLogLastMaxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
+        sessionLogPolling = true
+        setTimeout(pagerId, sessionLogPollIntervalMs) { pollSessionLogs() }
+    }
+
+    private fun pollSessionLogs() {
+        if (!sessionLogPolling || !sessionLogVisible) return
+        refreshSessionLogs()
+        val maxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
+        if (maxSeq > sessionLogLastMaxSeq) {
+            sessionLogNewCount += sessionLogView.count { it.seq > sessionLogLastMaxSeq }
+            sessionLogLastMaxSeq = maxSeq
+        }
+        if (sessionLogFollowBottom && sessionLogNewCount > 0) {
+            scrollSessionLogToBottom()
+            sessionLogNewCount = 0
+        }
+        setTimeout(pagerId, sessionLogPollIntervalMs) { pollSessionLogs() }
+    }
+
+    private fun scrollSessionLogToBottom() {
+        val scroller = sessionLogScrollerRef?.view ?: return
+        val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
+        val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
+        scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
+    }
+
+    fun onSessionLogScroll(params: ScrollParams) {
+        val atBottom = params.offsetY + params.viewHeight >= params.contentHeight - 8f
+        sessionLogFollowBottom = atBottom
+        if (atBottom) sessionLogNewCount = 0
+    }
+
+    fun onSessionLogJumpToBottom() {
+        sessionLogFollowBottom = true
+        sessionLogNewCount = 0
+        scrollSessionLogToBottom()
+    }
+
+    // ===== 清空本地诊断日志（§5.5） =====
+
+    fun requestSessionLogClear() {
+        sessionLogClearVisible = true
+    }
+
+    fun cancelSessionLogClear() {
+        sessionLogClearVisible = false
+        sessionLogClearing = false
+    }
+
+    fun confirmSessionLogClear() {
+        if (sessionLogClearing) return
+        sessionLogClearing = true
+        DshStreamLog.writeBehind?.clear()
+        sessionLogClearing = false
+        sessionLogClearVisible = false
+        refreshSessionLogs()
+        sessionLogFollowBottom = true
+        sessionLogNewCount = 0
+        sessionLogLastMaxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
+        bridgeModule.toast("已清空本地诊断日志")
     }
 
     /** 详情按需取原文：从内存 sessionEvents 按摘要中的 evtSeq 反查完整事件，脱敏后展示。 */
@@ -3042,6 +3262,34 @@ internal class DshHomePage : BasePager() {
             bridgeModule.toast("导出失败，已复制到剪贴板")
         }
         sessionLogExporting = false
+    }
+
+    /** 生成问题反馈包：全量日志（脱敏）+ 连接模式 + App 版本 + 设备型号，写入文件并分享。 */
+    fun exportFeedbackPackage() {
+        if (sessionLogFeedbackExporting) return
+        sessionLogFeedbackExporting = true
+        val events = DshStreamLog.writeBehind?.snapshot().orEmpty()
+        val device = bridgeModule.getDeviceInfo()
+        val stamp = LogExporter.formatTimestamp(currentTimeMillis()).replace(Regex("[^0-9]"), "")
+        val content = buildString {
+            appendLine("DSH 问题反馈包")
+            appendLine("生成时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
+            appendLine("连接模式：${connectionModeLabel()}")
+            appendLine("App 版本：${device?.optString("version").orEmpty().ifEmpty { "未知" }}")
+            appendLine("设备：${device?.optString("model").orEmpty().ifEmpty { "未知" }}（${device?.optString("os").orEmpty()}）")
+            appendLine("日志条数：${events.size}")
+            appendLine("说明：包含全部本地诊断日志，内容已脱敏。")
+            appendLine("")
+            append(LogExporter.toText(events))
+        }
+        runCatching {
+            val path = writeExportFile(exportDir, "dsh-feedback-$stamp.txt", content)
+            bridgeModule.shareExportFile(path)
+        }.onFailure {
+            bridgeModule.copyToPasteboard(content)
+            bridgeModule.toast("反馈包生成失败，已复制到剪贴板")
+        }
+        sessionLogFeedbackExporting = false
     }
 
     // ===== 重命名会话 =====

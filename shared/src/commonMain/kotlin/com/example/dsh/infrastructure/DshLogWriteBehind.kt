@@ -17,6 +17,11 @@ import kotlinx.coroutines.launch
  * 容量策略（双层）：
  * 1. 内存队列：maxEntries / maxBytes，超限时优先丢弃 DEBUG→INFO 级别的旧日志
  * 2. 数据库：maxStorageBytes，每次 flush 后检查，超限时淘汰最旧日志
+ *
+ * 并发模型：enqueue 来自任意调用线程（主线程为主），flush 在
+ * `Dispatchers.Default` 协程执行，两者与 onStop/clear/snapshot 并发访问
+ * 共享队列。所有共享状态（pending/totalBytes/nextSeq/flushJob 等）统一由
+ * [lock] 保护；耗时 IO（appendBatch / 容量查询）放在临界区之外执行。
  */
 internal class DshLogWriteBehind(
     private val logStore: DshLogStore,
@@ -27,9 +32,14 @@ internal class DshLogWriteBehind(
     private val flushDelayMs: Long = 500,
     private val batchFlushSize: Int = 32,
 ) {
+    private val lock = DshLock()
     private val pending = mutableListOf<LogEvent>()
-    private var nextSeq = 1L
+
+    /** 从库内已有最大 seq 之后开始编号，避免与持久化记录重复被 INSERT OR REPLACE 覆盖。 */
+    private var nextSeq = logStore.maxSeq() + 1
+
     private var flushJob: Job? = null
+    private var flushScheduled = false
     private var totalBytes = 0L
     private var droppedCount = 0L
     private var storageTrimCount = 0L
@@ -37,60 +47,91 @@ internal class DshLogWriteBehind(
 
     /** 启动时调用：检查数据库容量，超限则立即清理。 */
     fun onStart() {
-        if (started) return
-        started = true
-        enforceStorageLimit()
+        val shouldStart = lock.withLock {
+            if (started) {
+                false
+            } else {
+                started = true
+                true
+            }
+        }
+        if (shouldStart) enforceStorageLimit()
     }
 
     fun enqueue(event: LogEvent): LogEvent {
-        val seqd = event.copy(seq = nextSeq++)
-        pending.add(seqd)
-        totalBytes += seqd.size
-        enforceCapacity()
-        if (pending.size >= batchFlushSize) {
-            scheduleFlush(0)
-        } else if (flushJob == null || flushJob?.isCompleted != false) {
-            scheduleFlush(flushDelayMs)
+        var scheduleDelay: Long? = null
+        val seqd = lock.withLock {
+            val e = event.copy(seq = nextSeq++)
+            pending.add(e)
+            totalBytes += e.size
+            enforceCapacity()
+            scheduleDelay = if (pending.size >= batchFlushSize) {
+                0L
+            } else if (!flushScheduled) {
+                flushScheduled = true
+                flushDelayMs
+            } else {
+                null
+            }
+            e
         }
+        scheduleDelay?.let { scheduleFlush(it) }
         return seqd
     }
 
     /** 同步刷写所有待写日志到数据库，并检查存储容量。 */
     fun flush() {
-        if (pending.isEmpty()) {
-            enforceStorageLimit()
-            return
+        val batch = lock.withLock {
+            flushScheduled = false
+            if (pending.isEmpty()) {
+                null
+            } else {
+                val b = pending.toList()
+                pending.clear()
+                totalBytes = 0
+                b
+            }
         }
-        val batch = pending.toList()
-        pending.clear()
-        totalBytes = 0
-        logStore.appendBatch(batch)
+        if (batch != null) {
+            logStore.appendBatch(batch)
+        }
         enforceStorageLimit()
     }
 
     /** 停止时调用：取消待执行刷写任务，强制同步 flush。 */
     fun onStop() {
-        flushJob?.cancel()
-        flushJob = null
+        val job = lock.withLock {
+            flushScheduled = false
+            val j = flushJob
+            flushJob = null
+            j
+        }
+        job?.cancel()
         flush()
     }
 
     fun snapshot(): List<LogEvent> {
+        val pendingSnapshot = lock.withLock { pending.toList() }
         val storeEvents = logStore.query(LogFilter(), limit = maxEntries, offset = 0)
-        return (pending + storeEvents).sortedBy { it.seq }
+        return (pendingSnapshot + storeEvents).sortedBy { it.seq }
     }
 
     fun clear() {
-        pending.clear()
-        totalBytes = 0
-        flushJob?.cancel()
-        flushJob = null
+        val job = lock.withLock {
+            pending.clear()
+            totalBytes = 0
+            flushScheduled = false
+            val j = flushJob
+            flushJob = null
+            j
+        }
+        job?.cancel()
         logStore.clear()
     }
 
-    fun droppedCount(): Long = droppedCount
+    fun droppedCount(): Long = lock.withLock { droppedCount }
 
-    fun storageTrimCount(): Long = storageTrimCount
+    fun storageTrimCount(): Long = lock.withLock { storageTrimCount }
 
     private fun enforceCapacity() {
         if (pending.size <= maxEntries && totalBytes <= maxBytes) return
@@ -113,13 +154,14 @@ internal class DshLogWriteBehind(
         val current = logStore.sizeBytes()
         if (current <= maxStorageBytes) return
         logStore.dropOldest(maxStorageBytes / 2)
-        storageTrimCount++
+        lock.withLock { storageTrimCount++ }
     }
 
     private fun scheduleFlush(delayMs: Long) {
-        flushJob = scope.launch {
+        val job = scope.launch {
             if (delayMs > 0) delay(delayMs)
             flush()
         }
+        lock.withLock { flushJob = job }
     }
 }

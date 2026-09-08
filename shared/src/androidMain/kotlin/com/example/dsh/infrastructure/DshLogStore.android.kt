@@ -69,6 +69,13 @@ private class DshAndroidLogStore(path: String) : DshLogStore {
         ) { it.getColumnLong(0) } ?: 0L
     }
 
+    override fun maxSeq(): Long = synchronized(driver) {
+        queryOne(
+            "SELECT COALESCE(MAX(seq), 0) FROM dsh_log_events",
+            emptyList(),
+        ) { it.getColumnLong(0) } ?: 0L
+    }
+
     override fun dropOldest(keepBytes: Long) {
         synchronized(driver) {
             var current = sizeBytes()

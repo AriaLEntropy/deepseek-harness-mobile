@@ -37,6 +37,20 @@ internal class BridgeModule : Module() {
         callNativeMethod("shareExportFile", methodArgs, null)
     }
 
+    /** 读取上次崩溃栈（无则空串）；由各端 native 在崩溃时写入。 */
+    fun readLastCrash(): String = syncCallNativeMethod("readLastCrash", null, null)
+
+    /** 清除已上报的崩溃记录。 */
+    fun clearLastCrash() {
+        callNativeMethod("clearLastCrash", null, null)
+    }
+
+    /** 设备与 App 信息（version/model/os），供问题反馈包使用；不支持时返回 null。 */
+    fun getDeviceInfo(): JSONObject? {
+        val raw = syncCallNativeMethod("getDeviceInfo", null, null)
+        return raw.takeIf { it.isNotEmpty() }?.let { runCatching { JSONObject(it) }.getOrNull() }
+    }
+
     fun showAlert(
         title: String?,
         message: String?,

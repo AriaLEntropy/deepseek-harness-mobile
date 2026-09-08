@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
+import com.example.dsh.BuildConfig
 import com.example.dsh.KRApplication
 import com.example.dsh.KuiklyRenderActivity
 import com.example.dsh.ssh.DshSshForegroundService
@@ -101,6 +102,9 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "startSshKeepAlive" -> startSshKeepAlive()
             "stopSshKeepAlive" -> stopSshKeepAlive()
             "shareExportFile" -> shareExportFile(params)
+            "readLastCrash" -> readLastCrash(params)
+            "clearLastCrash" -> clearLastCrash(params)
+            "getDeviceInfo" -> getDeviceInfo(params)
 
             else -> callback?.invoke(
                 mapOf(
@@ -146,16 +150,40 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         val ctx = context ?: KRApplication.application
         val file = File(path)
         if (!file.exists()) return
-        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, file.name)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(intent, "导出会话日志")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(chooser)
+        } catch (e: Exception) {
+            // FileProvider 路径未配置（如导出目录变更）时兜底，避免崩溃
+            Log.e("KRBridgeModule", "shareExportFile failed", e)
+            Toast.makeText(ctx, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
         }
-        val chooser = Intent.createChooser(intent, "导出会话日志")
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        ctx.startActivity(chooser)
+    }
+
+    private fun readLastCrash(params: String?): String {
+        val file = File(KRApplication.application.filesDir, "last_crash.txt")
+        return if (file.exists()) file.readText() else ""
+    }
+
+    private fun clearLastCrash(params: String?): Any? {
+        File(KRApplication.application.filesDir, "last_crash.txt").delete()
+        return null
+    }
+
+    private fun getDeviceInfo(params: String?): String {
+        return JSONObject().apply {
+            put("version", BuildConfig.VERSION_NAME)
+            put("model", " ")
+            put("os", "Android ")
+        }.toString()
     }
 
     private fun copyToPasteboard(params: String?) {
