@@ -2291,6 +2291,14 @@ internal class DshHomePage : BasePager() {
                 applyTimeline()
             } else {
                 var remaining = pendingAttIds.size
+                var applied = false
+                val tryApply = {
+                    if (!applied && isRemoteHost && activeSessionId == sessionId) {
+                        applied = true
+                        attachmentRevision += 1
+                        applyTimeline()
+                    }
+                }
                 pendingAttIds.forEach { attId ->
                     hostRepository.loadAttachment(sessionId, attId) { dataUrl, error ->
                         if (error == null && dataUrl != null) {
@@ -2298,10 +2306,14 @@ internal class DshHomePage : BasePager() {
                         }
                         pendingAttachmentReads.remove(attId)
                         remaining -= 1
-                        if (remaining == 0 && isRemoteHost && activeSessionId == sessionId) {
-                            attachmentRevision += 1
-                            applyTimeline()
-                        }
+                        if (remaining <= 0) tryApply()
+                    }
+                }
+                // 兜底超时：15 秒后即使有回调丢失也强制 apply，避免会话一直空白
+                setTimeout(pagerId, 15000) {
+                    if (!applied && activeSessionId == sessionId) {
+                        DshStreamLog.log(LogLevel.WARN, "ui.att-timeout", "attachment preload timeout, force apply session=$sessionId remaining=$remaining", sessionId, null)
+                        tryApply()
                     }
                 }
             }
@@ -3749,6 +3761,8 @@ internal class DshHomePage : BasePager() {
         // Invalidate any in-flight request for the previous session before
         // starting the new one, so an old response cannot repaint this view.
         historyRequestGeneration++
+        // 清理旧会话的附件加载状态，防止 pendingAttachmentReads 泄漏导致新会话附件被跳过
+        pendingAttachmentReads.clear()
         loadMessagesFromDisk(id)
         fetchHostHistory(id)
         setTimeout(pagerId, 0) {
