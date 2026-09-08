@@ -203,7 +203,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             paddingBottom(10f)
                             paddingLeft(8f)
                             paddingRight(8f)
-                            backgroundColor(com.example.dsh.theme.DshDefaultPalette.deepseek500)
+                            backgroundColor(colors().bgLayer1)
                         }
                         View {
                             attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter(); marginLeft(4f) }
@@ -212,25 +212,25 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         }
                         View {
                             attr { flex(1f); flexDirectionColumn(); alignItemsCenter() }
-                            Text { attr { text("会话日志"); fontSize(17f); fontWeightBold();  } }
-                            Text { attr { text(total().toString() + " 条记录"); fontSize(11f);  marginTop(2f) } }
+                            Text { attr { text("会话日志"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
+                            Text { attr { text(total().toString() + " 条记录"); fontSize(11f); color(colors().labelTertiary); marginTop(2f) } }
                         }
                         View {
                             attr { flexDirectionRow(); alignItemsCenter(); width(120f); justifyContentFlexEnd() }
                             View {
                                 attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
                                 event { click { onSetSearchExpanded(true) } }
-                                Text { attr { text("🔍"); fontSize(16f); color(Color(0xFFFFFFFF)) } }
+                                Text { attr { text("🔍"); fontSize(16f); color(colors().labelSecondary) } }
                             }
                             View {
                                 attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
                                 event { click { if (!exporting()) onExport() } }
-                                Text { attr { text(if (exporting()) "…" else "↗"); fontSize(16f); color(Color(0xFFFFFFFF)) } }
+                                Text { attr { text(if (exporting()) "…" else "↗"); fontSize(16f); color(colors().labelSecondary) } }
                             }
                             View {
                                 attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
                                 event { click { onClearRequest() } }
-                                Text { attr { text("🗑"); fontSize(15f); color(Color(0xFFFFFFFF)) } }
+                                Text { attr { text("🗑"); fontSize(15f); color(colors().labelSecondary) } }
                             }
                         }
                     }
@@ -246,7 +246,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             paddingBottom(10f)
                             paddingLeft(8f)
                             paddingRight(8f)
-                            backgroundColor(com.example.dsh.theme.DshDefaultPalette.deepseek500)
+                            backgroundColor(colors().bgLayer1)
                         }
                         View {
                             attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter() }
@@ -256,15 +256,15 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         View {
                             attr {
                                 flex(1f); height(34f); flexDirectionRow(); alignItemsCenter()
-                                backgroundColor(Color(0x22FFFFFF)); borderRadius(17f)
+                                backgroundColor(Color(0xFFFFFFFF)); borderRadius(17f); border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                                 paddingLeft(12f); paddingRight(12f); marginLeft(4f); marginRight(4f)
                             }
-                            Text { attr { text("🔍"); fontSize(13f); color(Color(0xCCFFFFFF)); marginRight(6f) } }
+                            Text { attr { text("🔍"); fontSize(13f); color(colors().labelTertiary); marginRight(6f) } }
                             Input {
                                 ref { searchInputRef = it; if (searchOpening) it.view?.setText(keyword()) }
                                 attr {
-                                    flex(1f); fontSize(14f); color(Color(0xFFFFFFFF))
-                                    placeholder("搜索日志内容"); placeholderColor(Color(0x88FFFFFF))
+                                    flex(1f); fontSize(14f); color(colors().labelPrimary)
+                                    placeholder("搜索日志内容"); placeholderColor(colors().labelTertiary)
                                 }
                                 event { textDidChange { onKeyword(it.text) } }
                             }
@@ -272,7 +272,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 View {
                                     attr { width(24f); height(24f); alignItemsCenter(); justifyContentCenter() }
                                     event { click { searchInputRef?.view?.setText(""); onKeyword("") } }
-                                    Text { attr { text("✕"); fontSize(13f); color(Color(0xCCFFFFFF)) } }
+                                    Text { attr { text("✕"); fontSize(13f); color(colors().labelTertiary) } }
                                 }
                             }
                         }
