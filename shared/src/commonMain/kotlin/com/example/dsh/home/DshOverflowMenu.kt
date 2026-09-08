@@ -207,7 +207,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         }
                         View {
                             attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter(); marginLeft(4f) }
-                            event { click { onClose() } }
+                            Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(Color(0xFF1A1A1A)) } }
                             Text { attr { text("<"); fontSize(18f); fontWeightBold(); color(Color(0xFF1A1A1A)) } }
                         }
                         View {
@@ -250,7 +250,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         }
                         View {
                             attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter() }
-                            event { click { onSetSearchExpanded(false); onKeyword("") } }
+                            Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(Color(0xFF1A1A1A)) } }
                             Text { attr { text("<"); fontSize(18f); fontWeightBold(); color(Color(0xFF1A1A1A)) } }
                         }
                         View {
