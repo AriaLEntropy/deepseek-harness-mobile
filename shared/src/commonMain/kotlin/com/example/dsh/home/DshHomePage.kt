@@ -1141,7 +1141,7 @@ internal class DshHomePage : BasePager() {
                     customEndMs = { ctx.sessionLogCustomEndMs },
                     onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
                     onSetVisible = { ctx.sessionLogTimePickerVisible = it },
-                    onSetTargetStart = { ctx.sessionLogTimePickerTargetStart = it },
+                    onSetTargetStart = { target -> ctx.sessionLogTimePickerTargetStart = target; ctx.syncLogPickerPkValues(target) },
                     onSetPkValue = { field, value ->
                         when (field) {
                             0 -> ctx.sessionLogPkYear = value
@@ -3073,7 +3073,7 @@ internal class DshHomePage : BasePager() {
         recomputeSessionLogView()
     }
 
-    fun openLogTimePicker(targetStart: Boolean) {
+    private fun syncLogPickerPkValues(targetStart: Boolean) {
         val target = if (targetStart) sessionLogCustomStartMs else sessionLogCustomEndMs
         val ms = target ?: currentTimeMillis()
         val s = LogExporter.formatTimestamp(ms)
@@ -3082,6 +3082,10 @@ internal class DshHomePage : BasePager() {
         sessionLogPkDay = s.substring(8, 10).toInt()
         sessionLogPkHour = s.substring(11, 13).toInt()
         sessionLogPkMinute = s.substring(14, 16).toInt()
+    }
+
+    fun openLogTimePicker(targetStart: Boolean) {
+        syncLogPickerPkValues(targetStart)
         sessionLogTimePickerTargetStart = targetStart
         sessionLogTimePickerVisible = true
     }
