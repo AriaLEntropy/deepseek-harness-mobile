@@ -344,12 +344,12 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 attr {
                                     width(26f); height(26f); borderRadius(4f)
                                     alignItemsCenter(); justifyContentCenter(); marginRight(6f)
-                                    border(Border(if (locked) 2f else 1f, BorderStyle.SOLID, Color(lvColor)))
-                                    backgroundColor(if (on) Color(lvColor) else Color((lvColor and 0x00FFFFFF) or 0x26000000))
+                                    border(Border(if (locked) 2f else 1f, BorderStyle.SOLID, if (on) Color(lvColor) else colors().borderL2))
+                                    backgroundColor(if (on) Color(lvColor) else colors().bgLayer2)
                                     highlightBackgroundColor(Color(0x26000000))
                                 }
                                 event { click { onToggleLevel(lv) } }
-                                Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (on) Color(0xFFFFFFFF) else Color(lvColor)) } }
+                                Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (on) Color(0xFFFFFFFF) else colors().labelTertiary) } }
                             }
                         }
                     }
