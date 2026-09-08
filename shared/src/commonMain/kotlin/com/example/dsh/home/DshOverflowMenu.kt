@@ -344,6 +344,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                     alignItemsCenter(); justifyContentCenter(); marginRight(6f)
                                     border(Border(if (locked) 2f else 1f, BorderStyle.SOLID, Color(lvColor)))
                                     backgroundColor(if (on) Color(lvColor) else Color((lvColor and 0x00FFFFFF) or 0x26000000))
+                                    highlightBackgroundColor(Color(0x26000000))
                                 }
                                 event { click { onToggleLevel(lv) } }
                                 Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (on) Color(0xFFFFFFFF) else Color(lvColor)) } }
