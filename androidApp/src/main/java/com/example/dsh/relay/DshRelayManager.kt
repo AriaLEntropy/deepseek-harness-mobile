@@ -40,7 +40,21 @@ internal object DshRelayManager {
     private val listeners = CopyOnWriteArrayList<(DshRelayNativeState) -> Unit>()
     private val generation = AtomicLong(0)
     private val connecting = AtomicBoolean(false)
-    private val http = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
+    private val reconnectScheduled = AtomicBoolean(false)
+    private val outbound = Any()
+    private val http = OkHttpClient.Builder()
+        .callTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .build()
+    // The tunnel must not inherit callTimeout: OkHttp treats a WebSocket as one Call
+    // and would cancel a healthy sealed session after 20s. iOS sets these to infinity.
+    private val tunnelClient = OkHttpClient.Builder()
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .writeTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
+        .build()
     private var secrets: DshRelaySecrets? = null
     private var appContext: Context? = null
     private var loopback: DshRelayLoopbackServer? = null
@@ -52,6 +66,7 @@ internal object DshRelayManager {
     private var relayOrigin = ""
     private var hostId = ""
     @Volatile private var stopped = true
+    @Volatile private var droppingSocket = false
     @Volatile private var state = DshRelayNativeState("IDLE")
     private var connectivity: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -91,7 +106,11 @@ internal object DshRelayManager {
                 .put("deviceLabel", "Android")
                 .put("platform", "android")
             val response = http.newCall(
-                Request.Builder().url("${link.origin}/pair/claim-device").post(body.toString().toRequestBody(jsonMedia)).build(),
+                Request.Builder()
+                    .url("${link.origin}/pair/claim-device")
+                    .header("User-Agent", androidUserAgent())
+                    .post(body.toString().toRequestBody(jsonMedia))
+                    .build(),
             ).execute()
             val json = JSONObject(response.body?.string().orEmpty().ifBlank { "{}" })
             if (!response.isSuccessful) {
@@ -149,9 +168,9 @@ internal object DshRelayManager {
         stopped = true
         generation.incrementAndGet()
         connecting.set(false)
+        reconnectScheduled.set(false)
         unregisterNetwork()
-        socket?.cancel()
-        socket = null
+        dropSocket()
         cipher = null
         dropLoopback("disconnect")
         stopForeground()
@@ -169,6 +188,7 @@ internal object DshRelayManager {
 
     private fun connectInternal() {
         val myGeneration = generation.incrementAndGet()
+        dropSocket()
         try {
             val stored = secrets ?: throw IllegalStateException("missing secrets")
             val master = stored.masterKey() ?: throw IllegalStateException("not paired")
@@ -179,46 +199,74 @@ internal object DshRelayManager {
             relayOrigin = origin
             publish(DshRelayNativeState("CONNECTING", "正在申请访问票", hostId = hostId, hostName = hostName, relayOrigin = origin, paired = true, generation = myGeneration))
             val ticketResponse = http.newCall(
-                Request.Builder().url("$origin/access-ticket").header("Authorization", "Bearer $clientToken").post("{}".toRequestBody(jsonMedia)).build(),
+                Request.Builder()
+                    .url("$origin/access-ticket")
+                    .header("Authorization", "Bearer $clientToken")
+                    .header("User-Agent", androidUserAgent())
+                    .post("{}".toRequestBody(jsonMedia))
+                    .build(),
             ).execute()
             val ticketJson = JSONObject(ticketResponse.body?.string().orEmpty().ifBlank { "{}" })
             if (!ticketResponse.isSuccessful) throw IllegalStateException(ticketJson.optString("error").ifBlank { "ticket failed" })
-            accessSessionId = ticketJson.optString("accessSessionId")
+            val sessionId = ticketJson.optString("accessSessionId")
             val ticket = ticketJson.optString("ticket")
             val tunnelUrl = ticketJson.optString("tunnelUrl").ifBlank { toWs(origin) + "/client-tunnel" }
             hostId = ticketJson.optString("hostId").ifBlank { hostId }
-            require(ticket.isNotBlank() && accessSessionId.isNotBlank()) { "ticket response incomplete" }
+            require(ticket.isNotBlank() && sessionId.isNotBlank()) { "ticket response incomplete" }
+            accessSessionId = sessionId
             publish(state.copy(phase = "HANDSHAKING", message = "正在建立加密隧道", generation = myGeneration, hostId = hostId, hostName = hostName, relayOrigin = origin, paired = true))
             val clientRandomB64 = SealedTunnelCrypto.encodeBase64Url(SealedTunnelCrypto.randomBytes())
             val hello = envelope(
                 "client_hello",
                 JSONObject()
-                    .put("accessSessionId", accessSessionId)
+                    .put("accessSessionId", sessionId)
                     .put("clientRandomB64", clientRandomB64)
-                    .put("clientProofB64", SealedTunnelCrypto.clientProof(master, accessSessionId, clientRandomB64)),
+                    .put("clientProofB64", SealedTunnelCrypto.clientProof(master, sessionId, clientRandomB64)),
             )
-            val wsClient = http.newBuilder()
-                .readTimeout(0, TimeUnit.MILLISECONDS)
-                .pingInterval(20, TimeUnit.SECONDS)
-                .build()
-            wsClient.newWebSocket(
-                Request.Builder().url(tunnelUrl).header("Authorization", "Bearer $ticket").build(),
+            tunnelClient.newWebSocket(
+                Request.Builder()
+                    .url(tunnelUrl)
+                    .header("Authorization", "Bearer $ticket")
+                    .header("User-Agent", androidUserAgent())
+                    .header("Sec-WebSocket-Protocol", "dsh-e2ee-v1")
+                    .build(),
                 object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {
+                        if (stopped || myGeneration != generation.get()) {
+                            webSocket.cancel()
+                            return
+                        }
+                        droppingSocket = false
                         socket = webSocket
                         webSocket.send(hello.toString())
                     }
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         if (stopped || myGeneration != generation.get()) return
-                        handleOuter(text, master, clientRandomB64, myGeneration, origin)
+                        handleOuter(text, master, sessionId, clientRandomB64, myGeneration, origin)
+                    }
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        webSocket.close(code, reason)
                     }
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                        if (!stopped && myGeneration == generation.get()) scheduleReconnect()
+                        if (socket === webSocket) socket = null
+                        if (!stopped && myGeneration == generation.get()) {
+                            connecting.set(false)
+                            scheduleReconnect()
+                        }
                     }
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        Log.e(TAG, "relay socket failed", t)
+                        val expected = droppingSocket || socket !== webSocket
+                        if (socket === webSocket) socket = null
                         if (!stopped && myGeneration == generation.get()) {
-                            publish(state.copy(phase = "ERROR", message = t.message ?: "隧道失败"))
+                            connecting.set(false)
+                            if (!expected) {
+                                Log.e(TAG, "relay socket failed", t)
+                                tunnelCloseMessage(t)?.let { message ->
+                                    publish(state.copy(phase = "ERROR", message = message))
+                                }
+                            } else {
+                                Log.i(TAG, "relay socket closed: ${t.message}")
+                            }
                             scheduleReconnect()
                         }
                     }
@@ -226,42 +274,65 @@ internal object DshRelayManager {
             )
         } catch (error: Exception) {
             Log.e(TAG, "connect failed", error)
+            connecting.set(false)
             if (!stopped && myGeneration == generation.get()) {
                 publish(DshRelayNativeState("ERROR", error.message ?: "连接失败", hostId = hostId, hostName = hostName, relayOrigin = relayOrigin, paired = true, generation = myGeneration))
                 scheduleReconnect()
             }
-        } finally {
-            connecting.set(false)
         }
     }
 
-    private fun handleOuter(text: String, master: String, clientRandomB64: String, myGeneration: Long, origin: String) {
-        val msg = JSONObject(text)
-        when (msg.optString("type")) {
-            "server_hello" -> {
-                val payload = msg.optJSONObject("payload") ?: return
-                cipher = SealedTunnelCrypto.createClientCipher(
-                    master,
-                    accessSessionId,
-                    clientRandomB64,
-                    payload.optString("serverRandomB64"),
-                    payload.optString("serverProofB64"),
-                )
-                startLoopback(myGeneration, origin)
+    private fun handleOuter(
+        text: String,
+        master: String,
+        sessionId: String,
+        clientRandomB64: String,
+        myGeneration: Long,
+        origin: String,
+    ) {
+        try {
+            val msg = JSONObject(text)
+            when (msg.optString("type")) {
+                "server_hello" -> {
+                    val payload = msg.optJSONObject("payload") ?: return
+                    cipher = SealedTunnelCrypto.createClientCipher(
+                        master,
+                        sessionId,
+                        clientRandomB64,
+                        payload.optString("serverRandomB64"),
+                        payload.optString("serverProofB64"),
+                    )
+                    startLoopback(myGeneration, origin, sessionId)
+                    connecting.set(false)
+                }
+                "sealed" -> {
+                    val payload = msg.optJSONObject("payload") ?: return
+                    val opened = cipher?.open(SealedPayload(payload.optString("seq"), payload.optString("ciphertextB64"))) ?: return
+                    loopback?.onInner(opened.optString("type"), opened.optJSONObject("payload") ?: JSONObject(), opened.optString("channel"))
+                }
+                "device_close", "close" -> if (!stopped && myGeneration == generation.get()) {
+                    val reason = msg.optJSONObject("payload")?.optString("reason").orEmpty()
+                    Log.w(TAG, "relay closed type=${msg.optString("type")} reason=$reason")
+                    connecting.set(false)
+                    scheduleReconnect()
+                }
             }
-            "sealed" -> {
-                val payload = msg.optJSONObject("payload") ?: return
-                val opened = cipher?.open(SealedPayload(payload.optString("seq"), payload.optString("ciphertextB64"))) ?: return
-                loopback?.onInner(opened.optString("type"), opened.optJSONObject("payload") ?: JSONObject(), opened.optString("channel"))
+        } catch (error: Exception) {
+            Log.e(TAG, "relay handshake failed", error)
+            if (!stopped && myGeneration == generation.get()) {
+                connecting.set(false)
+                if (error !is E2eeException) {
+                    publish(state.copy(phase = "ERROR", message = error.message ?: "握手失败"))
+                }
+                scheduleReconnect()
             }
-            "device_close", "close" -> if (!stopped) scheduleReconnect()
         }
     }
 
-    private fun startLoopback(myGeneration: Long, origin: String) {
+    private fun startLoopback(myGeneration: Long, origin: String, sessionId: String) {
         dropLoopback("replace")
         localToken = SealedTunnelCrypto.encodeBase64Url(SealedTunnelCrypto.randomBytes(24))
-        val server = DshRelayLoopbackServer(localToken) { type, payload, channel -> sendInner(type, payload, channel) }
+        val server = DshRelayLoopbackServer(localToken) { type, payload, channel -> sendInner(type, payload, channel, sessionId) }
         val port = server.start()
         loopback = server
         Log.i(TAG, "loopback listening port=$port")
@@ -284,15 +355,47 @@ internal object DshRelayManager {
         if (port > 0) Log.i(TAG, "loopback stopped port=$port reason=$reason")
     }
 
-    private fun sendInner(type: String, payload: JSONObject, channel: String) {
-        val current = cipher ?: return
-        val sealed = current.seal(envelope(type, payload, channel))
-        socket?.send(
-            envelope(
-                "sealed",
-                JSONObject().put("accessSessionId", accessSessionId).put("seq", sealed.seq).put("ciphertextB64", sealed.ciphertextB64),
-            ).toString(),
-        )
+    private fun dropSocket() {
+        val current = socket
+        socket = null
+        if (current == null) return
+        droppingSocket = true
+        current.cancel()
+    }
+
+    private fun sendInner(type: String, payload: JSONObject, channel: String, sessionId: String) {
+        val failed = synchronized(outbound) {
+            val current = cipher ?: return
+            val currentSocket = socket ?: return
+            val sealed = current.seal(envelope(type, payload, channel))
+            !currentSocket.send(
+                envelope(
+                    "sealed",
+                    JSONObject()
+                        .put("accessSessionId", sessionId)
+                        .put("seq", sealed.seq)
+                        .put("ciphertextB64", sealed.ciphertextB64),
+                ).toString(),
+            )
+        }
+        if (failed && !stopped) {
+            Log.w(TAG, "inner send dropped type=$type channel=$channel")
+            connecting.set(false)
+            scheduleReconnect()
+        }
+    }
+
+    private fun tunnelCloseMessage(error: Throwable): String? {
+        val raw = error.message.orEmpty()
+        if (raw.equals("Socket closed", ignoreCase = true) ||
+            raw.equals("Socket is closed", ignoreCase = true) ||
+            raw.contains("Software caused connection abort", ignoreCase = true) ||
+            (error is java.net.SocketException && raw.contains("closed", ignoreCase = true)) ||
+            error is java.io.EOFException
+        ) {
+            return null
+        }
+        return raw.ifBlank { "隧道失败" }
     }
 
     private fun envelope(type: String, payload: JSONObject, channel: String? = null): JSONObject =
@@ -300,6 +403,8 @@ internal object DshRelayManager {
 
     private fun scheduleReconnect() {
         if (stopped) return
+        if (!reconnectScheduled.compareAndSet(false, true)) return
+        dropSocket()
         dropLoopback("reconnect")
         publish(
             state.copy(
@@ -310,8 +415,12 @@ internal object DshRelayManager {
             ),
         )
         thread(name = "dsh-relay-retry") {
-            Thread.sleep(2_000)
-            if (!stopped && connecting.compareAndSet(false, true)) connectInternal()
+            try {
+                Thread.sleep(2_000)
+                if (!stopped && connecting.compareAndSet(false, true)) connectInternal()
+            } finally {
+                reconnectScheduled.set(false)
+            }
         }
     }
 
@@ -333,6 +442,9 @@ internal object DshRelayManager {
     private fun toWs(origin: String): String =
         if (origin.startsWith("https:")) origin.replaceFirst("https:", "wss:") else origin.replaceFirst("http:", "ws:")
 
+    private fun androidUserAgent(): String =
+        "DSH-Android/${Build.VERSION.RELEASE} (Linux; Android ${Build.VERSION.RELEASE}; Mobile)"
+
     private fun startForeground(context: Context) {
         val app = context.applicationContext
         val intent = Intent(app, DshRelayForegroundService::class.java)
@@ -350,6 +462,7 @@ internal object DshRelayManager {
 
     private fun registerNetwork() {
         val context = appContext ?: return
+        unregisterNetwork()
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         connectivity = manager
         val callback = object : ConnectivityManager.NetworkCallback() {

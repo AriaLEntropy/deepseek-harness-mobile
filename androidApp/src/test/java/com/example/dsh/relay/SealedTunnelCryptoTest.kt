@@ -47,4 +47,35 @@ class SealedTunnelCryptoTest {
         val echoed = hostRoundtrip.open(client.seal(JSONObject().put("ping", true)))
         assertTrue(echoed.getBoolean("ping"))
     }
+
+    @Test
+    fun concurrentSealsGetUniqueSequences() {
+        val vectors = JSONObject(
+            javaClass.classLoader!!.getResource("sealed-tunnel-v1.json")!!.readText(),
+        )
+        val client = SealedTunnelCrypto.createClientCipher(
+            vectors.getString("masterKeyB64"),
+            vectors.getString("accessSessionId"),
+            vectors.getString("clientRandomB64"),
+            vectors.getString("serverRandomB64"),
+            vectors.getString("serverProofB64"),
+        )
+        val count = 32
+        val payloads = arrayOfNulls<SealedPayload>(count)
+        val threads = (0 until count).map { index ->
+            Thread {
+                payloads[index] = client.seal(JSONObject().put("n", index))
+            }.also(Thread::start)
+        }
+        threads.forEach(Thread::join)
+        val ordered = payloads.map { requireNotNull(it) }.sortedBy { it.seq.toLong() }
+        assertEquals((0 until count).map(Int::toString), ordered.map { it.seq })
+        val host = SealedTunnelCrypto.createHostCipher(
+            vectors.getString("masterKeyB64"),
+            vectors.getString("accessSessionId"),
+            vectors.getString("clientRandomB64"),
+            vectors.getString("serverRandomB64"),
+        )
+        ordered.forEach { payload -> host.open(payload) }
+    }
 }
