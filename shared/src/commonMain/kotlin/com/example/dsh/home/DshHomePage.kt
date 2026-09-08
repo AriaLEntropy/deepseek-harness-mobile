@@ -3098,16 +3098,8 @@ internal class DshHomePage : BasePager() {
     }
 
     fun onLogToggleLevel(level: LogLevel) {
-        // 至少保留一个等级选中：取消最后一个时不响应
-        val next = if (level in sessionLogLevelFilter) {
-            if (sessionLogLevelFilter.size == 1) sessionLogLevelFilter else sessionLogLevelFilter - level
-        } else {
-            sessionLogLevelFilter + level
-        }
-        if (next != sessionLogLevelFilter) {
-            sessionLogLevelFilter = next
-            recomputeSessionLogView()
-        }
+        sessionLogLevelFilter = if (level in sessionLogLevelFilter) sessionLogLevelFilter - level else sessionLogLevelFilter + level
+        recomputeSessionLogView()
     }
     fun onToggleLogType(type: String) {
         sessionLogSelectedTypes = if (type in sessionLogSelectedTypes) sessionLogSelectedTypes - type else sessionLogSelectedTypes + type

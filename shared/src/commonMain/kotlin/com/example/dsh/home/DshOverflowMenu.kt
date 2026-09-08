@@ -339,10 +339,10 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             val on = lv in levelFilter()
                             View {
                                 attr {
-                                    width(24f); height(24f); borderRadius(4f)
-                                    alignItemsCenter(); justifyContentCenter(); marginRight(5f)
+                                    width(26f); height(26f); borderRadius(4f)
+                                    alignItemsCenter(); justifyContentCenter(); marginRight(6f)
                                     border(Border(1f, BorderStyle.SOLID, Color(lvColor)))
-                                    backgroundColor(if (on) Color(lvColor) else Color(0x00000000))
+                                    backgroundColor(if (on) Color(lvColor) else Color((lvColor and 0x00FFFFFF) or 0x26000000))
                                 }
                                 event { click { onToggleLevel(lv) } }
                                 Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (on) Color(0xFFFFFFFF) else Color(lvColor)) } }
