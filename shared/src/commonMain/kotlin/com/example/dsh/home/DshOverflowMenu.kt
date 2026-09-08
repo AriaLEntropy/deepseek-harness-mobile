@@ -203,17 +203,17 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             paddingBottom(10f)
                             paddingLeft(8f)
                             paddingRight(8f)
-                            backgroundLinearGradient(Direction.TO_BOTTOM, ColorStop(com.example.dsh.theme.DshDefaultPalette.deepseek500, 0f), ColorStop(com.example.dsh.theme.DshDefaultPalette.deepseek600, 1f))
+
                         }
                         View {
-                            attr { flexDirectionRow(); alignItemsCenter(); width(56f); height(36f); justifyContentCenter() }
+                            attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter(); marginLeft(4f) }
                             event { click { onClose() } }
-                            Text { attr { text("‹"); fontSize(28f); color(Color(0xFFFFFFFF)); fontWeightBold() } }
+                            Text { attr { text("<"); fontSize(18f); fontWeightBold(); color(Color(0xFF1A1A1A)) } }
                         }
                         View {
                             attr { flex(1f); flexDirectionColumn(); alignItemsCenter() }
-                            Text { attr { text("会话日志"); fontSize(17f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
-                            Text { attr { text(total().toString() + " 条记录"); fontSize(11f); color(Color(0xCCFFFFFF)); marginTop(2f) } }
+                            Text { attr { text("会话日志"); fontSize(17f); fontWeightBold();  } }
+                            Text { attr { text(total().toString() + " 条记录"); fontSize(11f);  marginTop(2f) } }
                         }
                         View {
                             attr { flexDirectionRow(); alignItemsCenter(); width(120f); justifyContentFlexEnd() }
@@ -249,9 +249,9 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             backgroundLinearGradient(Direction.TO_BOTTOM, ColorStop(com.example.dsh.theme.DshDefaultPalette.deepseek500, 0f), ColorStop(com.example.dsh.theme.DshDefaultPalette.deepseek600, 1f))
                         }
                         View {
-                            attr { width(40f); height(36f); alignItemsCenter(); justifyContentCenter() }
+                            attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter() }
                             event { click { onSetSearchExpanded(false); onKeyword("") } }
-                            Text { attr { text("←"); fontSize(18f); color(Color(0xFFFFFFFF)) } }
+                            Text { attr { text("<"); fontSize(18f); fontWeightBold(); color(Color(0xFF1A1A1A)) } }
                         }
                         View {
                             attr {
