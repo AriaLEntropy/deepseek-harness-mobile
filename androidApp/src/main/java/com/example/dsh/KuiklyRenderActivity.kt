@@ -110,6 +110,12 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         super.registerExternalRenderView(kuiklyRenderExport)
         with(kuiklyRenderExport) {
             renderViewExport(KRWebView.VIEW_NAME, { context -> KRWebView(context) }, null)
+            // 覆盖内置 KRTextFieldView：关闭系统拼写检查，规避模拟器/低端设备输入 ANR
+            renderViewExport(
+                com.tencent.kuikly.core.render.android.expand.component.KRTextFieldView.VIEW_NAME,
+                { context -> DshNoSpellCheckTextField(context, softInputMode()) },
+                null
+            )
         }
     }
 
