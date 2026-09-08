@@ -29,6 +29,7 @@ import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.module.NetworkModule
 import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.module.RouterModule
+import com.tencent.kuikly.core.base.BackPressCallback
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.timer.setTimeout
@@ -226,6 +227,7 @@ internal class DshHomePage : BasePager() {
     // ===== 会话 topbar overflow menu 与会话管理动作 =====
     private var overflowMenuVisible by observable(false)
     private var sessionLogVisible by observable(false)
+    private val sessionLogBackCallback = object : BackPressCallback() { override fun handleOnBackPressed() { closeSessionLogs() } }
     private var diagnosticLogAllMode by observable(false)
     private val sessionLogCache by observableList<LogEvent>()
     private var sessionLogSelected by observable<LogEvent?>(null)
@@ -2956,6 +2958,7 @@ internal class DshHomePage : BasePager() {
 
     fun openSessionLogs() {
         closeSessionDrawer()
+        getBackPressHandler().addCallback(sessionLogBackCallback)
         diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
@@ -2964,10 +2967,10 @@ internal class DshHomePage : BasePager() {
 
     fun openDiagnosticLogs() {
         closeSessionDrawer()
+        getBackPressHandler().addCallback(sessionLogBackCallback)
         diagnosticLogAllMode = true
         refreshSessionLogs()
         sessionLogVisible = true
-        startSessionLogFollow()
         startSessionLogFollow()
     }
     fun jumpToSession(sessionId: String) {
@@ -3156,8 +3159,8 @@ internal class DshHomePage : BasePager() {
     }
 
     fun closeSessionLogs() {
+        getBackPressHandler().removeCallback(sessionLogBackCallback)
         sessionLogVisible = false
-        sessionLogPolling = false
         sessionLogSelected = null
         sessionLogDetailRaw = ""
         clearLogFilters()
