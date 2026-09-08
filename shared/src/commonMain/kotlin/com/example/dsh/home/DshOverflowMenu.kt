@@ -292,19 +292,40 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                 }
                             }
                         }
-                        // 行3：事件类型（横向滚动 Filter Chip，单选）
-                        Scroller {
-                            attr { flexDirectionRow(); marginTop(8f); paddingLeft(12f); paddingRight(12f) }
+                        // 行3：事件类型（§5.3 保留 type 关键词输入，如 mux.chunk、connect.*）
+                        View {
+                            attr {
+                                height(30f)
+                                marginTop(8f)
+                                paddingLeft(10f)
+                                paddingRight(10f)
+                                borderRadius(8f)
+                                border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                            }
+                            Input {
+                                attr {
+                                    flex(1f)
+                                    fontSize(12f)
+                                    color(colors().labelPrimary)
+                                    placeholder("事件类型，如 mux.chunk、connect.*")
+                                    placeholderColor(colors().labelTertiary)
+                                    text(typeFilter())
+                                }
+                                event { textDidChange { onTypeFilter(it.text) } }
+                            }
+                        }
+                        // 行4：常用事件类型 chips（流式换行常显，Modal 内 Scroller 失效故用流式）
+                        View {
+                            attr { flexDirectionRow(); flexWrap(FlexWrap.WRAP); marginTop(6f) }
                             vfor({ typeOptions() }) { type ->
-                                // vfor itemCreator 只能有一个孩子，外层 View 包裹双 vif
                                 View {
-                                    attr { marginRight(8f); flexDirectionRow(); alignItemsCenter() }
+                                    attr { marginRight(8f); marginBottom(6f); flexDirectionRow(); alignItemsCenter() }
                                     val sel = if (type == "全部") typeFilter().isEmpty() else typeFilter() == type
                                     vif({ sel }) {
                                         View {
                                             attr {
-                                                padding(left = 12f, right = 12f); height(30f)
-                                                borderRadius(15f); alignItemsCenter(); justifyContentCenter()
+                                                padding(left = 12f, right = 12f); height(28f)
+                                                borderRadius(14f); alignItemsCenter(); justifyContentCenter()
                                                 backgroundColor(colors().stateBusinessPrimary)
                                             }
                                             event { click { onTypeFilter(if (type == "全部") "" else type) } }
@@ -314,8 +335,8 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                     vif({ !sel }) {
                                         View {
                                             attr {
-                                                padding(left = 12f, right = 12f); height(30f)
-                                                borderRadius(15f); alignItemsCenter(); justifyContentCenter()
+                                                padding(left = 12f, right = 12f); height(28f)
+                                                borderRadius(14f); alignItemsCenter(); justifyContentCenter()
                                                 border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                                                 backgroundColor(Color(0x00000000))
                                             }

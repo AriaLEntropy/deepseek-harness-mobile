@@ -2965,11 +2965,13 @@ internal class DshHomePage : BasePager() {
         val kw = sessionLogKeyword.trim()
         // 动态提取当前会话所有事件类型，供筛选 chip 使用
         val types = sessionLogCache.map { it.type }.distinct().sorted()
-        sessionLogTypeOptions.clear()
-        sessionLogTypeOptions.add("全部")
-        sessionLogTypeOptions.addAll(types)
-        if (sessionLogTypeFilter.isNotEmpty() && sessionLogTypeFilter !in types) {
-            sessionLogTypeFilter = ""
+        // 仅在实际变化时重建 chips，避免输入过程每键触发 observable 重建
+        val newOptions = listOf("全部") + types
+        val changed = sessionLogTypeOptions.size != newOptions.size ||
+            sessionLogTypeOptions.indices.any { sessionLogTypeOptions[it] != newOptions[it] }
+        if (changed) {
+            sessionLogTypeOptions.clear()
+            sessionLogTypeOptions.addAll(newOptions)
         }
         val filtered = sessionLogCache.filter { e ->
             val timeOk = when (tf) {
@@ -2980,11 +2982,22 @@ internal class DshHomePage : BasePager() {
             }
             timeOk &&
                 (e.level in levels) &&
-                (typeQ.isEmpty() || e.type.contains(typeQ, ignoreCase = true)) &&
+                (typeQ.isEmpty() || matchesLogType(e.type, typeQ)) &&
                 (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
         }
         sessionLogView.clear()
         sessionLogView.addAll(filtered)
+    }
+
+    /** 事件类型匹配：`connect.*` 按前缀通配，其余子串匹配（忽略大小写）。 */
+    private fun matchesLogType(actual: String, query: String): Boolean {
+        val q = query.trim()
+        if (q.isEmpty()) return true
+        return if (q.endsWith(".*")) {
+            actual.startsWith(q.removeSuffix(".*"), ignoreCase = true)
+        } else {
+            actual.contains(q, ignoreCase = true)
+        }
     }
 
     fun onLogTimeFilter(value: Int) {
