@@ -338,18 +338,18 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         attr { flexDirectionRow(); alignItemsCenter(); marginRight(8f) }
                         for (lv in LogLevel.entries) {
                             val lvColor = sessionLogLevelColor(lv)
-                            val on = lv in levelFilter()
-                            val locked = on && levelFilter().size == 1
+
+
                             View {
                                 attr {
                                     width(26f); height(26f); borderRadius(4f)
                                     alignItemsCenter(); justifyContentCenter(); marginRight(6f)
-                                    border(Border(if (locked) 2f else 1f, BorderStyle.SOLID, if (on) Color(lvColor) else colors().borderL2))
-                                    backgroundColor(if (on) Color(lvColor) else colors().bgLayer2)
+                                    border(Border(if (lv in levelFilter() && levelFilter().size == 1) 2f else 1f, BorderStyle.SOLID, if (lv in levelFilter()) Color(lvColor) else colors().borderL2))
+                                    backgroundColor(if (lv in levelFilter()) Color(lvColor) else colors().bgLayer2)
                                     highlightBackgroundColor(Color(0x26000000))
                                 }
                                 event { click { onToggleLevel(lv) } }
-                                Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (on) Color(0xFFFFFFFF) else colors().labelTertiary) } }
+                                Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (lv in levelFilter()) Color(0xFFFFFFFF) else colors().labelTertiary) } }
                             }
                         }
                     }
@@ -524,17 +524,17 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             val filtered = if (kw.isEmpty()) allTypes else allTypes.filter { it.contains(kw, ignoreCase = true) }
                             val groups = filtered.groupBy { it.substringBefore(".") }
                             for ((prefix, types) in groups) {
-                                val allSelected = types.all { it in selectedTypes() }
+
                                 View {
                                     attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(16f); paddingRight(16f); paddingTop(10f); paddingBottom(6f) }
                                     Text { attr { text(prefix + " (" + types.size + ")"); fontSize(12f); fontWeightBold(); color(colors().labelSecondary); flex(1f) } }
                                     View {
                                         event { click { val selAll = !types.all { it in selectedTypes() }; types.forEach { if (selAll && it !in selectedTypes()) onToggleType(it); else if (!selAll && it in selectedTypes()) onToggleType(it) } } }
-                                        Text { attr { text(if (allSelected) "取消全选" else "全选"); fontSize(12f); color(colors().stateBusinessPrimary) } }
+                                        Text { attr { text(if (types.all { it in selectedTypes() }) "取消全选" else "全选"); fontSize(12f); color(colors().stateBusinessPrimary) } }
                                     }
                                 }
                                 for (t in types) {
-                                    val sel = t in selectedTypes()
+
                                     View {
                                         attr {
                                             flexDirectionRow(); alignItemsCenter()
@@ -545,11 +545,11 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                         View {
                                             attr {
                                                 width(20f); height(20f); borderRadius(4f)
-                                                border(Border(1.5f, BorderStyle.SOLID, if (sel) colors().stateBusinessPrimary else colors().borderL2))
-                                                backgroundColor(if (sel) colors().stateBusinessPrimary else Color(0x00000000))
+                                                border(Border(1.5f, BorderStyle.SOLID, if (t in selectedTypes()) colors().stateBusinessPrimary else colors().borderL2))
+                                                backgroundColor(if (t in selectedTypes()) colors().stateBusinessPrimary else Color(0x00000000))
                                                 alignItemsCenter(); justifyContentCenter()
                                             }
-                                            vif({ sel }) { Text { attr { text("✓"); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } } }
+                                            vif({ t in selectedTypes() }) { Text { attr { text("✓"); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } } }
                                         }
                                     }
                                 }
