@@ -3098,6 +3098,10 @@ internal class DshHomePage : BasePager() {
     }
 
     fun onLogToggleLevel(level: LogLevel) {
+        if (level in sessionLogLevelFilter && sessionLogLevelFilter.size == 1) {
+            bridgeModule.toast("至少保留一个级别")
+            return
+        }
         sessionLogLevelFilter = if (level in sessionLogLevelFilter) sessionLogLevelFilter - level else sessionLogLevelFilter + level
         recomputeSessionLogView()
     }

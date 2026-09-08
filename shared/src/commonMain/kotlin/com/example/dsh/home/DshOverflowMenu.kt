@@ -337,11 +337,12 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         for (lv in LogLevel.entries) {
                             val lvColor = sessionLogLevelColor(lv)
                             val on = lv in levelFilter()
+                            val locked = on && levelFilter().size == 1
                             View {
                                 attr {
                                     width(26f); height(26f); borderRadius(4f)
                                     alignItemsCenter(); justifyContentCenter(); marginRight(6f)
-                                    border(Border(1f, BorderStyle.SOLID, Color(lvColor)))
+                                    border(Border(if (locked) 2f else 1f, BorderStyle.SOLID, Color(lvColor)))
                                     backgroundColor(if (on) Color(lvColor) else Color((lvColor and 0x00FFFFFF) or 0x26000000))
                                 }
                                 event { click { onToggleLevel(lv) } }
