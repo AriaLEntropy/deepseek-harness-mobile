@@ -242,9 +242,11 @@ internal class DshHomePage : BasePager() {
     private var sessionLogPkHour by observable(0)
     private var sessionLogPkMinute by observable(0)
     private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
-    private var sessionLogTypeFilter by observable("")
+    private var sessionLogSelectedTypes by observable<Set<String>>(emptySet())
     private var sessionLogTypeOptions by observableList<String>()
     private var sessionLogKeyword by observable("")
+    private var sessionLogSearchExpanded by observable(false)
+    private var sessionLogTypeSheetVisible by observable(false)
     private val sessionLogView by observableList<LogEvent>()
     private var sessionLogTotal by observable(0)
     private var sessionLogClearMenuVisible by observable(false)
@@ -1094,7 +1096,7 @@ internal class DshHomePage : BasePager() {
                     exporting = { ctx.sessionLogExporting },
                     timeFilter = { ctx.sessionLogTimeFilter },
                     levelFilter = { ctx.sessionLogLevelFilter },
-                    typeFilter = { ctx.sessionLogTypeFilter },
+                    selectedTypes = { ctx.sessionLogSelectedTypes },
                     typeOptions = { ctx.sessionLogTypeOptions },
                     keyword = { ctx.sessionLogKeyword },
                     onSelect = { ctx.sessionLogSelected = it; ctx.loadSessionLogDetail(it) },
@@ -1107,9 +1109,14 @@ internal class DshHomePage : BasePager() {
                     onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
                     onOpenTimePicker = { target -> ctx.openLogTimePicker(target) },
                     onToggleLevel = { ctx.onLogToggleLevel(it) },
-                    onTypeFilter = { ctx.onLogTypeFilter(it) },
+                    onToggleType = { ctx.onToggleLogType(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
                     onClearFilters = { ctx.clearLogFilters() },
+                    searchExpanded = { ctx.sessionLogSearchExpanded },
+                    typeSheetVisible = { ctx.sessionLogTypeSheetVisible },
+                    onSetSearchExpanded = { ctx.onSetLogSearchExpanded(it) },
+                    onSetTypeSheetVisible = { ctx.onSetLogTypeSheetVisible(it) },
+                    onClearTypes = { ctx.onClearLogSelectedTypes() },
                     onClearRequest = { ctx.requestSessionLogClear() },
                     onFeedbackPackage = { ctx.exportFeedbackPackage() },
 
@@ -3010,7 +3017,7 @@ internal class DshHomePage : BasePager() {
         val todayPrefix = LogExporter.formatTimestamp(now).substring(0, 10)
         val tf = sessionLogTimeFilter
         val levels = sessionLogLevelFilter
-        val typeQ = sessionLogTypeFilter.trim()
+        val selectedTypes = sessionLogSelectedTypes
         val kw = sessionLogKeyword.trim()
         // 动态提取当前会话所有事件类型，供筛选 chip 使用
         val types = sessionLogCache.map { it.type }.distinct().sorted()
@@ -3036,7 +3043,7 @@ internal class DshHomePage : BasePager() {
             }
             timeOk &&
                 (e.level in levels) &&
-                (typeQ.isEmpty() || matchesLogType(e.type, typeQ)) &&
+                (selectedTypes.isEmpty() || e.type in selectedTypes) &&
                 (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
         }
         // 最小差异更新：Myers diff 只增删改变化行，避免全量 clear+addAll 导致列表重建、
@@ -3102,11 +3109,16 @@ internal class DshHomePage : BasePager() {
             recomputeSessionLogView()
         }
     }
-
-    fun onLogTypeFilter(value: String) {
-        sessionLogTypeFilter = value
+    fun onToggleLogType(type: String) {
+        sessionLogSelectedTypes = if (type in sessionLogSelectedTypes) sessionLogSelectedTypes - type else sessionLogSelectedTypes + type
         recomputeSessionLogView()
     }
+
+    fun onSetLogSearchExpanded(expanded: Boolean) { sessionLogSearchExpanded = expanded }
+
+    fun onSetLogTypeSheetVisible(visible: Boolean) { sessionLogTypeSheetVisible = visible }
+
+    fun onClearLogSelectedTypes() { sessionLogSelectedTypes = emptySet(); recomputeSessionLogView() }
 
     fun onLogKeyword(value: String) {
         sessionLogKeyword = value
@@ -3115,8 +3127,7 @@ internal class DshHomePage : BasePager() {
 
     fun clearLogFilters() {
         sessionLogTimeFilter = 0
-        sessionLogLevelFilter = LogLevel.entries.toSet()
-        sessionLogTypeFilter = ""
+        sessionLogSelectedTypes = emptySet()
         sessionLogKeyword = ""
         recomputeSessionLogView()
     }
