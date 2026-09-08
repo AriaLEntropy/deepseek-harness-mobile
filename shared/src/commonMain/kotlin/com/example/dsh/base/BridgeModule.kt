@@ -335,6 +335,17 @@ internal class BridgeModule : Module() {
         }
     }
 
+    /**
+     * 保存图片到系统相册。回调返回 JSON 字符串：
+     * 成功 {"ok":true}
+     * 失败 {"ok":false,"error":"可读原因"}
+     */
+    fun saveImage(dataUrl: String, callback: (String) -> Unit) {
+        callNativeMethod("saveImage", JSONObject().apply { put("dataUrl", dataUrl) }) { value ->
+            callback(value?.toString().orEmpty())
+        }
+    }
+
     fun importSshKey(uri: String, callback: (String) -> Unit) {
         callNativeMethod("importSshKey", JSONObject().apply { put("uri", uri) }) { value ->
             callback(value?.optString("keyId").orEmpty())

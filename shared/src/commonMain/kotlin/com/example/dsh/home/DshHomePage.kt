@@ -588,6 +588,7 @@ internal class DshHomePage : BasePager() {
                                 onPreviewImage = { ctx.previewImageUrl = it },
                                 previewImageUrl = { ctx.previewImageUrl },
                                 onDismissPreview = { ctx.previewImageUrl = null },
+                                onSaveImage = { ctx.saveImageToGallery(it) },
                             )
                             // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
                             //    工作目录、模型、运行状态、队列/作业数量。
@@ -729,6 +730,7 @@ internal class DshHomePage : BasePager() {
                             onPreviewImage = { ctx.previewImageUrl = it },
                             previewImageUrl = { ctx.previewImageUrl },
                             onDismissPreview = { ctx.previewImageUrl = null },
+                            onSaveImage = { ctx.saveImageToGallery(it) },
                         )
                         ctx.perfLog("body.conversation.end wide=false")
                     }
@@ -4209,14 +4211,17 @@ internal class DshHomePage : BasePager() {
                     DshStreamLog.i("ui.prompt-interrupt session=$sessionId message='${DshStreamLog.preview(error)}'")
                     return@streamReplyWithImages
                 }
-                // 发送失败：图片保留在输入区并标记 FAILED，可重试或删除
+                // 发送失败：图片重新加入输入区并标记 FAILED，可重试或删除
                 sendableImages.forEach { image ->
                     val idx = pendingImages.indexOfFirst { it.clientId == image.clientId }
+                    val failed = image.copy(
+                        state = DshImageDraftState.FAILED,
+                        error = "发送失败：$error",
+                    )
                     if (idx >= 0) {
-                        pendingImages[idx] = image.copy(
-                            state = DshImageDraftState.FAILED,
-                            error = "发送失败：$error",
-                        )
+                        pendingImages[idx] = failed
+                    } else {
+                        pendingImages.add(failed)
                     }
                 }
                 attachmentEpoch += 1
@@ -4229,6 +4234,10 @@ internal class DshHomePage : BasePager() {
                 streamHandle = null
             },
         )
+        // 图片已随 prompt 内嵌发出，立即清空输入区草稿；Host timeline 会以 attachmentId 回显
+        val sentIds = sendableImages.map { it.clientId }.toSet()
+        pendingImages.removeAll { it.clientId in sentIds }
+        attachmentEpoch += 1
     }
 
     private fun stopStream() {
@@ -4556,6 +4565,21 @@ internal class DshHomePage : BasePager() {
             }
             attachmentEpoch += 1
             DshStreamLog.log(LogLevel.INFO, "pick.added", "pendingImages size=${pendingImages.size} epoch=$attachmentEpoch", null, null)
+        }
+    }
+
+    /** 保存预览图片到系统相册，成功/失败 toast 反馈。 */
+    private fun saveImageToGallery(dataUrl: String) {
+        bridgeModule.saveImage(dataUrl) { raw ->
+            val result = runCatching {
+                com.tencent.kuikly.core.nvi.serialization.json.JSONObject(raw)
+            }.getOrNull()
+            if (result != null && result.optBoolean("ok")) {
+                bridgeModule.toast("已保存到相册")
+            } else {
+                val error = result?.optString("error").orEmpty().ifEmpty { "保存失败" }
+                bridgeModule.toast(error)
+            }
         }
     }
 

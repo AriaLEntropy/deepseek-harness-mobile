@@ -250,6 +250,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     onPreviewImage: (String) -> Unit = {},
     previewImageUrl: () -> String? = { null },
     onDismissPreview: () -> Unit = {},
+    onSaveImage: (String) -> Unit = {},
 ) {
     // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
@@ -1031,20 +1032,71 @@ internal fun ViewContainer<*, *>.DshConversation(
                     left(0f)
                     right(0f)
                     bottom(0f)
-                    backgroundColor(Color(0xCC000000))
-                    justifyContent(FlexJustifyContent.CENTER)
-                    alignItems(FlexAlign.CENTER)
                     zIndex(1000)
                 }
-                event {
-                    click { onDismissPreview() }
-                }
-                Image {
+                // 背景层：点击关闭
+                View {
                     attr {
-                        src(previewImageUrl() ?: "")
-                        width(availableWidth - 32f)
-                        height(availableWidth - 32f)
-                        resizeContain()
+                        positionAbsolute()
+                        top(0f)
+                        left(0f)
+                        right(0f)
+                        bottom(0f)
+                        backgroundColor(Color(0xCC000000))
+                    }
+                    event {
+                        click { onDismissPreview() }
+                    }
+                }
+                // 内容层：图片+保存按钮，不响应点击关闭
+                View {
+                    attr {
+                        positionAbsolute()
+                        top(0f)
+                        left(0f)
+                        right(0f)
+                        bottom(0f)
+                        justifyContent(FlexJustifyContent.CENTER)
+                        alignItems(FlexAlign.CENTER)
+                    }
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            alignItems(FlexAlign.CENTER)
+                        }
+                        Image {
+                            attr {
+                                src(previewImageUrl() ?: "")
+                                width(availableWidth - 32f)
+                                height(availableWidth - 32f)
+                                resizeContain()
+                            }
+                        }
+                        // 保存按钮
+                        View {
+                            attr {
+                                marginTop(24f)
+                                paddingLeft(24f)
+                                paddingRight(24f)
+                                paddingTop(10f)
+                                paddingBottom(10f)
+                                backgroundColor(Color(0x33FFFFFF))
+                                borderRadius(20f)
+                            }
+                            event {
+                                click {
+                                    val url = previewImageUrl()
+                                    if (url != null) onSaveImage(url)
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text("保存到相册")
+                                    fontSize(14f)
+                                    color(Color(0xFFFFFFFF.toInt()))
+                                }
+                            }
+                        }
                     }
                 }
             }

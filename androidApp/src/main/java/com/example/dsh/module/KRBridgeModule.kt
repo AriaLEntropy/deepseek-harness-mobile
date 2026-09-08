@@ -104,6 +104,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             }
 
             "pickImage" -> pickImage(params, callback)
+            "saveImage" -> saveImage(params, callback)
             "pickSshKey" -> pickSshKey(callback)
             "importSshKey" -> importSshKey(params, callback)
             "validateSshKey" -> validateSshKey(params, callback)
@@ -384,6 +385,52 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 "height" to height.toString(),
             )
         )
+    }
+
+    private fun saveImage(params: String?, callback: KuiklyRenderCallback?) {
+        try {
+            val dataUrl = JSONObject(params ?: "{}").optString("dataUrl", "")
+            if (dataUrl.isEmpty()) {
+                callback?.invoke(mapOf("ok" to false, "error" to "空图片数据"))
+                return
+            }
+            // 解析 dataUrl: data:<mime>;base64,<base64>
+            val commaIdx = dataUrl.indexOf(',')
+            if (commaIdx < 0 || !dataUrl.startsWith("data:")) {
+                callback?.invoke(mapOf("ok" to false, "error" to "无效的 dataUrl 格式"))
+                return
+            }
+            val header = dataUrl.substring(5, commaIdx)
+            val mime = header.substringBefore(';').ifEmpty { "image/png" }
+            val base64 = dataUrl.substring(commaIdx + 1)
+            val bytes = Base64.decode(base64, Base64.DEFAULT)
+            if (bytes == null || bytes.isEmpty()) {
+                callback?.invoke(mapOf("ok" to false, "error" to "图片解码失败"))
+                return
+            }
+            // 保存到系统相册
+            val resolver = context?.contentResolver
+            if (resolver == null) {
+                callback?.invoke(mapOf("ok" to false, "error" to "Context 不可用"))
+                return
+            }
+            val displayName = "DSH_${System.currentTimeMillis()}"
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                put(android.provider.MediaStore.Images.Media.MIME_TYPE, mime)
+                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/DSH")
+            }
+            val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                callback?.invoke(mapOf("ok" to false, "error" to "创建相册条目失败"))
+                return
+            }
+            resolver.openOutputStream(uri)?.use { it.write(bytes) }
+            callback?.invoke(mapOf("ok" to true))
+        } catch (e: Exception) {
+            val errMsg = e.message ?: "未知错误"
+            callback?.invoke(mapOf("ok" to false, "error" to errMsg))
+        }
     }
 
     private fun pickSshKey(callback: KuiklyRenderCallback?) {
