@@ -1,13 +1,19 @@
 package com.example.dsh.module
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.content.FileProvider
 import android.graphics.Color
 import android.os.Build
+import android.os.Bundle
+import android.provider.MediaStore
+import android.util.Base64
 import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
@@ -28,6 +34,8 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     private var navigationBarColorBeforeDim: Int? = null
     private var navigationBarContrastBeforeDim: Boolean? = null
     private var sshKeyCallback: KuiklyRenderCallback? = null
+    private var pickImageCallback: KuiklyRenderCallback? = null
+    private var pendingCameraFile: File? = null
 
     init {
         activeInstance = this
@@ -95,6 +103,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 setSystemBarsDimmed(params)
             }
 
+            "pickImage" -> pickImage(params, callback)
             "pickSshKey" -> pickSshKey(callback)
             "importSshKey" -> importSshKey(params, callback)
             "validateSshKey" -> validateSshKey(params, callback)
@@ -276,6 +285,107 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
+    private fun pickImage(params: String?, callback: KuiklyRenderCallback?) {
+        val source = JSONObject(params ?: "{}").optString("source", "album")
+        pickImageCallback = callback
+        val intent: Intent
+        val requestCode: Int
+        when (source) {
+            "camera" -> {
+                val packageManager = activity?.packageManager
+                val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                if (packageManager != null && captureIntent.resolveActivity(packageManager) == null) {
+                    finishPickImage(mapOf("ok" to false, "error" to "未找到可用的相机应用"))
+                    return
+                }
+                val cacheDir = context?.cacheDir ?: run {
+                    finishPickImage(mapOf("ok" to false, "error" to "无法访问缓存目录"))
+                    return
+                }
+                val photoDir = File(cacheDir, "camera").apply { mkdirs() }
+                val photoFile = File(photoDir, "dsh_capture_${System.currentTimeMillis()}.jpg")
+                val uri = try {
+                    FileProvider.getUriForFile(
+                        requireNotNull(context),
+                        requireNotNull(context).packageName + ".fileprovider",
+                        photoFile,
+                    )
+                } catch (e: Exception) {
+                    finishPickImage(mapOf("ok" to false, "error" to "相机文件创建失败"))
+                    return
+                }
+                pendingCameraFile = photoFile
+                captureIntent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                captureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                intent = captureIntent
+                requestCode = REQUEST_CAPTURE_PHOTO
+            }
+
+            else -> {
+                intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                }
+                requestCode = REQUEST_PICK_IMAGE
+            }
+        }
+        try {
+            activity?.startActivityForResult(intent, requestCode)
+        } catch (e: Exception) {
+            finishPickImage(mapOf("ok" to false, "error" to "无法打开${if (source == "camera") "相机" else "相册"}"))
+        }
+    }
+
+    private fun finishPickImage(result: Map<String, Any?>) {
+        Log.i("HRBridgePick", "finishPickImage ok=${result["ok"]} cancelled=${result["cancelled"]} err=${result["error"]} bytes=${result["bytes"]} mime=${result["mediaType"]} cb=${pickImageCallback != null}")
+        try {
+            pickImageCallback?.invoke(result)
+        } catch (t: Throwable) {
+        }
+        pickImageCallback = null
+        pendingCameraFile = null
+    }
+
+    private fun readPickedBytes(uri: Uri?): ByteArray? {
+        if (uri == null) return null
+        return try {
+            context?.contentResolver?.openInputStream(uri)?.use { it.readBytes() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun decodeImageMeta(bytes: ByteArray): Triple<String?, Int, Int> {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        return Triple(options.outMimeType, options.outWidth, options.outHeight)
+    }
+
+    private fun deliverPickedImage(bytes: ByteArray?, displayName: String) {
+        if (bytes == null || bytes.isEmpty()) {
+            finishPickImage(mapOf("ok" to false, "error" to "无法读取图片数据"))
+            return
+        }
+        val (mime, width, height) = decodeImageMeta(bytes)
+        if (mime.isNullOrEmpty() || width <= 0 || height <= 0) {
+            finishPickImage(mapOf("ok" to false, "error" to "不支持的图片格式"))
+            return
+        }
+        val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        Log.i("HRBridgePick", "dataUrl len=${base64.length} preview=yes")
+        finishPickImage(
+            mapOf(
+                "ok" to true,
+                "dataUrl" to "data:$mime;base64,$base64",
+                "mediaType" to mime,
+                "name" to displayName,
+                "bytes" to bytes.size.toString(),
+                "width" to width.toString(),
+                "height" to height.toString(),
+            )
+        )
+    }
+
     private fun pickSshKey(callback: KuiklyRenderCallback?) {
         sshKeyCallback = callback
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -333,15 +443,62 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != REQUEST_SSH_KEY) return
-        val uri = if (resultCode == android.app.Activity.RESULT_OK) data?.data?.toString().orEmpty() else ""
-        sshKeyCallback?.invoke(mapOf("uri" to uri))
-        sshKeyCallback = null
+        Log.i("HRBridgePick", "onActivityResult rc=$requestCode result=$resultCode data=${data?.data}")
+        when (requestCode) {
+            REQUEST_SSH_KEY -> {
+                val uri = if (resultCode == android.app.Activity.RESULT_OK) data?.data?.toString().orEmpty() else ""
+                sshKeyCallback?.invoke(mapOf("uri" to uri))
+                sshKeyCallback = null
+            }
+
+            REQUEST_PICK_IMAGE -> {
+                if (resultCode != android.app.Activity.RESULT_OK || data?.data == null) {
+                    finishPickImage(mapOf("ok" to false, "cancelled" to true))
+                    return
+                }
+                val uri = data.data
+                var name = "image"
+                try {
+                    context?.contentResolver?.query(
+                        uri!!,
+                        arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
+                        null, null, null,
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idx = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                            if (idx >= 0) name = cursor.getString(idx) ?: "image"
+                        }
+                    }
+                } catch (e: Exception) {
+                    // 保留默认名
+                }
+                deliverPickedImage(readPickedBytes(uri), name)
+            }
+
+            REQUEST_CAPTURE_PHOTO -> {
+                if (resultCode != android.app.Activity.RESULT_OK) {
+                    finishPickImage(mapOf("ok" to false, "cancelled" to true))
+                    return
+                }
+                val file = pendingCameraFile
+                if (file == null || !file.exists()) {
+                    finishPickImage(mapOf("ok" to false, "error" to "相机照片读取失败"))
+                    return
+                }
+                val bytes = try { file.readBytes() } catch (e: Exception) { null }
+                val name = file.name
+                file.delete()
+                pendingCameraFile = null
+                deliverPickedImage(bytes, name)
+            }
+        }
     }
 
     companion object {
         const val MODULE_NAME = "HRBridgeModule"
         const val REQUEST_SSH_KEY = 4091
+        const val REQUEST_PICK_IMAGE = 4092
+        const val REQUEST_CAPTURE_PHOTO = 4093
         private var activeInstance: KRBridgeModule? = null
 
         fun dispatchActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

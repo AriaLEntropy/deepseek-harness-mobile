@@ -162,12 +162,15 @@ internal object DshWebTimelineParser {
             val data = event.optJSONObject("data") ?: continue
             when (type) {
                 "user/message" -> {
-                    val text = textFromBlocks(data.optJSONArray("content"))
-                    if (text.isEmpty()) continue
+                    val content = data.optJSONArray("content")
+                    val text = textFromBlocks(content)
+                    val imagePreviews = imagePreviewsFromBlocks(content)
+                    val attachmentIds = attachmentIdsFromBlocks(content)
+                    if (text.isEmpty() && imagePreviews.isEmpty() && attachmentIds.isEmpty()) continue
                     val source = data.optJSONObject("source")
                     val sourceKind = source?.optString("kind").orEmpty()
                     if (sourceKind == "user") {
-                        result += DshWebTimelineItem("user-$seq", DshWebTimelineItem.Kind.USER, text)
+                        result += DshWebTimelineItem("user-$seq", DshWebTimelineItem.Kind.USER, text, attachmentIds = attachmentIds, imagePreviews = imagePreviews)
                     } else {
                         result += DshWebTimelineItem(
                             key = "context-$seq",
@@ -175,6 +178,8 @@ internal object DshWebTimelineParser {
                             text = text,
                             sourceLabel = contextSummary(source),
                             source = source,
+                            attachmentIds = attachmentIds,
+                            imagePreviews = imagePreviews,
                         )
                     }
                 }
@@ -419,6 +424,42 @@ internal fun textFromBlocks(blocks: JSONArray?): String {
     }
 }
 
+/** 从 content 块中提取所有 image 块的可显示 dataUrl（内嵌 data/url），attachmentId 类由调用方另行处理 */
+internal fun imagePreviewsFromBlocks(blocks: JSONArray?): List<String> {
+    if (blocks == null) return emptyList()
+    val result = mutableListOf<String>()
+    for (index in 0 until blocks.length()) {
+        val block = blocks.optJSONObject(index) ?: continue
+        if (block.optString("type") != "image") continue
+        inlineImageDataUrl(block)?.let { result += it }
+    }
+    return result
+}
+
+/** 从 content 块中提取所有 image 块的 attachmentId（电脑端/历史消息的图片引用格式） */
+internal fun attachmentIdsFromBlocks(blocks: JSONArray?): List<String> {
+    if (blocks == null) return emptyList()
+    val result = mutableListOf<String>()
+    for (index in 0 until blocks.length()) {
+        val block = blocks.optJSONObject(index) ?: continue
+        if (block.optString("type") != "image") continue
+        block.optJSONObject("attachment")?.optString("attachmentId")?.takeIf { it.isNotEmpty() }?.let { result += it }
+    }
+    return result
+}
+
+/** 从单个 image 块提取内嵌 dataUrl（data base64 / url），不含 attachmentId 引用 */
+internal fun inlineImageDataUrl(block: JSONObject): String? {
+    val data = block.optString("data").orEmpty()
+    if (data.isNotEmpty()) {
+        val mediaType = block.optString("mediaType").ifEmpty { "image/png" }
+        return if (data.startsWith("data:")) data else "data:$mediaType;base64,$data"
+    }
+    val url = block.optString("url").orEmpty()
+    if (url.isNotEmpty()) return url
+    return null
+}
+
 internal fun appendAssistantBlocks(
     result: MutableList<DshWebTimelineItem>,
     seq: Int,
@@ -438,15 +479,22 @@ internal fun appendAssistantBlocks(
                     it,
                 )
             }
-            "image" -> block.optJSONObject("attachment")?.optString("attachmentId")
-                ?.takeIf { it.isNotEmpty() }
-                ?.let {
-                    result += DshWebTimelineItem(
+            "image" -> {
+                val inlineUrl = inlineImageDataUrl(block)
+                val attachmentId = block.optJSONObject("attachment")?.optString("attachmentId")?.takeIf { it.isNotEmpty() }
+                when {
+                    inlineUrl != null -> result += DshWebTimelineItem(
                         "image-$seq-$blockIndex",
                         DshWebTimelineItem.Kind.IMAGE,
-                        attachmentId = it,
+                        imagePreviews = listOf(inlineUrl),
+                    )
+                    attachmentId != null -> result += DshWebTimelineItem(
+                        "image-$seq-$blockIndex",
+                        DshWebTimelineItem.Kind.IMAGE,
+                        attachmentId = attachmentId,
                     )
                 }
+            }
             "tool-call" -> Unit
             else -> result += DshWebTimelineItem(
                 "block-$seq-$blockIndex",
@@ -1687,6 +1735,69 @@ internal class DshRemoteHostRepository(
         }
         activeStreams[call.rpcId] = ActiveStream(sessionId, call.rpcId, onDelta, onComplete, onError)
         DshStreamLog.log(LogLevel.INFO, "prompt.start", "prompt.start session=$sessionId rpcId=${call.rpcId} promptChars=${prompt.length}", sessionId, call.rpcId)
+        return object : DshStreamHandle {
+            private var cancelled = false
+            override fun cancel() {
+                if (cancelled) return
+                cancelled = true
+                activeStreams.remove(call.rpcId)
+                call.cancel()
+                runtime.call(DshHostProtocol.SESSION_CANCEL, JSONObject().apply { put("sessionId", sessionId) }) { _, _, _ -> }
+            }
+        }
+    }
+
+    /**
+     * 携带图片的会话发送：content 按官方 PromptContentPart 构造
+     * [{type:"text",text}, {type:"image",mediaType,data,name}...]。
+     * 仅发送通过预检的图片（SELECTED/UPLOADING/SENT），失败或超限项不进入 wire。
+     * Host 落盘后以 ImageAttachmentRef 进入消息事实；本地草稿不写历史。
+     */
+    fun streamReplyWithImages(
+        pagerId: String,
+        sessionId: String,
+        prompt: String,
+        images: List<DshPendingImage>,
+        onDelta: (String, Boolean) -> Unit,
+        onComplete: (String) -> Unit,
+        onError: (String) -> Unit,
+    ): DshStreamHandle {
+        val content = JSONArray()
+        if (prompt.isNotEmpty()) {
+            content.put(JSONObject().apply { put("type", "text"); put("text", prompt) })
+        }
+        images.forEach { image ->
+            if (image.state == DshImageDraftState.INVALID || image.dataBase64.isEmpty()) return@forEach
+            content.put(JSONObject().apply {
+                put("type", "image")
+                put("mediaType", image.mediaType)
+                put("data", image.dataBase64)
+                if (image.name.isNotEmpty()) put("name", image.name)
+            })
+        }
+        val call = runtime.call(DshHostProtocol.SESSION_PROMPT, JSONObject().apply {
+            put("sessionId", sessionId); put("mode", "queue")
+            put("content", content)
+            put("clientTimeZone", "UTC")
+        }) { value, error, rpcId ->
+            if (error != null) {
+                if (dshIsTransportInterrupt(error.code, error.message)) {
+                    DshStreamLog.i("prompt.hold-for-resync session=$sessionId rpcId=$rpcId code=${error.code}")
+                    return@call
+                }
+                activeStreams.remove(rpcId); onError(error.message); return@call
+            }
+            val command = value?.optJSONObject("command")
+            if (command != null) {
+                activeStreams.remove(rpcId); onComplete(command.optString("text"))
+            }
+        }
+        activeStreams[call.rpcId] = ActiveStream(sessionId, call.rpcId, onDelta, onComplete, onError)
+        DshStreamLog.log(
+            LogLevel.INFO, "prompt.start",
+            "prompt.start session=$sessionId rpcId=${call.rpcId} promptChars=${prompt.length} images=${images.size}",
+            sessionId, call.rpcId,
+        )
         return object : DshStreamHandle {
             private var cancelled = false
             override fun cancel() {

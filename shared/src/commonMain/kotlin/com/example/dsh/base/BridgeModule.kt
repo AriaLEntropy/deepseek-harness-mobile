@@ -323,6 +323,17 @@ internal class BridgeModule : Module() {
             callback(value?.optString("uri").orEmpty())
         }
     }
+    /**
+     * 平台取图（相册/拍照）。回调返回 JSON 字符串：
+     * 成功 {"ok":true,"dataUrl":"data:image/png;base64,...","mediaType":"image/png","name":"x.jpg","bytes":123,"width":100,"height":80}
+     * 取消 {"ok":false,"cancelled":true}
+     * 失败 {"ok":false,"error":"可读原因"}
+     */
+    fun pickImage(source: String, callback: (String) -> Unit) {
+        callNativeMethod("pickImage", JSONObject().apply { put("source", source) }) { value ->
+            callback(value?.toString().orEmpty())
+        }
+    }
 
     fun importSshKey(uri: String, callback: (String) -> Unit) {
         callNativeMethod("importSshKey", JSONObject().apply { put("uri", uri) }) { value ->

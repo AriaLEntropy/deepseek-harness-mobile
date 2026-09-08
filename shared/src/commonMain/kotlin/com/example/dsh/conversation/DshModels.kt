@@ -110,12 +110,92 @@ internal fun dshFormatTurnDuration(elapsedMs: Long): String {
     return if (minutes > 0) "${minutes}分${seconds.toString().padStart(2, '0')}秒" else "${total}秒"
 }
 
+/** Host 下发的图片接入限额（来自 `imageLimits` projection，Host 为最终裁决者）。 */
 internal data class DshImageLimits(
     val maxImageBytes: Long,
     val maxImagesPerMessage: Int,
     val maxMessageImageBytes: Long,
     val maxImagePixels: Long,
+    /** 单张图片最大边长（宽、高各自的上限，单位像素）。 */
+    val maxImageDimension: Long,
     val mediaTypes: List<String>,
+) {
+    companion object {
+        /** imageLimits projection 缺失时的保守默认，仅用于前置体验；Host 校验仍然权威。 */
+        val DEFAULT = DshImageLimits(
+            maxImageBytes = 20L * 1024 * 1024,
+            maxImagesPerMessage = 20,
+            maxMessageImageBytes = 200L * 1024 * 1024,
+            maxImagePixels = 64_000_000L,
+            maxImageDimension = 8192L,
+            mediaTypes = listOf("image/png", "image/jpeg", "image/webp", "image/gif"),
+        )
+
+        fun fromJson(value: com.tencent.kuikly.core.nvi.serialization.json.JSONObject?): DshImageLimits? {
+            if (value == null) return null
+            val mediaTypes = buildList {
+                val array = value.optJSONArray("mediaTypes") ?: return@buildList
+                for (index in 0 until array.length()) {
+                    array.optString(index)?.takeIf { it.isNotEmpty() }?.let(::add)
+                }
+            }
+            if (mediaTypes.isEmpty()) return null
+            return DshImageLimits(
+                maxImageBytes = value.optLong("maxImageBytes", 0L).takeIf { it > 0L } ?: return null,
+                maxImagesPerMessage = value.optInt("maxImagesPerMessage", 0).takeIf { it > 0 } ?: return null,
+                maxMessageImageBytes = value.optLong("maxMessageImageBytes", 0L).takeIf { it > 0L } ?: return null,
+                maxImagePixels = value.optLong("maxImagePixels", 0L).takeIf { it > 0L } ?: return null,
+                maxImageDimension = value.optLong("maxImageDimension", 0L).takeIf { it > 0L } ?: return null,
+                mediaTypes = mediaTypes,
+            )
+        }
+    }
+}
+
+/** 输入区待发送图片的发送阶段。 */
+internal enum class DshImageDraftState {
+    /** 已选择并通过预检，等待随消息发送。 */
+    SELECTED,
+    /** 预检不通过（超限/类型不支持），显示原因，不进入发送。 */
+    INVALID,
+    /** 已随 session.prompt 发送，等待 Host 确认。 */
+    UPLOADING,
+    /** Host 已接收（消息事实包含 ImageAttachmentRef）。 */
+    SENT,
+    /** 发送失败，可删除或重试。 */
+    FAILED,
+}
+
+/**
+ * 发送前的图片草稿。仅存在于输入区生命周期内，绝不写入会话历史；
+ * Host 落盘后历史只保留 [DshImageAttachmentRef] 形式的引用。
+ */
+internal data class DshPendingImage(
+    val clientId: String,
+    val mediaType: String,
+    val name: String,
+    /** 规范 Base64（发送给 Host 的 data 字段）。 */
+    val dataBase64: String,
+    /** 本地预览 dataUrl（UI 缩略图）。 */
+    val previewDataUrl: String,
+    val bytes: Long,
+    val width: Int,
+    val height: Int,
+    val state: DshImageDraftState = DshImageDraftState.SELECTED,
+    val error: String = "",
+) {
+    val isInvalid: Boolean get() = state == DshImageDraftState.INVALID
+    val isUploading: Boolean get() = state == DshImageDraftState.UPLOADING
+}
+
+/** Host 历史中的图片引用（ImageAttachmentRef），不含 path/url/Base64。 */
+internal data class DshImageAttachmentRef(
+    val attachmentId: String,
+    val mediaType: String,
+    val bytes: Long,
+    val width: Int,
+    val height: Int,
+    val name: String = "",
 )
 
 internal data class DshRawSessionEvent(
@@ -301,7 +381,14 @@ internal data class DshMessage(
     val contextRelaySender: String = "",
     val isReasoning: Boolean = false,
     val attachmentId: String? = null,
+    val attachmentIds: List<String> = emptyList(),
     val toolCallId: String = "",
+    /**
+     * 用户消息随文发送的图片本地预览（dataUrl）。
+     * 仅存在于内存，不进入本地持久化（extra_json 未编码）；历史恢复走 Host timeline
+     * 的 attachmentId，见 [DshImageAttachmentRef]。
+     */
+    val imagePreviews: List<String> = emptyList(),
     /** Remote-only structured tool state; LOCAL keeps this null. */
     val remoteTool: DshRemoteToolCallModel? = null,
 )
@@ -419,6 +506,8 @@ internal fun DshMessage.visuallyEquals(other: DshMessage): Boolean =
         contextBody == other.contextBody &&
         isReasoning == other.isReasoning &&
         attachmentId == other.attachmentId &&
+        attachmentIds == other.attachmentIds &&
+        imagePreviews == other.imagePreviews &&
         toolCallId == other.toolCallId &&
         remoteTool == other.remoteTool
 
@@ -465,6 +554,8 @@ internal data class DshWebTimelineItem(
     val cardTitle: String = "",
     val cardBody: String = "",
     val attachmentId: String? = null,
+    val attachmentIds: List<String> = emptyList(),
+    val imagePreviews: List<String> = emptyList(),
     val source: com.tencent.kuikly.core.nvi.serialization.json.JSONObject? = null,
     val remoteTool: DshRemoteToolCallModel? = null,
 ) {

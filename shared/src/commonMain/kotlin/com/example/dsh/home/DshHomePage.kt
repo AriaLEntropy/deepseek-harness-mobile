@@ -189,8 +189,13 @@ internal class DshHomePage : BasePager() {
     private val webJsonNodeStates = mutableMapOf<String, Boolean>()
     private var webDisclosureRevision by observable(0)
     private var attachmentRevision by observable(0)
+    private var previewImageUrl by observable<String?>(null)
     private val cachedAttachmentDataUrls = mutableMapOf<String, String>()
     private val pendingAttachmentReads = mutableSetOf<String>()
+    // ===== Task 3 附件：输入区图片草稿（仅内存，不落盘）与 Host 下发限额 =====
+    private val pendingImages by observableList<DshPendingImage>()
+    private var attachmentEpoch by observable(0)
+    private var imageLimits by observable<DshImageLimits?>(null)
     private var queueDockExpanded by observable(false)
     private val queueItems by observableList<DshQueueItem>()
     private var queueActionBusy by observable(false)
@@ -379,6 +384,11 @@ internal class DshHomePage : BasePager() {
         val wide = pagerData.pageViewWidth >= 720f
         return {
             ctx.perfLog("body.builder.begin")
+            // Task 3：渲染期读取 pendingImages 以建立响应式订阅——
+            // Kuikly 的响应式追踪无法穿透「函数型参数 → vfor/vbind」链，
+            // 必须在渲染函数内直接访问 observableList 才能让增删触发整树重渲染。
+            @Suppress("UNUSED_VARIABLE")
+            val pendingAttachmentCount = this@DshHomePage.pendingImages.size
             // ===== 根容器 =====
             // 整页的根 View：纵向布局撑满剩余空间，背景色 BG，顶部留出系统状态栏高度。
             View {
@@ -489,7 +499,12 @@ internal class DshHomePage : BasePager() {
                                 onOpenModels = { ctx.openModelPicker() },
                                 onToggleCommandSheet = { ctx.toggleCommandSheet() },
                                 onPickCommand = { ctx.insertCommand(it) },
-                                onAttachmentTile = { ctx.bridgeModule.toast("附件功能待实现") },
+                                onAttachmentTile = { ctx.onAttachmentTile(it) },
+                            attachmentEpoch = { ctx.attachmentEpoch },
+                            attachmentRevision = { ctx.attachmentRevision },
+                            pendingImages = { ctx.pendingImages },
+                            onRemovePendingImage = { ctx.removePendingImage(it) },
+                            onRetryPendingImage = { ctx.retryPendingImage(it) },
                                 onToggleVoice = { ctx.toggleVoice() },
                                 folderLabel = { ctx.composerFolderLabel() },
                                 onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
@@ -570,6 +585,9 @@ internal class DshHomePage : BasePager() {
                                 connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
                                 connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
                                 connectionCapsuleFadeOutAnimation = { ctx.connectionCapsuleFadeOutAnimation },
+                                onPreviewImage = { ctx.previewImageUrl = it },
+                                previewImageUrl = { ctx.previewImageUrl },
+                                onDismissPreview = { ctx.previewImageUrl = null },
                             )
                             // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
                             //    工作目录、模型、运行状态、队列/作业数量。
@@ -627,7 +645,12 @@ internal class DshHomePage : BasePager() {
                             onOpenAgentModes = { ctx.openAgentModePicker() },
                             onToggleCommandSheet = { ctx.toggleCommandSheet() },
                             onPickCommand = { ctx.insertCommand(it) },
-                            onAttachmentTile = { ctx.bridgeModule.toast("附件功能待实现") },
+                            onAttachmentTile = { ctx.onAttachmentTile(it) },
+                            attachmentEpoch = { ctx.attachmentEpoch },
+                            attachmentRevision = { ctx.attachmentRevision },
+                            pendingImages = { ctx.pendingImages },
+                            onRemovePendingImage = { ctx.removePendingImage(it) },
+                            onRetryPendingImage = { ctx.retryPendingImage(it) },
                             onToggleVoice = { ctx.toggleVoice() },
                             folderLabel = { ctx.composerFolderLabel() },
                             onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
@@ -703,6 +726,9 @@ internal class DshHomePage : BasePager() {
                             connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
                             connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
                             connectionCapsuleFadeOutAnimation = { ctx.connectionCapsuleFadeOutAnimation },
+                            onPreviewImage = { ctx.previewImageUrl = it },
+                            previewImageUrl = { ctx.previewImageUrl },
+                            onDismissPreview = { ctx.previewImageUrl = null },
                         )
                         ctx.perfLog("body.conversation.end wide=false")
                     }
@@ -1521,6 +1547,14 @@ internal class DshHomePage : BasePager() {
                             }
                         }
                         "goal" -> goalSnapshot = parseGoalProjection(value)
+                        "imageLimits" -> {
+                            val limits = runCatching {
+                                DshImageLimits.fromJson(
+                                    com.tencent.kuikly.core.nvi.serialization.json.JSONObject(value),
+                                )
+                            }.getOrNull()
+                            if (limits != null) imageLimits = limits
+                        }
                     }
                 }
             },
@@ -2177,9 +2211,22 @@ internal class DshHomePage : BasePager() {
         val hostRepository = repository as? DshRemoteRepository ?: return
         hostRepository.loadWebTimeline(sessionId, { items ->
             if (!isRemoteHost || activeSessionId != sessionId) return@loadWebTimeline
-            val projected = items.map { item ->
+            // 先收集所有 attachmentIds，加载 dataUrl 后再创建消息（vforLazy 不响应列表变化，必须在消息入列时就有 imagePreviews）
+            val allAttIds = items.flatMap { item ->
                 when (item.kind) {
-                    DshWebTimelineItem.Kind.USER -> DshMessage(item.key, DshMessageRole.USER, item.text)
+                    DshWebTimelineItem.Kind.USER -> item.attachmentIds
+                    DshWebTimelineItem.Kind.IMAGE -> listOfNotNull(item.attachmentId)
+                    else -> emptyList()
+                }
+            }.distinct()
+            val pendingAttIds = allAttIds.filter { cachedAttachmentDataUrls[it] == null && pendingAttachmentReads.add(it) }
+            val applyTimeline = {
+                val projected = items.map { item ->
+                when (item.kind) {
+                    DshWebTimelineItem.Kind.USER -> {
+                        val loadedPreviews = item.attachmentIds.mapNotNull { cachedAttachmentDataUrls[it] }
+                        DshMessage(item.key, DshMessageRole.USER, item.text, attachmentIds = item.attachmentIds, imagePreviews = loadedPreviews)
+                    }
                     DshWebTimelineItem.Kind.ASSISTANT -> DshMessage(item.key, DshMessageRole.ASSISTANT, item.text)
                     DshWebTimelineItem.Kind.REASONING -> DshMessage(
                         item.key,
@@ -2192,6 +2239,7 @@ internal class DshHomePage : BasePager() {
                         DshMessageRole.ASSISTANT,
                         "",
                         attachmentId = item.attachmentId,
+                        imagePreviews = item.attachmentId?.let { cachedAttachmentDataUrls[it] }?.let { listOf(it) } ?: item.imagePreviews,
                     )
                     DshWebTimelineItem.Kind.UNKNOWN_BLOCK -> DshMessage(
                         item.key,
@@ -2225,18 +2273,36 @@ internal class DshHomePage : BasePager() {
                         toolError = item.error != null,
                     )
                 }
+                }
+                sessionMessageReady.add(sessionId)
+                DshStreamLog.log(LogLevel.INFO, "ui.timeline", "ui.timeline session=$sessionId size=${projected.size} userCount=${projected.count { it.role == DshMessageRole.USER }} assistantCount=${projected.count { it.role == DshMessageRole.ASSISTANT }} totalChars=${projected.sumOf { it.content.length }}", sessionId, null)
+                replaceMessagesIfChanged(projected, force = true)
+                if (projected.isNotEmpty()) {
+                    persistMessages(sessionId)
+                    sessionCacheStates[sessionId] = DshSessionCacheState.SYNCED
+                }
+                completePendingSessionSelection(sessionId)
+                realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
+                afterApply()
             }
-            sessionMessageReady.add(sessionId)
-            DshStreamLog.log(LogLevel.INFO, "ui.timeline", "ui.timeline session=$sessionId size=${projected.size} userCount=${projected.count { it.role == DshMessageRole.USER }} assistantCount=${projected.count { it.role == DshMessageRole.ASSISTANT }} totalChars=${projected.sumOf { it.content.length }}", sessionId, null)
-            replaceMessagesIfChanged(projected, forceReplace)
-            if (projected.isNotEmpty()) {
-                persistMessages(sessionId)
-                sessionCacheStates[sessionId] = DshSessionCacheState.SYNCED
+            if (pendingAttIds.isEmpty()) {
+                applyTimeline()
+            } else {
+                var remaining = pendingAttIds.size
+                pendingAttIds.forEach { attId ->
+                    hostRepository.loadAttachment(sessionId, attId) { dataUrl, error ->
+                        if (error == null && dataUrl != null) {
+                            cachedAttachmentDataUrls[attId] = dataUrl
+                        }
+                        pendingAttachmentReads.remove(attId)
+                        remaining -= 1
+                        if (remaining == 0 && isRemoteHost && activeSessionId == sessionId) {
+                            attachmentRevision += 1
+                            applyTimeline()
+                        }
+                    }
+                }
             }
-            projected.mapNotNull { it.attachmentId }.forEach { loadAttachment(sessionId, it) }
-            completePendingSessionSelection(sessionId)
-            realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
-            afterApply()
         }, { error ->
             DshStreamLog.i("ui.history-fail session=$sessionId error='${DshStreamLog.preview(error)}'")
             if (forceReplace && !sessionRunning && (streaming || stopButtonVisible)) {
@@ -2410,9 +2476,6 @@ internal class DshHomePage : BasePager() {
             }
             cachedAttachmentDataUrls[attachmentId] = dataUrl
             attachmentRevision += 1
-            val next = sessionMessageState(sessionId).toList()
-            if (activeSessionId == sessionId) replaceMessagesIfChanged(next)
-            else sessionMessageStates[sessionId] = ObservableList<DshMessage>().also { it.addAll(next) }
         }
     }
 
@@ -2471,17 +2534,19 @@ internal class DshHomePage : BasePager() {
             when (block.optString("type")) {
                 "image" -> {
                     val attachmentId = block.optJSONObject("attachment")?.optString("attachmentId").orEmpty()
-                    if (attachmentId.isEmpty()) continue
+                    val inlineUrl = com.example.dsh.conversation.inlineImageDataUrl(block)
+                    if (attachmentId.isEmpty() && inlineUrl == null) continue
                     val id = "image-${event.seq}-$index"
                     if (messages.none { it.id == id }) {
                         messages.add(DshMessage(
                             id = id,
                             role = DshMessageRole.ASSISTANT,
                             content = "",
-                            attachmentId = attachmentId,
+                            attachmentId = attachmentId.ifEmpty { null },
+                            imagePreviews = listOfNotNull(inlineUrl),
                         ))
                     }
-                    loadAttachment(activeSessionId, attachmentId)
+                    if (attachmentId.isNotEmpty()) loadAttachment(activeSessionId, attachmentId)
                 }
                 "text", "reasoning", "tool-call" -> Unit
                 else -> {
@@ -4031,7 +4096,8 @@ internal class DshHomePage : BasePager() {
     private fun sendDraft() {
         dismissKeyboard()
         val prompt = draft.trim()
-        if (prompt.isEmpty() || streaming) return
+        val sendableImages = pendingImages.filter { it.state != DshImageDraftState.INVALID && it.dataBase64.isNotEmpty() }
+        if ((prompt.isEmpty() && sendableImages.isEmpty()) || streaming) return
         val hostRepository = repository as? DshRemoteRepository
         if (hostRepository == null) {
             connectionLabel = "本地内核尚未连接"
@@ -4066,7 +4132,12 @@ internal class DshHomePage : BasePager() {
             return
         }
         val sessionId = activeSessionId
-        val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
+        val user = DshMessage(
+            "user-${messages.size}",
+            DshMessageRole.USER,
+            prompt,
+            imagePreviews = sendableImages.map { it.previewDataUrl },
+        )
         val assistantId = "assistant-${messages.size}"
         val reasoningId = "$assistantId-reasoning"
         val wasEmpty = messages.isEmpty()
@@ -4089,21 +4160,34 @@ internal class DshHomePage : BasePager() {
         assistantFlushScheduled = false
         draft = ""
         inputView?.setText("")
+        // 进入发送中：输入区草稿立即反映 UPLOADING 状态
+        sendableImages.forEach { image ->
+            val idx = pendingImages.indexOfFirst { it.clientId == image.clientId }
+            if (idx >= 0) {
+                pendingImages[idx] = image.copy(state = DshImageDraftState.UPLOADING)
+                attachmentEpoch += 1
+            }
+        }
         streaming = true
         stopButtonVisible = true
         connectionLabel = "正在生成"
         syncTurnStatusTicker()
         touchSessionActivity(sessionId)
-        streamHandle = hostRepository.streamReply(
+        streamHandle = hostRepository.streamReplyWithImages(
             pagerId = pagerId,
             sessionId = sessionId,
             prompt = prompt,
+            images = sendableImages,
             onDelta = { delta, isReasoning ->
                 if (isReasoning) queueReasoningDelta(reasoningId, delta)
                 else queueAssistantDelta(assistantId, delta)
             },
             onComplete = { result ->
-                if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
+                if (!connectionCoordinator.isActive(connectionMode)) return@streamReplyWithImages
+                // Host 已接受该轮（含图片），输入区草稿收敛为空；图片由 Host timeline 以 attachmentId 呈现
+                val completedIds = sendableImages.map { it.clientId }.toSet()
+                pendingImages.removeAll { it.clientId in completedIds }
+                attachmentEpoch += 1
                 flushAssistantDelta()
                 if (streamingAssistantId.isEmpty() && result.isNotEmpty()) {
                     ensureStreamingAssistantSegment()
@@ -4120,11 +4204,22 @@ internal class DshHomePage : BasePager() {
                 streamHandle = null
             },
             onError = { error ->
-                if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
+                if (!connectionCoordinator.isActive(connectionMode)) return@streamReplyWithImages
                 if (dshIsTransportInterrupt("", error)) {
                     DshStreamLog.i("ui.prompt-interrupt session=$sessionId message='${DshStreamLog.preview(error)}'")
-                    return@streamReply
+                    return@streamReplyWithImages
                 }
+                // 发送失败：图片保留在输入区并标记 FAILED，可重试或删除
+                sendableImages.forEach { image ->
+                    val idx = pendingImages.indexOfFirst { it.clientId == image.clientId }
+                    if (idx >= 0) {
+                        pendingImages[idx] = image.copy(
+                            state = DshImageDraftState.FAILED,
+                            error = "发送失败：$error",
+                        )
+                    }
+                }
+                attachmentEpoch += 1
                 flushAssistantDelta()
                 ensureStreamingAssistantSegment()
                 DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
@@ -4394,6 +4489,88 @@ internal class DshHomePage : BasePager() {
         commandSheetVisible = false
         voiceActive = !voiceActive
         connectionLabel = if (voiceActive) "正在聆听" else "已连接"
+    }
+
+    /** 附件方块点击：拍照/相册走平台取图，文件暂未开放 */
+    private fun onAttachmentTile(tile: DshCommandSheetTile) {
+        commandSheetVisible = false
+        when (tile) {
+            DshCommandSheetTile.CAMERA -> pickImageFrom("camera")
+            DshCommandSheetTile.GALLERY -> pickImageFrom("album")
+            DshCommandSheetTile.FILE -> bridgeModule.toast("文件上传暂未开放")
+        }
+    }
+
+    /** 平台取图 → 解析 → imageLimits 预检 → 加入输入区草稿；取消静默，失败 toast。 */
+    private fun pickImageFrom(source: String) {
+        bridgeModule.pickImage(source) { raw ->
+            DshStreamLog.log(LogLevel.INFO, "pick.raw", "pickImage rawLen=${raw.length} head=${LogSanitizer.sanitize(raw.take(160))}", null, null)
+            val result = runCatching {
+                com.tencent.kuikly.core.nvi.serialization.json.JSONObject(raw)
+            }.getOrNull()
+            if (result == null || !result.optBoolean("ok")) {
+                if (result?.optBoolean("cancelled") == true) return@pickImage
+                val error = result?.optString("error").orEmpty().ifEmpty { "取图失败" }
+                bridgeModule.toast(error)
+                return@pickImage
+            }
+            val pending = try {
+                val bytes = result.optString("bytes").toLongOrNull() ?: 0L
+                val width = result.optString("width").toIntOrNull() ?: 0
+                val height = result.optString("height").toIntOrNull() ?: 0
+                DshPendingImage(
+                    clientId = "img-${System.currentTimeMillis()}",
+                    mediaType = result.optString("mediaType"),
+                    name = result.optString("name").ifEmpty { "image" },
+                    dataBase64 = result.optString("dataUrl").substringAfter("base64,"),
+                    previewDataUrl = result.optString("dataUrl"),
+                    bytes = bytes,
+                    width = width,
+                    height = height,
+                )
+            } catch (t: Throwable) {
+                DshStreamLog.log(LogLevel.ERROR, "pick.parse", "pickImage pending parse failed: $t", null, null)
+                null
+            }
+            if (pending == null) {
+                bridgeModule.toast("取图解析失败")
+                return@pickImage
+            }
+            DshStreamLog.log(LogLevel.INFO, "pick.pending", "pending built ok=${pending.mediaType} ${pending.width}x${pending.height} b=${pending.bytes} pre=${pending.previewDataUrl.length}", null, null)
+            val limits = imageLimits ?: DshImageLimits.DEFAULT
+            val rejection = try {
+                DshImageValidator.rejectBatch(pendingImages.toList(), listOf(pending), limits)
+            } catch (t: Throwable) {
+                DshStreamLog.log(LogLevel.ERROR, "pick.validate", "rejectBatch failed: $t", null, null)
+                null
+            }
+            if (rejection != null) {
+                pendingImages.add(
+                    pending.copy(
+                        state = DshImageDraftState.INVALID,
+                        error = DshImageValidator.rejectionText(rejection),
+                    ),
+                )
+            } else {
+                pendingImages.add(pending)
+            }
+            attachmentEpoch += 1
+            DshStreamLog.log(LogLevel.INFO, "pick.added", "pendingImages size=${pendingImages.size} epoch=$attachmentEpoch", null, null)
+        }
+    }
+
+    private fun removePendingImage(clientId: String) {
+        pendingImages.removeAll { it.clientId == clientId }
+        attachmentEpoch += 1
+    }
+
+    private fun retryPendingImage(clientId: String) {
+        val index = pendingImages.indexOfFirst { it.clientId == clientId }
+        if (index < 0) return
+        val image = pendingImages[index]
+        if (image.state != DshImageDraftState.FAILED) return
+        pendingImages[index] = image.copy(state = DshImageDraftState.SELECTED, error = "")
+        attachmentEpoch += 1
     }
 
     /** 切换「+」命令半屏面板；打开时收起键盘 */
@@ -4745,7 +4922,7 @@ internal class DshHomePage : BasePager() {
             )
             return
         }
-        val remount = current.isEmpty() && filtered.isNotEmpty()
+        val remount = force || current.isEmpty() && filtered.isNotEmpty()
         DshStreamLog.i(
             "ui.replace-messages from=${current.size} to=${filtered.size} streaming=$streaming force=$force remount=$remount preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
         )

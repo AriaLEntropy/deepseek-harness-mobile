@@ -116,6 +116,15 @@ internal class DshRemoteRepository(
         attachmentId: String,
         callback: (String?, String?) -> Unit,
     ) = delegate.loadAttachment(sessionId, attachmentId, callback)
+    fun streamReplyWithImages(
+        pagerId: String,
+        sessionId: String,
+        prompt: String,
+        images: List<DshPendingImage>,
+        onDelta: (String, Boolean) -> Unit,
+        onComplete: (String) -> Unit,
+        onError: (String) -> Unit,
+    ): DshStreamHandle = delegate.streamReplyWithImages(pagerId, sessionId, prompt, images, onDelta, onComplete, onError)
 
     companion object {
         fun parseWebTimelineForTest(events: JSONArray): List<DshWebTimelineItem> =

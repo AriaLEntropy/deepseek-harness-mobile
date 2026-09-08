@@ -18,6 +18,7 @@ import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
+import com.tencent.kuikly.core.layout.FlexJustifyContent
 import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.reactive.collection.ObservableList
@@ -169,6 +170,11 @@ internal fun ViewContainer<*, *>.DshConversation(
     onToggleCommandSheet: () -> Unit,
     onPickCommand: (DshCommand) -> Unit,
     onAttachmentTile: (DshCommandSheetTile) -> Unit,
+    attachmentEpoch: () -> Int = { 0 },
+    attachmentRevision: () -> Int = { 0 },
+    pendingImages: () -> ObservableList<DshPendingImage> = { ObservableList() },
+    onRemovePendingImage: (String) -> Unit = {},
+    onRetryPendingImage: (String) -> Unit = {},
     onToggleVoice: () -> Unit,
     folderLabel: () -> String,
     onOpenFolderBrowser: () -> Unit,
@@ -241,6 +247,9 @@ internal fun ViewContainer<*, *>.DshConversation(
     connectionCapsuleVisible: () -> Boolean,
     connectionCapsuleFadeOut: () -> Boolean,
     connectionCapsuleFadeOutAnimation: () -> Animation,
+    onPreviewImage: (String) -> Unit = {},
+    previewImageUrl: () -> String? = { null },
+    onDismissPreview: () -> Unit = {},
 ) {
     // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
@@ -363,6 +372,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                 }
                                             },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
+                                            attachmentRevision = { attachmentRevision() },
+                                            onPreviewImage = { onPreviewImage(it) },
                                             contentProvider = {
                                                 val stored = messagesForSession(sessionId)
                                                     .firstOrNull { it.id == message.id }
@@ -621,6 +632,91 @@ internal fun ViewContainer<*, *>.DshConversation(
                         border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
+                    // 附件预览条：输入框上方横向滚动；超限/失败项带状态遮罩，可移除，失败可点按重试
+                    // vbind 订阅 attachmentEpoch，add/remove/retry 等变化强制重建此子树，
+                    // 重建时 vfor 重新求值读最新 pendingImages。
+                    vbind({ attachmentEpoch() }) {
+                        vif({ pendingImages().isNotEmpty() }) {
+                        View {
+                            attr {
+                                width((availableWidth - 24f).coerceAtLeast(0f))
+                                flexDirectionRow()
+                                height(60f)
+                                padding(2f, 10f, 2f, 0f)
+                            }
+                            vfor({ pendingImages() }) { image ->
+                                                                View {
+                                    attr {
+                                        size(56f, 56f)
+                                        marginRight(8f)
+                                        borderRadius(8f)
+                                        backgroundColor(colors().bgModulePlatform)
+                                        border(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                                    }
+                                    Image {
+                                        attr {
+                                            src(image.previewDataUrl)
+                                            width(56f)
+                                            height(56f)
+                                            resizeCover()
+                                        }
+                                    }
+                                    vif({ image.isUploading }) {
+                                        View {
+                                            attr {
+                                                absolutePositionAllZero()
+                                                backgroundColor(Color(0x66000000))
+                                                allCenter()
+                                            }
+                                            Text {
+                                                attr {
+                                                    text("发送中")
+                                                    fontSize(10f)
+                                                    color(Color(0xFFFFFFFF))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    vif({ image.isInvalid || image.state == DshImageDraftState.FAILED }) {
+                                        View {
+                                            attr {
+                                                absolutePositionAllZero()
+                                                backgroundColor(Color(0x4D000000))
+                                                allCenter()
+                                            }
+                                            Text {
+                                                attr {
+                                                    text(if (image.state == DshImageDraftState.FAILED) "失败" else "超限")
+                                                    fontSize(10f)
+                                                    color(Color(0xFFFFFFFF))
+                                                }
+                                            }
+                                            event { click { onRetryPendingImage(image.clientId) } }
+                                        }
+                                    }
+                                    View {
+                                        attr {
+                                            positionType(FlexPositionType.ABSOLUTE)
+                                            top(2f)
+                                            right(2f)
+                                            size(18f, 18f)
+                                            borderRadius(9f)
+                                            backgroundColor(Color(0x99000000))
+                                            allCenter()
+                                        }
+                                        Image {
+                                            attr {
+                                                src(ImageUri.commonAssets("x.svg"))
+                                                size(10f, 10f)
+                                            }
+                                        }
+                                        DshHitButton { onRemovePendingImage(image.clientId) }
+                                    }
+                                }
+                            }
+                        }
+                        }
+                    }
                     // 输入框：DSH Web 风格，内容自适应高度（单行起），达 maxHeight 后随输入内部滚动
                     TextArea {
                         ref { inputRef(it) }
@@ -763,7 +859,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 DshHitButton {
                                     when {
                                         stopButtonVisible() -> onStop()
-                                        draft().trim().isNotEmpty() -> onSend()
+                                        draft().trim().isNotEmpty() || pendingImages().isNotEmpty() -> onSend()
                                     }
                                 }
                             }
@@ -926,6 +1022,34 @@ internal fun ViewContainer<*, *>.DshConversation(
             colors = colors,
         )
 
+        // 图片全屏预览层：点击消息图片后显示，点击背景关闭
+        vif({ previewImageUrl() != null }) {
+            View {
+                attr {
+                    positionAbsolute()
+                    top(0f)
+                    left(0f)
+                    right(0f)
+                    bottom(0f)
+                    backgroundColor(Color(0xCC000000))
+                    justifyContent(FlexJustifyContent.CENTER)
+                    alignItems(FlexAlign.CENTER)
+                    zIndex(1000)
+                }
+                event {
+                    click { onDismissPreview() }
+                }
+                Image {
+                    attr {
+                        src(previewImageUrl() ?: "")
+                        width(availableWidth - 32f)
+                        height(availableWidth - 32f)
+                        resizeContain()
+                    }
+                }
+            }
+        }
+
     }
 }
 
@@ -947,6 +1071,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     onFooterAction: (DshMessage, DshMessageFooterAction) -> Unit = { _, _ -> },
     isTurnTail: () -> Boolean = { true },
     attachmentDataUrl: (String) -> String? = { null },
+    attachmentRevision: () -> Int = { 0 },
+    onPreviewImage: (String) -> Unit = {},
     contentProvider: (() -> String)? = null,
 ) {
     if (message.hidden) return
@@ -1231,6 +1357,43 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                                 fontSize(14f)
                                 color(colors().stateBusinessPrimary)
                                 marginTop(2f)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 用户消息随文图片（本地内存预览；历史恢复走 Host timeline attachmentId，异步加载后通过 attachmentRevision 触发重渲染）
+        vif({
+            val rev = attachmentRevision() // 建立响应式依赖，attachment 加载完成后重渲染
+            isUser && message.imagePreviews.isNotEmpty()
+        }) {
+            View {
+                attr {
+                    flexDirectionRow()
+                    flexWrap(FlexWrap.WRAP)
+                    justifyContent(FlexJustifyContent.FLEX_END)
+                    marginTop(6f)
+                    marginBottom(2f)
+                }
+                vforIndex({ ObservableList<String>().apply { addAll(message.imagePreviews) } }) { preview, _, _ ->
+                    View {
+                        attr {
+                            size(72f, 72f)
+                            marginLeft(6f)
+                            borderRadius(8f)
+                            backgroundColor(colors().bgModulePlatform)
+                            border(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                        }
+                        Image {
+                            attr {
+                                src(preview)
+                                width(72f)
+                                height(72f)
+                                resizeCover()
+                            }
+                            event {
+                                click { onPreviewImage(preview) }
                             }
                         }
                     }
