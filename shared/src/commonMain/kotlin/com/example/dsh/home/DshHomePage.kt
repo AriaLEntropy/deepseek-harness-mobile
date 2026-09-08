@@ -227,7 +227,34 @@ internal class DshHomePage : BasePager() {
     // ===== 会话 topbar overflow menu 与会话管理动作 =====
     private var overflowMenuVisible by observable(false)
     private var sessionLogVisible by observable(false)
-    private val sessionLogBackCallback = object : BackPressCallback() { override fun handleOnBackPressed() { closeSessionLogs() } }
+    private val overlayBackCallback = object : BackPressCallback() {
+        override fun handleOnBackPressed() {
+            when {
+                sessionLogClearVisible -> sessionLogClearVisible = false
+                sessionLogClearMenuVisible -> sessionLogClearMenuVisible = false
+                sessionLogTypeSheetVisible -> sessionLogTypeSheetVisible = false
+                sessionLogTimePickerVisible -> sessionLogTimePickerVisible = false
+                settingsChoiceKind.isNotEmpty() -> { if (!settingsChoiceBusy) settingsChoiceKind = "" }
+                selectTextModalVisible -> closeSelectTextModal()
+                sessionDeleteVisible -> sessionDeleteVisible = false
+                sessionArchiveVisible -> sessionArchiveVisible = false
+                sessionRenameVisible -> sessionRenameVisible = false
+                agentModePickerVisible -> agentModePickerVisible = false
+                permissionPickerVisible -> permissionPickerVisible = false
+                modelPickerVisible -> modelPickerVisible = false
+                commandSheetVisible -> commandSheetVisible = false
+                overflowMenuVisible -> closeOverflowMenu()
+                workspaceBrowserVisible -> workspaceBrowserVisible = false
+                credentialSetupVisible -> closeCredentialSettings()
+                sshSettingsVisible -> updateSshSettingsVisibility(false)
+                settingsPageVisible -> closeSettingsPage()
+                sessionLogSelected != null -> sessionLogSelected = null
+                sessionLogVisible -> closeSessionLogs()
+                sessionDrawerVisible -> closeSessionDrawer()
+                else -> acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
+            }
+        }
+    }
     private var diagnosticLogAllMode by observable(false)
     private val sessionLogCache by observableList<LogEvent>()
     private var sessionLogSelected by observable<LogEvent?>(null)
@@ -359,6 +386,7 @@ internal class DshHomePage : BasePager() {
             warmRecentSessionCache(scrollToEndAfterLoad = false)
         }
         setTimeout(pagerId, 0) { startConnection() }
+        getBackPressHandler().addCallback(overlayBackCallback)
         perfLog("startup.created.end", startedAt)
     }
 
@@ -2958,7 +2986,6 @@ internal class DshHomePage : BasePager() {
 
     fun openSessionLogs() {
         closeSessionDrawer()
-        getBackPressHandler().addCallback(sessionLogBackCallback)
         diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
@@ -2967,7 +2994,6 @@ internal class DshHomePage : BasePager() {
 
     fun openDiagnosticLogs() {
         closeSessionDrawer()
-        getBackPressHandler().addCallback(sessionLogBackCallback)
         diagnosticLogAllMode = true
         refreshSessionLogs()
         sessionLogVisible = true
@@ -3159,7 +3185,6 @@ internal class DshHomePage : BasePager() {
     }
 
     fun closeSessionLogs() {
-        getBackPressHandler().removeCallback(sessionLogBackCallback)
         sessionLogVisible = false
         sessionLogSelected = null
         sessionLogDetailRaw = ""
