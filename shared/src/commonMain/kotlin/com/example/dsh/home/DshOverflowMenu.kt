@@ -841,14 +841,14 @@ internal fun ViewContainer<*, *>.DshLogTimePickerModal(
                 allCenter()
                 paddingLeft(20f)
                 paddingRight(20f)
-                backgroundColor(Color(0x66000000))
+                backgroundColor(Color(0x80000000))
             }
             View {
                 attr {
                     width(pageViewWidth() - 40f)
                     maxWidth(420f)
                     padding(16f)
-                    borderRadius(16f)
+                    borderRadius(14f)
                     backgroundColor(colors().bgLayer1)
                 }
                 View {
@@ -865,26 +865,51 @@ internal fun ViewContainer<*, *>.DshLogTimePickerModal(
                     }
                 }
                 View {
-                    attr { flexDirectionRow(); marginTop(8f); height(160f) }
-                    ScrollPicker(itemList = Array(8) { (pkYear() - 7 + it).toString() }, defaultIndex = 7) {
-                        attr { itemWidth = 56f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(0, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(12) { (it + 1).toString() }, defaultIndex = pkMonth() - 1) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(1, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(31) { (it + 1).toString() }, defaultIndex = pkDay() - 1) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(2, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(24) { (if (it < 10) "0" else "") + it }, defaultIndex = pkHour()) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(3, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(60) { (if (it < 10) "0" else "") + it }, defaultIndex = pkMinute()) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(4, v.toInt()) } }
+                    attr { flexDirectionRow(); justifyContentCenter(); marginTop(8f); height(120f) }
+                    View {
+                        attr { flexDirectionRow(); height(120f) }
+                        ScrollPicker(itemList = Array(8) { (pkYear() - 7 + it).toString() }, defaultIndex = 7) {
+                            attr { itemWidth = 48f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+                            event { scrollEndEvent { v, _ -> onSetPkValue(0, v.toInt()) } }
+                        }
+                        ScrollPicker(itemList = Array(12) { (it + 1).toString() }, defaultIndex = pkMonth() - 1) {
+                            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+                            event { scrollEndEvent { v, _ -> onSetPkValue(1, v.toInt()) } }
+                        }
+                        ScrollPicker(itemList = Array(31) { (it + 1).toString() }, defaultIndex = pkDay() - 1) {
+                            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+                            event { scrollEndEvent { v, _ -> onSetPkValue(2, v.toInt()) } }
+                        }
+                        ScrollPicker(itemList = Array(24) { (if (it < 10) "0" else "") + it }, defaultIndex = pkHour()) {
+                            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+                            event { scrollEndEvent { v, _ -> onSetPkValue(3, v.toInt()) } }
+                        }
+                        ScrollPicker(itemList = Array(60) { (if (it < 10) "0" else "") + it }, defaultIndex = pkMinute()) {
+                            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+                            event { scrollEndEvent { v, _ -> onSetPkValue(4, v.toInt()) } }
+                        }
+                        View {
+                            attr {
+                                absolutePosition(top = 0f, left = 0f, right = 0f)
+                                height(40f)
+                                backgroundLinearGradient(Direction.TO_BOTTOM, ColorStop(colors().bgLayer1, 0f), ColorStop(Color.TRANSPARENT, 1f))
+                            }
+                        }
+                        View {
+                            attr {
+                                absolutePosition(bottom = 0f, left = 0f, right = 0f)
+                                height(40f)
+                                backgroundLinearGradient(Direction.TO_TOP, ColorStop(colors().bgLayer1, 0f), ColorStop(Color.TRANSPARENT, 1f))
+                            }
+                        }
+                        View {
+                            attr {
+                                absolutePosition(top = 40f, left = 0f, right = 0f)
+                                height(38f)
+                                borderTop(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                                borderBottom(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                            }
+                        }
                     }
                 }
                 Text {
