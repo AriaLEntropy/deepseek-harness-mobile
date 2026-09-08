@@ -203,12 +203,12 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             paddingBottom(10f)
                             paddingLeft(8f)
                             paddingRight(8f)
-
+                            backgroundColor(com.example.dsh.theme.DshDefaultPalette.deepseek500)
                         }
                         View {
                             attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter(); marginLeft(4f) }
+                            event { click { onClose() } }
                             Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(Color(0xFF1A1A1A)) } }
-                           
                         }
                         View {
                             attr { flex(1f); flexDirectionColumn(); alignItemsCenter() }
@@ -246,12 +246,12 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             paddingBottom(10f)
                             paddingLeft(8f)
                             paddingRight(8f)
-                            backgroundLinearGradient(Direction.TO_BOTTOM, ColorStop(com.example.dsh.theme.DshDefaultPalette.deepseek500, 0f), ColorStop(com.example.dsh.theme.DshDefaultPalette.deepseek600, 1f))
+                            backgroundColor(com.example.dsh.theme.DshDefaultPalette.deepseek500)
                         }
                         View {
                             attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter() }
+                            event { click { onSetSearchExpanded(false); onKeyword("") } }
                             Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(Color(0xFF1A1A1A)) } }
-
                         }
                         View {
                             attr {
