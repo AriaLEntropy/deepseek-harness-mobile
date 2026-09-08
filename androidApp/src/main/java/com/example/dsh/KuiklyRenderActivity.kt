@@ -60,6 +60,29 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
 
     override fun softInputMode(): Int? = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
 
+    /**
+     * 触摸落在聚焦输入框之外的区域时，清除输入框焦点并收起键盘（移动端标准行为）：
+     * 覆盖点击空白、点击列表/筛选控件、以及滑动日志列表等场景，避免输入框持续持有焦点。
+     * IME 候选条/键盘属于独立输入法窗口，其触摸事件不会经过本 Activity 分发，不会误伤候选词选择。
+     */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
+            val focused = currentFocus
+            if (focused is android.widget.EditText) {
+                val loc = IntArray(2)
+                focused.getLocationOnScreen(loc)
+                val hit = ev.rawX >= loc[0] && ev.rawX <= loc[0] + focused.width &&
+                    ev.rawY >= loc[1] && ev.rawY <= loc[1] + focused.height
+                if (!hit) {
+                    focused.clearFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    imm.hideSoftInputFromWindow(focused.windowToken, 0)
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         kuiklyRenderViewDelegator.onDetach()

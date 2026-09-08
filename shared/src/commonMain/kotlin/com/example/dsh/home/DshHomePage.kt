@@ -21,6 +21,7 @@ import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.InputView
+import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
@@ -33,7 +34,6 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.ListContentView
-import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.ScrollParams
 import com.tencent.kuikly.core.views.ScrollerView
 import kotlinx.coroutines.CoroutineScope
@@ -163,6 +163,7 @@ internal class DshHomePage : BasePager() {
     private val sessionMessageReady = mutableSetOf<String>()
     private val pendingSessionSelections = mutableSetOf<String>()
     private val localReadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val pendingLocalMessageReads = mutableSetOf<String>()
     private val sessionCacheStates = mutableMapOf<String, DshSessionCacheState>()
     private var inputFocused = false
@@ -231,6 +232,15 @@ internal class DshHomePage : BasePager() {
     private var sessionLogDetailRaw by observable("")
     private var sessionLogExporting by observable(false)
     private var sessionLogTimeFilter by observable(0)
+    private var sessionLogCustomStartMs by observable<Long?>(null)
+    private var sessionLogCustomEndMs by observable<Long?>(null)
+    private var sessionLogTimePickerVisible by observable(false)
+    private var sessionLogTimePickerTargetStart by observable(true)
+    private var sessionLogPkYear by observable(0)
+    private var sessionLogPkMonth by observable(1)
+    private var sessionLogPkDay by observable(1)
+    private var sessionLogPkHour by observable(0)
+    private var sessionLogPkMinute by observable(0)
     private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
     private var sessionLogTypeFilter by observable("")
     private var sessionLogTypeOptions by observableList<String>()
@@ -241,7 +251,7 @@ internal class DshHomePage : BasePager() {
     private var sessionLogClearVisible by observable(false)
     private var sessionLogClearing by observable(false)
     private var sessionLogFeedbackExporting by observable(false)
-    private var sessionLogScrollerRef: ViewRef<ScrollerView<*, *>>? = null
+    private var sessionLogScrollerRef: ViewRef<ListView<*, *>>? = null
     private var sessionLogFollowBottom by observable(true)
     private var sessionLogNewCount by observable(0)
     private var sessionLogLastMaxSeq = 0L
@@ -1081,8 +1091,6 @@ internal class DshHomePage : BasePager() {
                     visible = { ctx.sessionLogVisible },
                     events = { ctx.sessionLogView },
                     total = { ctx.sessionLogTotal },
-                    selected = { ctx.sessionLogSelected },
-                    detailRaw = { ctx.sessionLogDetailRaw },
                     exporting = { ctx.sessionLogExporting },
                     timeFilter = { ctx.sessionLogTimeFilter },
                     levelFilter = { ctx.sessionLogLevelFilter },
@@ -1092,9 +1100,12 @@ internal class DshHomePage : BasePager() {
                     onSelect = { ctx.sessionLogSelected = it; ctx.loadSessionLogDetail(it) },
                     onRefresh = { ctx.refreshSessionLogs() },
                     onExport = { ctx.exportSessionLogs() },
-                    onCopy = { ctx.copyLogDetail(it) },
                     onClose = { ctx.closeSessionLogs() },
                     onTimeFilter = { ctx.onLogTimeFilter(it) },
+                    customStartMs = { ctx.sessionLogCustomStartMs },
+                    customEndMs = { ctx.sessionLogCustomEndMs },
+                    onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
+                    onOpenTimePicker = { target -> ctx.openLogTimePicker(target) },
                     onToggleLevel = { ctx.onLogToggleLevel(it) },
                     onTypeFilter = { ctx.onLogTypeFilter(it) },
                     onKeyword = { ctx.onLogKeyword(it) },
@@ -1112,8 +1123,46 @@ internal class DshHomePage : BasePager() {
                     followBottom = { ctx.sessionLogFollowBottom },
                     onJumpToBottom = { ctx.onSessionLogJumpToBottom() },
                     allMode = { ctx.diagnosticLogAllMode },
-                    onJumpToSession = { ctx.jumpToSession(it) },
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
+                    statusBarHeight = ctx.pagerData.statusBarHeight,
+                    pageViewWidth = ctx.pagerData.pageViewWidth,
+                    colors = { this@DshHomePage.themeColors },
+                )
+
+                DshLogTimePickerModal(
+                    visible = { ctx.sessionLogTimePickerVisible },
+                    targetStart = { ctx.sessionLogTimePickerTargetStart },
+                    pkYear = { ctx.sessionLogPkYear },
+                    pkMonth = { ctx.sessionLogPkMonth },
+                    pkDay = { ctx.sessionLogPkDay },
+                    pkHour = { ctx.sessionLogPkHour },
+                    pkMinute = { ctx.sessionLogPkMinute },
+                    customStartMs = { ctx.sessionLogCustomStartMs },
+                    customEndMs = { ctx.sessionLogCustomEndMs },
+                    onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
+                    onSetVisible = { ctx.sessionLogTimePickerVisible = it },
+                    onSetTargetStart = { ctx.sessionLogTimePickerTargetStart = it },
+                    onSetPkValue = { field, value ->
+                        when (field) {
+                            0 -> ctx.sessionLogPkYear = value
+                            1 -> ctx.sessionLogPkMonth = value
+                            2 -> ctx.sessionLogPkDay = value
+                            3 -> ctx.sessionLogPkHour = value
+                            else -> ctx.sessionLogPkMinute = value
+                        }
+                    },
+                    colors = { this@DshHomePage.themeColors },
+                    pageViewWidth = { ctx.pagerData.pageViewWidth },
+                )
+
+                DshLogDetailModal(
+                    visible = { ctx.sessionLogSelected != null },
+                    entry = { ctx.sessionLogSelected },
+                    detailRaw = { ctx.sessionLogDetailRaw },
+                    allMode = { ctx.diagnosticLogAllMode },
+                    onClose = { ctx.sessionLogSelected = null },
+                    onCopy = { ctx.copyLogDetail(it) },
+                    onJumpToSession = { ctx.jumpToSession(it) },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = { this@DshHomePage.themeColors },
@@ -2978,6 +3027,11 @@ internal class DshHomePage : BasePager() {
                 1 -> now - e.timestamp <= 600_000L
                 2 -> now - e.timestamp <= 3_600_000L
                 3 -> LogExporter.formatTimestamp(e.timestamp).startsWith(todayPrefix)
+                4 -> {
+                    val start = sessionLogCustomStartMs
+                    val end = sessionLogCustomEndMs
+                    (start == null || e.timestamp >= start) && (end == null || e.timestamp <= end)
+                }
                 else -> true
             }
             timeOk &&
@@ -2985,8 +3039,9 @@ internal class DshHomePage : BasePager() {
                 (typeQ.isEmpty() || matchesLogType(e.type, typeQ)) &&
                 (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
         }
-        sessionLogView.clear()
-        sessionLogView.addAll(filtered)
+        // 最小差异更新：Myers diff 只增删改变化行，避免全量 clear+addAll 导致列表重建、
+        // 输入框失焦与删除时焦点循环跳动（列表未变化时 diff 为空，天然去抖）
+        sessionLogView.diffUpdate(filtered) { old, new -> old.seq == new.seq }
     }
 
     /** 事件类型匹配：`connect.*` 按前缀通配，其余子串匹配（忽略大小写）。 */
@@ -3002,7 +3057,33 @@ internal class DshHomePage : BasePager() {
 
     fun onLogTimeFilter(value: Int) {
         sessionLogTimeFilter = value
+        if (value == 4) {
+            // 杩涘叆鑷畾涔夋椂闂磋寖鍥达細榛樿鏈€杩?1 灏忔椂锛堝彧鍦ㄥ皻鏃犲€兼椂鍒濆鍖栵級
+            val now = currentTimeMillis()
+            if (sessionLogCustomStartMs == null) sessionLogCustomStartMs = now - 3_600_000L
+            if (sessionLogCustomEndMs == null) sessionLogCustomEndMs = now
+        }
         recomputeSessionLogView()
+    }
+
+    /** 鑷畾涔夎捣姝㈡椂闂存洿鏂帮細null 浠ｈ〃涓嶉檺銆?*/
+    fun onLogCustomTime(startMs: Long?, endMs: Long?) {
+        sessionLogCustomStartMs = startMs
+        sessionLogCustomEndMs = endMs
+        recomputeSessionLogView()
+    }
+
+    fun openLogTimePicker(targetStart: Boolean) {
+        val target = if (targetStart) sessionLogCustomStartMs else sessionLogCustomEndMs
+        val ms = target ?: currentTimeMillis()
+        val s = LogExporter.formatTimestamp(ms)
+        sessionLogPkYear = s.substring(0, 4).toInt()
+        sessionLogPkMonth = s.substring(5, 7).toInt()
+        sessionLogPkDay = s.substring(8, 10).toInt()
+        sessionLogPkHour = s.substring(11, 13).toInt()
+        sessionLogPkMinute = s.substring(14, 16).toInt()
+        sessionLogTimePickerTargetStart = targetStart
+        sessionLogTimePickerVisible = true
     }
 
     fun onLogToggleLevel(level: LogLevel) {
