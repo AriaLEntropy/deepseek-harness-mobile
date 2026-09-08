@@ -9,7 +9,9 @@ internal actual fun writeExportFile(dir: String, filename: String, content: Stri
     return file.absolutePath
 }
 
-/** Stub — actual share requires Activity context, deferred to UI layer. */
 internal actual fun shareExportFile(path: String) {
     android.util.Log.i("DshExport", "Export file ready at: $path")
 }
+
+internal actual fun localTimezoneOffsetMillis(): Long =
+    java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()).toLong()

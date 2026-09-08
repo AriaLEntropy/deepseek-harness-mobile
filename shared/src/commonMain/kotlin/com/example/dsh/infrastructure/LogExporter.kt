@@ -1,5 +1,7 @@
 package com.example.dsh.infrastructure
 
+internal expect fun localTimezoneOffsetMillis(): Long
+
 internal object LogExporter {
 
     fun toJson(events: List<LogEvent>): String = buildString {
@@ -47,7 +49,8 @@ internal object LogExporter {
 
     /** 将毫秒时间戳格式化为 `yyyy-MM-ddTHH:mm:ss.SSS`（纯算术实现，可跨平台）。 */
     fun formatTimestamp(epochMs: Long): String {
-        val totalSeconds = epochMs / 1000
+        val adjusted = epochMs + localTimezoneOffsetMillis()
+        val totalSeconds = adjusted / 1000
         val ms = (epochMs % 1000).toInt()
         var days = totalSeconds / 86400
         val timeOfDay = (totalSeconds % 86400).toInt()
@@ -88,7 +91,7 @@ internal object LogExporter {
         val md = monthDays(year)
         for (i in 0 until month - 1) days += md[i]
         days += day - 1
-        return (days * 86400L + hour * 3600L + minute * 60L) * 1000L
+        return (days * 86400L + hour * 3600L + minute * 60L) * 1000L - localTimezoneOffsetMillis()
     }
 }
 

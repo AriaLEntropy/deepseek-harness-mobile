@@ -5,3 +5,8 @@ internal actual fun writeExportFile(dir: String, filename: String, content: Stri
 
 /** No-op on JS; deferred to native platforms. */
 internal actual fun shareExportFile(path: String) = Unit
+
+internal actual fun localTimezoneOffsetMillis(): Long {
+    val offsetMinutes = js("new Date().getTimezoneOffset()").unsafeCast<Int>()
+    return -offsetMinutes.toLong() * 60L * 1000L
+}
