@@ -2955,6 +2955,7 @@ internal class DshHomePage : BasePager() {
     // ===== 会话日志 =====
 
     fun openSessionLogs() {
+        closeSessionDrawer()
         diagnosticLogAllMode = false
         refreshSessionLogs()
         sessionLogVisible = true
@@ -2962,15 +2963,15 @@ internal class DshHomePage : BasePager() {
     }
 
     fun openDiagnosticLogs() {
+        closeSessionDrawer()
         diagnosticLogAllMode = true
         refreshSessionLogs()
         sessionLogVisible = true
         startSessionLogFollow()
+        startSessionLogFollow()
     }
-
     fun jumpToSession(sessionId: String) {
         if (sessionId.isEmpty()) return
-        closeSessionLogs()
         val idx = sessions.indexOfFirst { it.id == sessionId }
         if (idx >= 0) {
             selectSession(sessionId)
