@@ -164,10 +164,12 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onSetSearchExpanded: (Boolean) -> Unit = {},
     onSetTypeSheetVisible: (Boolean) -> Unit = {},
     onClearTypes: () -> Unit = {},
+    sheetKeyword: () -> String = { "" },
+    onSetSheetKeyword: (String) -> Unit = {},
 ) {
     var searchInputRef: com.tencent.kuikly.core.base.ViewRef<InputView>? = null
     var sheetSearchRef: com.tencent.kuikly.core.base.ViewRef<InputView>? = null
-    var sheetSearchKeyword = ""
+
     var lastSearchExpanded = false
     var lastTypeSheetVisible = false
 
@@ -175,7 +177,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     lastSearchExpanded = searchExpanded()
     val sheetOpening = typeSheetVisible() && !lastTypeSheetVisible
     lastTypeSheetVisible = typeSheetVisible()
-    if (sheetOpening) { sheetSearchKeyword = "" }
+    if (sheetOpening) { onSetSheetKeyword("") }
 
     vif({ visible() }) {
         Modal(inWindow = true) {
@@ -290,7 +292,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             attr {
                                 flex(1f); height(40f); alignItemsCenter(); justifyContentCenter()
                             }
-                            event { click { onTimeFilter(i) } }
+                            event { click { onTimeFilter(i); if (i == 4) onOpenTimePicker(true) } }
                             vif({ timeFilter() == i }) {
                                 View {
                                     attr { absolutePosition(bottom = 0f, left = 12f, right = 12f); height(2f); backgroundColor(colors().stateBusinessPrimary) }
@@ -381,7 +383,8 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         attr { flexDirectionColumn(); alignItemsCenter(); marginTop(70f) }
                         Text { attr { text("无匹配结果"); fontSize(14f); color(colors().labelTertiary) } }
                         View {
-                            attr { marginTop(12f); padding(top = 8f, left = 18f, bottom = 8f, right = 18f); borderRadius(16f); border(Border(1f, BorderStyle.SOLID, colors().stateBusinessPrimary)) }
+                            attr { marginTop(12f); padding(top = 8f, left = 18f, bottom = 8f, right = 18f); borderRadius(16f); border(Border(1f, BorderStyle.SOLID, colors().stateBusinessPrimary)); highlightBackgroundColor(Color(0x0A000000)) }
+
                             event { click { onClearFilters() } }
                             Text { attr { text("清除筛选"); fontSize(13f); color(colors().stateBusinessPrimary) } }
                         }
@@ -403,6 +406,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                         paddingLeft(12f); paddingRight(12f)
                                         paddingTop(10f); paddingBottom(10f)
                                         borderBottom(Border(0.5f, BorderStyle.SOLID, colors().borderL1))
+                                        highlightBackgroundColor(Color(0x0A000000))
                                     }
                                     event { click { onSelect(entry) } }
                                     View {
@@ -472,6 +476,10 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                     backgroundColor(Color(0x66000000))
                 }
                 View {
+                    attr { absolutePositionAllZero() }
+                    event { click { onSetTypeSheetVisible(false) } }
+                }
+                View {
                     attr {
                         width(pageViewWidth)
                         absolutePosition(bottom = 0f, left = 0f, right = 0f)
@@ -502,9 +510,9 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         }
                         Text { attr { text("🔍"); fontSize(12f); color(colors().labelTertiary); marginRight(6f) } }
                         Input {
-                            ref { sheetSearchRef = it; if (sheetOpening) it.view?.setText("") }
+                            ref { sheetSearchRef = it; if (sheetOpening) it.view?.setText(sheetKeyword()) }
                             attr { flex(1f); fontSize(13f); color(colors().labelPrimary); placeholder("筛选类型"); placeholderColor(colors().labelTertiary) }
-                            event { textDidChange { sheetSearchKeyword = it.text } }
+                            event { textDidChange { onSetSheetKeyword(it.text) } }
                         }
                     }
                     View {
@@ -512,7 +520,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                         Scroller {
                             attr { absolutePositionAllZero(); showScrollerIndicator(false) }
                             val allTypes = typeOptions().filter { it != "全部" }
-                            val kw = sheetSearchKeyword.trim()
+                            val kw = sheetKeyword().trim()
                             val filtered = if (kw.isEmpty()) allTypes else allTypes.filter { it.contains(kw, ignoreCase = true) }
                             val groups = filtered.groupBy { it.substringBefore(".") }
                             for ((prefix, types) in groups) {
@@ -521,7 +529,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                     attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(16f); paddingRight(16f); paddingTop(10f); paddingBottom(6f) }
                                     Text { attr { text(prefix + " (" + types.size + ")"); fontSize(12f); fontWeightBold(); color(colors().labelSecondary); flex(1f) } }
                                     View {
-                                        event { click { types.forEach { onToggleType(it) } } }
+                                        event { click { val selAll = !types.all { it in selectedTypes() }; types.forEach { if (selAll && it !in selectedTypes()) onToggleType(it); else if (!selAll && it in selectedTypes()) onToggleType(it) } } }
                                         Text { attr { text(if (allSelected) "取消全选" else "全选"); fontSize(12f); color(colors().stateBusinessPrimary) } }
                                     }
                                 }

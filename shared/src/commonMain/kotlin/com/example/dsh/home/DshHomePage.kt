@@ -248,6 +248,7 @@ internal class DshHomePage : BasePager() {
     private var sessionLogSearchExpanded by observable(false)
     private var sessionLogTypeSheetVisible by observable(false)
     private val sessionLogView by observableList<LogEvent>()
+    private var sessionLogTypeSheetKeyword by observable("")
     private var sessionLogTotal by observable(0)
     private var sessionLogClearMenuVisible by observable(false)
     private var sessionLogClearVisible by observable(false)
@@ -1117,6 +1118,8 @@ internal class DshHomePage : BasePager() {
                     onSetSearchExpanded = { ctx.onSetLogSearchExpanded(it) },
                     onSetTypeSheetVisible = { ctx.onSetLogTypeSheetVisible(it) },
                     onClearTypes = { ctx.onClearLogSelectedTypes() },
+                    sheetKeyword = { ctx.sessionLogTypeSheetKeyword },
+                    onSetSheetKeyword = { ctx.onSetLogTypeSheetKeyword(it) },
                     onClearRequest = { ctx.requestSessionLogClear() },
                     onFeedbackPackage = { ctx.exportFeedbackPackage() },
 
@@ -3114,6 +3117,8 @@ internal class DshHomePage : BasePager() {
 
     fun onSetLogTypeSheetVisible(visible: Boolean) { sessionLogTypeSheetVisible = visible }
 
+    fun onSetLogTypeSheetKeyword(kw: String) { sessionLogTypeSheetKeyword = kw }
+
     fun onClearLogSelectedTypes() { sessionLogSelectedTypes = emptySet(); recomputeSessionLogView() }
 
     fun onLogKeyword(value: String) {
@@ -3123,6 +3128,7 @@ internal class DshHomePage : BasePager() {
 
     fun clearLogFilters() {
         sessionLogTimeFilter = 0
+        sessionLogLevelFilter = LogLevel.entries.toSet()
         sessionLogSelectedTypes = emptySet()
         sessionLogKeyword = ""
         recomputeSessionLogView()
