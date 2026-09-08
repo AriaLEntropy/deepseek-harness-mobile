@@ -326,7 +326,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                             event { click { onOpenTimePicker(true) } }
                             Text {
                                 attr {
-                                    text((customStartMs()?.let { formatCustomTime(it) } ?: "不限") + " ~ " + (customEndMs()?.let { formatCustomTime(it) } ?: "不限"))
+                                    text((customStartMs()?.let { LogExporter.formatTimestamp(it).substring(5, 16).replace('T', ' ') } ?: "不限") + " ~ " + (customEndMs()?.let { LogExporter.formatTimestamp(it).substring(5, 16).replace('T', ' ') } ?: "不限"))
                                     fontSize(10f); color(colors().stateBusinessPrimary)
                                 }
                             }
@@ -405,11 +405,11 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                     event { click { onSelect(entry) } }
                                     View {
                                         attr {
-                                            width(28f); height(28f); borderRadius(5f)
+                                            width(24f); height(24f); borderRadius(4f)
                                             alignItemsCenter(); justifyContentCenter()
                                             backgroundColor(Color(sessionLogLevelColor(entry.level)))
                                         }
-                                        Text { attr { text(sessionLogLevelLabel(entry.level)); fontSize(13f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
+                                        Text { attr { text(sessionLogLevelLabel(entry.level)); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
                                     }
                                     View {
                                         attr { flex(1f); marginLeft(10f); flexDirectionColumn() }
@@ -418,12 +418,12 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                                             Text {
                                                 attr {
                                                     text(entry.type); fontSize(12f); fontWeightBold()
-                                                    color(colors().stateBusinessPrimary); flex(1f); lines(1)
+                                                    color(colors().labelPrimary); flex(1f); lines(1)
                                                 }
                                             }
                                             Text {
                                                 attr {
-                                                    text(LogExporter.formatTimestamp(entry.timestamp).substring(11, 23))
+                                                    text(LogExporter.formatTimestamp(entry.timestamp).substring(11, 19))
                                                     fontSize(11f); color(colors().labelTertiary)
                                                 }
                                             }
