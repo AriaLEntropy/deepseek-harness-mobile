@@ -2269,6 +2269,7 @@ internal class DshHomePage : BasePager() {
                         toolCardType = item.cardType,
                         toolRunning = item.running,
                         toolError = item.error != null,
+                        toolStopped = item.stopped,
                     )
                 }
             }
@@ -2720,19 +2721,52 @@ internal class DshHomePage : BasePager() {
     }
 
     /**
-     * 取消提问（关闭按钮）：将所有问题标记为 skipped 后一次性提交，
-     * 告知 Host 用户主动取消了本次提问流程，同时清除本地 UI 状态。
+     * 取消提问（关闭按钮）：以 ok=false + code=cancelled 拒绝整个等待
+     * （与原版 apiproxy respond 的 cancelled 分支一致，wire 上表现为 ASK_CANCELLED），
+     * 同时清除本地 UI 状态。不再把全部题目标记 skipped 后当作正常答案提交。
      */
     private fun cancelQuestion() {
         val question = pendingQuestion ?: return
-        question.questions.forEachIndexed { index, _ ->
-            questionDrafts[index] = DshQuestionDraft(skipped = true)
+        if (question.rpcId.isEmpty()) {
+            questionError = "这个问题已失效，请等 Agent 重新提问"
+            DshStreamLog.question("cancel.abort empty-rpcId session=${question.sessionId}")
+            return
         }
-        selectedQuestionOptions.clear()
-        questionCustom = ""
+        val repository = repository as? DshRemoteRepository
+        if (repository == null) {
+            DshStreamLog.question("cancel.abort not-remote-repo")
+            return
+        }
         questionError = ""
-        DshStreamLog.question("ui.cancel dismissed rpcId=${question.rpcId}")
-        submitQuestion()
+        interactionBusy = true
+        DshStreamLog.question("ui.cancel send rpcId=${question.rpcId} session=${question.sessionId}")
+        repository.respondQuestionCancel(question.rpcId, question.sessionId) { accepted, reason ->
+            setTimeout(pagerId, 0) {
+                val stillPending = repository.pendingInteractions(question.sessionId).second
+                DshStreamLog.question(
+                    "cancel.callback accepted=$accepted reason='$reason' rpcId=${question.rpcId} stillPending=${stillPending?.rpcId.orEmpty()}",
+                )
+                interactionBusy = false
+                if (!accepted) {
+                    questionError = interactionFailureLabel(reason)
+                    DshStreamLog.question("cancel.rejected ui-kept error='$questionError'")
+                    return@setTimeout
+                }
+                repository.clearPending(question.rpcId)
+                if (pendingQuestion?.rpcId == question.rpcId) {
+                    pendingQuestion = null
+                    selectedQuestionOptions.clear()
+                    questionCustom = ""
+                    questionError = ""
+                    questionDrafts.clear()
+                }
+                DshStreamLog.question("cancel.accepted ui-hide rpcId=${question.rpcId}")
+                refreshPendingInteractions()
+                if (activeSessionId == question.sessionId) {
+                    loadWebTimeline(question.sessionId, scrollToEndAfterLoad = true)
+                }
+            }
+        }
     }
 
     private fun navigateQuestion(delta: Int) {

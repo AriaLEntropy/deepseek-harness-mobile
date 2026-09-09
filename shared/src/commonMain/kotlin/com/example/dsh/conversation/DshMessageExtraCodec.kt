@@ -148,6 +148,7 @@ internal object DshMessageExtraCodec {
         put("output", tool.output)
         put("error", tool.error)
         put("running", tool.running)
+        put("stopped", tool.stopped)
         put("cardType", tool.cardType.name)
         put("filePath", tool.filePath)
         put("todoDone", tool.todoDone)
@@ -171,6 +172,7 @@ internal object DshMessageExtraCodec {
         output = o.optString("output"),
         error = o.optString("error").takeIf { it.isNotEmpty() },
         running = o.optBoolean("running", false),
+        stopped = o.optBoolean("stopped", false),
         cardType = runCatching { DshToolCardType.valueOf(o.optString("cardType")) }.getOrDefault(DshToolCardType.GENERIC),
         filePath = o.optString("filePath").takeIf { it.isNotEmpty() },
         todoDone = o.optInt("todoDone", 0),

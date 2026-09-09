@@ -1079,6 +1079,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.colors = colors()
                     summary = remoteTool.summary
                     errorSummary = message.toolError
+                    stopped = message.toolStopped
                     body = message.content
                     open = isExpanded()
                     expandable = message.content.isNotEmpty()
@@ -1100,12 +1101,19 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             ?: remoteTool?.body?.takeIf { it.isNotEmpty() }
             ?: remoteTool?.input?.takeIf { it.isNotEmpty() }
             ?: message.content
-        val toolBody = if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) {
-            dshAskReadableBody(remoteTool.input, rawBody).ifEmpty { "已回答" }
-        } else {
-            rawBody
-        }
-        val trimmedBody = toolBody.trimStart()
+        // body 直接用 settle 阶段生成的结果（问答可读文本 / 取消中断文案），
+        // 不再重算兜底：中断/取消时 dshAskReadableBody 返回空，旧逻辑会错误兜成"已回答"。
+        val toolBody = remoteTool?.body?.takeIf { it.isNotEmpty() } ?: rawBody
+        // 结构化提问卡片：解析成功时用专门组件渲染，替代纯文本 body。
+        val askCancelled = remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION &&
+            remoteTool.summary == "已取消"
+        val askAborted = remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION &&
+            message.toolStopped
+        val askCardData = if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) {
+            dshAskQuestionCard(remoteTool.input, remoteTool.output ?: "", askCancelled, askAborted)
+        } else null
+        val effectiveBody = if (askCardData != null) "" else toolBody
+        val trimmedBody = effectiveBody.trimStart()
         val isJson = !isRemoteSpecial &&
             (trimmedBody.startsWith("{") || trimmedBody.startsWith("["))
         val cardLabel = remoteTool?.title ?: when (message.toolCardType) {
@@ -1118,7 +1126,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             DshToolCardType.GENERIC -> message.toolName ?: "工具"
         }
         val summary = remoteTool?.summary?.takeUnless { it.dshLooksLikeJson() }
-            ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "已完成" else
+            ?: if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) "" else
                 toolBody.lineSequence().firstOrNull().orEmpty().takeUnless { it.dshLooksLikeJson() }.orEmpty()
         // 工具调用行：Bash/Read 等，JSON 结果可折叠展开
         View {
@@ -1133,8 +1141,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.colors = colors()
                     this.summary = summary
                     errorSummary = message.toolError
-                    body = if (isJson) "" else toolBody
-                    jsonContent = if (isJson) toolBody else ""
+                    stopped = message.toolStopped
+                    body = if (isJson) "" else effectiveBody
+                    jsonContent = if (isJson) effectiveBody else ""
                     open = isExpanded()
                     expandable = true
                     this.onToggle = onToggle
@@ -1144,6 +1153,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
                     running = message.toolRunning
+                    askCard = askCardData
                 }
             }
         }

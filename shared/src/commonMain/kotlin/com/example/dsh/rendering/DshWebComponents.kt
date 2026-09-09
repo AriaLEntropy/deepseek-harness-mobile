@@ -54,6 +54,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         backgroundColor(
                             when {
                                 ctx.attr.errorSummary -> c.interactiveBgHoverDanger
+                                ctx.attr.stopped -> c.stateWarnTertiary
                                 ctx.attr.running -> c.stateBusinessTertiary
                                 else -> c.bgLayer1
                             },
@@ -72,9 +73,12 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         } else if (ctx.attr.errorSummary) {
                             backgroundColor(c.interactiveBgHoverDanger)
                             borderRadius(6f)
+                        } else if (ctx.attr.stopped) {
+                            backgroundColor(c.stateWarnTertiary)
+                            borderRadius(6f)
                         }
                     }
-                    vif({ ctx.attr.errorSummary }) {
+                    vif({ ctx.attr.errorSummary || ctx.attr.stopped }) {
                         View {
                             attr {
                                 size(14f, 14f)
@@ -84,12 +88,14 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 attr {
                                     size(8f, 8f)
                                     borderRadius(4f)
-                                    backgroundColor(c.stateErrorPrimary)
+                                    backgroundColor(
+                                        if (ctx.attr.errorSummary) c.stateErrorPrimary else c.stateWarnPrimary,
+                                    )
                                 }
                             }
                         }
                     }
-                    vif({ !ctx.attr.errorSummary && ctx.attr.iconAsset.isNotEmpty() }) {
+                    vif({ !ctx.attr.errorSummary && !ctx.attr.stopped && ctx.attr.iconAsset.isNotEmpty() }) {
                         Image {
                             attr {
                                 src(ImageUri.commonAssets(ctx.attr.iconAsset))
@@ -151,7 +157,15 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             marginBottom(8f)
                             flexDirectionColumn()
                         }
-                        vif({ ctx.attr.jsonContent.isNotEmpty() }) {
+                        vif({ ctx.attr.askCard != null }) {
+                            DshAskQuestionCard {
+                                attr {
+                                    card = ctx.attr.askCard
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isNotEmpty() }) {
                             DshJsonTree {
                                 attr {
                                     content = ctx.attr.jsonContent
@@ -161,7 +175,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
                             if (ctx.attr.plainBody) {
                                 Text {
                                     attr {
@@ -190,7 +204,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() }) {
                             Text {
                                 attr {
                                     text("暂无输出")
@@ -224,9 +238,11 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var onToggleJsonNode: (String) -> Unit by observable({})
     var chrome: Boolean by observable(false)
     var running: Boolean by observable(false)
+    var stopped: Boolean by observable(false)
     var plainBody: Boolean by observable(false)
     var bodyCollapsible: Boolean by observable(true)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
+    var askCard: DshAskQuestionCard? by observable(null)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */
@@ -1827,4 +1843,115 @@ private fun ViewContainer<*, *>.DshTapTarget(onClick: () -> Unit) {
         }
         event { click { onClick() } }
     }
+}
+
+internal class DshAskQuestionCardAttr : ComposeAttr() {
+    var card: DshAskQuestionCard? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal class DshAskQuestionCardView : ComposeView<DshAskQuestionCardAttr, ComposeEvent>() {
+    override fun createAttr(): DshAskQuestionCardAttr = DshAskQuestionCardAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val c = ctx.attr.colors
+        val card = ctx.attr.card ?: return { View { } }
+        return when (card) {
+            is DshAskQuestionCard.Answered -> {
+                val questions = ObservableList<AnsweredItem>().also { it.addAll(card.questions) }
+                val skippedLabel = card.skippedLabel
+                {
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            marginTop(4f)
+                            padding(0f, 4f, 4f, 4f)
+                        }
+                        vfor({ questions }) { item ->
+                            val answers = ObservableList<String>().also { it.addAll(item.answers) }
+                            View {
+                                attr {
+                                    flexDirectionColumn()
+                                    marginTop(12f)
+                                }
+                                Text {
+                                    attr {
+                                        text(item.question)
+                                        fontSize(14f)
+                                        lineHeight(22f)
+                                        color(c.labelTertiary)
+                                    }
+                                }
+                                vif({ item.answers.isEmpty() }) {
+                                    Text {
+                                        attr {
+                                            text(skippedLabel)
+                                            fontSize(14f)
+                                            lineHeight(22f)
+                                            color(c.labelTertiary)
+                                            marginTop(2f)
+                                        }
+                                    }
+                                }
+                                vif({ item.answers.isNotEmpty() }) {
+                                    vfor({ answers }) { answer ->
+                                        Text {
+                                            attr {
+                                                text(answer)
+                                                fontSize(14f)
+                                                lineHeight(22f)
+                                                color(c.labelPrimary)
+                                                marginTop(2f)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            is DshAskQuestionCard.Unanswered -> {
+                val questions = ObservableList<UnansweredItem>().also { it.addAll(card.questions) }
+                val verdict = card.verdict
+                {
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            marginTop(4f)
+                            padding(0f, 4f, 4f, 4f)
+                        }
+                        Text {
+                            attr {
+                                text(verdict)
+                                fontSize(14f)
+                                lineHeight(22f)
+                                color(c.labelPrimary)
+                                marginTop(12f)
+                                marginBottom(8f)
+                            }
+                        }
+                        vfor({ questions }) { item ->
+                            Text {
+                                attr {
+                                    text(item.question)
+                                    fontSize(14f)
+                                    lineHeight(22f)
+                                    color(c.labelTertiary)
+                                    marginTop(6f)
+                                    marginLeft(16f)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun ViewContainer<*, *>.DshAskQuestionCard(init: DshAskQuestionCardView.() -> Unit) {
+    addChild(DshAskQuestionCardView(), init)
 }

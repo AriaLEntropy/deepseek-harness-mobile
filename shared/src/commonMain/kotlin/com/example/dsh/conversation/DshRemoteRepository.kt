@@ -76,6 +76,12 @@ internal class DshRemoteRepository(
         callback: (Boolean, String) -> Unit,
     ) = delegate.respondQuestion(rpcId, sessionId, answer, callback)
 
+    fun respondQuestionCancel(
+        rpcId: String,
+        sessionId: String,
+        callback: (Boolean, String) -> Unit,
+    ) = delegate.respondQuestionCancel(rpcId, sessionId, callback)
+
     fun clearPending(rpcId: String) = delegate.clearPending(rpcId)
 
     /** 会话产生新消息时刷新其 updatedAt（消息时间），供抽屉 workspaceGroups 实时重排。 */
