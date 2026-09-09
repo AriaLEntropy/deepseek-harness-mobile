@@ -963,6 +963,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         return
     }
     // 上下文注入卡片：Web 时间线下展示注入到上下文的资料（可展开）
+    // 与 dsh web 对齐：展开后直接显示全文，不做 body 二次折叠；recall 类型标题为“上下文回忆”。
     if (isWebTimeline && message.isContextInjection) {
         View {
             attr {
@@ -971,7 +972,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             }
             DshDisclosureRow {
                 attr {
-                    title = "上下文注入"
+                    title = if (message.contextForm == "recall") "上下文回忆" else "上下文注入"
                     iconAsset = "context.svg"
                     this.colors = colors()
                     summary = message.toolName.orEmpty()
@@ -996,9 +997,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = isExpanded()
                     expandable = message.contextCanExpand()
                     this.onToggle = onToggle
-                    bodyExpanded = isBodyExpanded()
-                    this.onToggleBody = onToggleBody
-                    maxBodyLines = 8
+                    bodyCollapsible = false
                 }
             }
         }

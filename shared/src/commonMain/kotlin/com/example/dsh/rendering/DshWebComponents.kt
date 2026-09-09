@@ -180,6 +180,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                         expanded = ctx.attr.bodyExpanded
                                         maxLines = ctx.attr.maxBodyLines
                                         error = ctx.attr.errorSummary
+                                        collapsible = ctx.attr.bodyCollapsible
                                         colors = c
                                         this.onToggle = {
                                             ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
@@ -224,6 +225,7 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var chrome: Boolean by observable(false)
     var running: Boolean by observable(false)
     var plainBody: Boolean by observable(false)
+    var bodyCollapsible: Boolean by observable(true)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
 }
 
@@ -235,8 +237,10 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
     override fun body(): ViewBuilder {
         val ctx = this
         val c = ctx.attr.colors
-        val expanded = ctx.attr.expanded
-        val hidden = ctx.attr.content.lineSequence().count() - ctx.attr.maxLines
+        // collapsible=false 时保留代码块样式与滑动区域，但不做行截断、不显示"其余N行/收起"。
+        val collapsible = ctx.attr.collapsible
+        val expanded = ctx.attr.expanded || !collapsible
+        val hidden = if (collapsible) ctx.attr.content.lineSequence().count() - ctx.attr.maxLines else 0
         val capped = hidden > 0 && !expanded
         val joined = if (expanded) {
             ctx.attr.content
@@ -322,6 +326,7 @@ internal class DshLongTextAttr : ComposeAttr() {
     var maxHeight: Float by observable(0f)
     var error: Boolean by observable(false)
     var onToggle: () -> Unit by observable({})
+    var collapsible: Boolean by observable(true)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
 }
 
