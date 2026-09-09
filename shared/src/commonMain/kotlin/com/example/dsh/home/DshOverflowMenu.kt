@@ -155,6 +155,10 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onJumpToBottom: () -> Unit = {},
     allMode: () -> Boolean = { false },
     sessionTitleProvider: (String) -> String = { it },
+    sessionOptions: () -> ObservableList<String>,
+    selectedSessions: () -> Set<String> = { emptySet() },
+    onToggleSession: (String) -> Unit = {},
+    onClearSessions: () -> Unit = {},
     statusBarHeight: Float,
     pageViewWidth: Float,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
@@ -375,6 +379,41 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
                 }
 
                 // ===== 空状态 =====
+
+                // ===== 全局模式：会话筛选 chips =====
+                vif({ allMode() && sessionOptions().isNotEmpty() }) {
+                    View {
+                        attr { flexDirectionRow(); alignItemsCenter(); marginTop(6f); paddingLeft(12f); paddingRight(12f) }
+                        Text { attr { text("会话"); fontSize(11f); color(colors().labelTertiary); marginRight(8f) } }
+                        View {
+                            attr { flexDirectionRow(); flex(1f); alignItemsCenter() }
+                            View {
+                                attr {
+                                    height(22f); borderRadius(11f); paddingLeft(10f); paddingRight(10f)
+                                    marginRight(6f); alignItemsCenter(); justifyContentCenter()
+                                    border(Border(1f, BorderStyle.SOLID, if (selectedSessions().isEmpty()) colors().stateBusinessPrimary else colors().borderL2))
+                                    backgroundColor(if (selectedSessions().isEmpty()) Color(0x1A000000) else colors().bgLayer2)
+                                }
+                                event { click { onClearSessions() } }
+                                Text { attr { text("全部"); fontSize(11f); color(if (selectedSessions().isEmpty()) colors().stateBusinessPrimary else colors().labelSecondary) } }
+                            }
+                            for (sid in sessionOptions()) {
+                                val label = if (sid == "__mobile__") "移动端" else sessionTitleProvider(sid).take(10)
+                                val selected = sid in selectedSessions()
+                                View {
+                                    attr {
+                                        height(22f); borderRadius(11f); paddingLeft(10f); paddingRight(10f)
+                                        marginRight(6f); alignItemsCenter(); justifyContentCenter()
+                                        border(Border(1f, BorderStyle.SOLID, if (selected) colors().stateBusinessPrimary else colors().borderL2))
+                                        backgroundColor(if (selected) Color(0x1A000000) else colors().bgLayer2)
+                                    }
+                                    event { click { onToggleSession(sid) } }
+                                    Text { attr { text(label); fontSize(11f); color(if (selected) colors().stateBusinessPrimary else colors().labelSecondary); lines(1) } }
+                                }
+                            }
+                        }
+                    }
+                }
                 vif({ total() == 0 }) {
                     Text { attr { text("暂无日志"); marginTop(90f); alignSelfCenter(); fontSize(14f); color(colors().labelTertiary) } }
                 }

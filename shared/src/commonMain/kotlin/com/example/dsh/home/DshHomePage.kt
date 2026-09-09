@@ -272,6 +272,8 @@ internal class DshHomePage : BasePager() {
     private var sessionLogPkMinute by observable(0)
     private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
     private var sessionLogSelectedTypes by observable<Set<String>>(emptySet())
+    private var sessionLogSelectedSessions by observable<Set<String>>(emptySet())
+    private var sessionLogSessionOptions by observableList<String>()
     private var sessionLogTypeOptions by observableList<String>()
     private var sessionLogKeyword by observable("")
     private var sessionLogSearchExpanded by observable(false)
@@ -1164,6 +1166,10 @@ internal class DshHomePage : BasePager() {
                     onJumpToBottom = { ctx.onSessionLogJumpToBottom() },
                     allMode = { ctx.diagnosticLogAllMode },
                     sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
+                    sessionOptions = { ctx.sessionLogSessionOptions },
+                    selectedSessions = { ctx.sessionLogSelectedSessions },
+                    onToggleSession = { ctx.onLogToggleSession(it) },
+                    onClearSessions = { ctx.onClearLogSessions() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = { this@DshHomePage.themeColors },
@@ -3051,6 +3057,7 @@ internal class DshHomePage : BasePager() {
         val tf = sessionLogTimeFilter
         val levels = sessionLogLevelFilter
         val selectedTypes = sessionLogSelectedTypes
+        val selectedSessions = sessionLogSelectedSessions
         val kw = sessionLogKeyword.trim()
         // 动态提取当前会话所有事件类型，供筛选 chip 使用
         val types = sessionLogCache.map { it.type }.distinct().sorted()
@@ -3061,6 +3068,18 @@ internal class DshHomePage : BasePager() {
         if (changed) {
             sessionLogTypeOptions.clear()
             sessionLogTypeOptions.addAll(newOptions)
+        }
+        if (changed) {
+            sessionLogTypeOptions.clear()
+            sessionLogTypeOptions.addAll(newOptions)
+        }
+        // 全局模式：提取有日志的会话列表（含移动端本地事件标记 __mobile__）
+        val sessIds = sessionLogCache.map { if (it.sessionId.isNullOrEmpty()) "__mobile__" else it.sessionId }.distinct().sorted()
+        val sessChanged = sessionLogSessionOptions.size != sessIds.size ||
+            sessionLogSessionOptions.indices.any { sessionLogSessionOptions[it] != sessIds[it] }
+        if (sessChanged) {
+            sessionLogSessionOptions.clear()
+            sessionLogSessionOptions.addAll(sessIds)
         }
         val filtered = sessionLogCache.filter { e ->
             val timeOk = when (tf) {
@@ -3077,6 +3096,7 @@ internal class DshHomePage : BasePager() {
             timeOk &&
                 (e.level in levels) &&
                 (selectedTypes.isEmpty() || e.type in selectedTypes) &&
+                (selectedSessions.isEmpty() || (if (e.sessionId.isNullOrEmpty()) "__mobile__" in selectedSessions else e.sessionId in selectedSessions)) &&
                 (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
         }
         // 最小差异更新：Myers diff 只增删改变化行，避免全量 clear+addAll 导致列表重建、
@@ -3156,10 +3176,17 @@ internal class DshHomePage : BasePager() {
         recomputeSessionLogView()
     }
 
+    fun onLogToggleSession(sessionId: String) {
+        sessionLogSelectedSessions = if (sessionId in sessionLogSelectedSessions) sessionLogSelectedSessions - sessionId else sessionLogSelectedSessions + sessionId
+        recomputeSessionLogView()
+    }
+    fun onClearLogSessions() { sessionLogSelectedSessions = emptySet(); recomputeSessionLogView() }
+
     fun clearLogFilters() {
         sessionLogTimeFilter = 0
         sessionLogLevelFilter = LogLevel.entries.toSet()
         sessionLogSelectedTypes = emptySet()
+        sessionLogSelectedSessions = emptySet()
         sessionLogKeyword = ""
         recomputeSessionLogView()
     }
@@ -3275,32 +3302,58 @@ internal class DshHomePage : BasePager() {
     /** 导出全量原文：内存事件流组稿（脱敏），缺失时回退摘要；写入文件并打开系统分享。 */
     fun exportSessionLogs() {
         if (sessionLogExporting) return
-        val targetId = overflowTargetId()
-        if (targetId.isEmpty()) return
         sessionLogExporting = true
-        val storeEvents = (repository as? DshRemoteRepository)?.store?.sessionEvents?.get(targetId)?.toList().orEmpty()
+        val isGlobal = diagnosticLogAllMode
+        val targetId = overflowTargetId()
+        if (!isGlobal && targetId.isEmpty()) {
+            sessionLogExporting = false
+            return
+        }
         val content = buildString {
-            appendLine("DSH 会话日志导出")
-            appendLine("会话：$targetId")
-            appendLine("导出时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
-            appendLine("说明：原文来自会话活跃期的内存事件流，App 重启后可能缺失；导出内容已脱敏。")
-            appendLine("")
-            if (storeEvents.isNotEmpty()) {
-                for (e in storeEvents) {
-                    appendLine("[${e.seq}] ${e.type}")
-                    appendLine(LogSanitizer.sanitize(e.raw))
-                    appendLine("")
+            if (isGlobal) {
+                appendLine("DSH 全局日志导出")
+                appendLine("范围：全部会话（含移动端本地事件）")
+                appendLine("导出时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
+                appendLine("说明：原文来自内存事件流，App 重启后可能缺失；导出内容已脱敏。")
+                appendLine("")
+                val allEvents = DshStreamLog.writeBehind?.snapshot().orEmpty()
+                    .sortedByDescending { it.seq }
+                if (allEvents.isNotEmpty()) {
+                    for (e in allEvents) {
+                        val sessLabel = if (e.sessionId.isNullOrEmpty()) "移动端" else {
+                            sessions.firstOrNull { it.id == e.sessionId }?.title?.ifEmpty { e.sessionId } ?: e.sessionId
+                        }
+                        appendLine("[${LogExporter.formatTimestamp(e.timestamp)}] ${e.level.name} ${e.type}  会话：$sessLabel")
+                        appendLine(e.message)
+                        appendLine("")
+                    }
+                } else {
+                    appendLine("（暂无日志事件）")
                 }
             } else {
-                appendLine("（内存事件流不可用，以下为摘要日志）")
-                for (e in sessionLogCache.toList()) {
-                    appendLine("[${LogExporter.formatTimestamp(e.timestamp)}] ${e.level.name} ${e.type} ${e.message}")
+                val storeEvents = (repository as? DshRemoteRepository)?.store?.sessionEvents?.get(targetId)?.toList().orEmpty()
+                appendLine("DSH 会话日志导出")
+                appendLine("会话：$targetId")
+                appendLine("导出时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
+                appendLine("说明：原文来自会话活跃期的内存事件流，App 重启后可能缺失；导出内容已脱敏。")
+                appendLine("")
+                if (storeEvents.isNotEmpty()) {
+                    for (e in storeEvents) {
+                        appendLine("[${e.seq}] ${e.type}")
+                        appendLine(LogSanitizer.sanitize(e.raw))
+                        appendLine("")
+                    }
+                } else {
+                    appendLine("（内存事件流不可用，以下为摘要日志）")
+                    for (e in sessionLogCache.toList()) {
+                        appendLine("[${LogExporter.formatTimestamp(e.timestamp)}] ${e.level.name} ${e.type} ${e.message}")
+                    }
                 }
             }
         }
-        val safeName = targetId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
+        val safeName = if (isGlobal) "global" else targetId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
         runCatching {
-            val path = writeExportFile(exportDir, "dsh-session-$safeName-log.txt", content)
+            val path = writeExportFile(exportDir, "dsh-$safeName-log.txt", content)
             bridgeModule.shareExportFile(path)
         }.onFailure {
             sessionLogExporting = false
