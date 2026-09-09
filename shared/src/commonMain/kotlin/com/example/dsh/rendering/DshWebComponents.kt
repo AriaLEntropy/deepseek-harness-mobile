@@ -175,7 +175,15 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail != null }) {
+                            DshContextDetails {
+                                attr {
+                                    detail = ctx.attr.contextDetail
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isNotEmpty() }) {
                             if (ctx.attr.plainBody) {
                                 Text {
                                     attr {
@@ -204,7 +212,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.toolDetail != null }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.toolDetail != null }) {
                             DshToolDetails {
                                 attr {
                                     detail = ctx.attr.toolDetail
@@ -212,7 +220,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
                             Text {
                                 attr {
                                     text("暂无输出")
@@ -254,6 +262,176 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     /** Compact one-line chrome used by Web ToolRow/ReasoningRow equivalents. */
     var compact: Boolean by observable(false)
     var toolDetail: DshToolDetail? by observable(null)
+    var contextDetail: DshContextDetail? by observable(null)
+}
+
+/** The durable context fields retain their producer-specific presentation after expansion. */
+internal data class DshContextDetail(
+    val form: String,
+    val body: String,
+    val catalog: List<DshContextCatalogEntry>,
+    val sections: List<DshContextSection>,
+    val recalls: List<DshContextRecall>,
+    val instructions: List<DshContextInstruction>,
+    val relaySender: String,
+)
+
+internal class DshContextDetailsView : ComposeView<DshContextDetailsAttr, ComposeEvent>() {
+    override fun createAttr(): DshContextDetailsAttr = DshContextDetailsAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val detail = ctx.attr.detail ?: return { View { } }
+        val catalog = ObservableList<DshContextCatalogEntry>().also { it.addAll(detail.catalog) }
+        val sections = ObservableList<DshContextSection>().also { it.addAll(detail.sections) }
+        val recalls = ObservableList<DshContextRecall>().also { it.addAll(detail.recalls) }
+        val instructions = ObservableList<DshContextInstruction>().also { it.addAll(detail.instructions) }
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginLeft(22f)
+                    marginTop(4f)
+                }
+                vif({ detail.relaySender.isNotEmpty() }) {
+                    Text {
+                        attr {
+                            text("来自 ${detail.relaySender}")
+                            fontSize(12f)
+                            color(ctx.attr.colors.labelTertiary)
+                            marginBottom(4f)
+                        }
+                    }
+                }
+                vfor({ catalog }) { item ->
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            padding(7f, 8f, 7f, 8f)
+                            marginTop(4f)
+                            borderRadius(6f)
+                            backgroundColor(ctx.attr.colors.bgModulePlatform)
+                        }
+                        Text {
+                            attr {
+                                text(item.name)
+                                fontSize(12f)
+                                fontFamily("monospace")
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(item.description)
+                                fontSize(13f)
+                                lineHeight(20f)
+                                color(ctx.attr.colors.labelSecondary)
+                                marginTop(2f)
+                            }
+                        }
+                    }
+                }
+                vfor({ instructions }) { item ->
+                    View {
+                        attr {
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            marginTop(5f)
+                        }
+                        Text {
+                            attr {
+                                text(item.path)
+                                flex(1f)
+                                lines(1)
+                                fontSize(12f)
+                                fontFamily("monospace")
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(when (item.action) { "remove" -> "已移除"; "replace" -> "已更新"; else -> "已加载" })
+                                marginLeft(8f)
+                                fontSize(12f)
+                                color(ctx.attr.colors.labelTertiary)
+                            }
+                        }
+                    }
+                }
+                vfor({ recalls }) { item ->
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            marginTop(5f)
+                            padding(7f, 8f, 7f, 8f)
+                            borderRadius(6f)
+                            backgroundColor(ctx.attr.colors.bgModulePlatform)
+                        }
+                        Text {
+                            attr {
+                                text(item.label)
+                                fontSize(13f)
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text("保留 ${item.retainedMessages} 条，省略 ${item.omittedMessages} 条${if (item.truncated) "，已截断" else ""}")
+                                fontSize(12f)
+                                color(ctx.attr.colors.labelTertiary)
+                                marginTop(2f)
+                            }
+                        }
+                    }
+                }
+                vfor({ sections }) { item ->
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            marginTop(8f)
+                        }
+                        Text {
+                            attr {
+                                text(item.title)
+                                fontSize(13f)
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(boundedContextText(item.body))
+                                fontSize(13f)
+                                lineHeight(21f)
+                                color(ctx.attr.colors.labelSecondary)
+                                marginTop(3f)
+                            }
+                        }
+                    }
+                }
+                vif({ detail.body.isNotEmpty() }) {
+                    Text {
+                        attr {
+                            text(detail.body)
+                            fontSize(13f)
+                            lineHeight(21f)
+                            color(ctx.attr.colors.labelSecondary)
+                            marginTop(8f)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal class DshContextDetailsAttr : ComposeAttr() {
+    var detail: DshContextDetail? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal fun ViewContainer<*, *>.DshContextDetails(init: DshContextDetailsView.() -> Unit) {
+    addChild(DshContextDetailsView(), init)
 }
 
 /** Input/output kept separately so a tool detail does not collapse into one raw text block. */

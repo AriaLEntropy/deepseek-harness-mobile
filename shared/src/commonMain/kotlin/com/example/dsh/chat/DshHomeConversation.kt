@@ -1154,29 +1154,21 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     iconAsset = "context.svg"
                     this.colors = colors()
                     summary = message.toolName.orEmpty()
-                    body = if (message.contextCatalog.isNotEmpty()) {
-                        message.contextCatalog.joinToString("\n") { "${it.name}\n${it.description}" }
-                    } else if (message.contextSections.isNotEmpty()) {
-                        message.contextSections.joinToString("\n\n") {
-                            "${it.title}\n${boundedContextText(it.body)}"
-                        }
-                    } else if (message.contextRecalls.isNotEmpty()) {
-                        message.contextRecalls.joinToString("\n") {
-                            "${it.label} · 保留 ${it.retainedMessages} · 省略 ${it.omittedMessages}${if (it.truncated) " · 已截断" else ""}"
-                        } + "\n\n" + boundedContextText(message.contextBody)
-                    } else if (message.contextInstructions.isNotEmpty()) {
-                        message.contextInstructions.joinToString("\n") { "${it.path} · ${it.action}" } +
-                            "\n\n" + boundedContextText(message.contextBody)
-                    } else if (message.contextRelaySender.isNotEmpty()) {
-                        "来自 ${message.contextRelaySender}\n\n${boundedContextText(message.contextBody)}"
-                    } else {
-                        boundedContextText(message.contextBody)
-                    }
+                    body = ""
                     open = isExpanded()
                     expandable = message.contextCanExpand()
                     this.onToggle = onToggle
                     bodyCollapsible = false
                     compact = true
+                    contextDetail = DshContextDetail(
+                        form = message.contextForm,
+                        body = boundedContextText(message.contextBody),
+                        catalog = message.contextCatalog,
+                        sections = message.contextSections,
+                        recalls = message.contextRecalls,
+                        instructions = message.contextInstructions,
+                        relaySender = message.contextRelaySender,
+                    )
                 }
             }
         }
