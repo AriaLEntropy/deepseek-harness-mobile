@@ -1146,7 +1146,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         View {
             attr {
                 width(pagerData.pageViewWidth - 36f)
-                marginBottom(12f)
+                marginBottom(6f)
             }
             DshDisclosureRow {
                 attr {
@@ -1154,28 +1154,21 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     iconAsset = "context.svg"
                     this.colors = colors()
                     summary = message.toolName.orEmpty()
-                    body = if (message.contextCatalog.isNotEmpty()) {
-                        message.contextCatalog.joinToString("\n") { "${it.name}\n${it.description}" }
-                    } else if (message.contextSections.isNotEmpty()) {
-                        message.contextSections.joinToString("\n\n") {
-                            "${it.title}\n${boundedContextText(it.body)}"
-                        }
-                    } else if (message.contextRecalls.isNotEmpty()) {
-                        message.contextRecalls.joinToString("\n") {
-                            "${it.label} · 保留 ${it.retainedMessages} · 省略 ${it.omittedMessages}${if (it.truncated) " · 已截断" else ""}"
-                        } + "\n\n" + boundedContextText(message.contextBody)
-                    } else if (message.contextInstructions.isNotEmpty()) {
-                        message.contextInstructions.joinToString("\n") { "${it.path} · ${it.action}" } +
-                            "\n\n" + boundedContextText(message.contextBody)
-                    } else if (message.contextRelaySender.isNotEmpty()) {
-                        "来自 ${message.contextRelaySender}\n\n${boundedContextText(message.contextBody)}"
-                    } else {
-                        boundedContextText(message.contextBody)
-                    }
+                    body = ""
                     open = isExpanded()
                     expandable = message.contextCanExpand()
                     this.onToggle = onToggle
                     bodyCollapsible = false
+                    compact = true
+                    contextDetail = DshContextDetail(
+                        form = message.contextForm,
+                        body = boundedContextText(message.contextBody),
+                        catalog = message.contextCatalog,
+                        sections = message.contextSections,
+                        recalls = message.contextRecalls,
+                        instructions = message.contextInstructions,
+                        relaySender = message.contextRelaySender,
+                    )
                 }
             }
         }
@@ -1237,6 +1230,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
                     plainBody = true
+                    compact = true
                 }
             }
         }
@@ -1248,7 +1242,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
-                marginBottom(12f)
+                marginBottom(6f)
             }
             DshDisclosureRow {
                 attr {
@@ -1266,6 +1260,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
                     running = message.toolRunning
+                    compact = true
                 }
             }
         }
@@ -1310,7 +1305,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
-                marginBottom(12f)
+                marginBottom(6f)
             }
             DshDisclosureRow {
                 attr {
@@ -1320,7 +1315,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.summary = summary
                     errorSummary = message.toolError
                     stopped = message.toolStopped
-                    body = if (isJson) "" else effectiveBody
+                    body = ""
                     jsonContent = if (isJson) effectiveBody else ""
                     open = isExpanded()
                     expandable = true
@@ -1332,6 +1327,15 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggleJsonNode = onToggleJsonNode
                     running = message.toolRunning
                     askCard = askCardData
+                    compact = true
+                    toolDetail = if (isJson || askCardData != null) null else DshToolDetail(
+                        kind = remoteTool?.kind ?: DshRemoteToolKind.GENERIC,
+                        input = remoteTool?.input.orEmpty(),
+                        output = remoteTool?.output.orEmpty(),
+                        fallback = effectiveBody,
+                        running = message.toolRunning,
+                        error = message.toolError,
+                    )
                 }
             }
         }

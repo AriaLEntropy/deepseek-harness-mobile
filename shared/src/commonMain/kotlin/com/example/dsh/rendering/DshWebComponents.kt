@@ -64,7 +64,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                 }
                 View {
                     attr {
-                        height(28f)
+                        height(if (ctx.attr.compact) 24f else 28f)
                         flexDirectionRow()
                         alignItemsCenter()
                         if (ctx.attr.running) {
@@ -115,7 +115,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         attr {
                             text(ctx.attr.title)
                             marginLeft(7f)
-                            fontSize(14f)
+                                        fontSize(if (ctx.attr.compact) 13f else 14f)
                             color(c.labelPrimary)
                         }
                     }
@@ -135,7 +135,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 text(ctx.attr.summary)
                                 flex(1f)
                                 lines(1)
-                                fontSize(14f)
+                                fontSize(if (ctx.attr.compact) 13f else 14f)
                                 color(if (ctx.attr.errorSummary) c.stateErrorPrimary else c.labelSecondary)
                             }
                         }
@@ -175,12 +175,20 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isNotEmpty() }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail != null }) {
+                            DshContextDetails {
+                                attr {
+                                    detail = ctx.attr.contextDetail
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isNotEmpty() }) {
                             if (ctx.attr.plainBody) {
                                 Text {
                                     attr {
                                         text(ctx.attr.body)
-                                        fontSize(14f)
+                            fontSize(if (ctx.attr.compact) 13f else 14f)
                                         lineHeight(24f)
                                         color(c.labelSecondary)
                                         marginTop(6f)
@@ -204,7 +212,15 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.toolDetail != null }) {
+                            DshToolDetails {
+                                attr {
+                                    detail = ctx.attr.toolDetail
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
                             Text {
                                 attr {
                                     text("暂无输出")
@@ -243,6 +259,320 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var bodyCollapsible: Boolean by observable(true)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
     var askCard: DshAskQuestionCard? by observable(null)
+    /** Compact one-line chrome used by Web ToolRow/ReasoningRow equivalents. */
+    var compact: Boolean by observable(false)
+    var toolDetail: DshToolDetail? by observable(null)
+    var contextDetail: DshContextDetail? by observable(null)
+}
+
+/** The durable context fields retain their producer-specific presentation after expansion. */
+internal data class DshContextDetail(
+    val form: String,
+    val body: String,
+    val catalog: List<DshContextCatalogEntry>,
+    val sections: List<DshContextSection>,
+    val recalls: List<DshContextRecall>,
+    val instructions: List<DshContextInstruction>,
+    val relaySender: String,
+)
+
+internal class DshContextDetailsView : ComposeView<DshContextDetailsAttr, ComposeEvent>() {
+    override fun createAttr(): DshContextDetailsAttr = DshContextDetailsAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val detail = ctx.attr.detail ?: return { View { } }
+        val catalog = ObservableList<DshContextCatalogEntry>().also { it.addAll(detail.catalog) }
+        val sections = ObservableList<DshContextSection>().also { it.addAll(detail.sections) }
+        val recalls = ObservableList<DshContextRecall>().also { it.addAll(detail.recalls) }
+        val instructions = ObservableList<DshContextInstruction>().also { it.addAll(detail.instructions) }
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginLeft(22f)
+                    marginTop(4f)
+                }
+                vif({ detail.relaySender.isNotEmpty() }) {
+                    Text {
+                        attr {
+                            text("来自 ${detail.relaySender}")
+                            fontSize(12f)
+                            color(ctx.attr.colors.labelTertiary)
+                            marginBottom(4f)
+                        }
+                    }
+                }
+                vfor({ catalog }) { item ->
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            padding(7f, 8f, 7f, 8f)
+                            marginTop(4f)
+                            borderRadius(6f)
+                            backgroundColor(ctx.attr.colors.bgModulePlatform)
+                        }
+                        Text {
+                            attr {
+                                text(item.name)
+                                fontSize(12f)
+                                fontFamily("monospace")
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(item.description)
+                                fontSize(13f)
+                                lineHeight(20f)
+                                color(ctx.attr.colors.labelSecondary)
+                                marginTop(2f)
+                            }
+                        }
+                    }
+                }
+                vfor({ instructions }) { item ->
+                    View {
+                        attr {
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            marginTop(5f)
+                        }
+                        Text {
+                            attr {
+                                text(item.path)
+                                flex(1f)
+                                lines(1)
+                                fontSize(12f)
+                                fontFamily("monospace")
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(when (item.action) { "remove" -> "已移除"; "replace" -> "已更新"; else -> "已加载" })
+                                marginLeft(8f)
+                                fontSize(12f)
+                                color(ctx.attr.colors.labelTertiary)
+                            }
+                        }
+                    }
+                }
+                vfor({ recalls }) { item ->
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            marginTop(5f)
+                            padding(7f, 8f, 7f, 8f)
+                            borderRadius(6f)
+                            backgroundColor(ctx.attr.colors.bgModulePlatform)
+                        }
+                        Text {
+                            attr {
+                                text(item.label)
+                                fontSize(13f)
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text("保留 ${item.retainedMessages} 条，省略 ${item.omittedMessages} 条${if (item.truncated) "，已截断" else ""}")
+                                fontSize(12f)
+                                color(ctx.attr.colors.labelTertiary)
+                                marginTop(2f)
+                            }
+                        }
+                    }
+                }
+                vfor({ sections }) { item ->
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            marginTop(8f)
+                        }
+                        Text {
+                            attr {
+                                text(item.title)
+                                fontSize(13f)
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(boundedContextText(item.body))
+                                fontSize(13f)
+                                lineHeight(21f)
+                                color(ctx.attr.colors.labelSecondary)
+                                marginTop(3f)
+                            }
+                        }
+                    }
+                }
+                vif({ detail.body.isNotEmpty() }) {
+                    Text {
+                        attr {
+                            text(detail.body)
+                            fontSize(13f)
+                            lineHeight(21f)
+                            color(ctx.attr.colors.labelSecondary)
+                            marginTop(8f)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal class DshContextDetailsAttr : ComposeAttr() {
+    var detail: DshContextDetail? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal fun ViewContainer<*, *>.DshContextDetails(init: DshContextDetailsView.() -> Unit) {
+    addChild(DshContextDetailsView(), init)
+}
+
+/** Input/output kept separately so a tool detail does not collapse into one raw text block. */
+internal data class DshToolDetail(
+    val kind: DshRemoteToolKind,
+    val input: String,
+    val output: String,
+    val fallback: String,
+    val running: Boolean,
+    val error: Boolean,
+)
+
+internal class DshToolDetailsView : ComposeView<DshToolDetailsAttr, ComposeEvent>() {
+    override fun createAttr(): DshToolDetailsAttr = DshToolDetailsAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val detail = ctx.attr.detail ?: return { View { } }
+        val output = detail.output.ifEmpty { if (detail.running) "" else detail.fallback }
+        val codeStyle = detail.kind == DshRemoteToolKind.BASH ||
+            detail.kind == DshRemoteToolKind.READ ||
+            detail.kind == DshRemoteToolKind.FILE_MUTATION
+        val inputLabel = when (detail.kind) {
+            DshRemoteToolKind.BASH -> "命令"
+            DshRemoteToolKind.READ -> "文件"
+            DshRemoteToolKind.FILE_MUTATION -> "变更"
+            DshRemoteToolKind.SEARCH, DshRemoteToolKind.WEB -> "查询"
+            else -> "输入"
+        }
+        val outputLabel = when (detail.kind) {
+            DshRemoteToolKind.BASH -> "输出"
+            DshRemoteToolKind.READ -> "内容"
+            DshRemoteToolKind.FILE_MUTATION -> "结果"
+            DshRemoteToolKind.SEARCH, DshRemoteToolKind.WEB -> "结果"
+            else -> "输出"
+        }
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginLeft(22f)
+                    marginTop(2f)
+                }
+                vif({ detail.input.isNotBlank() }) {
+                    DshToolDetailSection {
+                        attr {
+                            label = inputLabel
+                            content = detail.input
+                            code = codeStyle
+                            colors = ctx.attr.colors
+                        }
+                    }
+                }
+                vif({ output.isNotBlank() }) {
+                    DshToolDetailSection {
+                        attr {
+                            label = outputLabel
+                            content = output
+                            code = codeStyle
+                            error = detail.error
+                            colors = ctx.attr.colors
+                        }
+                    }
+                }
+                vif({ detail.running && output.isEmpty() }) {
+                    Text {
+                        attr {
+                            text("等待工具输出")
+                            fontSize(13f)
+                            lineHeight(20f)
+                            color(ctx.attr.colors.labelTertiary)
+                            marginTop(4f)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal class DshToolDetailsAttr : ComposeAttr() {
+    var detail: DshToolDetail? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal class DshToolDetailSectionView : ComposeView<DshToolDetailSectionAttr, ComposeEvent>() {
+    override fun createAttr(): DshToolDetailSectionAttr = DshToolDetailSectionAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginTop(6f)
+                    padding(8f)
+                    borderRadius(8f)
+                    backgroundColor(if (ctx.attr.code) ctx.attr.colors.markdownCodeBlock else ctx.attr.colors.bgModulePlatform)
+                    border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
+                }
+                Text {
+                    attr {
+                        text(ctx.attr.label)
+                        fontSize(11f)
+                        color(ctx.attr.colors.labelTertiary)
+                        marginBottom(4f)
+                    }
+                }
+                Scroller {
+                    attr { height(180f) }
+                    Text {
+                        attr {
+                            text(ctx.attr.content)
+                            fontSize(if (ctx.attr.code) 12f else 13f)
+                            lineHeight(if (ctx.attr.code) 18f else 21f)
+                            if (ctx.attr.code) fontFamily("monospace")
+                            color(if (ctx.attr.error) ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelSecondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal class DshToolDetailSectionAttr : ComposeAttr() {
+    var label: String by observable("")
+    var content: String by observable("")
+    var code: Boolean by observable(false)
+    var error: Boolean by observable(false)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal fun ViewContainer<*, *>.DshToolDetails(init: DshToolDetailsView.() -> Unit) {
+    addChild(DshToolDetailsView(), init)
+}
+
+internal fun ViewContainer<*, *>.DshToolDetailSection(init: DshToolDetailSectionView.() -> Unit) {
+    addChild(DshToolDetailSectionView(), init)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */
