@@ -371,6 +371,8 @@ internal data class DshMessage(
     val toolCardType: DshToolCardType = DshToolCardType.GENERIC,
     val toolRunning: Boolean = false,
     val toolError: Boolean = false,
+    /** 工具调用被中断（stopped 态），与原版一致：非错误，用琥珀色提示。 */
+    val toolStopped: Boolean = false,
     val isContextInjection: Boolean = false,
     val contextForm: String = "",
     val contextBody: String = "",
@@ -501,6 +503,7 @@ internal fun DshMessage.visuallyEquals(other: DshMessage): Boolean =
         toolCardType == other.toolCardType &&
         toolRunning == other.toolRunning &&
         toolError == other.toolError &&
+        toolStopped == other.toolStopped &&
         isContextInjection == other.isContextInjection &&
         contextForm == other.contextForm &&
         contextBody == other.contextBody &&
@@ -548,6 +551,7 @@ internal data class DshWebTimelineItem(
     val output: String? = null,
     val error: String? = null,
     val running: Boolean = false,
+    val stopped: Boolean = false,
     val callId: String = "",
     val callSeq: Int = -1,
     val cardType: DshToolCardType = DshToolCardType.GENERIC,

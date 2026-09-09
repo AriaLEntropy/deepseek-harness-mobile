@@ -41,6 +41,8 @@ internal data class DshRemoteToolCallModel(
     val output: String = "",
     val error: String? = null,
     val running: Boolean = true,
+    /** 工具调用被中断（interrupted / ASK_ABORTED）：与原版 stopped 语义一致，非错误。 */
+    val stopped: Boolean = false,
     val cardType: DshToolCardType = DshToolCardType.GENERIC,
     val filePath: String? = null,
     val todoDone: Int = 0,
@@ -63,6 +65,7 @@ internal fun DshRemoteToolCallModel.toRemoteMessage(key: String): DshMessage = D
     toolCardType = cardType,
     toolRunning = running,
     toolError = error != null,
+    toolStopped = stopped,
     toolCallId = callId,
     remoteTool = this,
 )
@@ -152,24 +155,36 @@ internal object DshRemoteToolCallModels {
         // generic card. Only an absent result view inherits the call view.
         val card = view?.let(::toolCardType) ?: base.cardType
         val title = view?.optString("title")?.takeIf { it.isNotEmpty() } ?: base.title
-        val body = when (base.kind) {
-            DshRemoteToolKind.ASK_QUESTION -> dshAskReadableBody(base.input, result.output)
-                .ifEmpty { resultBody(base.kind, card, view, result.output) }
-            else -> resultBody(base.kind, card, view, result.output)
+        // 与原版 AskQuestionRow / tool-call-model 一致：区分「用户取消」「被中断」与
+        // 真正的执行失败。wire 上取消/中断由 data.error.code 承载（ASK_CANCELLED、
+        // ASK_ABORTED、interrupted），isError 只说明结果块带错，不能直接当失败渲染。
+        val errorCode = data.optJSONObject("error")?.optString("code").orEmpty()
+        val ask = base.kind == DshRemoteToolKind.ASK_QUESTION
+        val cancelled = ask && errorCode == "ASK_CANCELLED"
+        val aborted = ask && (errorCode == "ASK_ABORTED" || errorCode == "interrupted")
+        val interruptedGeneric = !ask && errorCode == "interrupted"
+        val stopped = aborted || interruptedGeneric
+        val body = when {
+            cancelled -> "本轮已取消，未提交回答"
+            aborted -> "本轮已中断，未提交回答"
+            else -> when (base.kind) {
+                DshRemoteToolKind.ASK_QUESTION -> dshAskReadableBody(base.input, result.output)
+                    .ifEmpty { resultBody(base.kind, card, view, result.output) }
+                else -> resultBody(base.kind, card, view, result.output)
+            }
         }
         val todo = if (base.kind == DshRemoteToolKind.TODO) {
             TodoSummary(base.todoDone, base.todoTotal, base.todoActive, base.todoActiveExtra)
         } else TodoSummary()
-        val question = if (base.kind == DshRemoteToolKind.ASK_QUESTION) {
-            answerSummary(result.output)
-        } else AnswerSummary()
+        val question = if (ask) answerSummary(result.output) else AnswerSummary()
         return base.copy(
             callId = callId.ifEmpty { base.callId },
             title = title,
-            summary = settledSummary(base, title, result.output, question),
+            summary = settledSummary(base, title, result.output, question, cancelled, aborted),
             body = body,
             output = result.output,
-            error = if (result.isError) result.output.ifEmpty { "工具执行失败" } else null,
+            error = if (result.isError && !cancelled && !stopped) result.output.ifEmpty { "工具执行失败" } else null,
+            stopped = stopped,
             running = false,
             cardType = card,
             todoDone = todo.done,
@@ -188,9 +203,13 @@ internal object DshRemoteToolCallModels {
         title: String,
         output: String,
         question: AnswerSummary,
+        cancelled: Boolean,
+        aborted: Boolean,
     ): String = when (base.kind) {
         DshRemoteToolKind.ASK_QUESTION -> when {
-            question.total > 0 -> "已回答 ${question.answered}/${question.total}"
+            cancelled -> "已取消"
+            aborted -> "已中断"
+            question.total > 0 -> "${question.answered}/${question.total} 已回答"
             else -> "已完成"
         }
         DshRemoteToolKind.TODO -> todoLabel(base.todoDone, base.todoTotal, base.todoActive, base.todoActiveExtra)
@@ -211,7 +230,7 @@ internal object DshRemoteToolCallModels {
         DshRemoteToolKind.SEARCH -> if (name.equals("glob", true)) "Glob" else "Grep"
         DshRemoteToolKind.WEB -> if (name.equals("web_fetch", true)) "Fetch" else "Search"
         DshRemoteToolKind.SKILL -> "Skill"
-        DshRemoteToolKind.ASK_QUESTION -> "Ask"
+        DshRemoteToolKind.ASK_QUESTION -> "提问"
         DshRemoteToolKind.TODO -> "Todo"
         DshRemoteToolKind.GENERIC -> view?.optString("title")?.takeIf { it.isNotEmpty() } ?: name
     }
@@ -505,4 +524,83 @@ private fun dshExtractJsonObject(raw: String): JSONObject? {
     val end = trimmed.lastIndexOf('}')
     if (start >= 0 && end > start) return parse(trimmed.substring(start, end + 1))
     return null
+}
+
+/** 结构化提问卡片数据，对齐原版 AskQuestionCardModel。 */
+sealed class DshAskQuestionCard {
+    data class Answered(
+        val questions: List<AnsweredItem>,
+        val skippedLabel: String,
+    ) : DshAskQuestionCard()
+
+    data class Unanswered(
+        val questions: List<UnansweredItem>,
+        val verdict: String,
+    ) : DshAskQuestionCard()
+}
+
+data class AnsweredItem(val id: String, val question: String, val answers: List<String>)
+data class UnansweredItem(val id: String, val question: String)
+
+/** 从 input/output 构建结构化提问卡片；解析失败返回 null（渲染层回退纯文本）。 */
+internal fun dshAskQuestionCard(
+    input: String,
+    output: String,
+    cancelled: Boolean,
+    aborted: Boolean,
+): DshAskQuestionCard? {
+    val questions = dshAskQuestionEntries(input)
+    if (cancelled || aborted) {
+        if (questions == null) return null
+        val verdict = if (cancelled) "用户已取消，未提交回答" else "本轮被中断，未提交回答"
+        return DshAskQuestionCard.Unanswered(
+            questions = questions.map { UnansweredItem(it.id, it.question) },
+            verdict = verdict,
+        )
+    }
+    val answersRoot = dshExtractJsonObject(output) ?: return null
+    val answers = answersRoot.optJSONArray("answers") ?: return null
+    if (questions == null || questions.size != answers.length()) return null
+    val byId = mutableMapOf<String, JSONObject>()
+    for (index in 0 until answers.length()) {
+        val answer = answers.optJSONObject(index) ?: continue
+        byId[answer.optString("id").orEmpty()] = answer
+    }
+    val paired = mutableListOf<AnsweredItem>()
+    for (question in questions) {
+        val answer = byId[question.id] ?: return null
+        val selected = answer.optJSONArray("selected")
+        val answerTexts = mutableListOf<String>()
+        if (selected != null) {
+            for (i in 0 until selected.length()) {
+                answerTexts.add(selected.optString(i).orEmpty())
+            }
+        }
+        val custom = answer.optString("custom").orEmpty()
+        if (custom.isNotEmpty()) answerTexts.add(custom)
+        paired.add(AnsweredItem(question.id, question.question, answerTexts))
+    }
+    return DshAskQuestionCard.Answered(
+        questions = paired,
+        skippedLabel = "跳过",
+    )
+}
+
+private data class AskQuestionEntry(val id: String, val question: String)
+
+private fun dshAskQuestionEntries(input: String): List<AskQuestionEntry>? {
+    val root = dshExtractJsonObject(input) ?: return null
+    val questions = root.optJSONArray("questions") ?: return null
+    if (questions.length() == 0) return null
+    val ids = mutableSetOf<String>()
+    val result = mutableListOf<AskQuestionEntry>()
+    for (index in 0 until questions.length()) {
+        val item = questions.optJSONObject(index) ?: return null
+        val id = item.optString("id").orEmpty()
+        val question = item.optString("question").orEmpty().ifEmpty { item.optString("prompt").orEmpty() }
+        if (id.isEmpty() || question.isEmpty() || ids.contains(id)) return null
+        ids.add(id)
+        result.add(AskQuestionEntry(id, question))
+    }
+    return result
 }

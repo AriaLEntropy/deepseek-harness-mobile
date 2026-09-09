@@ -125,7 +125,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     exporting: () -> Boolean,
     timeFilter: () -> Int,
     levelFilter: () -> Set<LogLevel>,
-    typeFilter: () -> String,
+    selectedTypes: () -> Set<String>,
     typeOptions: () -> ObservableList<String>,
     keyword: () -> String,
     onSelect: (LogEvent?) -> Unit,
@@ -138,7 +138,7 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onLogCustomTime: (Long?, Long?) -> Unit = { _, _ -> },
     onOpenTimePicker: (Boolean) -> Unit = {},
     onToggleLevel: (LogLevel) -> Unit,
-    onTypeFilter: (String) -> Unit,
+    onToggleType: (String) -> Unit,
     onKeyword: (String) -> Unit,
     onClearFilters: () -> Unit,
     onClearRequest: () -> Unit = {},
@@ -155,431 +155,482 @@ internal fun ViewContainer<*, *>.DshSessionLogModal(
     onJumpToBottom: () -> Unit = {},
     allMode: () -> Boolean = { false },
     sessionTitleProvider: (String) -> String = { it },
+    sessionOptions: () -> ObservableList<String>,
+    selectedSessions: () -> Set<String> = { emptySet() },
+    onToggleSession: (String) -> Unit = {},
+    onClearSessions: () -> Unit = {},
     statusBarHeight: Float,
     pageViewWidth: Float,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
-) {
-    // type/keyword input refs for chips/clear sync (no controlled text() binding to avoid focus loss)
-    var typeInputRef: ViewRef<InputView>? = null
-    var keywordInputRef: ViewRef<InputView>? = null
-    // 弹窗由关到开：本次 recompose 内同步回显当前筛选值（仅打开时一次）
-    val modalOpening = visible() && !logModalLastVisible
 
-    logModalLastVisible = visible()
+    searchExpanded: () -> Boolean = { false },
+    typeSheetVisible: () -> Boolean = { false },
+    onSetSearchExpanded: (Boolean) -> Unit = {},
+    onSetTypeSheetVisible: (Boolean) -> Unit = {},
+    onClearTypes: () -> Unit = {},
+    sheetKeyword: () -> String = { "" },
+    onSetSheetKeyword: (String) -> Unit = {},
+) {
+    var searchInputRef: com.tencent.kuikly.core.base.ViewRef<InputView>? = null
+    var sheetSearchRef: com.tencent.kuikly.core.base.ViewRef<InputView>? = null
+
+    var lastSearchExpanded = false
+    var lastTypeSheetVisible = false
+
+    val searchOpening = searchExpanded() && !lastSearchExpanded
+    lastSearchExpanded = searchExpanded()
+    val sheetOpening = typeSheetVisible() && !lastTypeSheetVisible
+    lastTypeSheetVisible = typeSheetVisible()
+    if (sheetOpening) { onSetSheetKeyword("") }
+
     vif({ visible() }) {
         Modal(inWindow = true) {
             attr {
                 absolutePositionAllZero()
-                backgroundColor(Color(0x66000000))
+                backgroundColor(Color(0x80000000))
             }
             View {
                 attr {
                     width(pageViewWidth)
                     absolutePositionAllZero()
                     flexDirectionColumn()
-                    paddingTop(18f + statusBarHeight)
-                    paddingBottom(10f)
                     backgroundColor(colors().bgBase)
                 }
-                    // ===== 列表（全屏日志页） =====
-                    View {
-                        attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f); height(44f) }
-                        // 返回：chevron-left 图标 + 文字
-                        View {
-                            attr { flexDirectionRow(); alignItemsCenter(); width(72f) }
-                            event { click { onClose() } }
-                            Image {
-                                attr { src(ImageUri.commonAssets("chevron-left.svg")); size(16f, 16f); tintColor(colors().stateBusinessPrimary) }
-                            }
-                            Text {
-                                attr { text("返回"); fontSize(14f); color(colors().stateBusinessPrimary); marginLeft(2f) }
-                            }
-                        }
-                        Text {
-                            attr {
-                                text("会话日志")
-                                fontSize(17f)
-                                fontWeightBold()
-                                color(colors().labelPrimary)
-                                flex(1f)
-                                textAlignCenter()
-                            }
-                        }
-                        // 导出 + 反馈包 + 清空：右对齐（Modal 内浮层菜单触摸命中失效，直接放按钮）
-                        View {
-                            attr { flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
-                            View {
-                                attr { paddingLeft(10f) }
-                                event { click { if (!exporting()) onExport() } }
-                                Text {
-                                    attr { text(if (exporting()) "导出中..." else "导出"); fontSize(14f); color(colors().stateBusinessPrimary) }
-                                }
-                            }
-                            View {
-                                attr { paddingLeft(10f) }
-                                event { click { onFeedbackPackage() } }
-                                Text {
-                                    attr { text("反馈包"); fontSize(14f); color(colors().stateBusinessPrimary) }
-                                }
-                            }
-                            View {
-                                attr { paddingLeft(10f) }
-                                event { click { onClearRequest() } }
-                                Text {
-                                    attr { text("清空"); fontSize(14f); color(colors().stateErrorPrimary) }
-                                }
-                            }
-                        }
-                    }
-                    // 筛选区（§5.3 四维常显，选值可见）
+
+                // ===== 顶部栏（默认态：品牌色渐变 + 标题 + 图标按钮） =====
+                vif({ !searchExpanded() }) {
                     View {
                         attr {
-                            marginTop(6f)
-                            paddingLeft(12f)
-                            paddingRight(12f)
-                            paddingTop(8f)
-                            paddingBottom(4f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingTop(statusBarHeight + 6f)
+                            paddingBottom(10f)
+                            paddingLeft(8f)
+                            paddingRight(8f)
+                            backgroundColor(colors().bgLayer1)
                         }
-                        // 行1：时间范围（分段控制器，选中白底深字）
                         View {
-                            attr {
-                                marginTop(6f)
-                                flexDirectionRow()
-                                borderRadius(10f)
-                                backgroundColor(colors().specificSelector)
-                                padding(top = 2f, left = 2f, bottom = 2f, right = 2f)
-                            }
-                            val timeLabels = listOf("全部", "10分钟", "1小时", "今天", "自定义")
-                            for (i in timeLabels.indices) {
-                                vif({ timeFilter() == i }) {
-                                    View {
-                                        attr {
-                                            flex(1f); height(30f); borderRadius(8f)
-                                            alignItemsCenter(); justifyContentCenter()
-                                            backgroundColor(colors().bgLayer1)
-                                        }
-                                        event { click { onTimeFilter(i) } }
-                                        Text { attr { text(timeLabels[i]); fontSize(12f); fontWeightBold(); color(colors().labelPrimary) } }
-                                    }
-                                }
-                                vif({ timeFilter() != i }) {
-                                    View {
-                                        attr {
-                                            flex(1f); height(30f); borderRadius(8f)
-                                            alignItemsCenter(); justifyContentCenter()
-                                            backgroundColor(Color(0x00000000))
-                                        }
-                                        event { click { onTimeFilter(i) } }
-                                        Text { attr { text(timeLabels[i]); fontSize(12f); fontWeightBold(); color(colors().labelTertiary) } }
-                                    }
-                                }
-                            }
+                            attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter(); marginLeft(4f) }
+                            event { click { onClose() } }
+                            Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(Color(0xFF1A1A1A)) } }
                         }
-                        // 行2：等级多选（彩色色块，选中实心填充白字）
-                        // 行1b：自定义时间起止（只在"自定义"模式显示）
-                        vif({ timeFilter() == 4 }) {
+                        View {
+                            attr { flex(1f); flexDirectionColumn(); alignItemsCenter() }
+                            Text { attr { text("会话日志"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
+                            Text { attr { text(total().toString() + " 条记录"); fontSize(11f); color(colors().labelTertiary); marginTop(2f) } }
+                        }
+                        View {
+                            attr { flexDirectionRow(); alignItemsCenter(); width(120f); justifyContentFlexEnd() }
                             View {
-                                attr {
-                                    flexDirectionRow(); alignItemsCenter(); marginTop(8f); height(32f)
-                                    paddingLeft(10f); paddingRight(10f)
-                                    borderRadius(8f)
-                                    border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                                }
-                                View {
-                                    attr { flexDirectionRow(); alignItemsCenter(); flex(1f) }
-                                    event { click { onOpenTimePicker(true) } }
-                                    Text { attr { text("开始"); fontSize(12f); color(colors().labelTertiary) } }
-                                    Text {
-                                        attr {
-                                            text(customStartMs()?.let { formatCustomTime(it) } ?: "不限"); fontSize(12f); color(colors().labelPrimary); marginLeft(6f)
-                                        }
-                                    }
-                                }
-                                View {
-                                    attr { flexDirectionRow(); alignItemsCenter() }
-                                    event { click { onOpenTimePicker(false) } }
-                                    Text { attr { text("结束"); fontSize(12f); color(colors().labelTertiary); marginLeft(12f) } }
-                                    Text {
-                                        attr {
-                                            text(customEndMs()?.let { formatCustomTime(it) } ?: "不限"); fontSize(12f); color(colors().labelPrimary); marginLeft(6f)
-                                        }
-                                    }
-                                }
+                                attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
+                                event { click { onSetSearchExpanded(true) } }
+                                Image { attr { src(ImageUri.commonAssets("tool-search.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } }
+                            }
+                            View {
+                                attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
+                                event { click { if (!exporting()) onExport() } }
+                                vif({ exporting() }) { Text { attr { text("…"); fontSize(16f); color(colors().labelSecondary) } } }
+                                vif({ !exporting() }) { Image { attr { src(ImageUri.commonAssets("share.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } } }
+                            }
+                            View {
+                                attr { width(36f); height(36f); alignItemsCenter(); justifyContentCenter() }
+                                event { click { onClearRequest() } }
+                                Image { attr { src(ImageUri.commonAssets("delete.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } }
                             }
                         }
-                        // 行2：级别多选（彩色色块，选中实心填充白字）
+                }
+                }
+                // ===== 顶部栏（搜索态：SearchView） =====
+                vif({ searchExpanded() }) {
+                    View {
+                        attr {
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingTop(statusBarHeight + 6f)
+                            paddingBottom(10f)
+                            paddingLeft(8f)
+                            paddingRight(8f)
+                            backgroundColor(colors().bgLayer1)
+                        }
                         View {
-                            attr { flexDirectionRow(); alignItemsCenter(); marginTop(10f) }
-                            for (lv in LogLevel.entries) {
-                                val lvColor = sessionLogLevelColor(lv)
-                                vif({ lv in levelFilter() }) {
-                                    View {
-                                        attr {
-                                            marginRight(10f); width(30f); height(30f); borderRadius(15f)
-                                            alignItemsCenter(); justifyContentCenter()
-                                            border(Border(1f, BorderStyle.SOLID, Color(lvColor)))
-                                            backgroundColor(Color(lvColor))
-                                        }
-                                        event { click { onToggleLevel(lv) } }
-                                        Text { attr { text(sessionLogLevelLabel(lv)); fontSize(13f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
-                                    }
-                                }
-                                vif({ lv !in levelFilter() }) {
-                                    View {
-                                        attr {
-                                            marginRight(10f); width(30f); height(30f); borderRadius(15f)
-                                            alignItemsCenter(); justifyContentCenter()
-                                            border(Border(1f, BorderStyle.SOLID, Color(lvColor)))
-                                            backgroundColor(Color(0x00000000))
-                                        }
-                                        event { click { onToggleLevel(lv) } }
-                                        Text { attr { text(sessionLogLevelLabel(lv)); fontSize(13f); fontWeightBold(); color(Color(lvColor)) } }
-                                    }
-                                }
-                            }
+                            attr { width(36f); height(36f); borderRadius(18f); backgroundColor(Color(0xF0F0F0)); alignItemsCenter(); justifyContentCenter() }
+                            event { click { onSetSearchExpanded(false); onKeyword("") } }
+                            Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(Color(0xFF1A1A1A)) } }
                         }
-                        // 行3：事件类型（§5.3 保留 type 关键词输入，如 mux.chunk、connect.*）
                         View {
                             attr {
-                                height(30f)
-                                marginTop(8f)
-                                paddingLeft(10f)
-                                paddingRight(10f)
-                                borderRadius(8f)
-                                border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                            }
+                                flex(1f); height(34f); flexDirectionRow(); alignItemsCenter()
+                                backgroundColor(Color(0xFFFFFFFF)); borderRadius(17f); border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                                paddingLeft(12f); paddingRight(12f); marginLeft(4f); marginRight(4f) }
+                            Image { attr { src(ImageUri.commonAssets("tool-search.svg")); size(14f, 14f); tintColor(colors().labelTertiary); marginRight(6f) } }
+
                             Input {
-                                ref { typeInputRef = it; if (modalOpening) it.view?.setText(typeFilter()) }
+                                ref { searchInputRef = it; if (searchOpening) it.view?.setText(keyword()) }
                                 attr {
-                                    flex(1f)
-                                    fontSize(12f)
-                                    color(colors().labelPrimary)
-                                    placeholder("事件类型，如 mux.chunk、connect.*")
-                                    placeholderColor(colors().labelTertiary)
-                                }
-                                event { textDidChange { onTypeFilter(it.text) } }
-                            }
-                        }
-                        // 行4：常用事件类型 chips（流式换行常显，Modal 内 Scroller 失效故用流式）
-                        View {
-                            attr { flexDirectionRow(); flexWrap(FlexWrap.WRAP); marginTop(6f) }
-                            vfor({ typeOptions() }) { type ->
-                                View {
-                                    attr { marginRight(8f); marginBottom(6f); flexDirectionRow(); alignItemsCenter() }
-                                    val sel = if (type == "全部") typeFilter().isEmpty() else typeFilter() == type
-                                    vif({ sel }) {
-                                        View {
-                                            attr {
-                                                padding(left = 12f, right = 12f); height(28f)
-                                                borderRadius(14f); alignItemsCenter(); justifyContentCenter()
-                                                backgroundColor(colors().stateBusinessPrimary)
-                                            }
-                                            event { click {
-                                    val v = if (type == "全部") "" else type
-                                    typeInputRef?.view?.setText(v)
-                                    onTypeFilter(v)
-                                } }
-                                            Text { attr { text(type); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
-                                        }
-                                    }
-                                    vif({ !sel }) {
-                                        View {
-                                            attr {
-                                                padding(left = 12f, right = 12f); height(28f)
-                                                borderRadius(14f); alignItemsCenter(); justifyContentCenter()
-                                                border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                                                backgroundColor(Color(0x00000000))
-                                            }
-                                            event { click {
-                                    val v = if (type == "全部") "" else type
-                                    typeInputRef?.view?.setText(v)
-                                    onTypeFilter(v)
-                                } }
-                                            Text { attr { text(type); fontSize(12f); color(colors().labelSecondary) } }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // 行4：关键词
-                        View {
-                            attr {
-                                height(34f)
-                                marginTop(6f)
-                                paddingLeft(10f)
-                                paddingRight(10f)
-                                borderRadius(8f)
-                                border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                            }
-                            Input {
-                                ref { keywordInputRef = it; if (modalOpening) it.view?.setText(keyword()) }
-                                attr {
-                                    flex(1f)
-                                    fontSize(12f)
-                                    color(colors().labelPrimary)
-                                    placeholder("搜索日志内容")
-                                    placeholderColor(colors().labelTertiary)
+                                    flex(1f); fontSize(14f); color(colors().labelPrimary)
+                                    placeholder("搜索日志内容"); placeholderColor(colors().labelTertiary)
                                 }
                                 event { textDidChange { onKeyword(it.text) } }
                             }
-                        }
-                        View { attr { height(0.5f); marginTop(10f); backgroundColor(colors().borderL1) } }
-                    }
-                    vif({ total() > 0 && total() <= 3 }) {
-                        Text {
-                            attr {
-                                text("仅记录本次连接期间产生的事件；在本会话发送消息或执行任务后，完整事件流将实时写入这里")
-                                marginTop(10f)
-                                marginLeft(12f)
-                                marginRight(12f)
-                                fontSize(11f)
-                                color(colors().labelTertiary)
+                            vif({ keyword().isNotEmpty() }) {
+                                View {
+                                    attr { width(24f); height(24f); alignItemsCenter(); justifyContentCenter() }
+                                    event { click { searchInputRef?.view?.setText(""); onKeyword("") } }
+                                    Text { attr { text("✕"); fontSize(13f); color(colors().labelTertiary) } }
+                                }
                             }
                         }
                     }
-                    vif({ total() == 0 }) {
-                        Text {
-                            attr {
-                                text("暂无日志")
-                                marginTop(90f)
-                                alignSelfCenter()
-                                fontSize(14f)
-                                color(colors().labelTertiary)
-                            }
-                        }
+                }
+
+                // ===== 时间筛选 Tab（Material 风格） =====
+                View {
+                    attr {
+                        flexDirectionRow()
+                        backgroundColor(colors().bgLayer1)
+                        borderBottom(Border(0.5f, BorderStyle.SOLID, colors().borderL1))
                     }
-                    vif({ total() > 0 && events().isEmpty() }) {
+                    val timeLabels = listOf("全部", "10分钟", "1小时", "今天", "自定义")
+                    for (i in timeLabels.indices) {
                         View {
-                            attr { flexDirectionColumn(); alignItemsCenter(); marginTop(70f) }
+                            attr {
+                                flex(1f); height(40f); alignItemsCenter(); justifyContentCenter()
+                            }
+                            event { click { onTimeFilter(i); if (i == 4) onOpenTimePicker(true) } }
+                            vif({ timeFilter() == i }) {
+                                View {
+                                    attr { absolutePosition(bottom = 0f, left = 12f, right = 12f); height(2f); backgroundColor(colors().stateBusinessPrimary) }
+                                }
+                            }
                             Text {
                                 attr {
-                                    text("无匹配结果")
-                                    fontSize(14f)
-                                    color(colors().labelTertiary)
-                                }
-                            }
-                            View {
-                                attr {
-                                    marginTop(12f)
-                                    padding(top = 8f, left = 18f, bottom = 8f, right = 18f)
-                                    borderRadius(16f)
-                                    border(Border(1f, BorderStyle.SOLID, colors().stateBusinessPrimary))
-                                }
-                                event { click {
-                                    typeInputRef?.view?.setText("")
-                                    keywordInputRef?.view?.setText("")
-                                    onClearFilters()
-                                } }
-                                Text {
-                                    attr {
-                                        text("清除筛选")
-                                        fontSize(13f)
-                                        color(colors().stateBusinessPrimary)
-                                    }
+                                    text(timeLabels[i]); fontSize(12f)
+                                    color(if (timeFilter() == i) colors().stateBusinessPrimary else colors().labelTertiary)
+                                    fontWeightBold()
                                 }
                             }
                         }
                     }
-                    vif({ events().isNotEmpty() }) {
+                }
+
+                // ===== 辅助筛选行（级别 toggle + 类型下拉 + 匹配数） =====
+                View {
+                    attr {
+                        flexDirectionRow(); alignItemsCenter()
+                        paddingLeft(12f); paddingRight(12f)
+                        height(40f)
+                        backgroundColor(colors().bgLayer1)
+                        borderBottom(Border(0.5f, BorderStyle.SOLID, colors().borderL1))
+                    }
+                    vif({ timeFilter() == 4 }) {
                         View {
-                            attr { flex(1f); marginTop(4f) }
-                            List {
-                                attr { absolutePositionAllZero(); firstContentLoadMaxIndex(LOG_INITIAL_RENDER_COUNT) }
-                                ref { scrollerRef(it) }
-                                event {
-                                    scroll { params -> onLogScroll(params) }
+                            attr {
+                                flexDirectionRow(); alignItemsCenter(); height(26f)
+                                backgroundColor(com.example.dsh.theme.DshDefaultPalette.blue50); borderRadius(4f)
+                                paddingLeft(8f); paddingRight(8f); marginRight(8f)
+                            }
+                            event { click { onOpenTimePicker(true) } }
+                            Text {
+                                attr {
+                                    text((customStartMs()?.let { LogExporter.formatTimestamp(it).substring(5, 16).replace('T', ' ') } ?: "不限") + " ~ " + (customEndMs()?.let { LogExporter.formatTimestamp(it).substring(5, 16).replace('T', ' ') } ?: "不限"))
+                                    fontSize(10f); color(colors().stateBusinessPrimary)
                                 }
-                                vforLazy({ events() }, maxLoadItem = LOG_MAX_RENDERED) { entry, _, _ ->
+                            }
+                        }
+                    }
+                    View {
+                        attr { flexDirectionRow(); alignItemsCenter(); marginRight(8f) }
+                        for (lv in LogLevel.entries) {
+                            val lvColor = sessionLogLevelColor(lv)
+
+
+                            View {
+                                attr {
+                                    width(26f); height(26f); borderRadius(4f)
+                                    alignItemsCenter(); justifyContentCenter(); marginRight(6f)
+                                    border(Border(if (lv in levelFilter() && levelFilter().size == 1) 2f else 1f, BorderStyle.SOLID, if (lv in levelFilter()) Color(lvColor) else colors().borderL2))
+                                    backgroundColor(if (lv in levelFilter()) Color(lvColor) else colors().bgLayer2)
+                                    highlightBackgroundColor(Color(0x26000000))
+                                }
+                                event { click { onToggleLevel(lv) } }
+                                Text { attr { text(sessionLogLevelLabel(lv)); fontSize(12f); fontWeightBold(); color(if (lv in levelFilter()) Color(0xFFFFFFFF) else colors().labelTertiary) } }
+                            }
+                        }
+                    }
+                    View {
+                        attr {
+                            flexDirectionRow(); alignItemsCenter(); height(28f)
+                            border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                            borderRadius(6f); paddingLeft(8f); paddingRight(8f); flex(1f)
+                        }
+                        event { click { onSetTypeSheetVisible(true) } }
+                        Text { attr { text("类型"); fontSize(11f); color(colors().labelTertiary); marginRight(4f) } }
+                        Text {
+                            attr {
+                                text(if (selectedTypes().isEmpty()) "全部" else selectedTypes().joinToString(", ") { it.substringAfterLast(".") })
+                                fontSize(11f); color(colors().labelPrimary); flex(1f); lines(1)
+                            }
+                        }
+                        Text { attr { text("▾"); fontSize(11f); color(colors().labelTertiary); marginLeft(4f) } }
+                    }
+                    Text {
+                        attr { text(events().size.toString()); fontSize(11f); color(colors().labelTertiary); marginLeft(8f) }
+                    }
+                }
+
+                // ===== 空状态 =====
+
+                // ===== 全局模式：会话筛选 chips =====
+                vif({ allMode() && sessionOptions().isNotEmpty() }) {
+                    View {
+                        attr { flexDirectionRow(); alignItemsCenter(); marginTop(6f); paddingLeft(12f); paddingRight(12f) }
+                        Text { attr { text("会话"); fontSize(11f); color(colors().labelTertiary); marginRight(8f) } }
+                        View {
+                            attr { flexDirectionRow(); flex(1f); alignItemsCenter() }
+                            View {
+                                attr {
+                                    height(22f); borderRadius(11f); paddingLeft(10f); paddingRight(10f)
+                                    marginRight(6f); alignItemsCenter(); justifyContentCenter()
+                                    border(Border(1f, BorderStyle.SOLID, if (selectedSessions().isEmpty()) colors().stateBusinessPrimary else colors().borderL2))
+                                    backgroundColor(if (selectedSessions().isEmpty()) Color(0x1A000000) else colors().bgLayer2)
+                                }
+                                event { click { onClearSessions() } }
+                                Text { attr { text("全部"); fontSize(11f); color(if (selectedSessions().isEmpty()) colors().stateBusinessPrimary else colors().labelSecondary) } }
+                            }
+                            for (sid in sessionOptions()) {
+                                val label = if (sid == "__mobile__") "移动端" else sessionTitleProvider(sid).take(10)
+                                val selected = sid in selectedSessions()
                                 View {
                                     attr {
-                                        minHeight(44f)
+                                        height(22f); borderRadius(11f); paddingLeft(10f); paddingRight(10f)
+                                        marginRight(6f); alignItemsCenter(); justifyContentCenter()
+                                        border(Border(1f, BorderStyle.SOLID, if (selected) colors().stateBusinessPrimary else colors().borderL2))
+                                        backgroundColor(if (selected) Color(0x1A000000) else colors().bgLayer2)
+                                    }
+                                    event { click { onToggleSession(sid) } }
+                                    Text { attr { text(label); fontSize(11f); color(if (selected) colors().stateBusinessPrimary else colors().labelSecondary); lines(1) } }
+                                }
+                            }
+                        }
+                    }
+                }
+                vif({ total() == 0 }) {
+                    Text { attr { text("暂无日志"); marginTop(90f); alignSelfCenter(); fontSize(14f); color(colors().labelTertiary) } }
+                }
+                vif({ total() > 0 && events().isEmpty() }) {
+                    View {
+                        attr { flexDirectionColumn(); alignItemsCenter(); marginTop(70f) }
+                        Text { attr { text("无匹配结果"); fontSize(14f); color(colors().labelTertiary) } }
+                        View {
+                            attr { marginTop(12f); padding(top = 8f, left = 18f, bottom = 8f, right = 18f); borderRadius(16f); border(Border(1f, BorderStyle.SOLID, colors().stateBusinessPrimary)); highlightBackgroundColor(Color(0x0A000000)) }
+
+                            event { click { onClearFilters() } }
+                            Text { attr { text("清除筛选"); fontSize(13f); color(colors().stateBusinessPrimary) } }
+                        }
+                    }
+                }
+
+                // ===== 日志列表（Chucker 双行紧凑布局） =====
+                vif({ events().isNotEmpty() }) {
+                    View {
+                        attr { flex(1f); marginTop(2f) }
+                        List {
+                            attr { absolutePositionAllZero(); firstContentLoadMaxIndex(LOG_INITIAL_RENDER_COUNT) }
+                            ref { scrollerRef(it) }
+                            event { scroll { params -> onLogScroll(params) } }
+                            vforLazy({ events() }, maxLoadItem = LOG_MAX_RENDERED) { entry, _, _ ->
+                                View {
+                                    attr {
                                         flexDirectionRow()
-                                        alignItemsCenter()
-                                        paddingLeft(12f)
-                                        paddingRight(12f)
+                                        paddingLeft(12f); paddingRight(12f)
+                                        paddingTop(10f); paddingBottom(10f)
+                                        borderBottom(Border(0.5f, BorderStyle.SOLID, colors().borderL1))
+                                        highlightBackgroundColor(Color(0x0A000000))
                                     }
-                                    Text {
+                                    event { click { onSelect(entry) } }
+                                    View {
                                         attr {
-                                            text(LogExporter.formatTimestamp(entry.timestamp).substring(11, 23))
-                                            width(74f)
-                                            fontSize(11f)
-                                            color(colors().labelTertiary)
+                                            width(24f); height(24f); borderRadius(4f)
+                                            alignItemsCenter(); justifyContentCenter()
+                                            backgroundColor(Color(sessionLogLevelColor(entry.level)))
                                         }
+                                        Text { attr { text(sessionLogLevelLabel(entry.level)); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
                                     }
-                                    Text {
-                                        attr {
-                                            text(sessionLogLevelLabel(entry.level))
-                                            width(28f)
-                                            fontSize(12f)
-                                            color(Color(sessionLogLevelColor(entry.level)))
+                                    View {
+                                        attr { flex(1f); marginLeft(10f); flexDirectionColumn() }
+                                        View {
+                                            attr { flexDirectionRow(); alignItemsCenter() }
+                                            Text {
+                                                attr {
+                                                    text(entry.type); fontSize(12f); fontWeightBold()
+                                                    color(colors().labelPrimary); flex(1f); lines(1)
+                                                }
+                                            }
+                                            Text {
+                                                attr {
+                                                    text(LogExporter.formatTimestamp(entry.timestamp).substring(11, 19))
+                                                    fontSize(11f); color(colors().labelTertiary)
+                                                }
+                                            }
                                         }
-                                    }
-                                    Text {
-                                        attr {
-                                            text(entry.type)
-                                            width(96f)
-                                            fontSize(11f)
-                                            color(colors().stateBusinessPrimary)
-                                            lines(1)
-                                        }
-                                    }
-                                    vif({ allMode() }) {
                                         Text {
                                             attr {
-                                                text(if (entry.sessionId.isNullOrEmpty()) "移动端" else sessionTitleProvider(entry.sessionId))
-                                                width(80f)
-                                                fontSize(10f)
-                                                color(colors().labelTertiary)
-                                                lines(1)
+                                                text(entry.message); fontSize(12f); color(colors().labelPrimary)
+                                                marginTop(3f); lines(2)
+                                            }
+                                        }
+                                        Text {
+                                            attr {
+                                                text("seq=" + entry.seq + "  " + entry.size + " B" + if (allMode()) "  " + (if (entry.sessionId.isNullOrEmpty()) "移动端" else sessionTitleProvider(entry.sessionId)) else "")
+                                                fontSize(10f); color(colors().labelTertiary); marginTop(3f)
                                             }
                                         }
                                     }
-                                    Text {
-                                        attr {
-                                            text(entry.message)
-                                            flex(1f)
-                                            marginLeft(6f)
-                                            fontSize(12f)
-                                            color(colors().labelPrimary)
-                                            lines(1)
-                                        }
-                                    }
-                                    DshHitButton { onSelect(entry) }
                                 }
                             }
                         }
                         vif({ !followBottom() && newCount() > 0 }) {
                             View {
                                 attr {
-                                    positionAbsolute()
-                                    right(12f)
-                                    bottom(14f)
-                                    flexDirectionRow()
-                                    alignItemsCenter()
-                                    padding(left = 12f, right = 12f)
-                                    height(32f)
-                                    borderRadius(16f)
+                                    positionAbsolute(); right(12f); bottom(14f)
+                                    flexDirectionRow(); alignItemsCenter()
+                                    padding(left = 12f, right = 12f); height(32f); borderRadius(16f)
                                     backgroundColor(colors().stateBusinessPrimary)
                                     boxShadow(BoxShadow(0f, 2f, 8f, Color(0x33000000)))
                                 }
                                 event { click { onJumpToBottom() } }
-                                Text {
-                                    attr {
-                                        text("↓ 新日志 " + newCount())
-                                        fontSize(12f)
-                                        fontWeightBold()
-                                        color(Color(0xFFFFFFFF))
-                                    }
-                                }
+                                Text { attr { text("↓ 新日志 " + newCount()); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
                             }
                         }
                     }
                 }
+            }
         }
 
+        // ===== 类型选择 Bottom Sheet =====
+        vif({ typeSheetVisible() }) {
+            Modal(inWindow = true) {
+                attr {
+                    absolutePositionAllZero()
+                    backgroundColor(Color(0x66000000))
+                }
+                View {
+                    attr { absolutePositionAllZero() }
+                    event { click { onSetTypeSheetVisible(false) } }
+                }
+                View {
+                    attr {
+                        width(pageViewWidth)
+                        absolutePosition(bottom = 0f, left = 0f, right = 0f)
+                        flexDirectionColumn()
+                        backgroundColor(colors().bgLayer1)
+                        borderRadius(topLeft = 16f, topRight = 16f, bottomLeft = 0f, bottomRight = 0f)
+                        maxHeight(pageViewWidth * 1.2f)
+                    }
+                    View {
+                        attr { alignItemsCenter(); paddingTop(8f); paddingBottom(4f) }
+                        View { attr { width(36f); height(4f); borderRadius(2f); backgroundColor(colors().borderL2) } }
+                    }
+                    View {
+                        attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(16f); paddingRight(16f); paddingBottom(8f) }
+                        Text { attr { text("选择事件类型"); fontSize(16f); fontWeightBold(); color(colors().labelPrimary); flex(1f) } }
+                        View {
+                            attr { width(32f); height(32f); alignItemsCenter(); justifyContentCenter() }
+                            event { click { onSetTypeSheetVisible(false) } }
+                            Text { attr { text("✕"); fontSize(16f); color(colors().labelTertiary) } }
+                        }
+                    }
+                    View {
+                        attr {
+                            flexDirectionRow(); alignItemsCenter(); height(36f)
+                            marginLeft(16f); marginRight(16f); marginBottom(8f)
+                            backgroundColor(colors().bgBase); borderRadius(8f)
+                            paddingLeft(10f); paddingRight(10f)
+                        }
+                        Text { attr { text("🔍"); fontSize(12f); color(colors().labelTertiary); marginRight(6f) } }
+                        Input {
+                            ref { sheetSearchRef = it; if (sheetOpening) it.view?.setText(sheetKeyword()) }
+                            attr { flex(1f); fontSize(13f); color(colors().labelPrimary); placeholder("筛选类型"); placeholderColor(colors().labelTertiary) }
+                            event { textDidChange { onSetSheetKeyword(it.text) } }
+                        }
+                    }
+                    View {
+                        attr { flex(1f); flexDirectionColumn() }
+                        Scroller {
+                            attr { absolutePositionAllZero(); showScrollerIndicator(false) }
+                            val allTypes = typeOptions().filter { it != "全部" }
+                            val kw = sheetKeyword().trim()
+                            val filtered = if (kw.isEmpty()) allTypes else allTypes.filter { it.contains(kw, ignoreCase = true) }
+                            val groups = filtered.groupBy { it.substringBefore(".") }
+                            for ((prefix, types) in groups) {
+
+                                View {
+                                    attr { flexDirectionRow(); alignItemsCenter(); paddingLeft(16f); paddingRight(16f); paddingTop(10f); paddingBottom(6f) }
+                                    Text { attr { text(prefix + " (" + types.size + ")"); fontSize(12f); fontWeightBold(); color(colors().labelSecondary); flex(1f) } }
+                                    View {
+                                        event { click { val selAll = !types.all { it in selectedTypes() }; types.forEach { if (selAll && it !in selectedTypes()) onToggleType(it); else if (!selAll && it in selectedTypes()) onToggleType(it) } } }
+                                        Text { attr { text(if (types.all { it in selectedTypes() }) "取消全选" else "全选"); fontSize(12f); color(colors().stateBusinessPrimary) } }
+                                    }
+                                }
+                                for (t in types) {
+
+                                    View {
+                                        attr {
+                                            flexDirectionRow(); alignItemsCenter()
+                                            paddingLeft(24f); paddingRight(16f); paddingTop(8f); paddingBottom(8f)
+                                        }
+                                        event { click { onToggleType(t) } }
+                                        Text { attr { text(t); fontSize(13f); color(colors().labelPrimary); flex(1f) } }
+                                        View {
+                                            attr {
+                                                width(20f); height(20f); borderRadius(4f)
+                                                border(Border(1.5f, BorderStyle.SOLID, if (t in selectedTypes()) colors().stateBusinessPrimary else colors().borderL2))
+                                                backgroundColor(if (t in selectedTypes()) colors().stateBusinessPrimary else Color(0x00000000))
+                                                alignItemsCenter(); justifyContentCenter()
+                                            }
+                                            vif({ t in selectedTypes() }) { Text { attr { text("✓"); fontSize(12f); fontWeightBold(); color(Color(0xFFFFFFFF)) } } }
+                                        }
+                                    }
+                                }
+                            }
+                            vif({ filtered.isEmpty() }) {
+                                Text { attr { text("无匹配类型"); fontSize(13f); color(colors().labelTertiary); alignSelfCenter(); marginTop(30f) } }
+                            }
+                        }
+                    }
+                    View {
+                        attr { flexDirectionRow(); alignItemsCenter(); padding(12f); borderTop(Border(0.5f, BorderStyle.SOLID, colors().borderL1)) }
+                        View {
+                            attr { height(36f); paddingLeft(16f); paddingRight(16f); alignItemsCenter(); justifyContentCenter(); borderRadius(8f) }
+                            event { click { onClearTypes() } }
+                            Text { attr { text("重置"); fontSize(14f); color(colors().labelTertiary) } }
+                        }
+                        View { attr { flex(1f) } }
+                        View {
+                            attr {
+                                height(36f); paddingLeft(20f); paddingRight(20f); alignItemsCenter(); justifyContentCenter()
+                                borderRadius(8f); backgroundColor(colors().stateBusinessPrimary)
+                            }
+                            event { click { onSetTypeSheetVisible(false) } }
+                            Text { attr { text("应用 (" + selectedTypes().size + ")"); fontSize(14f); fontWeightBold(); color(Color(0xFFFFFFFF)) } }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ===== 清空确认弹窗 =====
+        DshSessionLogClearDialog(
+            visible = { clearDialogVisible() },
+            busy = { clearing() },
+            onCancel = { onClearDialogCancel() },
+            onConfirm = { onClearDialogConfirm() },
+            pageViewWidth = pageViewWidth,
+            colors = { colors() },
+        )
     }
 }
-}
+
 /** 清空本地诊断日志 确认弹窗：只清 dsh_log_events 与内存 pending，不影响会话。 */
 internal fun ViewContainer<*, *>.DshSessionLogClearDialog(
     visible: () -> Boolean,
@@ -834,6 +885,51 @@ internal fun ViewContainer<*, *>.DshLogTimePickerModal(
     colors: () -> com.example.dsh.theme.DshColorTokens,
     pageViewWidth: () -> Float
 ) {
+    fun ViewContainer<*, *>.renderPickerColumns() {
+        ScrollPicker(itemList = Array(8) { (pkYear() - 7 + it).toString() }, defaultIndex = 7) {
+            attr { itemWidth = 48f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+            event { scrollEndEvent { v, _ -> onSetPkValue(0, v.toInt()) } }
+        }
+        ScrollPicker(itemList = Array(12) { (it + 1).toString() }, defaultIndex = pkMonth() - 1) {
+            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+            event { scrollEndEvent { v, _ -> onSetPkValue(1, v.toInt()) } }
+        }
+        ScrollPicker(itemList = Array(31) { (it + 1).toString() }, defaultIndex = pkDay() - 1) {
+            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+            event { scrollEndEvent { v, _ -> onSetPkValue(2, v.toInt()) } }
+        }
+        ScrollPicker(itemList = Array(24) { (if (it < 10) "0" else "") + it }, defaultIndex = pkHour()) {
+            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+            event { scrollEndEvent { v, _ -> onSetPkValue(3, v.toInt()) } }
+        }
+        ScrollPicker(itemList = Array(60) { (if (it < 10) "0" else "") + it }, defaultIndex = pkMinute()) {
+            attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
+            event { scrollEndEvent { v, _ -> onSetPkValue(4, v.toInt()) } }
+        }
+        View {
+            attr {
+                absolutePosition(top = 0f, left = 0f, right = 0f)
+                height(40f)
+                backgroundLinearGradient(Direction.TO_BOTTOM, ColorStop(colors().bgLayer1, 0f), ColorStop(Color.TRANSPARENT, 1f))
+            }
+        }
+        View {
+            attr {
+                absolutePosition(bottom = 0f, left = 0f, right = 0f)
+                height(40f)
+                backgroundLinearGradient(Direction.TO_TOP, ColorStop(colors().bgLayer1, 0f), ColorStop(Color.TRANSPARENT, 1f))
+            }
+        }
+        View {
+            attr {
+                absolutePosition(top = 40f, left = 0f, right = 0f)
+                height(38f)
+                borderTop(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                borderBottom(Border(1f, BorderStyle.SOLID, colors().borderL1))
+            }
+        }
+    }
+
     vif({ visible() }) {
         Modal(inWindow = true) {
             attr {
@@ -841,14 +937,14 @@ internal fun ViewContainer<*, *>.DshLogTimePickerModal(
                 allCenter()
                 paddingLeft(20f)
                 paddingRight(20f)
-                backgroundColor(Color(0x66000000))
+                backgroundColor(Color(0x80000000))
             }
             View {
                 attr {
                     width(pageViewWidth() - 40f)
                     maxWidth(420f)
                     padding(16f)
-                    borderRadius(16f)
+                    borderRadius(14f)
                     backgroundColor(colors().bgLayer1)
                 }
                 View {
@@ -865,26 +961,18 @@ internal fun ViewContainer<*, *>.DshLogTimePickerModal(
                     }
                 }
                 View {
-                    attr { flexDirectionRow(); marginTop(8f); height(160f) }
-                    ScrollPicker(itemList = Array(8) { (pkYear() - 7 + it).toString() }, defaultIndex = 7) {
-                        attr { itemWidth = 56f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(0, v.toInt()) } }
+                    attr { flexDirectionRow(); justifyContentCenter(); marginTop(8f); height(120f) }
+                    vif({ targetStart() }) {
+                        View {
+                            attr { flexDirectionRow(); height(120f) }
+                            renderPickerColumns()
+                        }
                     }
-                    ScrollPicker(itemList = Array(12) { (it + 1).toString() }, defaultIndex = pkMonth() - 1) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(1, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(31) { (it + 1).toString() }, defaultIndex = pkDay() - 1) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(2, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(24) { (if (it < 10) "0" else "") + it }, defaultIndex = pkHour()) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(3, v.toInt()) } }
-                    }
-                    ScrollPicker(itemList = Array(60) { (if (it < 10) "0" else "") + it }, defaultIndex = pkMinute()) {
-                        attr { itemWidth = 44f; itemHeight = 40f; countPerScreen = 3; itemTextColor = colors().labelPrimary }
-                        event { scrollEndEvent { v, _ -> onSetPkValue(4, v.toInt()) } }
+                    vif({ !targetStart() }) {
+                        View {
+                            attr { flexDirectionRow(); height(120f) }
+                            renderPickerColumns()
+                        }
                     }
                 }
                 Text {

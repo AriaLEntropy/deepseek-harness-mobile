@@ -57,3 +57,11 @@ inspect_*.py
 read_sessions.py
 session-list-*.json
 verify-*.png
+
+# === local editor / temp files (not part of product code) ===
+.cursor/
+CLAUDE.md
+rules/
+kuikly-input-*.md
+docs/harness-*.md
+docs/uiux-log-filter-design*.html

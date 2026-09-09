@@ -238,6 +238,7 @@ internal object DshWebTimelineParser {
                             input = settled.input,
                             output = settled.output,
                             running = settled.running,
+                            stopped = settled.stopped,
                             error = settled.error,
                             cardType = settled.cardType,
                             cardTitle = settled.title,
@@ -252,6 +253,7 @@ internal object DshWebTimelineParser {
                             input = settled.input,
                             output = settled.output,
                             running = settled.running,
+                            stopped = settled.stopped,
                             callId = settled.callId,
                             callSeq = seq,
                             error = settled.error,
@@ -613,8 +615,19 @@ internal class DshHostConnectionRuntime(
         return DshRpcCall(rpcId) { queued.removeAll { it.rpcId == rpcId } }
     }
 
-    /** POST /api/respond has a ClientResponse body, not a unary RPC body. */
-    fun respond(rpcId: String, value: JSONObject, callback: (Boolean, String) -> Unit) {
+    /**
+     * POST /api/respond has a ClientResponse body, not a unary RPC body.
+     * [ok]=false 时按原版协议发送 error 信封（error.code 如 "cancelled"），
+     * 供 apiproxy 的 respond 路由识别「用户取消」等语义响应。
+     */
+    fun respond(
+        rpcId: String,
+        value: JSONObject,
+        callback: (Boolean, String) -> Unit,
+        ok: Boolean = true,
+        errorCode: String = "",
+        errorMessage: String = "",
+    ) {
         if (rpcId.isEmpty()) {
             DshStreamLog.question("respond.http.skip empty-rpcId session=${value.optString("sessionId")}")
             callback(false, "缺少请求编号")
@@ -630,8 +643,16 @@ internal class DshHostConnectionRuntime(
             put("type", "client-response")
             put("rpcId", rpcId)
             put("result", JSONObject().apply {
-                put("ok", true)
-                put("value", value)
+                put("ok", ok)
+                if (ok) {
+                    put("value", value)
+                } else {
+                    put("error", JSONObject().apply {
+                        put("code", errorCode)
+                        put("message", errorMessage)
+                        put("details", JSONObject())
+                    })
+                }
             })
         }
         val headers = JSONObject().apply {
@@ -967,6 +988,26 @@ internal class DshRemoteHostRepository(
             put("sessionId", sessionId)
             put("answer", answer)
         }, callback)
+    }
+
+    /**
+     * 用户主动关闭提问流程：以 ok=false + code=cancelled 拒绝整个等待，
+     * 与原版 apiproxy respond 的 cancelled 分支一致（对应 wire 上 ASK_CANCELLED）。
+     */
+    fun respondQuestionCancel(
+        rpcId: String,
+        sessionId: String,
+        callback: (Boolean, String) -> Unit,
+    ) {
+        DshStreamLog.question("repo.respondQuestionCancel rpcId=$rpcId session=$sessionId")
+        runtime.respond(
+            rpcId,
+            JSONObject().apply { put("sessionId", sessionId) },
+            callback,
+            ok = false,
+            errorCode = "cancelled",
+            errorMessage = "the user closed this question request",
+        )
     }
 
     fun clearPending(rpcId: String) {
