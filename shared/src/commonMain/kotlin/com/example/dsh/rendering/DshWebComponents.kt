@@ -64,7 +64,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                 }
                 View {
                     attr {
-                        height(28f)
+                        height(if (ctx.attr.compact) 24f else 28f)
                         flexDirectionRow()
                         alignItemsCenter()
                         if (ctx.attr.running) {
@@ -115,7 +115,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         attr {
                             text(ctx.attr.title)
                             marginLeft(7f)
-                            fontSize(14f)
+                                        fontSize(if (ctx.attr.compact) 13f else 14f)
                             color(c.labelPrimary)
                         }
                     }
@@ -135,7 +135,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 text(ctx.attr.summary)
                                 flex(1f)
                                 lines(1)
-                                fontSize(14f)
+                                fontSize(if (ctx.attr.compact) 13f else 14f)
                                 color(if (ctx.attr.errorSummary) c.stateErrorPrimary else c.labelSecondary)
                             }
                         }
@@ -180,7 +180,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 Text {
                                     attr {
                                         text(ctx.attr.body)
-                                        fontSize(14f)
+                            fontSize(if (ctx.attr.compact) 13f else 14f)
                                         lineHeight(24f)
                                         color(c.labelSecondary)
                                         marginTop(6f)
@@ -243,6 +243,8 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var bodyCollapsible: Boolean by observable(true)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
     var askCard: DshAskQuestionCard? by observable(null)
+    /** Compact one-line chrome used by Web ToolRow/ReasoningRow equivalents. */
+    var compact: Boolean by observable(false)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */

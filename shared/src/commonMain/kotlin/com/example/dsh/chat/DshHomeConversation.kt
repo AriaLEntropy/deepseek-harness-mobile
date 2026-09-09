@@ -1146,7 +1146,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         View {
             attr {
                 width(pagerData.pageViewWidth - 36f)
-                marginBottom(12f)
+                marginBottom(6f)
             }
             DshDisclosureRow {
                 attr {
@@ -1176,6 +1176,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     expandable = message.contextCanExpand()
                     this.onToggle = onToggle
                     bodyCollapsible = false
+                    compact = true
                 }
             }
         }
@@ -1237,6 +1238,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
                     plainBody = true
+                    compact = true
                 }
             }
         }
@@ -1248,7 +1250,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
-                marginBottom(12f)
+                marginBottom(6f)
             }
             DshDisclosureRow {
                 attr {
@@ -1266,6 +1268,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggleBody = onToggleBody
                     maxBodyLines = 8
                     running = message.toolRunning
+                    compact = true
                 }
             }
         }
@@ -1310,7 +1313,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         View {
             attr {
                 width((pagerData.pageViewWidth - 36f).coerceAtLeast(0f))
-                marginBottom(12f)
+                marginBottom(6f)
             }
             DshDisclosureRow {
                 attr {
@@ -1332,6 +1335,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggleJsonNode = onToggleJsonNode
                     running = message.toolRunning
                     askCard = askCardData
+                    compact = true
                 }
             }
         }
