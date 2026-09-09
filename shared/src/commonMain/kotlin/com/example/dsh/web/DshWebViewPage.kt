@@ -11,6 +11,7 @@ import com.example.dsh.storage.*
 import com.example.dsh.web.*
 import com.example.dsh.base.BasePager
 import com.tencent.kuikly.core.annotations.Page
+import com.tencent.kuikly.core.base.BackPressCallback
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.Color
@@ -36,6 +37,12 @@ internal class DshWebViewPage : BasePager() {
 
     override fun created() {
         super.created()
+        // WebView page: back press closes page
+        getBackPressHandler().addCallback(object : BackPressCallback() {
+            override fun handleOnBackPressed() {
+                acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
+            }
+        })
         url = pageData.params.optString("url").trim()
         if (url.isEmpty()) status = "链接为空"
     }

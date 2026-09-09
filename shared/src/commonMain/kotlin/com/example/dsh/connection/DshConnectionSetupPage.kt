@@ -52,6 +52,12 @@ internal class DshConnectionSetupPage : BasePager() {
 
     override fun created() {
         super.created()
+        // Connection page has no overlays; back press closes the page.
+        getBackPressHandler().addCallback(object : BackPressCallback() {
+            override fun handleOnBackPressed() {
+                acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
+            }
+        })
         val databaseDir = pageData.params.optString("databaseDir")
         val prefs = prefs()
         val legacyMode = prefs.getItem(LEGACY_MODE_KEY)
