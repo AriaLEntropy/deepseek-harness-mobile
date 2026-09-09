@@ -204,7 +204,15 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 }
                             }
                         }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() }) {
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.toolDetail != null }) {
+                            DshToolDetails {
+                                attr {
+                                    detail = ctx.attr.toolDetail
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
                             Text {
                                 attr {
                                     text("暂无输出")
@@ -245,6 +253,148 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var askCard: DshAskQuestionCard? by observable(null)
     /** Compact one-line chrome used by Web ToolRow/ReasoningRow equivalents. */
     var compact: Boolean by observable(false)
+    var toolDetail: DshToolDetail? by observable(null)
+}
+
+/** Input/output kept separately so a tool detail does not collapse into one raw text block. */
+internal data class DshToolDetail(
+    val kind: DshRemoteToolKind,
+    val input: String,
+    val output: String,
+    val fallback: String,
+    val running: Boolean,
+    val error: Boolean,
+)
+
+internal class DshToolDetailsView : ComposeView<DshToolDetailsAttr, ComposeEvent>() {
+    override fun createAttr(): DshToolDetailsAttr = DshToolDetailsAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val detail = ctx.attr.detail ?: return { View { } }
+        val output = detail.output.ifEmpty { if (detail.running) "" else detail.fallback }
+        val codeStyle = detail.kind == DshRemoteToolKind.BASH ||
+            detail.kind == DshRemoteToolKind.READ ||
+            detail.kind == DshRemoteToolKind.FILE_MUTATION
+        val inputLabel = when (detail.kind) {
+            DshRemoteToolKind.BASH -> "命令"
+            DshRemoteToolKind.READ -> "文件"
+            DshRemoteToolKind.FILE_MUTATION -> "变更"
+            DshRemoteToolKind.SEARCH, DshRemoteToolKind.WEB -> "查询"
+            else -> "输入"
+        }
+        val outputLabel = when (detail.kind) {
+            DshRemoteToolKind.BASH -> "输出"
+            DshRemoteToolKind.READ -> "内容"
+            DshRemoteToolKind.FILE_MUTATION -> "结果"
+            DshRemoteToolKind.SEARCH, DshRemoteToolKind.WEB -> "结果"
+            else -> "输出"
+        }
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginLeft(22f)
+                    marginTop(2f)
+                }
+                vif({ detail.input.isNotBlank() }) {
+                    DshToolDetailSection {
+                        attr {
+                            label = inputLabel
+                            content = detail.input
+                            code = codeStyle
+                            colors = ctx.attr.colors
+                        }
+                    }
+                }
+                vif({ output.isNotBlank() }) {
+                    DshToolDetailSection {
+                        attr {
+                            label = outputLabel
+                            content = output
+                            code = codeStyle
+                            error = detail.error
+                            colors = ctx.attr.colors
+                        }
+                    }
+                }
+                vif({ detail.running && output.isEmpty() }) {
+                    Text {
+                        attr {
+                            text("等待工具输出")
+                            fontSize(13f)
+                            lineHeight(20f)
+                            color(ctx.attr.colors.labelTertiary)
+                            marginTop(4f)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal class DshToolDetailsAttr : ComposeAttr() {
+    var detail: DshToolDetail? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal class DshToolDetailSectionView : ComposeView<DshToolDetailSectionAttr, ComposeEvent>() {
+    override fun createAttr(): DshToolDetailSectionAttr = DshToolDetailSectionAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginTop(6f)
+                    padding(8f)
+                    borderRadius(8f)
+                    backgroundColor(if (ctx.attr.code) ctx.attr.colors.markdownCodeBlock else ctx.attr.colors.bgModulePlatform)
+                    border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
+                }
+                Text {
+                    attr {
+                        text(ctx.attr.label)
+                        fontSize(11f)
+                        color(ctx.attr.colors.labelTertiary)
+                        marginBottom(4f)
+                    }
+                }
+                Scroller {
+                    attr { height(180f) }
+                    Text {
+                        attr {
+                            text(ctx.attr.content)
+                            fontSize(if (ctx.attr.code) 12f else 13f)
+                            lineHeight(if (ctx.attr.code) 18f else 21f)
+                            if (ctx.attr.code) fontFamily("monospace")
+                            color(if (ctx.attr.error) ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelSecondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal class DshToolDetailSectionAttr : ComposeAttr() {
+    var label: String by observable("")
+    var content: String by observable("")
+    var code: Boolean by observable(false)
+    var error: Boolean by observable(false)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal fun ViewContainer<*, *>.DshToolDetails(init: DshToolDetailsView.() -> Unit) {
+    addChild(DshToolDetailsView(), init)
+}
+
+internal fun ViewContainer<*, *>.DshToolDetailSection(init: DshToolDetailSectionView.() -> Unit) {
+    addChild(DshToolDetailSectionView(), init)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */

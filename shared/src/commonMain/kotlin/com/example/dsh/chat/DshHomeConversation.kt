@@ -1323,7 +1323,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.summary = summary
                     errorSummary = message.toolError
                     stopped = message.toolStopped
-                    body = if (isJson) "" else effectiveBody
+                    body = ""
                     jsonContent = if (isJson) effectiveBody else ""
                     open = isExpanded()
                     expandable = true
@@ -1336,6 +1336,14 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     running = message.toolRunning
                     askCard = askCardData
                     compact = true
+                    toolDetail = if (isJson || askCardData != null) null else DshToolDetail(
+                        kind = remoteTool?.kind ?: DshRemoteToolKind.GENERIC,
+                        input = remoteTool?.input.orEmpty(),
+                        output = remoteTool?.output.orEmpty(),
+                        fallback = effectiveBody,
+                        running = message.toolRunning,
+                        error = message.toolError,
+                    )
                 }
             }
         }
