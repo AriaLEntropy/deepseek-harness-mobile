@@ -407,7 +407,6 @@ internal fun ViewContainer<*, *>.DshConversation(
         }
             View {
                 attr {
-                    height(COMPOSER_HEIGHT)
                     width(availableWidth)
                     flexDirectionColumn()
                     padding(12f, 14f, 12f, 14f)

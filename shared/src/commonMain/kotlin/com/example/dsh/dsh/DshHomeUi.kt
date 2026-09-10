@@ -49,6 +49,5 @@ internal fun topBarConnectingText(label: String): String {
     return value
 }
 
-internal const val COMPOSER_HEIGHT = 142f
 internal const val CHAT_INITIAL_RENDER_COUNT = 48
 internal const val CHAT_MAX_RENDERED_MESSAGES = 128
