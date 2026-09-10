@@ -18,6 +18,9 @@ import kotlinx.coroutines.launch
  * 1. 内存队列：maxEntries / maxBytes，超限时优先丢弃 DEBUG→INFO 级别的旧日志
  * 2. 数据库：maxStorageBytes，每次 flush 后检查，超限时淘汰最旧日志
  *
+ * 取数上限：snapshot 查询数据库时使用 [snapshotLimit]，与内存队列上限 [maxEntries]
+ * 解耦，可单独调大以便界面/导出看到更多历史，而不增加内存驻留压力。
+ *
  * 并发模型：enqueue 来自任意调用线程（主线程为主），flush 在
  * `Dispatchers.Default` 协程执行，两者与 onStop/clear/snapshot 并发访问
  * 共享队列。所有共享状态（pending/totalBytes/nextSeq/flushJob 等）统一由
@@ -31,6 +34,7 @@ internal class DshLogWriteBehind(
     private val maxStorageBytes: Long = 50L * 1024 * 1024,
     private val flushDelayMs: Long = 500,
     private val batchFlushSize: Int = 32,
+    private val snapshotLimit: Int = 20000,
 ) {
     private val lock = DshLock()
     private val pending = mutableListOf<LogEvent>()
@@ -112,7 +116,7 @@ internal class DshLogWriteBehind(
 
     fun snapshot(): List<LogEvent> {
         val pendingSnapshot = lock.withLock { pending.toList() }
-        val storeEvents = logStore.query(LogFilter(), limit = maxEntries, offset = 0)
+        val storeEvents = logStore.query(LogFilter(), limit = snapshotLimit, offset = 0)
         return (pendingSnapshot + storeEvents).sortedBy { it.seq }
     }
 

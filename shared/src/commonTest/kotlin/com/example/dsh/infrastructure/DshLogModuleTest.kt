@@ -61,6 +61,7 @@ private class WriteBehindHarness(
     maxStorageBytes: Long = 50L * 1024 * 1024,
     flushDelayMs: Long = 10_000,
     batchFlushSize: Int = 32,
+    snapshotLimit: Int = 20000,
 ) {
     val store = store
     private val scope = CoroutineScope(Dispatchers.Default)
@@ -72,6 +73,7 @@ private class WriteBehindHarness(
         maxStorageBytes = maxStorageBytes,
         flushDelayMs = flushDelayMs,
         batchFlushSize = batchFlushSize,
+        snapshotLimit = snapshotLimit,
     )
 
     fun close() = writeBehind.onStop()
@@ -158,6 +160,19 @@ class DshLogWriteBehindTest {
             assertEquals(4L, e4.seq)
             assertEquals(5L, e5.seq)
             assertEquals(listOf(1L, 3L, 4L, 5L), h.writeBehind.snapshot().map { it.seq })
+        } finally {
+            h.close()
+        }
+    }
+
+    @Test
+    fun snapshotRespectsSnapshotLimit() {
+        val store = FakeLogStore().apply {
+            appendBatch((1L..6L).map { logEvent(seq = it) })
+        }
+        val h = WriteBehindHarness(store = store, snapshotLimit = 3)
+        try {
+            assertEquals(3, h.writeBehind.snapshot().size)
         } finally {
             h.close()
         }
