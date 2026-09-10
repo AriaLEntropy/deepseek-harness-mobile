@@ -1,6 +1,5 @@
 package com.example.dsh.home
 
-import com.example.dsh.theme.DshThemeManager
 import com.example.dsh.theme.DshThemeMode
 
 import com.example.dsh.base.*
@@ -1462,6 +1461,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     connectionModeLabel: () -> String,
     apiKeyConfigured: () -> Boolean,
     hostVersion: () -> String,
+    themeMode: () -> DshThemeMode,
     onClose: () -> Unit,
     onRetry: () -> Unit,
     onOpenConnection: () -> Unit,
@@ -1574,23 +1574,23 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
 
             // 账户
             DshSettingsGroupTitle("账户", colors = colors)
-            DshSettingsRow("icon-link16.svg", "连接设置", connectionModeLabel(), onOpenConnection, colors = colors)
-            DshSettingsRow("icon-api14.svg", "API Key", if (apiKeyConfigured()) "已配置" else "未配置", onOpenApiKey, colors = colors)
+            DshSettingsRow("icon-link16.svg", "连接设置", connectionModeLabel, onOpenConnection, colors = colors)
+            DshSettingsRow("icon-api14.svg", "API Key", { if (apiKeyConfigured()) "已配置" else "未配置" }, onOpenApiKey, colors = colors)
 
             // 权限
             DshSettingsGroupTitle("权限", colors = colors)
-            DshSettingsRow("permission-write.svg", "工作区权限", dshSettingsPermissionLabel(snapshot()), onPickPermission, colors = colors)
+            DshSettingsRow("permission-write.svg", "工作区权限", { dshSettingsPermissionLabel(snapshot()) }, onPickPermission, colors = colors)
 
             // 应用
             DshSettingsGroupTitle("应用", colors = colors)
-            DshSettingsRow("icon-globe14.svg", "语言", dshSettingsLocaleLabel(snapshot()), onPickLocale, colors = colors)
-            DshSettingsRow("icon-followsystem16.svg", "外观", dshThemeModeLabel(), onPickTheme, colors = colors)
-            DshSettingsRow("icon-agentpreset16.svg", "默认模型", dshSettingsDefaultModelLabel(snapshot()), onPickDefaultModel, colors = colors)
-            DshSettingsRow("icon-refresh16.svg", "诊断日志", "", onOpenDiagnosticLogs, colors = colors)
+            DshSettingsRow("icon-globe14.svg", "语言", { dshSettingsLocaleLabel(snapshot()) }, onPickLocale, colors = colors)
+            DshSettingsRow("icon-followsystem16.svg", "外观", { dshThemeModeLabel(themeMode()) }, onPickTheme, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "默认模型", { dshSettingsDefaultModelLabel(snapshot()) }, onPickDefaultModel, colors = colors)
+            DshSettingsRow("icon-refresh16.svg", "诊断日志", { "" }, onOpenDiagnosticLogs, colors = colors)
 
             // 关于
             DshSettingsGroupTitle("关于", colors = colors)
-            DshSettingsRow("icon-refresh16.svg", "电脑端 DSH 版本", hostVersion(), {}, colors = colors)
+            DshSettingsRow("icon-refresh16.svg", "电脑端 DSH 版本", hostVersion, {}, colors = colors)
             View {
                 attr {
                     height(52f)
@@ -1635,8 +1635,8 @@ internal fun dshSettingsLocaleLabel(snapshot: DshSettingsSnapshot): String = whe
     else -> "跟随电脑端"
 }
 
-/** 外观行文字：直接读取全局内置模式（与 DshThemeManager.mode 保持一致，响应式刷新） */
-internal fun dshThemeModeLabel(): String = when (DshThemeManager.mode) {
+/** 由页面的 observable 主题模式驱动，颜色不变时也能更新外观文字。 */
+internal fun dshThemeModeLabel(mode: DshThemeMode): String = when (mode) {
     DshThemeMode.LIGHT -> "浅色"
     DshThemeMode.DARK -> "深色"
     DshThemeMode.SYSTEM -> "跟随系统"
@@ -1662,7 +1662,7 @@ internal fun ViewContainer<*, *>.DshSettingsGroupTitle(title: String, colors: ()
 internal fun ViewContainer<*, *>.DshSettingsRow(
     icon: String,
     title: String,
-    value: String,
+    value: () -> String,
     onClick: () -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
@@ -1691,10 +1691,10 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
                 color(colors().labelPrimary)
             }
         }
-        vif({ value.isNotEmpty() }) {
+        vif({ value().isNotEmpty() }) {
             Text {
                 attr {
-                    text(value)
+                    text(value())
                     fontSize(13f)
                     color(colors().labelTertiary)
                 }
@@ -1765,7 +1765,6 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
                 }
             }
             vfor({ options() }) { option ->
-                val selected = option.value == selectedValue()
                 View {
                     attr {
                         height(52f)
@@ -1775,14 +1774,14 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
                         paddingLeft(14f)
                         paddingRight(14f)
                         borderRadius(9f)
-                        backgroundColor(if (selected) colors().stateBusinessTertiary else Color(0x00FFFFFF))
+                        backgroundColor(if (option.value == selectedValue()) colors().stateBusinessTertiary else Color(0x00FFFFFF))
                     }
                     Text {
                         attr {
                             text(option.label.ifEmpty { option.value })
                             flex(1f)
                             fontSize(14f)
-                            color(if (selected) colors().stateBusinessPrimary else colors().labelPrimary)
+                            color(if (option.value == selectedValue()) colors().stateBusinessPrimary else colors().labelPrimary)
                         }
                     }
                     vif({ option.value == selectedValue() }) {

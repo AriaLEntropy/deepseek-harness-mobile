@@ -437,6 +437,35 @@ internal fun dshTurnTailAssistant(messages: List<DshMessage>): DshMessage? {
     }?.value
 }
 
+internal data class DshTurnProcessSummary(
+    val key: String,
+    val label: String,
+)
+
+/** Returns a summary for the closed-turn process members before the final answer. */
+internal fun dshTurnProcessSummary(messages: List<DshMessage>, message: DshMessage): DshTurnProcessSummary? {
+    val lastUser = messages.indexOfLast { it.role == DshMessageRole.USER }
+    if (lastUser < 0) return null
+    val tail = dshTurnTailAssistant(messages) ?: return null
+    val tailIndex = messages.indexOfFirst { it.id == tail.id }
+    if (tailIndex <= lastUser) return null
+    val members = messages.subList(lastUser + 1, tailIndex).filter {
+        it.role == DshMessageRole.TOOL || it.isReasoning || it.isContextInjection ||
+            (it.role == DshMessageRole.ASSISTANT && !it.isReasoning)
+    }
+    if (members.isEmpty() || members.none { it.id == message.id }) return null
+    if (members.first().id != message.id) return DshTurnProcessSummary("", "")
+    val toolCount = members.count { it.role == DshMessageRole.TOOL && !it.isContextInjection }
+    val messageCount = members.count { it.role == DshMessageRole.ASSISTANT && !it.isReasoning }
+    val labels = buildList {
+        if (toolCount > 0) add("$toolCount 个工具调用")
+        if (messageCount > 0) add("$messageCount 条消息")
+        if (members.any { it.isReasoning }) add("思考")
+        if (members.any { it.isContextInjection }) add("上下文")
+    }
+    return DshTurnProcessSummary("turn-process-${tail.id}", labels.joinToString(" · ").ifEmpty { "思考了一会儿" })
+}
+
 /**
  * 以 [anchorId] 为锚点聚合整个回合的完整助手正文。
  *

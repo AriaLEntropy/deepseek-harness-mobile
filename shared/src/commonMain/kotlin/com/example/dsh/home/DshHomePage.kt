@@ -925,6 +925,7 @@ internal class DshHomePage : BasePager() {
                         connectionModeLabel = { ctx.connectionModeLabel() },
                         apiKeyConfigured = { ctx.pendingApiKey.isNotEmpty() },
                         hostVersion = { ctx.hostVersion },
+                        themeMode = { this@DshHomePage.themeMode },
                         onClose = { ctx.closeSettingsPage() },
                         onRetry = { ctx.reloadSettings() },
                         onOpenConnection = { ctx.openConnectionSettings() },
@@ -1788,21 +1789,26 @@ internal class DshHomePage : BasePager() {
         settingsChoiceBusy = false
     }
 
-    private fun reloadSettings() {
-        settingsLoading = true
-        settingsError = ""
+    private fun reloadSettings(showLoading: Boolean = true) {
+        // 保存后的回读只更新数据，避免加载提示插入列表导致滚动位置跳动。
+        if (showLoading) {
+            settingsLoading = true
+            settingsError = ""
+        }
         val repo = repository
         if (repo == null) {
             settingsLoading = false
-            settingsError = "未连接电脑端"
+            if (showLoading) settingsError = "未连接电脑端"
             return
         }
         repo.describeSettings({
-            settingsLoading = false
             settingsSnapshot = it
+            settingsError = ""
+            settingsLoading = false
         }, {
             settingsLoading = false
-            settingsError = it
+            if (showLoading) settingsError = it
+            else bridgeModule.toast("设置刷新失败：$it")
         })
     }
 
@@ -1833,7 +1839,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun openSettingsChoice(kind: String, title: String) {
-        settingsChoiceKind = kind
+        if (settingsChoiceBusy) return
         settingsChoiceTitle = title
         settingsChoiceOptions.clear()
         when (kind) {
@@ -1848,17 +1854,26 @@ internal class DshHomePage : BasePager() {
                 settingsChoiceOptions.add(DshSettingsChoice("dark", "深色"))
             }
         }
+        settingsChoiceKind = kind
     }
 
     private fun applySettingsChoice(choice: DshSettingsChoice) {
         val kind = settingsChoiceKind
-        if (kind.isEmpty()) return
+        if (kind.isEmpty() || settingsChoiceBusy) return
         settingsChoiceKind = ""
+        if (kind == "theme") {
+            // 本地外观不依赖电脑连接；同步失败也保留移动端选择。
+            runCatching {
+                acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                    .setString(DshThemeManager.PREF_KEY_THEME_MODE, choice.value)
+            }
+            DshThemeManager.applyPreference(choice.value)
+        }
         settingsChoiceBusy = true
         val repo = repository
         if (repo == null) {
             settingsChoiceBusy = false
-            bridgeModule.toast("未连接电脑端")
+            if (kind != "theme") bridgeModule.toast("未连接电脑端")
             return
         }
         when (kind) {
@@ -1868,7 +1883,7 @@ internal class DshHomePage : BasePager() {
                 settingsSnapshot.permissionRevision,
                 {
                     settingsChoiceBusy = false
-                    reloadSettings()
+                    reloadSettings(showLoading = false)
                 },
                 {
                     settingsChoiceBusy = false
@@ -1881,7 +1896,7 @@ internal class DshHomePage : BasePager() {
                 settingsSnapshot.localeRevision,
                 {
                     settingsChoiceBusy = false
-                    reloadSettings()
+                    reloadSettings(showLoading = false)
                 },
                 {
                     settingsChoiceBusy = false
@@ -1889,19 +1904,13 @@ internal class DshHomePage : BasePager() {
                 },
             )
             "theme" -> {
-                // 移动端本地优先：立即生效并持久化，不依赖电脑端同步结果
                 settingsChoiceBusy = false
-                runCatching {
-                    acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
-                        .setString(DshThemeManager.PREF_KEY_THEME_MODE, choice.value)
-                }
-                DshThemeManager.applyPreference(choice.value)
                 // 顺带同步电脑端外观（失败仅提示，不影响移动端）
                 repo.updateSetting(
                     "ui-theme",
                     JSONObject().apply { put("preference", choice.value) },
                     settingsSnapshot.themeRevision,
-                    { reloadSettings() },
+                    { reloadSettings(showLoading = false) },
                     { bridgeModule.toast("外观同步电脑端失败：$it") },
                 )
             }
@@ -1932,7 +1941,7 @@ internal class DshHomePage : BasePager() {
         }
         repo.updateSetting("agent-default-model", patch, settingsSnapshot.defaultModelRevision, {
             modelPickerVisible = false
-            reloadSettings()
+            reloadSettings(showLoading = false)
         }, {
             modelPickerVisible = false
             bridgeModule.toast("默认模型设置失败：$it")
