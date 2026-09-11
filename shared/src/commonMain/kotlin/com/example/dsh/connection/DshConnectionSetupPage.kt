@@ -49,6 +49,7 @@ internal class DshConnectionSetupPage : BasePager() {
     private var localStore: DshLocalStore? = null
     private var engineModule: DshEngineModule? = null
     private var probeRepository: DshRepository? = null
+    private var autoConnectAttempted = false
 
     override fun created() {
         super.created()
@@ -106,6 +107,94 @@ internal class DshConnectionSetupPage : BasePager() {
         keyId = profile?.keyId.orEmpty()
         sshFingerprint = profile?.hostFingerprint.orEmpty()
         keyLabel = if (keyId.isEmpty()) "未导入 SSH 私钥" else "已导入 SSH 私钥"
+        // 冷启动自动尝试一次连接：连得上直接进主页，连不上停留在此页。
+        // 从主页返回本页（改设置 / 断开）时带 skipAutoConnect，避免刚断开又被弹回主页。
+        if (!pageData.params.optBoolean(SKIP_AUTO_CONNECT_KEY) && !autoConnectAttempted) {
+            autoConnectAttempted = true
+            setTimeout(pagerId, AUTO_CONNECT_DELAY_MS) { autoConnect() }
+        }
+    }
+
+    /** 进入连接页后的自动连接：按上次模式探测，成功进主页，失败留在本页展示原因。 */
+    private fun autoConnect() {
+        if (busy) return
+        when (connectionMode) {
+            DshConnectionMode.RELAY -> if (relayPaired) probeRelay()
+            DshConnectionMode.SSH -> probeSsh()
+            DshConnectionMode.LOCAL -> Unit
+        }
+    }
+
+    /** SSH 自动连接：复用已保存的 profile 走一次真实探测（SSH 隧道 + 拉会话）。 */
+    private fun probeSsh() {
+        val ssh = sshPort.toIntOrNull()
+        val dsh = dshPort.toIntOrNull()
+        if (!pageData.supportsSshBridge) return
+        if (host.isBlank() || user.isBlank() || keyId.isBlank() || ssh == null || dsh == null) return
+        busy = true
+        error = ""
+        probeRemote(DshRemoteProfile(
+            host = host.trim(),
+            sshPort = ssh,
+            username = user.trim(),
+            remoteDshPort = dsh,
+            keyId = keyId,
+            hostFingerprint = sshFingerprint,
+        ))
+    }
+
+    /** Relay 自动连接：建立隧道后拉一次会话验证 Host 可用；Relay 失败会一直重试，故加超时兜底。 */
+    private fun probeRelay() {
+        if (!pageData.supportsRelayBridge) return
+        val module = acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME)
+        var settled = false
+        busy = true
+        error = "正在连接已配对电脑"
+        fun fail(message: String) {
+            if (settled) return
+            settled = true
+            busy = false
+            error = message
+            (probeRepository as? DshRemoteRepository)?.stop()
+            probeRepository = null
+            module.disconnect()
+        }
+        setTimeout(pagerId, RELAY_PROBE_TIMEOUT_MS) {
+            fail("无法连接到已配对电脑，请确认电脑端 Relay 与 DSH 已启动")
+        }
+        module.connect { state ->
+            if (settled) return@connect
+            when (state.phase) {
+                DshRelayPhase.READY -> {
+                    if (state.localPort <= 0 || state.localToken.isEmpty()) return@connect
+                    if (probeRepository != null) return@connect
+                    val repository = DshRemoteRepository(
+                        network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
+                        webSocket = acquireModule(DshWebSocketModule.MODULE_NAME),
+                        connection = DshHostConnection("http://127.0.0.1:${state.localPort}", state.localToken),
+                        pagerId = pagerId,
+                    )
+                    probeRepository = repository
+                    repository.loadSessions({
+                        if (settled) return@loadSessions
+                        settled = true
+                        setTimeout(pagerId, 0) {
+                            busy = false
+                            error = ""
+                            (probeRepository as? DshRemoteRepository)?.stop()
+                            probeRepository = null
+                            module.disconnect()
+                            openHome()
+                        }
+                    }, { message ->
+                        fail("远程 DSH 不可用：$message")
+                    })
+                }
+                DshRelayPhase.ERROR, DshRelayPhase.STOPPED ->
+                    fail(state.message.ifEmpty { "无法连接到已配对电脑" })
+                else -> Unit
+            }
+        }
     }
 
     override fun body(): ViewBuilder {
@@ -356,7 +445,8 @@ internal class DshConnectionSetupPage : BasePager() {
                                 busy = false
                                 error = ""
                                 (probeRepository as? DshRemoteRepository)?.stop()
-                                module.stopSsh()
+                                // 保留 SSH 隧道交给主页复用，避免拆掉刚建好的连接再重连。
+                                module.detachSsh()
                                 openHome()
                             }
                         }, { message ->
@@ -434,6 +524,9 @@ internal class DshConnectionSetupPage : BasePager() {
     }
 
     companion object {
+        private const val SKIP_AUTO_CONNECT_KEY = "skipAutoConnect"
+        private const val AUTO_CONNECT_DELAY_MS = 200
+        private const val RELAY_PROBE_TIMEOUT_MS = 8_000
         private const val LEGACY_HOST_KEY = "dsh_ssh_host"
         private const val LEGACY_MODE_KEY = "dsh_connection_mode"
         private const val LEGACY_USER_KEY = "dsh_ssh_user"

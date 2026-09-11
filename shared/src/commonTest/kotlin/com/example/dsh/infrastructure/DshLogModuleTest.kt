@@ -6,6 +6,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
+import com.example.dsh.diagnostics.DshLogQuery
 
 /** 内存版 DshLogStore，用于驱动 DshLogWriteBehind 的容量与生命周期测试。 */
 private class FakeLogStore : DshLogStore {
@@ -14,14 +16,22 @@ private class FakeLogStore : DshLogStore {
     var dropOldestCalls = 0
     var clearCalls = 0
     var maxSeqValue = 0L
+    var failAppend = false
 
     override fun appendBatch(events: List<LogEvent>) {
+        if (failAppend) throw RuntimeException("append failed")
         this.events.addAll(events)
         storedBytes += events.sumOf { it.size }
     }
 
     override fun query(filter: LogFilter, limit: Int, offset: Int): List<LogEvent> =
-        events.sortedByDescending { it.seq }.take(limit).drop(offset)
+        events.filter {
+            (filter.beforeSeq == null || it.seq < filter.beforeSeq) &&
+                (filter.sessionId == null || it.sessionId == filter.sessionId) &&
+                (filter.fromTime == null || it.timestamp >= filter.fromTime) &&
+                (filter.toTime == null || it.timestamp <= filter.toTime) &&
+                (filter.levels.isNullOrEmpty() || it.level in filter.levels)
+        }.sortedByDescending { it.seq }.drop(offset).take(limit)
 
     override fun clear() {
         events.clear()
@@ -80,6 +90,35 @@ private class WriteBehindHarness(
 }
 
 class DshLogWriteBehindTest {
+    @Test
+    fun oldSessionIsFoundBeyondLatestFiveThousandAndPagesHaveNoDuplicates() {
+        val store = FakeLogStore().apply {
+            appendBatch((1L..6200L).map { logEvent(it).copy(sessionId = if (it <= 300) "old" else "recent") })
+            maxSeqValue = 6200
+        }
+        val h = WriteBehindHarness(store)
+        try {
+            val query = DshLogQuery(LogFilter(sessionId = "old"))
+            val first = query.readPage(h.writeBehind, 0, 200)
+            val second = query.readPage(h.writeBehind, 200, 200)
+            assertEquals(300, first.total)
+            assertEquals(200, first.rows.size)
+            assertEquals(100, second.rows.size)
+            assertEquals(300, (first.rows + second.rows).map { it.seq }.distinct().size)
+            val all = mutableListOf<Long>()
+            h.writeBehind.forEachPage(LogFilter()) { all.addAll(it.map { e -> e.seq }) }
+            assertEquals(6200, all.distinct().size)
+        } finally { h.close() }
+    }
+
+    @Test
+    fun failedFlushDoesNotSilentlyExportIncompleteLogs() {
+        val h = WriteBehindHarness(FakeLogStore().apply { failAppend = true })
+        try {
+            h.writeBehind.enqueue(logEvent(0))
+            assertFailsWith<IllegalStateException> { h.writeBehind.forEachPage(LogFilter()) { } }
+        } finally { h.close() }
+    }
 
     @Test
     fun seqContinuesAfterStoreMax() {
@@ -230,9 +269,76 @@ class DshLogWriteBehindTest {
             h.close()
         }
     }
+
+    @Test
+    fun onStartInitializesSeqFromStore() {
+        val h = WriteBehindHarness(store = FakeLogStore().apply { maxSeqValue = 42 })
+        try {
+            h.writeBehind.onStart()
+            assertEquals(43L, h.writeBehind.enqueue(logEvent(seq = 0)).seq)
+        } finally {
+            h.close()
+        }
+    }
+
+    @Test
+    fun sanitizeAppliedOnFlushAndSizeMatchesStoredMessage() {
+        val h = WriteBehindHarness()
+        try {
+            val raw = "GET /x?token=secret123&a=1"
+            h.writeBehind.enqueue(logEvent(seq = 0, message = raw, size = raw.length))
+            h.writeBehind.flush()
+            val stored = h.store.events.single()
+            assertTrue(stored.message.contains("token=***"))
+            assertFalse(stored.message.contains("secret123"))
+            assertEquals(stored.message.length, stored.size)
+        } finally {
+            h.close()
+        }
+    }
+
+    @Test
+    fun snapshotSanitizesPendingEntries() {
+        val h = WriteBehindHarness()
+        try {
+            h.writeBehind.enqueue(logEvent(seq = 0, message = "login password=hunter2"))
+            val snap = h.writeBehind.snapshot().single()
+            assertTrue(snap.message.contains("password=***"))
+            assertFalse(snap.message.contains("hunter2"))
+        } finally {
+            h.close()
+        }
+    }
+
+    @Test
+    fun flushRequeuesBatchWhenStoreFails() {
+        val store = FakeLogStore().apply { failAppend = true }
+        val h = WriteBehindHarness(store = store)
+        try {
+            h.writeBehind.enqueue(logEvent(seq = 0, message = "a"))
+            h.writeBehind.flush()
+            assertTrue(store.events.isEmpty())
+            // 失败后原始批次回灌 pending，仍可通过 snapshot 观察到
+            assertEquals(listOf("a"), h.writeBehind.snapshot().map { it.message })
+            store.failAppend = false
+            h.writeBehind.flush()
+            assertEquals(listOf("a"), store.events.map { it.message })
+        } finally {
+            h.close()
+        }
+    }
 }
 
 class LogSanitizerTest {
+    @Test
+    fun escapedJsonSecretsAndShortAttachmentUrisAreRedacted() {
+        val value = """{"access-ticket":"a\"b","dataUrl":"data:image/png;base64,YQ==","clientToken":"short"}"""
+        val safe = LogSanitizer.sanitize(value)
+        assertFalse(safe.contains("a\\\"b"))
+        assertFalse(safe.contains("YQ=="))
+        assertFalse(safe.contains("short"))
+        assertEquals(safe, LogSanitizer.sanitize(safe))
+    }
 
     @Test
     fun redactsQueryToken() {
@@ -309,6 +415,11 @@ class LogSanitizerTest {
 }
 
 class DshLogSelectTest {
+    @Test
+    fun typeAlternativesStayInsideSessionAndTimeBoundary() {
+        val select = buildLogSelect(LogFilter(types = listOf("tool/call", "tool/result"), sessionId = "s1", fromTime = 10), 200, 0)
+        assertTrue(select.sql.contains("(type = ? OR type = ?) AND session_id = ? AND time >= ?"))
+    }
 
     @Test
     fun emptyFilterSelectsAllOrderedDesc() {
@@ -375,5 +486,115 @@ class DshLogSelectTest {
     fun limitOffsetAlwaysTrailing() {
         val s = buildLogSelect(LogFilter(sessionId = "s1"), limit = 5, offset = 20)
         assertEquals(listOf("s1", "5", "20"), s.args)
+    }
+}
+
+class LogExporterTest {
+
+    @Test
+    fun toJsonProducesStructureAndEscapesSpecials() {
+        val events = listOf(
+            LogEvent(
+                seq = 1, timestamp = 1000, level = LogLevel.INFO, type = "chat.msg",
+                sessionId = "s1", rpcId = null, message = "line1\nline2\t\"q\"", size = 10,
+            ),
+        )
+        val json = LogExporter.toJson(events)
+        assertTrue(json.trimStart().startsWith("["))
+        assertTrue(json.contains("\"seq\": 1"))
+        assertTrue(json.contains("\"level\": \"INFO\""))
+        assertTrue(json.contains("\"sessionId\": \"s1\""))
+        assertTrue(json.contains("\"rpcId\": null"))
+        assertTrue(json.contains("\\n"))
+        assertTrue(json.contains("\\t"))
+        assertTrue(json.contains("\\\""))
+    }
+
+    @Test
+    fun toJsonEscapesControlCharacters() {
+        val events = listOf(
+            LogEvent(
+                seq = 1, timestamp = 0, level = LogLevel.DEBUG, type = "t",
+                sessionId = null, rpcId = null, message = "a\u0001b", size = 3,
+            ),
+        )
+        val json = LogExporter.toJson(events)
+        assertTrue(json.contains("\\u0001"), "control char not escaped: $json")
+    }
+
+    @Test
+    fun toTextFormatsLevelTypeAndSession() {
+        val events = listOf(
+            LogEvent(
+                seq = 1, timestamp = 0, level = LogLevel.WARN, type = "net.err",
+                sessionId = "s2", rpcId = null, message = "boom", size = 4,
+            ),
+        )
+        val text = LogExporter.toText(events)
+        assertTrue(text.contains("[WARN]"))
+        assertTrue(text.contains("[net.err]"))
+        assertTrue(text.contains("[s2]"))
+        assertTrue(text.contains("boom"))
+    }
+}
+
+class DshStreamLogGatingTest {
+    @Test
+    fun consoleAndPersistedOutputBothRedactSecrets() {
+        withStreamLog { wb ->
+            val output = mutableListOf<String>()
+            DshStreamLog.minLevel = LogLevel.INFO
+            DshStreamLog.persistEnabled = true
+            DshStreamLog.consoleSink = { _, _, message -> output.add(message) }
+            DshStreamLog.log(LogLevel.ERROR, "rpc.failed", "clientToken=secret-value", "s1", "r1")
+            wb.flush()
+            assertFalse(output.single().contains("secret-value"))
+            assertFalse(wb.snapshot().single().message.contains("secret-value"))
+        }
+    }
+
+    private fun withStreamLog(block: (DshLogWriteBehind) -> Unit) {
+        val store = FakeLogStore()
+        val scope = CoroutineScope(Dispatchers.Default)
+        val wb = DshLogWriteBehind(store, scope, flushDelayMs = 10_000)
+        val prevSink = DshStreamLog.consoleSink
+        val prevWb = DshStreamLog.writeBehind
+        val prevMin = DshStreamLog.minLevel
+        val prevPersist = DshStreamLog.persistEnabled
+        DshStreamLog.consoleSink = { _, _, _ -> }
+        DshStreamLog.writeBehind = wb
+        try {
+            block(wb)
+        } finally {
+            wb.onStop()
+            DshStreamLog.consoleSink = prevSink
+            DshStreamLog.writeBehind = prevWb
+            DshStreamLog.minLevel = prevMin
+            DshStreamLog.persistEnabled = prevPersist
+        }
+    }
+
+    @Test
+    fun belowMinLevelIsNotPersisted() {
+        withStreamLog { wb ->
+            DshStreamLog.minLevel = LogLevel.WARN
+            DshStreamLog.i("info.hello")
+            DshStreamLog.d("debug.hello")
+            wb.flush()
+            assertTrue(wb.snapshot().isEmpty())
+            DshStreamLog.e("err.boom")
+            wb.flush()
+            assertEquals(1, wb.snapshot().size)
+        }
+    }
+
+    @Test
+    fun persistDisabledStopsPersistence() {
+        withStreamLog { wb ->
+            DshStreamLog.persistEnabled = false
+            DshStreamLog.e("err.boom")
+            wb.flush()
+            assertTrue(wb.snapshot().isEmpty())
+        }
     }
 }

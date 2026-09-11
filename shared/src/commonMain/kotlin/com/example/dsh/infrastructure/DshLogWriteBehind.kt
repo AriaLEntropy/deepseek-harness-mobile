@@ -35,12 +35,17 @@ internal class DshLogWriteBehind(
     private val flushDelayMs: Long = 500,
     private val batchFlushSize: Int = 32,
     private val snapshotLimit: Int = 20000,
+    private val sanitize: (String) -> String = { LogSanitizer.sanitize(it) },
 ) {
     private val lock = DshLock()
+    // Serialize DB operations and flush/clear boundaries; enqueue never waits on this after initialization.
+    private val storeLock = DshLock()
+    private var revision = 0L
     private val pending = mutableListOf<LogEvent>()
 
-    /** 从库内已有最大 seq 之后开始编号，避免与持久化记录重复被 INSERT OR REPLACE 覆盖。 */
-    private var nextSeq = logStore.maxSeq() + 1
+    /** 从库内已有最大 seq 之后开始编号；惰性初始化，避免在构造期执行阻塞 IO。 */
+    private var nextSeq = 0L
+    private var seqInitialized = false
 
     private var flushJob: Job? = null
     private var flushScheduled = false
@@ -49,8 +54,8 @@ internal class DshLogWriteBehind(
     private var storageTrimCount = 0L
     private var started = false
 
-    /** 启动时调用：检查数据库容量，超限则立即清理。 */
-    fun onStart() {
+    /** 启动时调用：初始化写入序号并检查数据库容量，超限则立即清理。 */
+    fun onStart() = storeLock.withLock {
         val shouldStart = lock.withLock {
             if (started) {
                 false
@@ -59,13 +64,34 @@ internal class DshLogWriteBehind(
                 true
             }
         }
-        if (shouldStart) enforceStorageLimit()
+        if (shouldStart) {
+            val maxSeq = logStore.maxSeq()
+            lock.withLock {
+                if (!seqInitialized) {
+                    nextSeq = maxSeq + 1
+                    seqInitialized = true
+                }
+            }
+            enforceStorageLimit()
+        }
+    }
+
+    private fun ensureSeqInitialized() {
+        if (lock.withLock { seqInitialized }) return
+        storeLock.withLock {
+            val maxSeq = logStore.maxSeq()
+            lock.withLock {
+                if (!seqInitialized) { nextSeq = maxSeq + 1; seqInitialized = true }
+            }
+        }
     }
 
     fun enqueue(event: LogEvent): LogEvent {
+        ensureSeqInitialized()
         var scheduleDelay: Long? = null
         val seqd = lock.withLock {
             val e = event.copy(seq = nextSeq++)
+            revision++
             pending.add(e)
             totalBytes += e.size
             enforceCapacity()
@@ -84,7 +110,10 @@ internal class DshLogWriteBehind(
     }
 
     /** 同步刷写所有待写日志到数据库，并检查存储容量。 */
-    fun flush() {
+    fun flush() { storeLock.withLock { flushLocked() } }
+
+    private fun flushLocked(): Boolean {
+        var success = true
         val batch = lock.withLock {
             flushScheduled = false
             if (pending.isEmpty()) {
@@ -97,9 +126,20 @@ internal class DshLogWriteBehind(
             }
         }
         if (batch != null) {
-            logStore.appendBatch(batch)
+            val sanitized = batch.map { sanitizeEvent(it) }
+            val ok = runCatching { logStore.appendBatch(sanitized) }.isSuccess
+            if (!ok) {
+                success = false
+                // 落库失败：回灌原始批次，等待下次刷写重试（容量超限时按策略丢弃）。
+                lock.withLock {
+                    pending.addAll(0, batch)
+                    totalBytes += batch.sumOf { it.size.toLong() }
+                    enforceCapacity()
+                }
+            }
         }
         enforceStorageLimit()
+        return success
     }
 
     /** 停止时调用：取消待执行刷写任务，强制同步 flush。 */
@@ -114,15 +154,32 @@ internal class DshLogWriteBehind(
         flush()
     }
 
-    fun snapshot(): List<LogEvent> {
-        val pendingSnapshot = lock.withLock { pending.toList() }
+    fun snapshot(): List<LogEvent> = storeLock.withLock {
+        val pendingSnapshot = lock.withLock { pending.toList() }.map { sanitizeEvent(it) }
         val storeEvents = logStore.query(LogFilter(), limit = snapshotLimit, offset = 0)
-        return (pendingSnapshot + storeEvents).sortedBy { it.seq }
+        (pendingSnapshot + storeEvents).distinctBy { it.seq }.map { sanitizeEvent(it) }.sortedBy { it.seq }
     }
 
-    fun clear() {
+    fun version(): Long = lock.withLock { revision }
+
+    /** Worker-only bounded reads. A stable DB view prevents concurrent inserts/eviction shifting pages. */
+    fun forEachPage(filter: LogFilter, consume: (List<LogEvent>) -> Unit) = storeLock.withLock {
+        check(flushLocked()) { "日志写入失败，请重试" }
+        var cursor = filter.beforeSeq
+        while (true) {
+            val page = logStore.query(filter.copy(beforeSeq = cursor), 256, 0)
+            if (page.isEmpty()) break
+            consume(page.map { sanitizeEvent(it) })
+            val next = page.last().seq
+            check(cursor == null || next < cursor) { "日志分页游标未推进" }
+            cursor = next
+        }
+    }
+
+    fun clear() = storeLock.withLock {
         val job = lock.withLock {
             pending.clear()
+            revision++
             totalBytes = 0
             flushScheduled = false
             val j = flushJob
@@ -137,20 +194,40 @@ internal class DshLogWriteBehind(
 
     fun storageTrimCount(): Long = lock.withLock { storageTrimCount }
 
+    /** 对单条事件延迟脱敏，并同步修正 size 以匹配脱敏后的消息长度。 */
+    private fun sanitizeEvent(e: LogEvent): LogEvent {
+        val safe = LogSanitizer.sanitize(e)
+        val msg = sanitize(safe.message)
+        return safe.copy(message = msg, size = (e.size + (msg.length - e.message.length)).coerceAtLeast(0))
+    }
+
+    /**
+     * 容量淘汰：优先丢弃最旧的低级别日志（DEBUG → INFO → 任意级别），直至回到限额内。
+     * 通过一次标记 + 一次重建（O(n)）完成，避免逐条中间删除带来的 O(n²) 移位。
+     */
     private fun enforceCapacity() {
         if (pending.size <= maxEntries && totalBytes <= maxBytes) return
-        // Drop oldest entries, prefer low-level, until under both limits
-        while (pending.isNotEmpty() && (pending.size > maxEntries || totalBytes > maxBytes)) {
-            // Find the oldest low-level event (DEBUG first, then INFO)
-            val dropIdx = pending.indexOfFirst { it.level == LogLevel.DEBUG }
-                .takeIf { it >= 0 }
-                ?: pending.indexOfFirst { it.level == LogLevel.INFO }
-                ?.takeIf { it >= 0 }
-                ?: 0
-            val removed = pending.removeAt(dropIdx)
-            totalBytes -= removed.size
-            droppedCount++
+        var entries = pending.size
+        var bytes = totalBytes
+        val drop = HashSet<Int>()
+        for (lvl in arrayOf(LogLevel.DEBUG, LogLevel.INFO, null)) {
+            if (entries <= maxEntries && bytes <= maxBytes) break
+            for (i in pending.indices) {
+                if (i in drop) continue
+                if (lvl != null && pending[i].level != lvl) continue
+                drop.add(i)
+                entries--
+                bytes -= pending[i].size
+                if (entries <= maxEntries && bytes <= maxBytes) break
+            }
         }
+        if (drop.isEmpty()) return
+        val kept = ArrayList<LogEvent>(pending.size - drop.size)
+        for (i in pending.indices) if (i !in drop) kept.add(pending[i])
+        droppedCount += (pending.size - kept.size).toLong()
+        pending.clear()
+        pending.addAll(kept)
+        totalBytes = bytes
     }
 
     /** 检查数据库容量，超过 maxStorageBytes 时淘汰最旧日志。 */
@@ -158,7 +235,7 @@ internal class DshLogWriteBehind(
         val current = logStore.sizeBytes()
         if (current <= maxStorageBytes) return
         logStore.dropOldest(maxStorageBytes / 2)
-        lock.withLock { storageTrimCount++ }
+        lock.withLock { storageTrimCount++; revision++ }
     }
 
     private fun scheduleFlush(delayMs: Long) {

@@ -59,6 +59,12 @@ internal class KRDshEngineModule : KuiklyRenderBaseModule() {
             SshTunnelManager.disconnect()
             null
         }
+        "detachSsh" -> {
+            // 只解除本页监听、保留隧道，供下一页复用（连接页探测成功后交给主页）。
+            sshListener?.let(SshTunnelManager::removeListener)
+            sshListener = null
+            null
+        }
         "sshEndpoint" -> SshTunnelManager.endpoint()
         "status" -> mapOf(
             "phase" to "UNSUPPORTED",

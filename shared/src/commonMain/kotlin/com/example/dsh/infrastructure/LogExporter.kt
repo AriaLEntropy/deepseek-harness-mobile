@@ -2,11 +2,18 @@ package com.example.dsh.infrastructure
 
 internal expect fun localTimezoneOffsetMillis(): Long
 
+/**
+ * 设备本地时区偏移缓存（毫秒，UTC→本地为正）。嵌入式 JS 引擎（QuickJS）无系统时区数据，
+ * Date.getTimezoneOffset() 恒为 0；由 BasePager 页面创建时向原生侧同步查询一次写入。
+ */
+internal var cachedLocalTimezoneOffsetMillis: Long? = null
+
 internal object LogExporter {
 
     fun toJson(events: List<LogEvent>): String = buildString {
         appendLine("[")
-        for ((i, e) in events.withIndex()) {
+        for ((i, original) in events.withIndex()) {
+            val e = LogSanitizer.sanitize(original)
             appendLine("  {")
             appendLine("    \"seq\": ${e.seq},")
             appendLine("    \"time\": ${e.timestamp},")
@@ -23,10 +30,11 @@ internal object LogExporter {
     }
 
     fun toText(events: List<LogEvent>): String = buildString {
-        for (e in events) {
+        for (original in events) {
+            val e = LogSanitizer.sanitize(original)
             val ts = formatTimestamp(e.timestamp)
             val sid = e.sessionId?.let { "[$it]" }.orEmpty()
-            appendLine("[$ts][${e.level.name}][${e.type}]$sid ${e.message}")
+            appendLine("[$ts][${e.level.name}][${e.type}]$sid seq=${e.seq} rpcId=${e.rpcId ?: "-"} ${e.message}")
         }
     }
 
@@ -39,7 +47,15 @@ internal object LogExporter {
                 '\n' -> append("\\n")
                 '\r' -> append("\\r")
                 '\t' -> append("\\t")
-                else -> append(c)
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                else -> if (c < '\u0020') {
+                    // 其余控制字符按 \uXXXX 转义，保证输出为合法 JSON。
+                    append("\\u")
+                    append(c.code.toString(16).padStart(4, '0'))
+                } else {
+                    append(c)
+                }
             }
         }
         append('"')
@@ -96,6 +112,7 @@ internal object LogExporter {
 }
 
 internal expect fun writeExportFile(dir: String, filename: String, content: String): String
+internal expect fun appendExportFile(path: String, content: String)
 
 /** Open the system share sheet for a file at the given path. */
 internal expect fun shareExportFile(path: String)

@@ -21,6 +21,7 @@ export class KRDshEngineModule extends KuiklyRenderBaseModule {
         return null;
       case 'trustSshFingerprint':
       case 'stopSsh':
+      case 'detachSsh':
       case 'stop':
         return null;
       case 'sshEndpoint':

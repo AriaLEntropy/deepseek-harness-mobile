@@ -95,7 +95,7 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         this.deleteSshKey(params);
         break;
       case 'shareExportFile':
-        this.shareExportFile(params);
+        this.shareExportFile(params, callback);
         break;
       case 'readLastCrash':
         return this.readLastCrash();
@@ -238,11 +238,9 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
     const keyId = jsonString(moduleParams(params as Object), 'keyId');
     new DshSshKeyStore().deleteKey(keyId);
   }
-}
-
-  private shareExportFile(params: KRAny): void {
+  private shareExportFile(params: KRAny, callback: KuiklyRenderCallback): void {
     const path = jsonString(moduleParams(params as Object), 'path');
-    if (path.length === 0) return;
+    if (path.length === 0) { callback?.(mapOf(['ok', 'message'], [false, '缺少文件路径'])); return; }
     try {
       const context = getContext(this) as common.UIAbilityContext;
       const uri = fileUri.getUriFromPath(path);
@@ -253,9 +251,11 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         if (error) {
           dshError('shareExportFile failed', error);
         }
+        callback?.(mapOf(['ok', 'message'], [!error, error ? '无法分享文件' : '分享操作完成']));
       });
     } catch (error) {
       dshError('shareExportFile failed', error as Object);
+      callback?.(mapOf(['ok', 'message'], [false, '无法打开分享面板']));
     }
   }
 
@@ -281,3 +281,4 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       return '';
     }
   }
+}

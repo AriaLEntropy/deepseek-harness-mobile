@@ -1130,7 +1130,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
-    DshStreamLog.i("row role=${message.role} id=${message.id} contentChars=${message.content.length}")
+    DshStreamLog.d("row role=${message.role} id=${message.id} contentChars=${message.content.length}")
     val renderedContent = contentProvider?.invoke() ?: message.content
     if (
         message.role == DshMessageRole.ASSISTANT &&
@@ -1389,12 +1389,12 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             event {
                 if (!isUser && !isError) {
                     longPress {
-                        DshStreamLog.i("longpress fired role=${message.role} id=${message.id}")
+                        DshStreamLog.d("longpress fired role=${message.role} id=${message.id}")
                         onLongPress(message, renderedContent, it.pageX, it.pageY)
                     }
                 }
                 register("touchDown", {
-                    DshStreamLog.i("touchdown on msg role=${message.role} id=${message.id}")
+                    DshStreamLog.d("touchdown on msg role=${message.role} id=${message.id}")
                 })
             }
             if (isUser || isError) {

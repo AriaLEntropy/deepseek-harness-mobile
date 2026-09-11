@@ -14,16 +14,17 @@ private class DshIosLogStore(path: String) : DshLogStore {
     }
 
     init {
-        driver.execute("CREATE TABLE IF NOT EXISTS dsh_log_events (seq INTEGER PRIMARY KEY, time INTEGER NOT NULL, level INTEGER NOT NULL, type TEXT NOT NULL, session_id TEXT, rpc_id TEXT, message TEXT NOT NULL, size INTEGER NOT NULL)")
-        driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_log_time ON dsh_log_events(time)")
-        driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_log_type ON dsh_log_events(type)")
+        driver.execute(DshLogSql.CREATE_TABLE)
+        driver.execute(DshLogSql.CREATE_INDEX_TIME)
+        driver.execute(DshLogSql.CREATE_INDEX_TYPE)
+        driver.execute(DshLogSql.CREATE_INDEX_SESSION)
     }
 
     override fun appendBatch(events: List<LogEvent>) {
         if (events.isEmpty()) return
         driver.transaction {
             for (event in events) {
-                val s = driver.prepare(INSERT_SQL)
+                val s = driver.prepare(DshLogSql.INSERT)
                 try {
                     s.bindString(1, event.seq.toString())
                     s.bindString(2, event.timestamp.toString())
@@ -55,38 +56,20 @@ private class DshIosLogStore(path: String) : DshLogStore {
     }
 
     override fun clear() {
-        driver.execute("DELETE FROM dsh_log_events")
+        driver.execute(DshLogSql.CLEAR)
     }
 
-    override fun sizeBytes(): Long = queryOne(
-        "SELECT COALESCE(SUM(length(message) + length(type) + 32), 0) FROM dsh_log_events",
-        emptyList(),
-    ) { it.getColumnLong(0) } ?: 0L
+    override fun sizeBytes(): Long =
+        queryOne(DshLogSql.SIZE_BYTES, emptyList()) { it.getColumnLong(0) } ?: 0L
 
-    override fun maxSeq(): Long = queryOne(
-        "SELECT COALESCE(MAX(seq), 0) FROM dsh_log_events",
-        emptyList(),
-    ) { it.getColumnLong(0) } ?: 0L
+    override fun maxSeq(): Long =
+        queryOne(DshLogSql.MAX_SEQ, emptyList()) { it.getColumnLong(0) } ?: 0L
 
     override fun dropOldest(keepBytes: Long) {
-        var current = sizeBytes()
-        if (current <= keepBytes) return
-        // Phase 1: only evict DEBUG and INFO entries, protecting WARN/ERROR
-        driver.execute(
-            "DELETE FROM dsh_log_events WHERE seq IN (" +
-                "SELECT seq FROM dsh_log_events WHERE level IN (0, 1) ORDER BY seq ASC LIMIT " +
-                "(SELECT COUNT(*) / 2 FROM dsh_log_events WHERE level IN (0, 1))" +
-                ")"
-        )
-        current = sizeBytes()
-        if (current <= keepBytes) return
-        // Phase 2: still over limit — evict oldest entries across all levels
-        driver.execute(
-            "DELETE FROM dsh_log_events WHERE seq IN (" +
-                "SELECT seq FROM dsh_log_events ORDER BY seq ASC LIMIT " +
-                "(SELECT COUNT(*) / 4 FROM dsh_log_events)" +
-                ")"
-        )
+        if (sizeBytes() <= keepBytes) return
+        driver.execute(DshLogSql.DROP_OLDEST_LOW_LEVEL)
+        if (sizeBytes() <= keepBytes) return
+        driver.execute(DshLogSql.DROP_OLDEST_ALL)
     }
 
     private fun mapEvent(s: SqlStatement): LogEvent {
@@ -115,10 +98,6 @@ private class DshIosLogStore(path: String) : DshLogStore {
 
     private fun nullableString(s: SqlStatement, index: Int): String? =
         if (s.getColumnType(index) == ColumnType.NULL) null else s.getColumnString(index)
-
-    private companion object {
-        private const val INSERT_SQL = "INSERT OR REPLACE INTO dsh_log_events (seq, time, level, type, session_id, rpc_id, message, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    }
 }
 
 /**

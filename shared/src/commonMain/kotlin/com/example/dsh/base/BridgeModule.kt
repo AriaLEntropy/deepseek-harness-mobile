@@ -31,10 +31,12 @@ internal class BridgeModule : Module() {
     }
 
     /** 打开系统分享面板分享导出文件（Android 已实现；iOS 接入后同名校名）。 */
-    fun shareExportFile(path: String) {
+    fun shareExportFile(path: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         val methodArgs = JSONObject()
         methodArgs.put("path", path)
-        callNativeMethod("shareExportFile", methodArgs, null)
+        callNativeMethod("shareExportFile", methodArgs) { value ->
+            onResult(value?.optBoolean("ok") == true, value?.optString("message").orEmpty())
+        }
     }
 
     /** 读取上次崩溃栈（无则空串）；由各端 native 在崩溃时写入。 */
@@ -44,6 +46,10 @@ internal class BridgeModule : Module() {
     fun clearLastCrash() {
         callNativeMethod("clearLastCrash", null, null)
     }
+
+    /** 同步获取设备本地时区偏移（毫秒，UTC→本地为正）；原生未实现时返回 null。 */
+    fun timezoneOffsetMillis(): Long? =
+        syncCallNativeMethod("timezoneOffset", null, null).toLongOrNull()
 
     /** 设备与 App 信息（version/model/os），供问题反馈包使用；不支持时返回 null。 */
     fun getDeviceInfo(): JSONObject? {

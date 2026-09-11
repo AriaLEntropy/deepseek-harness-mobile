@@ -91,6 +91,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 currentTimestamp(params)
             }
 
+            "timezoneOffset" -> {
+                timezoneOffset()
+            }
+
             "dateFormatter" -> {
                 dateFormatter(params)
             }
@@ -111,7 +115,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "deleteSshKey" -> deleteSshKey(params)
             "startSshKeepAlive" -> startSshKeepAlive()
             "stopSshKeepAlive" -> stopSshKeepAlive()
-            "shareExportFile" -> shareExportFile(params)
+            "shareExportFile" -> shareExportFile(params, callback)
             "readLastCrash" -> readLastCrash(params)
             "clearLastCrash" -> clearLastCrash(params)
             "getDeviceInfo" -> getDeviceInfo(params)
@@ -152,14 +156,13 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         ).show()
     }
 
-    private fun shareExportFile(params: String?) {
-        if (params == null) return
-        val paramJSON = JSONObject(params)
+    private fun shareExportFile(params: String?, callback: KuiklyRenderCallback?) {
+        val paramJSON = JSONObject(params ?: "{}")
         val path = paramJSON.optString("path")
-        if (path.isEmpty()) return
+        if (path.isEmpty()) { callback?.invoke(mapOf("ok" to false, "message" to "缺少文件路径")); return }
         val ctx = context ?: KRApplication.application
         val file = File(path)
-        if (!file.exists()) return
+        if (!file.isFile) { callback?.invoke(mapOf("ok" to false, "message" to "导出文件不存在")); return }
         try {
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -171,10 +174,13 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             val chooser = Intent.createChooser(intent, "导出会话日志")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ctx.startActivity(chooser)
+            // ACTION_SEND only confirms that the chooser opened, not that the recipient saved the file.
+            callback?.invoke(mapOf("ok" to true, "message" to "分享面板已打开"))
         } catch (e: Exception) {
             // FileProvider 路径未配置（如导出目录变更）时兜底，避免崩溃
             Log.e("KRBridgeModule", "shareExportFile failed", e)
             Toast.makeText(ctx, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
+            callback?.invoke(mapOf("ok" to false, "message" to "无法打开分享面板"))
         }
     }
 
@@ -191,8 +197,8 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     private fun getDeviceInfo(params: String?): String {
         return JSONObject().apply {
             put("version", BuildConfig.VERSION_NAME)
-            put("model", " ")
-            put("os", "Android ")
+            put("model", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+            put("os", "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         }.toString()
     }
 
@@ -246,6 +252,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     private fun currentTimestamp(params: String?): String {
         return (System.currentTimeMillis()).toString()
+    }
+
+    /** 设备本地时区偏移（毫秒，UTC→本地为正），供 JS 侧时间格式化（QuickJS 无时区数据）。 */
+    private fun timezoneOffset(): String {
+        return java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()).toString()
     }
 
     private fun dateFormatter(params: String?): String {

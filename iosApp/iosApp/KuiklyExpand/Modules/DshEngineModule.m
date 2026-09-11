@@ -73,6 +73,13 @@
     _tunnel.onState = nil;
 }
 
+// iOS 的 SSH 隧道是页面级实例，无法跨页复用；保持与 stopSsh 相同的断开语义。
+- (void)detachSsh:(NSDictionary *)args {
+    [_tunnel disconnect];
+    _tunnel.onState = nil;
+    _tunnel = nil;
+}
+
 - (id)sshEndpoint:(NSDictionary *)args {
     return [_tunnel endpoint] ?: @"";
 }

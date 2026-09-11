@@ -10,11 +10,19 @@ import platform.posix.timezone
 internal actual fun writeExportFile(dir: String, filename: String, content: String): String {
     val path = "$dir/$filename"
     memScoped {
-        val file = fopen(path, "w") ?: return@memScoped
-        fputs(content, file)
-        fclose(file)
+        val file = fopen(path, "w") ?: error("无法打开导出文件")
+        val result = fputs(content, file)
+        val closed = fclose(file)
+        check(result >= 0 && closed == 0) { "导出文件写入失败" }
     }
     return path
+}
+
+internal actual fun appendExportFile(path: String, content: String) {
+    val file = fopen(path, "a") ?: error("无法打开导出文件")
+    val result = fputs(content, file)
+    val closed = fclose(file)
+    check(result >= 0 && closed == 0) { "导出文件写入失败" }
 }
 
 internal actual fun shareExportFile(path: String) = Unit

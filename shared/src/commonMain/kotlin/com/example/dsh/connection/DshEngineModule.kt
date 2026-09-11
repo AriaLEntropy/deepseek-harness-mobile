@@ -88,6 +88,14 @@ internal class DshEngineModule : Module() {
         toNative(false, "stopSsh", null, null, false)
     }
 
+    /**
+     * 解除当前页的 SSH 状态监听但保留隧道，供下一页复用（连接页探测成功后交给主页）。
+     * 平台不支持时退化为断开，行为与 [stopSsh] 一致。
+     */
+    fun detachSsh() {
+        toNative(false, "detachSsh", null, null, false)
+    }
+
     fun status(): DshEngineState {
         val raw = toNative(false, "status", null, null, true).toString()
         val value = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())

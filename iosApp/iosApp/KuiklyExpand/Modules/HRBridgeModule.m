@@ -68,18 +68,27 @@ static void DshUncaughtExceptionHandler(NSException *exception) {
 }
 
 - (void)shareExportFile:(NSDictionary *)args {
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
     NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
     NSString *path = params[@"path"];
-    if (path.length == 0) return;
+    if (path.length == 0 || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        if (callback) callback(@{ @"ok": @NO, @"message": @"导出文件不存在" });
+        return;
+    }
     NSURL *url = [NSURL fileURLWithPath:path];
     UIViewController *presenter = [DshNativeUi topViewController];
-    if (!presenter) return;
+    if (!presenter) {
+        if (callback) callback(@{ @"ok": @NO, @"message": @"无法打开分享面板" });
+        return;
+    }
     UIActivityViewController *activityVC =
         [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
     // iPad 需要 popover 锚点，否则会崩溃
     activityVC.popoverPresentationController.sourceView = presenter.view;
     activityVC.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 0, 0);
-    [presenter presentViewController:activityVC animated:YES completion:nil];
+    [presenter presentViewController:activityVC animated:YES completion:^{
+        if (callback) callback(@{ @"ok": @YES, @"message": @"分享面板已打开" });
+    }];
 }
 
 - (NSString *)readLastCrash:(NSDictionary *)args {

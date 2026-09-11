@@ -4,6 +4,7 @@ import com.example.dsh.connection.*
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.theme.DshThemeManager
+import com.example.dsh.infrastructure.cachedLocalTimezoneOffsetMillis
 import com.example.dsh.theme.DshThemeMode
 import com.tencent.kuikly.core.pager.Pager
 import com.tencent.kuikly.core.module.Module
@@ -32,6 +33,10 @@ internal abstract class BasePager : Pager() {
 
     override fun created() {
         super.created()
+        // JS 运行时（QuickJS）无系统时区数据，从原生侧同步查询一次并缓存，供日志时间格式化使用
+        runCatching {
+            acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).timezoneOffsetMillis()
+        }.getOrNull()?.let { cachedLocalTimezoneOffsetMillis = it }
         // 恢复移动端本地持久化的外观偏好（无记录则保持跟随系统）；host 的 ui-theme 偏好不再自动覆盖移动端
         val saved = runCatching {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME).getItem(DshThemeManager.PREF_KEY_THEME_MODE)

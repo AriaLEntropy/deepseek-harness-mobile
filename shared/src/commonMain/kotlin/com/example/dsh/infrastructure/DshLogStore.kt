@@ -8,6 +8,9 @@ internal data class LogFilter(
     val text: String? = null,
     val fromTime: Long? = null,
     val toTime: Long? = null,
+    val sessionIds: List<String>? = null,
+    val beforeSeq: Long? = null,
+    val typeQuery: String? = null,
 )
 
 /** Log persistence API. Implemented per platform so DB drivers (e.g. kuiklysqlite) stay off commonMain. */
@@ -44,7 +47,7 @@ internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int): LogSele
                 "type = ?"
             }
         }
-        whereClauses.add(typeConditions.joinToString(" OR "))
+        whereClauses.add("(" + typeConditions.joinToString(" OR ") + ")")
     }
     if (!filter.levels.isNullOrEmpty()) {
         val levelValues = filter.levels.map { it.value.toString() }
@@ -71,6 +74,19 @@ internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int): LogSele
     if (filter.toTime != null) {
         args.add(filter.toTime.toString())
         whereClauses.add("time <= ?")
+    }
+    if (!filter.sessionIds.isNullOrEmpty()) {
+        val conditions = filter.sessionIds.map {
+            if (it == "__mobile__") "(session_id IS NULL OR session_id = '')"
+            else { args.add(it); "session_id = ?" }
+        }
+        whereClauses.add("(" + conditions.joinToString(" OR ") + ")")
+    }
+    filter.beforeSeq?.let { args.add(it.toString()); whereClauses.add("seq < ?") }
+    filter.typeQuery?.takeIf { it.isNotBlank() }?.let {
+        val escaped = it.removeSuffix(".*").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        args.add(if (it.endsWith(".*")) "$escaped%" else "%$escaped%")
+        whereClauses.add("type LIKE ? ESCAPE '\\'")
     }
 
     val where = if (whereClauses.isEmpty()) "" else "WHERE ${whereClauses.joinToString(" AND ")}"

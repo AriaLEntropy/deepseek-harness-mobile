@@ -124,7 +124,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         if (content == lastContent && streaming == lastStreaming) return
         val endingStream = lastStreaming && !streaming
         if (content.isEmpty() && lastContent.isNotEmpty()) {
-            DshStreamLog.i(
+            DshStreamLog.d(
                 "render.skip empty-wipe streaming=$streaming prevChars=${lastContent.length} prevBlocks=${blockList.size}",
             )
             lastStreaming = streaming
@@ -135,14 +135,14 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             content.length < lastContent.length &&
             lastContent.startsWith(content)
         ) {
-            DshStreamLog.i(
+            DshStreamLog.d(
                 "render.skip shrink streaming=$streaming prevChars=${lastContent.length} nextChars=${content.length}",
             )
             lastStreaming = streaming
             return
         }
         if (streaming && !lastStreaming) {
-            DshStreamLog.i("render.stream-start chars=${content.length}")
+            DshStreamLog.d("render.stream-start chars=${content.length}")
             streamingState.reset()
             blockList.clear()
             blockCount = 0
@@ -155,7 +155,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         val toParse = if (streaming) DshStreamingMarkdown.closeOpenFence(input) else input
         val next = streamingState.update(toParse, force = !streaming)
         if (next == null) {
-            DshStreamLog.i("render.skip parser-null streaming=$streaming chars=${content.length}")
+            DshStreamLog.d("render.skip parser-null streaming=$streaming chars=${content.length}")
             return
         }
         val previousCount = blockList.size
@@ -172,7 +172,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             treeEpoch += 1
         }
         flexNode.markDirty()
-        DshStreamLog.i(
+        DshStreamLog.d(
             "render.apply streaming=$streaming uiBlocks=$previousCount→${blockList.size} ${DshStreamLog.blocks(next)}",
         )
     }

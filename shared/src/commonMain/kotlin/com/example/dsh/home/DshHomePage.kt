@@ -4,6 +4,7 @@ import com.example.dsh.base.*
 import com.example.dsh.chat.*
 import com.example.dsh.connection.*
 import com.example.dsh.conversation.*
+import com.example.dsh.diagnostics.DshLogPageContract
 import com.example.dsh.home.*
 import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
@@ -27,6 +28,8 @@ import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.module.NetworkModule
+import com.tencent.kuikly.core.module.CallbackRef
+import com.tencent.kuikly.core.module.NotifyModule
 import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.base.BackPressCallback
@@ -59,6 +62,7 @@ internal class DshHomePage : BasePager() {
     private var repository: DshRepository? = null
     private var localStore: DshLocalStore? = null
     private var logStore: DshLogStore? = null
+    private var logJumpNotifyRef: CallbackRef? = null
     private var exportDir = ""
     private var engineModule: DshEngineModule? = null
     private var engineReady = false
@@ -234,14 +238,11 @@ internal class DshHomePage : BasePager() {
     private var workspaceActionError by observable("")
     // ===== 会话 topbar overflow menu 与会话管理动作 =====
     private var overflowMenuVisible by observable(false)
-    private var sessionLogVisible by observable(false)
+
     private val overlayBackCallback = object : BackPressCallback() {
         override fun handleOnBackPressed() {
             when {
-                sessionLogClearVisible -> sessionLogClearVisible = false
-                sessionLogClearMenuVisible -> sessionLogClearMenuVisible = false
-                sessionLogTypeSheetVisible -> sessionLogTypeSheetVisible = false
-                sessionLogTimePickerVisible -> sessionLogTimePickerVisible = false
+
                 settingsChoiceKind.isNotEmpty() -> { if (!settingsChoiceBusy) settingsChoiceKind = "" }
                 selectTextModalVisible -> closeSelectTextModal()
                 sessionDeleteVisible -> sessionDeleteVisible = false
@@ -257,49 +258,13 @@ internal class DshHomePage : BasePager() {
                 credentialSetupVisible -> closeCredentialSettings()
                 sshSettingsVisible -> updateSshSettingsVisibility(false)
                 settingsPageVisible -> closeSettingsPage()
-                sessionLogSelected != null -> sessionLogSelected = null
-                sessionLogVisible -> closeSessionLogs()
+
                 sessionDrawerVisible -> closeSessionDrawer()
                 else -> acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
             }
         }
     }
-    private var diagnosticLogAllMode by observable(false)
-    private val sessionLogCache by observableList<LogEvent>()
-    private var sessionLogSelected by observable<LogEvent?>(null)
-    private var sessionLogDetailRaw by observable("")
-    private var sessionLogExporting by observable(false)
-    private var sessionLogTimeFilter by observable(0)
-    private var sessionLogCustomStartMs by observable<Long?>(null)
-    private var sessionLogCustomEndMs by observable<Long?>(null)
-    private var sessionLogTimePickerVisible by observable(false)
-    private var sessionLogTimePickerTargetStart by observable(true)
-    private var sessionLogPkYear by observable(0)
-    private var sessionLogPkMonth by observable(1)
-    private var sessionLogPkDay by observable(1)
-    private var sessionLogPkHour by observable(0)
-    private var sessionLogPkMinute by observable(0)
-    private var sessionLogLevelFilter by observable<Set<LogLevel>>(LogLevel.entries.toSet())
-    private var sessionLogSelectedTypes by observable<Set<String>>(emptySet())
-    private var sessionLogSelectedSessions by observable<Set<String>>(emptySet())
-    private var sessionLogSessionOptions by observableList<String>()
-    private var sessionLogTypeOptions by observableList<String>()
-    private var sessionLogKeyword by observable("")
-    private var sessionLogSearchExpanded by observable(false)
-    private var sessionLogTypeSheetVisible by observable(false)
-    private val sessionLogView by observableList<LogEvent>()
-    private var sessionLogTypeSheetKeyword by observable("")
-    private var sessionLogTotal by observable(0)
-    private var sessionLogClearMenuVisible by observable(false)
-    private var sessionLogClearVisible by observable(false)
-    private var sessionLogClearing by observable(false)
-    private var sessionLogFeedbackExporting by observable(false)
-    private var sessionLogScrollerRef: ViewRef<ListView<*, *>>? = null
-    private var sessionLogFollowBottom by observable(true)
-    private var sessionLogNewCount by observable(0)
-    private var sessionLogLastMaxSeq = 0L
-    private var sessionLogPolling = false
-    private val sessionLogPollIntervalMs = 1000
+
     private var sessionRenameVisible by observable(false)
     private var sessionRenameDraft by observable("")
     private var sessionRenameBusy by observable(false)
@@ -375,6 +340,7 @@ internal class DshHomePage : BasePager() {
                 DshStreamLog.writeBehind = wb
             }
         }
+        registerLogPageNotifications()
         reportLastCrashIfAny()
         connectionMode = when (pageData.params.optString("connectionMode")) {
             "relay" -> DshConnectionMode.RELAY
@@ -414,6 +380,7 @@ internal class DshHomePage : BasePager() {
         stopCurrentEngine()
         DshStreamLog.writeBehind?.onStop()
         DshStreamLog.writeBehind = null
+        unregisterLogPageNotifications()
         localReadScope.cancel()
         super.pageWillDestroy()
     }
@@ -1199,105 +1166,6 @@ internal class DshHomePage : BasePager() {
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     colors = { this@DshHomePage.themeColors },
-                )
-                DshSessionLogModal(
-                    visible = { ctx.sessionLogVisible },
-                    events = { ctx.sessionLogView },
-                    total = { ctx.sessionLogTotal },
-                    exporting = { ctx.sessionLogExporting },
-                    timeFilter = { ctx.sessionLogTimeFilter },
-                    levelFilter = { ctx.sessionLogLevelFilter },
-                    selectedTypes = { ctx.sessionLogSelectedTypes },
-                    typeOptions = { ctx.sessionLogTypeOptions },
-                    keyword = { ctx.sessionLogKeyword },
-                    onSelect = { ctx.sessionLogSelected = it; ctx.loadSessionLogDetail(it) },
-                    onRefresh = { ctx.refreshSessionLogs() },
-                    onExport = { ctx.exportSessionLogs() },
-                    onClose = { ctx.closeSessionLogs() },
-                    onTimeFilter = { ctx.onLogTimeFilter(it) },
-                    customStartMs = { ctx.sessionLogCustomStartMs },
-                    customEndMs = { ctx.sessionLogCustomEndMs },
-                    onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
-                    onOpenTimePicker = { target -> ctx.openLogTimePicker(target) },
-                    onToggleLevel = { ctx.onLogToggleLevel(it) },
-                    onToggleType = { ctx.onToggleLogType(it) },
-                    onKeyword = { ctx.onLogKeyword(it) },
-                    onClearFilters = { ctx.clearLogFilters() },
-                    searchExpanded = { ctx.sessionLogSearchExpanded },
-                    typeSheetVisible = { ctx.sessionLogTypeSheetVisible },
-                    onSetSearchExpanded = { ctx.onSetLogSearchExpanded(it) },
-                    onSetTypeSheetVisible = { ctx.onSetLogTypeSheetVisible(it) },
-                    onClearTypes = { ctx.onClearLogSelectedTypes() },
-                    sheetKeyword = { ctx.sessionLogTypeSheetKeyword },
-                    onSetSheetKeyword = { ctx.onSetLogTypeSheetKeyword(it) },
-                    onClearRequest = { ctx.requestSessionLogClear() },
-                    onFeedbackPackage = { ctx.exportFeedbackPackage() },
-
-                    clearDialogVisible = { ctx.sessionLogClearVisible },
-                    clearing = { ctx.sessionLogClearing },
-                    onClearDialogCancel = { ctx.cancelSessionLogClear() },
-                    onClearDialogConfirm = { ctx.confirmSessionLogClear() },
-                    scrollerRef = { ctx.sessionLogScrollerRef = it },
-                    onLogScroll = { ctx.onSessionLogScroll(it) },
-                    newCount = { ctx.sessionLogNewCount },
-                    followBottom = { ctx.sessionLogFollowBottom },
-                    onJumpToBottom = { ctx.onSessionLogJumpToBottom() },
-                    allMode = { ctx.diagnosticLogAllMode },
-                    sessionTitleProvider = { sid -> ctx.sessions.firstOrNull { it.id == sid }?.title?.ifEmpty { sid } ?: sid },
-                    sessionOptions = { ctx.sessionLogSessionOptions },
-                    selectedSessions = { ctx.sessionLogSelectedSessions },
-                    onToggleSession = { ctx.onLogToggleSession(it) },
-                    onClearSessions = { ctx.onClearLogSessions() },
-                    statusBarHeight = ctx.pagerData.statusBarHeight,
-                    pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = { this@DshHomePage.themeColors },
-                )
-
-                DshLogTimePickerModal(
-                    visible = { ctx.sessionLogTimePickerVisible },
-                    targetStart = { ctx.sessionLogTimePickerTargetStart },
-                    pkYear = { ctx.sessionLogPkYear },
-                    pkMonth = { ctx.sessionLogPkMonth },
-                    pkDay = { ctx.sessionLogPkDay },
-                    pkHour = { ctx.sessionLogPkHour },
-                    pkMinute = { ctx.sessionLogPkMinute },
-                    customStartMs = { ctx.sessionLogCustomStartMs },
-                    customEndMs = { ctx.sessionLogCustomEndMs },
-                    onLogCustomTime = { startMs, endMs -> ctx.onLogCustomTime(startMs, endMs) },
-                    onSetVisible = { ctx.sessionLogTimePickerVisible = it },
-                    onSetTargetStart = { target -> ctx.sessionLogTimePickerTargetStart = target; ctx.syncLogPickerPkValues(target) },
-                    onSetPkValue = { field, value ->
-                        when (field) {
-                            0 -> ctx.sessionLogPkYear = value
-                            1 -> ctx.sessionLogPkMonth = value
-                            2 -> ctx.sessionLogPkDay = value
-                            3 -> ctx.sessionLogPkHour = value
-                            else -> ctx.sessionLogPkMinute = value
-                        }
-                    },
-                    colors = { this@DshHomePage.themeColors },
-                    pageViewWidth = { ctx.pagerData.pageViewWidth },
-                )
-
-                DshLogDetailModal(
-                    visible = { ctx.sessionLogSelected != null },
-                    entry = { ctx.sessionLogSelected },
-                    detailRaw = { ctx.sessionLogDetailRaw },
-                    allMode = { ctx.diagnosticLogAllMode },
-                    onClose = { ctx.sessionLogSelected = null },
-                    onCopy = { ctx.copyLogDetail(it) },
-                    onJumpToSession = { ctx.jumpToSession(it) },
-                    statusBarHeight = ctx.pagerData.statusBarHeight,
-                    pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = { this@DshHomePage.themeColors },
-                )
-
-                DshSessionLogClearDialog(
-                    visible = { ctx.sessionLogClearVisible },
-                    busy = { ctx.sessionLogClearing },
-                    onCancel = { ctx.cancelSessionLogClear() },
-                    onConfirm = { ctx.confirmSessionLogClear() },
-                    pageViewWidth = ctx.pagerData.pageViewWidth,
                 )
                 DshSessionRenameDialog(
                     visible = { ctx.sessionRenameVisible },
@@ -2198,7 +2066,11 @@ internal class DshHomePage : BasePager() {
     private fun openConnectionSetup() {
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
             "connection_setup",
-            JSONObject().apply { put("pageName", "connection_setup") },
+            JSONObject().apply {
+                put("pageName", "connection_setup")
+                // 从主页返回连接页是主动改设置/断开，跳过自动连接，避免立刻又被弹回主页。
+                put("skipAutoConnect", true)
+            },
         )
     }
 
@@ -2613,7 +2485,7 @@ internal class DshHomePage : BasePager() {
                 }
                 flushAssistantDelta()
                 ensureStreamingAssistantSegment()
-                DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
+                DshStreamLog.log(LogLevel.ERROR, "ui.error", "ui.error session=$sessionId message='${DshStreamLog.preview(error)}'", sessionId, null)
                 settleStreamingMessage(DshMessageRole.ERROR, error)
                 persistMessages(sessionId)
                 connectionLabel = "已连接"
@@ -3178,15 +3050,6 @@ internal class DshHomePage : BasePager() {
     /** overflow menu 的目标会话：抽屉行打开时指向该行会话，否则回退到当前会话。 */
     private fun overflowTargetId(): String = overflowTargetSessionId.ifEmpty { activeSessionId }
 
-    /** 从会话事件摘要日志的 message 中解析 evtSeq（会话事件 seq，用于反查内存原文）。 */
-    private fun dshParseLogEventSeq(message: String): Int? {
-        val idx = message.indexOf("evtSeq=")
-        if (idx < 0) return null
-        val rest = message.substring(idx + "evtSeq=".length)
-        val end = rest.indexOfFirst { it < '0' || it > '9' }.let { if (it < 0) rest.length else it }
-        if (end == 0) return null
-        return rest.substring(0, end).toIntOrNull()
-    }
 
     fun overflowActions(): ObservableList<DshOverflowAction> {
         val result = ObservableList<DshOverflowAction>()
@@ -3210,408 +3073,92 @@ internal class DshHomePage : BasePager() {
         }
     }
 
-    // ===== 会话日志 =====
+    // ===== 会话日志（独立路由页 DshLogPage） =====
 
     fun openSessionLogs() {
         closeSessionDrawer()
-        diagnosticLogAllMode = false
-        refreshSessionLogs()
-        sessionLogVisible = true
-        startSessionLogFollow()
+        openLogPage(overflowTargetId())
     }
 
     fun openDiagnosticLogs() {
         closeSessionDrawer()
-        diagnosticLogAllMode = true
-        refreshSessionLogs()
-        sessionLogVisible = true
-        startSessionLogFollow()
+        openLogPage("")
     }
-    fun jumpToSession(sessionId: String) {
-        if (sessionId.isEmpty()) return
-        val idx = sessions.indexOfFirst { it.id == sessionId }
-        if (idx >= 0) {
-            selectSession(sessionId)
+
+    /** 打开日志页；logSessionId 为空表示全局诊断日志模式。 */
+    private fun openLogPage(logSessionId: String) {
+        acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
+            "dsh_log",
+            JSONObject().apply {
+                put("pageName", "dsh_log")
+                put("sessionId", logSessionId)
+                put("exportDir", exportDir)
+                put("connectionMode", connectionModeLabel())
+                put(DshLogPageContract.KEY_OWNER, pagerId)
+                put(DshLogPageContract.KEY_SESSION_TITLES, JSONArray().apply {
+                    sessions.forEach { session ->
+                        put(JSONObject().apply {
+                            put(DshLogPageContract.KEY_SESSION_ID, session.id)
+                            put(DshLogPageContract.KEY_SESSION_TITLE, session.title)
+                        })
+                    }
+                })
+            },
+        )
+    }
+
+    private fun registerLogPageNotifications() {
+        val notify = acquireModule<NotifyModule>(NotifyModule.MODULE_NAME)
+        logJumpNotifyRef = notify.addNotify(DshLogPageContract.EVENT_JUMP_TO_SESSION) { data ->
+            if (data?.optString(DshLogPageContract.KEY_OWNER) != pagerId) return@addNotify
+            val sessionId = data?.optString(DshLogPageContract.KEY_SESSION_ID).orEmpty()
+            val requestId = data?.optString(DshLogPageContract.KEY_REQUEST).orEmpty()
+            jumpToSession(sessionId) { ok, message ->
+                notify.postNotify(DshLogPageContract.EVENT_JUMP_RESULT, JSONObject().apply {
+                    put(DshLogPageContract.KEY_REQUEST, requestId)
+                    put("ok", ok); put("message", message)
+                })
+            }
         }
+    }
+
+    private fun unregisterLogPageNotifications() {
+        val notify = acquireModule<NotifyModule>(NotifyModule.MODULE_NAME)
+        logJumpNotifyRef?.let { notify.removeNotify(DshLogPageContract.EVENT_JUMP_TO_SESSION, it) }
+        logJumpNotifyRef = null
+    }
+
+    private fun jumpToSession(sessionId: String, onResult: (Boolean, String) -> Unit) {
+        val remote = repository as? DshRemoteRepository
+        if (sessionId.isBlank() || remote == null) { onResult(false, "当前未连接到 Host"); return }
+        val expectedConnection = activeConnectionId
+        remote.loadSessions({ available ->
+            if (repository !== remote || activeConnectionId != expectedConnection) { onResult(false, "连接已切换，请重新打开日志页"); return@loadSessions }
+            val target = available.firstOrNull { it.id == sessionId }
+            if (target == null) { onResult(false, "Host 中已找不到该会话，可能已删除"); return@loadSessions }
+            // Includes archived sessions from session.list. Opening does not unarchive or alter the Host ledger.
+            remote.loadHistory(sessionId, { _ ->
+                if (repository !== remote || activeConnectionId != expectedConnection) { onResult(false, "连接已切换"); return@loadHistory }
+                if (sessions.none { it.id == sessionId }) sessions.add(target)
+                sessionMessageState(sessionId, loadFromDisk = false)
+                sessionMessageReady.add(sessionId)
+                closeSettingsPage()
+                closeSessionDrawer()
+                selectMountedSession(sessionId)
+                onResult(true, "")
+            }, { message -> onResult(false, "无法读取该会话：$message") })
+        }, { message -> onResult(false, "无法确认会话：$message") })
     }
 
     /** 读取上次崩溃记录：写入日志中心（type=crash）并提示，然后清除。 */
     private fun reportLastCrashIfAny() {
         val raw = bridgeModule.readLastCrash()
         if (raw.isEmpty()) return
-        bridgeModule.clearLastCrash()
-        DshStreamLog.log(LogLevel.ERROR, "crash", "上次异常退出：${LogSanitizer.sanitize(raw.take(2000))}", null, null)
+        DshStreamLog.log(LogLevel.ERROR, "crash", "上次异常退出：${LogSanitizer.sanitize(raw).take(16000)}", null, null)
         bridgeModule.toast("检测到上次异常退出，崩溃栈已记录到日志")
     }
 
-    fun refreshSessionLogs() {
-        val targetId = overflowTargetId()
-        val writeBehind = DshStreamLog.writeBehind
-        sessionLogCache.clear()
-        if (writeBehind == null) return
-        var events = writeBehind.snapshot()
-        if (!diagnosticLogAllMode) {
-            if (targetId.isEmpty()) return
-            events = events.filter { it.sessionId == targetId }
-        }
-        events = events.sortedByDescending { it.seq }
-        // 无新日志（seq 范围与条数未变）时跳过重建，避免高频 observable 变更
-        // 与渲染线程并发触发 Kuikly ReactiveObserver CME
-        val prevSize = sessionLogCache.size
-        val prevFirstSeq = sessionLogCache.firstOrNull()?.seq
-        val prevLastSeq = sessionLogCache.lastOrNull()?.seq
-        sessionLogCache.clear()
-        sessionLogCache.addAll(events)
-        if (sessionLogCache.size == prevSize &&
-            sessionLogCache.firstOrNull()?.seq == prevFirstSeq &&
-            sessionLogCache.lastOrNull()?.seq == prevLastSeq
-        ) {
-            return
-        }
-        recomputeSessionLogView()
-    }
 
-    /** 按四维筛选（时间/等级/事件类型/关键词）重算日志视图；只过滤当前会话缓存。 */
-    fun recomputeSessionLogView() {
-        sessionLogTotal = sessionLogCache.size
-        val now = currentTimeMillis()
-        val todayPrefix = LogExporter.formatTimestamp(now).substring(0, 10)
-        val tf = sessionLogTimeFilter
-        val levels = sessionLogLevelFilter
-        val selectedTypes = sessionLogSelectedTypes
-        val selectedSessions = sessionLogSelectedSessions
-        val kw = sessionLogKeyword.trim()
-        // 动态提取当前会话所有事件类型，供筛选 chip 使用
-        val types = sessionLogCache.map { it.type }.distinct().sorted()
-        // 仅在实际变化时重建 chips，避免输入过程每键触发 observable 重建
-        val newOptions = listOf("全部") + types
-        val changed = sessionLogTypeOptions.size != newOptions.size ||
-            sessionLogTypeOptions.indices.any { sessionLogTypeOptions[it] != newOptions[it] }
-        if (changed) {
-            sessionLogTypeOptions.clear()
-            sessionLogTypeOptions.addAll(newOptions)
-        }
-        if (changed) {
-            sessionLogTypeOptions.clear()
-            sessionLogTypeOptions.addAll(newOptions)
-        }
-        // 全局模式：提取有日志的会话列表（含移动端本地事件标记 __mobile__）
-        val sessIds = sessionLogCache.map { if (it.sessionId.isNullOrEmpty()) "__mobile__" else it.sessionId }.distinct().sorted()
-        val sessChanged = sessionLogSessionOptions.size != sessIds.size ||
-            sessionLogSessionOptions.indices.any { sessionLogSessionOptions[it] != sessIds[it] }
-        if (sessChanged) {
-            sessionLogSessionOptions.clear()
-            sessionLogSessionOptions.addAll(sessIds)
-        }
-        val filtered = sessionLogCache.filter { e ->
-            val timeOk = when (tf) {
-                1 -> now - e.timestamp <= 600_000L
-                2 -> now - e.timestamp <= 3_600_000L
-                3 -> LogExporter.formatTimestamp(e.timestamp).startsWith(todayPrefix)
-                4 -> {
-                    val start = sessionLogCustomStartMs
-                    val end = sessionLogCustomEndMs
-                    (start == null || e.timestamp >= start) && (end == null || e.timestamp <= end)
-                }
-                else -> true
-            }
-            timeOk &&
-                (e.level in levels) &&
-                (selectedTypes.isEmpty() || e.type in selectedTypes) &&
-                (selectedSessions.isEmpty() || (if (e.sessionId.isNullOrEmpty()) "__mobile__" in selectedSessions else e.sessionId in selectedSessions)) &&
-                (kw.isEmpty() || e.message.contains(kw, ignoreCase = true))
-        }
-        // 最小差异更新：Myers diff 只增删改变化行，避免全量 clear+addAll 导致列表重建、
-        // 输入框失焦与删除时焦点循环跳动（列表未变化时 diff 为空，天然去抖）
-        sessionLogView.diffUpdate(filtered) { old, new -> old.seq == new.seq }
-    }
-
-    /** 事件类型匹配：`connect.*` 按前缀通配，其余子串匹配（忽略大小写）。 */
-    private fun matchesLogType(actual: String, query: String): Boolean {
-        val q = query.trim()
-        if (q.isEmpty()) return true
-        return if (q.endsWith(".*")) {
-            actual.startsWith(q.removeSuffix(".*"), ignoreCase = true)
-        } else {
-            actual.contains(q, ignoreCase = true)
-        }
-    }
-
-    fun onLogTimeFilter(value: Int) {
-        sessionLogTimeFilter = value
-        if (value == 4) {
-            // 杩涘叆鑷畾涔夋椂闂磋寖鍥达細榛樿鏈€杩?1 灏忔椂锛堝彧鍦ㄥ皻鏃犲€兼椂鍒濆鍖栵級
-            val now = currentTimeMillis()
-            if (sessionLogCustomStartMs == null) sessionLogCustomStartMs = now - 3_600_000L
-            if (sessionLogCustomEndMs == null) sessionLogCustomEndMs = now
-        }
-        recomputeSessionLogView()
-    }
-
-    /** 鑷畾涔夎捣姝㈡椂闂存洿鏂帮細null 浠ｈ〃涓嶉檺銆?*/
-    fun onLogCustomTime(startMs: Long?, endMs: Long?) {
-        sessionLogCustomStartMs = startMs
-        sessionLogCustomEndMs = endMs
-        recomputeSessionLogView()
-    }
-
-    private fun syncLogPickerPkValues(targetStart: Boolean) {
-        val target = if (targetStart) sessionLogCustomStartMs else sessionLogCustomEndMs
-        val ms = target ?: currentTimeMillis()
-        val s = LogExporter.formatTimestamp(ms)
-        sessionLogPkYear = s.substring(0, 4).toInt()
-        sessionLogPkMonth = s.substring(5, 7).toInt()
-        sessionLogPkDay = s.substring(8, 10).toInt()
-        sessionLogPkHour = s.substring(11, 13).toInt()
-        sessionLogPkMinute = s.substring(14, 16).toInt()
-    }
-
-    fun openLogTimePicker(targetStart: Boolean) {
-        syncLogPickerPkValues(targetStart)
-        sessionLogTimePickerTargetStart = targetStart
-        sessionLogTimePickerVisible = true
-    }
-
-    fun onLogToggleLevel(level: LogLevel) {
-        if (level in sessionLogLevelFilter && sessionLogLevelFilter.size == 1) {
-            bridgeModule.toast("至少保留一个级别")
-            return
-        }
-        sessionLogLevelFilter = if (level in sessionLogLevelFilter) sessionLogLevelFilter - level else sessionLogLevelFilter + level
-        recomputeSessionLogView()
-    }
-    fun onToggleLogType(type: String) {
-        sessionLogSelectedTypes = if (type in sessionLogSelectedTypes) sessionLogSelectedTypes - type else sessionLogSelectedTypes + type
-        recomputeSessionLogView()
-    }
-
-    fun onSetLogSearchExpanded(expanded: Boolean) { sessionLogSearchExpanded = expanded }
-
-    fun onSetLogTypeSheetVisible(visible: Boolean) { sessionLogTypeSheetVisible = visible }
-
-    fun onSetLogTypeSheetKeyword(kw: String) { sessionLogTypeSheetKeyword = kw }
-
-    fun onClearLogSelectedTypes() { sessionLogSelectedTypes = emptySet(); recomputeSessionLogView() }
-
-    fun onLogKeyword(value: String) {
-        sessionLogKeyword = value
-        recomputeSessionLogView()
-    }
-
-    fun onLogToggleSession(sessionId: String) {
-        sessionLogSelectedSessions = if (sessionId in sessionLogSelectedSessions) sessionLogSelectedSessions - sessionId else sessionLogSelectedSessions + sessionId
-        recomputeSessionLogView()
-    }
-    fun onClearLogSessions() { sessionLogSelectedSessions = emptySet(); recomputeSessionLogView() }
-
-    fun clearLogFilters() {
-        sessionLogTimeFilter = 0
-        sessionLogLevelFilter = LogLevel.entries.toSet()
-        sessionLogSelectedTypes = emptySet()
-        sessionLogSelectedSessions = emptySet()
-        sessionLogKeyword = ""
-        recomputeSessionLogView()
-    }
-
-    /** 复制单条日志详情（全部字段 + 脱敏原文）到剪贴板。 */
-    fun copyLogDetail(entry: LogEvent) {
-        val text = buildString {
-            appendLine("DSH 日志详情")
-            appendLine("时间：${LogExporter.formatTimestamp(entry.timestamp)}")
-            appendLine("序号：${entry.seq}")
-            appendLine("级别：${entry.level.name}")
-            appendLine("类型：${entry.type}")
-            appendLine("会话：${entry.sessionId ?: "-"}")
-            appendLine("RPC：${entry.rpcId ?: "-"}")
-            appendLine("大小：${entry.size} B")
-            appendLine("消息：${entry.message}")
-            if (sessionLogDetailRaw.isNotEmpty()) {
-                appendLine("原文：${sessionLogDetailRaw}")
-            }
-        }
-        bridgeModule.copyToPasteboard(text)
-        bridgeModule.toast("已复制")
-    }
-
-    fun closeSessionLogs() {
-        sessionLogVisible = false
-        sessionLogSelected = null
-        sessionLogDetailRaw = ""
-        clearLogFilters()
-        sessionLogView.clear()
-        sessionLogScrollerRef = null
-    }
-
-    // ===== 日志实时跟随（§5.2） =====
-
-    private fun startSessionLogFollow() {
-        sessionLogPolling = false
-        sessionLogFollowBottom = true
-        sessionLogNewCount = 0
-        sessionLogLastMaxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
-        sessionLogPolling = true
-        setTimeout(pagerId, sessionLogPollIntervalMs) { pollSessionLogs() }
-    }
-
-    private fun pollSessionLogs() {
-        if (!sessionLogPolling || !sessionLogVisible) return
-        refreshSessionLogs()
-        val maxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
-        if (maxSeq > sessionLogLastMaxSeq) {
-            sessionLogNewCount += sessionLogView.count { it.seq > sessionLogLastMaxSeq }
-            sessionLogLastMaxSeq = maxSeq
-        }
-        if (sessionLogFollowBottom && sessionLogNewCount > 0) {
-            scrollSessionLogToBottom()
-            sessionLogNewCount = 0
-        }
-        setTimeout(pagerId, sessionLogPollIntervalMs) { pollSessionLogs() }
-    }
-
-    private fun scrollSessionLogToBottom() {
-        val scroller = sessionLogScrollerRef?.view ?: return
-        val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
-        val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
-        scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
-    }
-
-    fun onSessionLogScroll(params: ScrollParams) {
-        val atBottom = params.offsetY + params.viewHeight >= params.contentHeight - 8f
-        sessionLogFollowBottom = atBottom
-        if (atBottom) sessionLogNewCount = 0
-    }
-
-    fun onSessionLogJumpToBottom() {
-        sessionLogFollowBottom = true
-        sessionLogNewCount = 0
-        scrollSessionLogToBottom()
-    }
-
-    // ===== 清空本地诊断日志（§5.5） =====
-
-    fun requestSessionLogClear() {
-        sessionLogClearVisible = true
-    }
-
-    fun cancelSessionLogClear() {
-        sessionLogClearVisible = false
-        sessionLogClearing = false
-    }
-
-    fun confirmSessionLogClear() {
-        if (sessionLogClearing) return
-        sessionLogClearing = true
-        DshStreamLog.writeBehind?.clear()
-        sessionLogClearing = false
-        sessionLogClearVisible = false
-        refreshSessionLogs()
-        sessionLogFollowBottom = true
-        sessionLogNewCount = 0
-        sessionLogLastMaxSeq = sessionLogView.maxOfOrNull { it.seq } ?: 0L
-        bridgeModule.toast("已清空本地诊断日志")
-    }
-
-    /** 详情按需取原文：从内存 sessionEvents 按摘要中的 evtSeq 反查完整事件，脱敏后展示。 */
-    fun loadSessionLogDetail(entry: LogEvent?) {
-        sessionLogDetailRaw = ""
-        if (entry == null || entry.sessionId.isNullOrEmpty()) return
-        val evtSeq = dshParseLogEventSeq(entry.message) ?: return
-        val raw = (repository as? DshRemoteRepository)?.store?.sessionEvents?.get(entry.sessionId)
-            ?.firstOrNull { it.seq == evtSeq }?.raw ?: return
-        sessionLogDetailRaw = LogSanitizer.sanitize(raw)
-    }
-
-    /** 导出全量原文：内存事件流组稿（脱敏），缺失时回退摘要；写入文件并打开系统分享。 */
-    fun exportSessionLogs() {
-        if (sessionLogExporting) return
-        sessionLogExporting = true
-        val isGlobal = diagnosticLogAllMode
-        val targetId = overflowTargetId()
-        if (!isGlobal && targetId.isEmpty()) {
-            sessionLogExporting = false
-            return
-        }
-        val content = buildString {
-            if (isGlobal) {
-                appendLine("DSH 全局日志导出")
-                appendLine("范围：全部会话（含移动端本地事件）")
-                appendLine("导出时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
-                appendLine("说明：原文来自内存事件流，App 重启后可能缺失；导出内容已脱敏。")
-                appendLine("")
-                val allEvents = DshStreamLog.writeBehind?.snapshot().orEmpty()
-                    .sortedByDescending { it.seq }
-                if (allEvents.isNotEmpty()) {
-                    for (e in allEvents) {
-                        val sessLabel = if (e.sessionId.isNullOrEmpty()) "移动端" else {
-                            sessions.firstOrNull { it.id == e.sessionId }?.title?.ifEmpty { e.sessionId } ?: e.sessionId
-                        }
-                        appendLine("[${LogExporter.formatTimestamp(e.timestamp)}] ${e.level.name} ${e.type}  会话：$sessLabel")
-                        appendLine(e.message)
-                        appendLine("")
-                    }
-                } else {
-                    appendLine("（暂无日志事件）")
-                }
-            } else {
-                val storeEvents = (repository as? DshRemoteRepository)?.store?.sessionEvents?.get(targetId)?.toList().orEmpty()
-                appendLine("DSH 会话日志导出")
-                appendLine("会话：$targetId")
-                appendLine("导出时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
-                appendLine("说明：原文来自会话活跃期的内存事件流，App 重启后可能缺失；导出内容已脱敏。")
-                appendLine("")
-                if (storeEvents.isNotEmpty()) {
-                    for (e in storeEvents) {
-                        appendLine("[${e.seq}] ${e.type}")
-                        appendLine(LogSanitizer.sanitize(e.raw))
-                        appendLine("")
-                    }
-                } else {
-                    appendLine("（内存事件流不可用，以下为摘要日志）")
-                    for (e in sessionLogCache.toList()) {
-                        appendLine("[${LogExporter.formatTimestamp(e.timestamp)}] ${e.level.name} ${e.type} ${e.message}")
-                    }
-                }
-            }
-        }
-        val safeName = if (isGlobal) "global" else targetId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
-        runCatching {
-            val path = writeExportFile(exportDir, "dsh-$safeName-log.txt", content)
-            bridgeModule.shareExportFile(path)
-        }.onFailure {
-            sessionLogExporting = false
-            bridgeModule.copyToPasteboard(content)
-            bridgeModule.toast("导出失败，已复制到剪贴板")
-        }
-        sessionLogExporting = false
-    }
-
-    /** 生成问题反馈包：全量日志（脱敏）+ 连接模式 + App 版本 + 设备型号，写入文件并分享。 */
-    fun exportFeedbackPackage() {
-        if (sessionLogFeedbackExporting) return
-        sessionLogFeedbackExporting = true
-        val events = DshStreamLog.writeBehind?.snapshot().orEmpty()
-        val device = bridgeModule.getDeviceInfo()
-        val stamp = LogExporter.formatTimestamp(currentTimeMillis()).replace(Regex("[^0-9]"), "")
-        val content = buildString {
-            appendLine("DSH 问题反馈包")
-            appendLine("生成时间：${LogExporter.formatTimestamp(currentTimeMillis())}")
-            appendLine("连接模式：${connectionModeLabel()}")
-            appendLine("App 版本：${device?.optString("version").orEmpty().ifEmpty { "未知" }}")
-            appendLine("设备：${device?.optString("model").orEmpty().ifEmpty { "未知" }}（${device?.optString("os").orEmpty()}）")
-            appendLine("日志条数：${events.size}")
-            appendLine("说明：包含全部本地诊断日志，内容已脱敏。")
-            appendLine("")
-            append(LogExporter.toText(events))
-        }
-        runCatching {
-            val path = writeExportFile(exportDir, "dsh-feedback-$stamp.txt", content)
-            bridgeModule.shareExportFile(path)
-        }.onFailure {
-            bridgeModule.copyToPasteboard(content)
-            bridgeModule.toast("反馈包生成失败，已复制到剪贴板")
-        }
-        sessionLogFeedbackExporting = false
-    }
 
     // ===== 重命名会话 =====
 
@@ -4498,7 +4045,7 @@ internal class DshHomePage : BasePager() {
                 attachmentEpoch += 1
                 flushAssistantDelta()
                 ensureStreamingAssistantSegment()
-                DshStreamLog.i("ui.error session=$sessionId message='${DshStreamLog.preview(error)}'")
+                DshStreamLog.log(LogLevel.ERROR, "ui.error", "ui.error session=$sessionId message='${DshStreamLog.preview(error)}'", sessionId, null)
                 settleStreamingMessage(DshMessageRole.ERROR, error)
                 persistMessages(sessionId)
                 connectionLabel = "已连接"
@@ -4784,7 +4331,7 @@ internal class DshHomePage : BasePager() {
     /** 平台取图 → 解析 → imageLimits 预检 → 加入输入区草稿；取消静默，失败 toast。 */
     private fun pickImageFrom(source: String) {
         bridgeModule.pickImage(source) { raw ->
-            DshStreamLog.log(LogLevel.INFO, "pick.raw", "pickImage rawLen=${raw.length} head=${LogSanitizer.sanitize(raw.take(160))}", null, null)
+            DshStreamLog.log(LogLevel.INFO, "pick.raw", "pickImage rawLen=${raw.length}", null, null)
             val result = runCatching {
                 com.tencent.kuikly.core.nvi.serialization.json.JSONObject(raw)
             }.getOrNull()
@@ -4799,7 +4346,7 @@ internal class DshHomePage : BasePager() {
                 val width = result.optString("width").toIntOrNull() ?: 0
                 val height = result.optString("height").toIntOrNull() ?: 0
                 DshPendingImage(
-                    clientId = "img-${System.currentTimeMillis()}",
+                    clientId = "img-${currentTimeMillis()}",
                     mediaType = result.optString("mediaType"),
                     name = result.optString("name").ifEmpty { "image" },
                     dataBase64 = result.optString("dataUrl").substringAfter("base64,"),
@@ -4921,8 +4468,12 @@ internal class DshHomePage : BasePager() {
         if (streamingAssistantId.isEmpty() || pendingAssistantDelta.isEmpty()) return
         streamingAssistantContent += pendingAssistantDelta.toString()
         pendingAssistantDelta.setLength(0)
-        DshStreamLog.i(
-            "ui.flush id=$streamingAssistantId chars=${streamingAssistantContent.length} preview='${DshStreamLog.preview(streamingAssistantContent)}'",
+        DshStreamLog.log(
+            LogLevel.INFO,
+            "ui.flush",
+            "ui.flush id=$streamingAssistantId chars=${streamingAssistantContent.length}",
+            activeSessionId,
+            null,
         )
         // Keep the ObservableList row stable while tokens arrive. `messages[i] =
         // copy()` is remove+add; LazyLoop treats an append at currentEnd as
@@ -5138,8 +4689,12 @@ internal class DshHomePage : BasePager() {
                 messages.add(DshMessage(id, role, finalContent, streaming = false))
             }
             realizeVisibleMessages()
-            DshStreamLog.i(
-                "ui.settle id=$id role=$role index=$index chars=${finalContent.length} preview='${DshStreamLog.preview(finalContent)}'",
+            DshStreamLog.log(
+                LogLevel.INFO,
+                "ui.settle",
+                "ui.settle id=$id role=$role index=$index chars=${finalContent.length}",
+                sessionId,
+                null,
             )
             streamingReasoningId = ""
             streamingReasoningContent = ""
@@ -5218,8 +4773,12 @@ internal class DshHomePage : BasePager() {
             return
         }
         val remount = force || current.isEmpty() && filtered.isNotEmpty()
-        DshStreamLog.i(
-            "ui.replace-messages from=${current.size} to=${filtered.size} streaming=$streaming force=$force remount=$remount preview='${DshStreamLog.preview(filtered.lastOrNull()?.content.orEmpty())}'",
+        DshStreamLog.log(
+            LogLevel.INFO,
+            "ui.replace-messages",
+            "ui.replace-messages from=${current.size} to=${filtered.size} streaming=$streaming force=$force remount=$remount",
+            activeSessionId,
+            null,
         )
         applyMessagesInPlace(filtered)
         sessionMessageStates[activeSessionId] = messages

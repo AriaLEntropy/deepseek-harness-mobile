@@ -59,7 +59,7 @@ internal class DshIncrementalMarkdownState(
 
     fun reset() {
         if (sealed.isNotEmpty() || live != null || lastRaw.isNotEmpty() || parseCount > 0) {
-            DshStreamLog.i(
+            DshStreamLog.d(
                 "parse.reset droppedSealed=${sealed.size} hadLive=${live != null} parseCount=$parseCount sealedChars=${sealedPrefix.length}",
             )
         }
@@ -74,12 +74,12 @@ internal class DshIncrementalMarkdownState(
     fun update(raw: String, streaming: Boolean, force: Boolean = false): List<MarkdownBlock>? {
         val input = if (raw.isEmpty() && streaming) DshStreamingMarkdown.PLACEHOLDER else raw
         if (!force && input == lastRaw && streaming == lastStreaming) {
-            DshStreamLog.i("parse.skip identical streaming=$streaming chars=${input.length}")
+            DshStreamLog.d("parse.skip identical streaming=$streaming chars=${input.length}")
             return null
         }
 
         if (input.isBlank() && !streaming) {
-            DshStreamLog.i("parse.skip blank-end")
+            DshStreamLog.d("parse.skip blank-end")
             reset()
             lastRaw = input
             lastStreaming = streaming
@@ -88,7 +88,7 @@ internal class DshIncrementalMarkdownState(
 
         val resync = resyncReason(input)
         if (resync != null) {
-            DshStreamLog.i(
+            DshStreamLog.d(
                 "parse.resync reason=$resync droppedSealed=${sealed.size} sealedChars=${sealedPrefix.length} full=${input.length}",
             )
             sealed.clear()
@@ -103,7 +103,7 @@ internal class DshIncrementalMarkdownState(
             live = null
             lastRaw = input
             lastStreaming = streaming
-            DshStreamLog.i(
+            DshStreamLog.d(
                 "parse.flush streaming=$streaming force=$force full=${input.length} sealedChars=${sealedPrefix.length} tail=0 parsed=0 parse#=$parseCount freeze=0 sealedBlocks=${sealed.size} live=none",
             )
             return emit()
@@ -118,8 +118,8 @@ internal class DshIncrementalMarkdownState(
             live = null
             lastRaw = input
             lastStreaming = streaming
-            DshStreamLog.i(
-                "parse.flush streaming=$streaming force=$force full=${input.length} sealedChars=${sealedPrefix.length} tail=${tailRaw.length} parsed=${toParse.length} parse#=$parseCount freeze=0 nodes=0 live=none parsed='${DshStreamLog.preview(toParse)}'",
+            DshStreamLog.d(
+                "parse.flush streaming=$streaming force=$force full=${input.length} sealedChars=${sealedPrefix.length} tail=${tailRaw.length} parsed=${toParse.length} parse#=$parseCount freeze=0 nodes=0 live=none",
             )
             return emit()
         }
@@ -165,14 +165,14 @@ internal class DshIncrementalMarkdownState(
         lastStreaming = streaming
         val liveSlice = live
         val ratio = if (input.isEmpty()) 0 else (toParse.length * 100) / input.length
-        DshStreamLog.i(
+        DshStreamLog.d(
             "parse.flush streaming=$streaming force=$force full=${input.length} " +
                 "sealedChars=$sealedCharsBefore→${sealedPrefix.length} tail=${tailRaw.length} " +
                 "parsed=${toParse.length}($ratio% of full) fenceClosed=$fenceClosed parse#=$parseCount " +
                 "nodes=${nodes.size} freeze=$freezeCount sealed=${sealedBefore}→${sealed.size} " +
                 "newSealed=[${newlySealed.joinToString(",")}] " +
                 "live=${liveSlice?.let { "${DshStreamLog.blockKind(it.blockContent)}:${it.blockContent.length}" } ?: "none"} " +
-                "parsed='${DshStreamLog.preview(toParse)}' live='${DshStreamLog.preview(liveSlice?.blockContent ?: "")}'",
+                "liveChars=${liveSlice?.blockContent?.length ?: 0}",
         )
         return emit()
     }

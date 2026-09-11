@@ -62,6 +62,13 @@ internal object SshTunnelManager {
     @Synchronized
     fun connect(context: Context, next: DshSshConfig, keyBytes: ByteArray, keyPassphrase: String = "") {
         if (connecting) return
+        // 复用已有隧道：连接页探测成功后主页会再调一次 connect，配置相同就直接返回，
+        // 避免拆掉刚建好的隧道重连。startSsh 已先 addListener 回放过当前 READY 状态，
+        // 这里不再 publish，否则回调会收到两次 READY 而重复建连。
+        if (state.phase == SshPhase.READY && localPort > 0 && config == next) {
+            Log.i(TAG, "reuse existing READY tunnel port=$localPort")
+            return
+        }
         appContext = context.applicationContext
         stopped = false
         config = next
