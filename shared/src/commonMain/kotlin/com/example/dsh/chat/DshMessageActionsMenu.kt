@@ -131,6 +131,7 @@ internal fun ViewContainer<*, *>.DshMessageActionsMenu(
                                 attr {
                                     src(ImageUri.commonAssets(item.iconAsset))
                                     size(18f, 18f)
+                                    tintColor(colors().labelTertiary)
                                 }
                             }
                             DshHitButton(item.onClick)

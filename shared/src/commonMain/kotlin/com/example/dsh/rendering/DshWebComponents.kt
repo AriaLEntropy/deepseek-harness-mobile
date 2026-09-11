@@ -1670,7 +1670,7 @@ internal class DshGoalBarView : ComposeView<DshGoalBarAttr, ComposeEvent>() {
                         border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                     }
                     Image {
-                        attr { src(ImageUri.commonAssets("goal.svg")); size(14f, 14f) }
+                        attr { src(ImageUri.commonAssets("goal.svg")); size(14f, 14f); tintColor(ctx.attr.colors.labelTertiary) }
                     }
                     Text {
                         attr {
@@ -2278,6 +2278,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                     src(ImageUri.commonAssets("tool-ask.svg"))
                                     size(18f, 18f)
                                     marginTop(4f)
+                                    tintColor(ctx.attr.colors.labelTertiary)
                                 }
                             }
                             TextArea {

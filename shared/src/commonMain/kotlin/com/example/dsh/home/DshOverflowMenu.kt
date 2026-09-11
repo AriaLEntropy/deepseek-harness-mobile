@@ -70,7 +70,7 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
                     width(menuWidth)
                     borderRadius(12f)
                     border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                    backgroundColor(colors().bgLayer1)
+                    backgroundColor(colors().specificMenu)
                     boxShadow(BoxShadow(0f, 4f, 16f, Color(0x33000000)))
                     paddingTop(6f)
                     paddingBottom(6f)

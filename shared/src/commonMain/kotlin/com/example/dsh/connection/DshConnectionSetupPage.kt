@@ -558,7 +558,7 @@ private fun ViewContainer<*, *>.DshSetupInput(
         attr { flex(flexValue); marginLeft(marginLeft); flexDirectionColumn(); marginTop(12f) }
         Text { attr { text(label); fontSize(12f); color(colors().labelSecondary) } }
         View {
-            attr { height(42f); marginTop(5f); paddingLeft(10f); paddingRight(10f); borderRadius(8f); backgroundColor(colors().bgLayer1); border(Border(1f, BorderStyle.SOLID, colors().borderL1)) }
+            attr { height(42f); marginTop(5f); paddingLeft(10f); paddingRight(10f); borderRadius(8f); backgroundColor(colors().specificInputMajor); border(Border(1f, BorderStyle.SOLID, colors().borderL1)) }
             Input {
                 ref { it.view?.setText(value()) }
                 attr { flex(1f); fontSize(14f); color(colors().labelPrimary); placeholder(hint); placeholderColor(colors().labelTertiary); returnKeyTypeDone() }

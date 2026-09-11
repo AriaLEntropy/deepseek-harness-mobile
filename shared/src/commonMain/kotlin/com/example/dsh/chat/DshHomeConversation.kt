@@ -563,6 +563,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     src(ImageUri.commonAssets("folder.svg"))
                                     size(16f, 16f)
+                                    tintColor(colors().labelPrimary)
                                 }
                             }
                             Text {
@@ -577,6 +578,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     src(ImageUri.commonAssets("chevron-down.svg"))
                                     size(12f, 12f)
+                                    tintColor(colors().labelCaption)
                                 }
                             }
                             DshHitButton(onOpenFolderBrowser)
@@ -596,6 +598,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     src(ImageUri.commonAssets("agent-preset.svg"))
                                     size(16f, 16f)
+                                    tintColor(colors().labelTertiary)
                                 }
                             }
                             Text {
@@ -610,6 +613,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 attr {
                                     src(ImageUri.commonAssets("chevron-down.svg"))
                                     size(12f, 12f)
+                                    tintColor(colors().labelCaption)
                                 }
                             }
                             DshHitButton(onOpenAgentModes)
@@ -628,7 +632,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                         marginRight(12f)
                         flexDirectionColumn()
                         paddingTop(10f)
-                        backgroundColor(colors().bgLayer1)
+                        backgroundColor(colors().specificInputMajor)
                         borderRadius(22f)
                         border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
@@ -709,6 +713,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             attr {
                                                 src(ImageUri.commonAssets("x.svg"))
                                                 size(10f, 10f)
+                                                tintColor(Color.WHITE)
                                             }
                                         }
                                         DshHitButton { onRemovePendingImage(image.clientId) }
@@ -772,7 +777,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     backgroundColor(colors().specificSelector)
                                     allCenter()
                                 }
-                                Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f) } }
+                                Image { attr { src(ImageUri.commonAssets("plus.svg")); size(14f, 14f); tintColor(colors().labelPrimary) } }
                                 DshHitButton { onToggleCommandSheet() }
                             }
                             // 权限 chip：dsh 语义 —— 当前权限态盾牌图标 + 下箭头，会话开始前可选（仅图标，文字在弹窗内）
@@ -791,12 +796,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         attr {
                                             src(ImageUri.commonAssets(dshPermissionIcon(permissionValue())))
                                             size(16f, 16f)
+                                            tintColor(dshPermissionTint(permissionValue(), false, colors()))
                                         }
                                     }
                                     Image {
                                         attr {
                                             src(ImageUri.commonAssets("chevron-down.svg"))
                                             size(12f, 12f)
+                                            tintColor(colors().labelCaption)
                                         }
                                     }
                                     DshHitButton(onOpenPermissions)
@@ -831,6 +838,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     attr {
                                         src(ImageUri.commonAssets("chevron-down.svg"))
                                         size(12f, 12f)
+                                        tintColor(colors().labelCaption)
                                     }
                                 }
                                 DshHitButton(onOpenModels)
@@ -841,10 +849,13 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     size(34f, 34f)
                                     borderRadius(999f)
                                     allCenter()
-                                    backgroundColor(Color(
-                                        if (stopButtonVisible()) 0xFFE05252
-                                        else 0xFF3964FE
-                                    ))
+                                    backgroundColor(
+                                        if (stopButtonVisible()) {
+                                            colors().stateErrorPrimary
+                                        } else {
+                                            colors().buttonInfoFill
+                                        },
+                                    )
                                     opacity(
                                         if (stopButtonVisible() || draft().trim().isNotEmpty()) 1f
                                         else 0.4f
@@ -852,10 +863,10 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     transform(translate = Translate(percentageX = 0f, percentageY = 0f, offsetY = -2f))
                                 }
                                 vif({ stopButtonVisible() }) {
-                                    Image { attr { src(ImageUri.commonAssets("square.svg")); size(16f, 16f) } }
+                                    Image { attr { src(ImageUri.commonAssets("square.svg")); size(16f, 16f); tintColor(Color.WHITE) } }
                                 }
                                 velse {
-                                    Image { attr { src(ImageUri.commonAssets("arrow-up.svg")); size(16f, 16f) } }
+                                    Image { attr { src(ImageUri.commonAssets("arrow-up.svg")); size(16f, 16f); tintColor(Color.WHITE) } }
                                 }
                                 DshHitButton {
                                     when {

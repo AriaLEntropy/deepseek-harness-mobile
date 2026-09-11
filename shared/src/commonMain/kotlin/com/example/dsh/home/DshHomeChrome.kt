@@ -738,7 +738,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                     }
                     View {
                         attr { size(32f, 32f); allCenter() }
-                        Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f) } }
+                        Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } }
                         event { click { showEfforts = false } }
                     }
                     Text {
@@ -908,6 +908,16 @@ internal fun dshPermissionIcon(value: String): String = when (value) {
     else -> "permission-write.svg"
 }
 
+internal fun dshPermissionTint(
+    value: String,
+    selected: Boolean,
+    colors: com.example.dsh.theme.DshColorTokens,
+): Color = when {
+    value == "danger-full-access" || value == "full-access" -> colors.stateErrorPrimary
+    selected -> colors.stateBusinessPrimary
+    else -> colors.labelSecondary
+}
+
 // 权限选择弹窗（会话开始前，users 在底部工具栏点击权限 chip 打开）。
 // 三个圆角卡片：盾牌 svg 在上、权限名在下，选中卡片蓝底高亮 + 右上对勾（cf412 样式）。
 internal fun ViewContainer<*, *>.DshPermissionPicker(
@@ -976,7 +986,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                             ))
                             backgroundColor(
                                 if (option.selected) {
-                                    if (option.value == "danger-full-access") colors().stateErrorSecondary else colors().stateBusinessTertiary
+                                    if (option.value == "danger-full-access") colors().interactiveBgHoverDanger else colors().stateBusinessTertiary
                                 } else colors().bgBase,
                             )
                         }
@@ -986,6 +996,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                                 attr {
                                     src(ImageUri.commonAssets(dshPermissionIcon(option.value)))
                                     size(20f, 20f)
+                                    tintColor(dshPermissionTint(option.value, option.selected, colors()))
                                 }
                             }
                         }
@@ -1313,7 +1324,7 @@ internal fun ViewContainer<*, *>.DshTopBar(
             alignItemsCenter()
             paddingLeft(12f)
             paddingRight(14f)
-            backgroundColor(colors().bgLayer1)
+            backgroundColor(colors().bgBase)
             borderBottom(Border(1f, BorderStyle.SOLID, colors().borderL1))
         }
 //        左侧菜单图标：点击打开会话抽屉
@@ -1558,7 +1569,7 @@ internal fun ViewContainer<*, *>.DshWorkspaceBrowserModal(
                         color(colors().labelPrimary)
                     }
                 }
-                View { attr { size(32f, 32f); allCenter() }; Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f) } }; DshHitButton { onClose() } }
+                View { attr { size(32f, 32f); allCenter() }; Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }; DshHitButton { onClose() } }
             }
             Scroller {
                 attr {
@@ -1657,7 +1668,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     Modal(inWindow = true) {
         attr {
             absolutePositionAllZero()
-            backgroundColor(colors().bgBase)
+            backgroundColor(colors().bgLayer2)
         }
         View {
             attr {
@@ -1667,7 +1678,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 alignItemsCenter()
                 paddingLeft(12f)
                 paddingRight(8f)
-                backgroundColor(colors().bgBase)
+                backgroundColor(colors().bgLayer2)
             }
             View { attr { flex(1f) } }
             Text { attr { text("设置"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
@@ -1675,7 +1686,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 attr { flex(1f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
                 View {
                     attr { size(36f, 36f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f) } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
                     event { click { onClose() } }
                 }
             }
@@ -1853,7 +1864,7 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
             alignItemsCenter()
             paddingLeft(16f)
             paddingRight(12f)
-            backgroundColor(colors().bgBase)
+            backgroundColor(Color(0x00000000))
         }
         Image {
             attr {
@@ -1894,7 +1905,7 @@ internal fun ViewContainer<*, *>.DshSettingsRow(
         attr {
             height(1f)
             marginLeft(16f)
-            backgroundColor(colors().specificSelector)
+            backgroundColor(colors().borderL2)
         }
     }
 }

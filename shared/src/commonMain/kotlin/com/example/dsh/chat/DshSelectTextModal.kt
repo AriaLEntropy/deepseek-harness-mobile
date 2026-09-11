@@ -46,7 +46,7 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
                     bottom(0f)
                     flexDirectionColumn()
                     borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
-                    backgroundColor(colors().bgLayer1)
+                    backgroundColor(colors().bgLayer2)
                 }
                 // 头部：标题居中，右上角关闭
                 View {
@@ -67,7 +67,7 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
                     }
                     View {
                         attr { positionType(FlexPositionType.ABSOLUTE); right(16f); size(32f, 32f); allCenter() }
-                        Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f) } }
+                        Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
                         DshHitButton { onClose() }
                     }
                 }
