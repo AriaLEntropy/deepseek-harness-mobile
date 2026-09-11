@@ -903,12 +903,13 @@ internal data class DshPermissionOption(
 // dsh 语义：权限态 → 盾牌图标（read-only=盾牌+对勾，workspace-write=盾牌+铅笔，full-access=盾牌+感叹号）
 internal fun dshPermissionIcon(value: String): String = when (value) {
     "read-only" -> "permission-read.svg"
+    "danger-full-access" -> "permission-danger.svg"
     "full-access" -> "permission-danger.svg"
     else -> "permission-write.svg"
 }
 
 // 权限选择弹窗（会话开始前，users 在底部工具栏点击权限 chip 打开）。
-// 三个圆角卡片：盾牌 svg 在上、权限名在下，选中卡片蓝底高亮 + 右上对勾。
+// 三个圆角卡片：盾牌 svg 在上、权限名在下，选中卡片蓝底高亮 + 右上对勾（cf412 样式）。
 internal fun ViewContainer<*, *>.DshPermissionPicker(
     options: () -> ObservableList<DshPermissionOption>,
     onClose: () -> Unit,
@@ -950,7 +951,7 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                     event { click { onClose() } }
                 }
             }
-            // 三个圆角权限卡片：横向一行等宽，svg 在卡内上方、文字在下方（cf412 样式）
+            // 三个圆角权限卡片：横向一行等宽，svg 在卡内上方、文字在下方
             View {
                 attr {
                     marginTop(12f)
@@ -969,10 +970,14 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                             border(Border(
                                 1f,
                                 BorderStyle.SOLID,
-                                if (option.selected) colors().stateBusinessPrimary else colors().borderL2,
+                                if (option.selected) {
+                                    if (option.value == "danger-full-access") colors().stateErrorPrimary else colors().stateBusinessPrimary
+                                } else colors().borderL2,
                             ))
                             backgroundColor(
-                                if (option.selected) colors().stateBusinessTertiary else colors().bgBase,
+                                if (option.selected) {
+                                    if (option.value == "danger-full-access") colors().stateErrorSecondary else colors().stateBusinessTertiary
+                                } else colors().bgBase,
                             )
                         }
                         View {
@@ -990,7 +995,11 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                                 marginTop(6f)
                                 fontSize(13f)
                                 fontWeightMedium()
-                                color(if (option.selected) colors().stateBusinessPrimary else colors().labelPrimary)
+                                color(
+                                    if (option.selected) {
+                                        if (option.value == "danger-full-access") colors().stateErrorPrimary else colors().stateBusinessPrimary
+                                    } else colors().labelPrimary
+                                )
                             }
                         }
                         if (option.selected) {
@@ -1000,7 +1009,9 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                                     size(20f, 20f)
                                     allCenter()
                                     borderRadius(10f)
-                                    backgroundColor(colors().stateBusinessPrimary)
+                                    backgroundColor(
+                                        if (option.value == "danger-full-access") colors().stateErrorPrimary else colors().stateBusinessPrimary
+                                    )
                                 }
                                 Image {
                                     attr {
@@ -1012,6 +1023,175 @@ internal fun ViewContainer<*, *>.DshPermissionPicker(
                             }
                         }
                         event { click { onSelect(option) } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Full access 风险确认弹窗：对齐 dsh 原版 RiskConfirmation（红色警示 icon + 风险文案 +
+// 「我已了解风险」勾选 + 取消/启用双按钮），勾选前启用按钮不可点。
+internal fun ViewContainer<*, *>.DshRiskConfirmationModal(
+    title: String,
+    description: String,
+    acknowledgeLabel: String,
+    cancelLabel: String,
+    confirmLabel: String,
+    acknowledged: () -> Boolean,
+    busy: () -> Boolean,
+    onAcknowledgedChange: (Boolean) -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            allCenter()
+            paddingLeft(20f)
+            paddingRight(20f)
+            backgroundColor(Color(0x66000000))
+        }
+        View {
+            attr {
+                width(pagerData.pageViewWidth - 40f)
+                maxWidth(440f)
+                flexDirectionColumn()
+                padding(24f)
+                borderRadius(18f)
+                backgroundColor(colors().bgLayer1)
+            }
+            View {
+                attr { height(32f); flexDirectionRow(); alignItemsCenter() }
+                Text {
+                    attr {
+                        text(title)
+                        flex(1f)
+                        fontSize(18f)
+                        fontWeightBold()
+                        color(colors().labelPrimary)
+                    }
+                }
+                View {
+                    attr { size(32f, 32f); allCenter() }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
+                    DshHitButton { if (!busy()) onCancel() }
+                }
+            }
+            View {
+                attr {
+                    marginTop(16f)
+                    flexDirectionRow()
+                    alignItemsFlexStart()
+                }
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets("warning-outline.svg"))
+                        size(18f, 18f)
+                        marginTop(2f)
+                        tintColor(colors().stateErrorPrimary)
+                    }
+                }
+                Text {
+                    attr {
+                        text(description)
+                        flex(1f)
+                        marginLeft(10f)
+                        fontSize(14f)
+                        lineHeight(22f)
+                        color(colors().labelSecondary)
+                    }
+                }
+            }
+            View {
+                attr {
+                    marginTop(20f)
+                    flexDirectionRow()
+                    alignItemsFlexStart()
+                }
+                View {
+                    attr {
+                        size(18f, 18f)
+                        allCenter()
+                        borderRadius(4f)
+                        border(Border(
+                            1.5f,
+                            BorderStyle.SOLID,
+                            if (acknowledged()) colors().buttonPrimaryFill else colors().borderL2,
+                        ))
+                        backgroundColor(if (acknowledged()) colors().buttonPrimaryFill else Color(0x00000000))
+                    }
+                    vif({ acknowledged() }) {
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("check.svg"))
+                                size(12f, 12f)
+                                tintColor(colors().labelPrimaryInverted)
+                            }
+                        }
+                    }
+                    DshHitButton { if (!busy()) onAcknowledgedChange(!acknowledged()) }
+                }
+                Text {
+                    attr {
+                        text(acknowledgeLabel)
+                        flex(1f)
+                        marginLeft(10f)
+                        fontSize(14f)
+                        lineHeight(22f)
+                        color(colors().labelPrimary)
+                    }
+                }
+                DshHitButton { if (!busy()) onAcknowledgedChange(!acknowledged()) }
+            }
+            View {
+                attr {
+                    marginTop(24f)
+                    flexDirectionRow()
+                    justifyContentFlexEnd()
+                    alignItemsCenter()
+                }
+                View {
+                    attr {
+                        height(38f)
+                        paddingLeft(16f)
+                        paddingRight(16f)
+                        allCenter()
+                        borderRadius(8f)
+                        border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                        backgroundColor(colors().bgLayer1)
+                    }
+                    Text {
+                        attr {
+                            text(cancelLabel)
+                            fontSize(14f)
+                            fontWeightMedium()
+                            color(colors().labelPrimary)
+                        }
+                    }
+                    DshHitButton { if (!busy()) onCancel() }
+                }
+                View {
+                    attr {
+                        height(38f)
+                        marginLeft(12f)
+                        paddingLeft(16f)
+                        paddingRight(16f)
+                        allCenter()
+                        borderRadius(8f)
+                        backgroundColor(if (acknowledged()) colors().buttonPrimaryFill else colors().buttonPrimaryDimmed)
+                    }
+                    Text {
+                        attr {
+                            text(confirmLabel)
+                            fontSize(14f)
+                            fontWeightMedium()
+                            color(if (acknowledged()) colors().labelPrimaryInverted else colors().labelSecondary)
+                        }
+                    }
+                    DshHitButton {
+                        if (!busy() && acknowledged()) onConfirm()
                     }
                 }
             }

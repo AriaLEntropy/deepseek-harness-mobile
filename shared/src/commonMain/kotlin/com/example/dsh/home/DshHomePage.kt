@@ -133,6 +133,9 @@ internal class DshHomePage : BasePager() {
     private var selectedEffortLabel by observable("")
     private var modelOptions by observableList<DshModelOption>()
     private var permissionPickerVisible by observable(false)
+    private var riskConfirmVisible by observable(false)
+    private var riskAcknowledged by observable(false)
+    private var pendingDangerPermission: DshPermissionOption? = null
     private var permissionValue by observable("workspace-write")
     private var permissionLabel by observable("工作区写入")
     private var agentModePickerVisible by observable(false)
@@ -245,6 +248,7 @@ internal class DshHomePage : BasePager() {
                 sessionArchiveVisible -> sessionArchiveVisible = false
                 sessionRenameVisible -> sessionRenameVisible = false
                 agentModePickerVisible -> agentModePickerVisible = false
+                riskConfirmVisible -> riskConfirmVisible = false
                 permissionPickerVisible -> permissionPickerVisible = false
                 modelPickerVisible -> modelPickerVisible = false
                 commandSheetVisible -> commandSheetVisible = false
@@ -545,7 +549,7 @@ internal class DshHomePage : BasePager() {
                                 onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
                                 permissionValue = { ctx.permissionValue },
                                 permissionLabel = { ctx.permissionLabel },
-                                onOpenPermissions = { ctx.openSettingsPage() },
+                                onOpenPermissions = { ctx.openPermissionPicker() },
                                 agentModeLabel = { ctx.agentModeLabel },
                                 onOpenAgentModes = { ctx.openAgentModePicker() },
                                 isWebTimeline = { ctx.isRemoteHost },
@@ -676,7 +680,7 @@ internal class DshHomePage : BasePager() {
                             onOpenModels = { ctx.openModelPicker() },
                             permissionValue = { ctx.permissionValue },
                             permissionLabel = { ctx.permissionLabel },
-                            onOpenPermissions = { ctx.openSettingsPage() },
+                            onOpenPermissions = { ctx.openPermissionPicker() },
                             agentModeLabel = { ctx.agentModeLabel },
                             onOpenAgentModes = { ctx.openAgentModePicker() },
                             onToggleCommandSheet = { ctx.toggleCommandSheet() },
@@ -839,25 +843,70 @@ internal class DshHomePage : BasePager() {
                 }
 
                 // ===== 权限选择弹窗 =====
-                // 会话开始前（现状只是一个本地选项），选择工作区写入权限。
-                // 注意：host 目前没有权限接口。选中值存本地，未来在 session.create /
-                // 发起首条消息时随参数下发，host 支持后即可用手机初始选的权限创建电脑端会话。
+                // 选择「默认权限预设」：选项优先取 host settings 动态枚举（与设置页一致），
+                // 未连接/不支持时回退本地三项。选择动作走 settings.update 全局设置通道，
+                // 与设置页「工作区权限」同一入口，影响之后新建的会话。
                 vif({ ctx.permissionPickerVisible }) {
                     DshPermissionPicker(
                         options = {
                             ObservableList<DshPermissionOption>().apply {
-                                addAll(listOf(
-                                    DshPermissionOption("read-only", "只读", ctx.permissionValue == "read-only"),
-                                    DshPermissionOption("workspace-write", "工作区写入", ctx.permissionValue == "workspace-write"),
-                                    DshPermissionOption("full-access", "完全访问", ctx.permissionValue == "full-access"),
-                                ))
+                                val choices = ctx.settingsSnapshot.permissionChoices
+                                if (choices.isNotEmpty()) {
+                                    addAll(choices.map {
+                                        DshPermissionOption(
+                                            it.value,
+                                            it.label,
+                                            it.value == ctx.settingsSnapshot.permissionPreset,
+                                        )
+                                    })
+                                } else {
+                                    addAll(listOf(
+                                        DshPermissionOption("read-only", "只读", ctx.permissionValue == "read-only"),
+                                        DshPermissionOption("workspace-write", "工作区写入", ctx.permissionValue == "workspace-write"),
+                                        DshPermissionOption("danger-full-access", "完全访问", ctx.permissionValue == "danger-full-access"),
+                                    ))
+                                }
                             }
                         },
                         onClose = { ctx.permissionPickerVisible = false },
                         onSelect = { option ->
-                            ctx.permissionValue = option.value
-                            ctx.permissionLabel = option.label
-                            ctx.permissionPickerVisible = false
+                            if (option.value == "danger-full-access") {
+                                ctx.pendingDangerPermission = option
+                                ctx.riskAcknowledged = false
+                                ctx.riskConfirmVisible = true
+                            } else {
+                                ctx.permissionValue = option.value
+                                ctx.permissionLabel = option.label
+                                ctx.permissionPickerVisible = false
+                                ctx.applyPermissionPreset(option)
+                            }
+                        },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+
+                // ===== Full access 风险确认弹窗（对齐 dsh 原版 RiskConfirmation）=====
+                vif({ ctx.riskConfirmVisible }) {
+                    DshRiskConfirmationModal(
+                        title = "确认启用 Full access？",
+                        description = "启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
+                        acknowledgeLabel = "我已了解风险，并愿意继续",
+                        cancelLabel = "取消",
+                        confirmLabel = "启用 Full access",
+                        acknowledged = { ctx.riskAcknowledged },
+                        busy = { ctx.settingsChoiceBusy },
+                        onAcknowledgedChange = { ctx.riskAcknowledged = it },
+                        onCancel = { ctx.riskConfirmVisible = false },
+                        onConfirm = {
+                            val option = ctx.pendingDangerPermission
+                            if (option != null) {
+                                ctx.riskConfirmVisible = false
+                                ctx.pendingDangerPermission = null
+                                ctx.permissionPickerVisible = false
+                                ctx.permissionValue = option.value
+                                ctx.permissionLabel = option.label
+                                ctx.applyPermissionPreset(option)
+                            }
                         },
                         colors = { this@DshHomePage.themeColors },
                     )
@@ -1916,6 +1965,57 @@ internal class DshHomePage : BasePager() {
             }
             else -> settingsChoiceBusy = false
         }
+    }
+
+    // 首页权限弹窗的选择：与设置页「工作区权限」走同一个全局设置通道（settings.update），
+    // 选项已优先取 host 动态枚举；未连接或 host 不支持设置时仅本地记住并提示。
+    private fun openPermissionPicker() {
+        dismissKeyboard()
+        commandSheetVisible = false
+        permissionPickerVisible = true
+        // 快照未加载（通常还没打开过设置页）时预热拉取，弹窗选项展示 host 真实预设。
+        if (repository != null && settingsSnapshot.permissionChoices.isEmpty()) {
+            reloadSettings(showLoading = false)
+        }
+    }
+
+    private fun applyPermissionPreset(option: DshPermissionOption) {
+        val repo = repository ?: run {
+            bridgeModule.toast("未连接电脑端，权限已本地记住，连接后可在设置页同步")
+            return
+        }
+        if (settingsChoiceBusy) return
+        if (settingsSnapshot.permissionChoices.isEmpty()) {
+            // 设置快照尚未加载：先拉取一次 host settings（拿到 revision），成功后再写入。
+            settingsChoiceBusy = true
+            repo.describeSettings({
+                settingsChoiceBusy = false
+                settingsSnapshot = it
+                pushPermissionPreset(repo, option, it.permissionRevision)
+            }, {
+                settingsChoiceBusy = false
+                bridgeModule.toast("获取权限设置失败：$it")
+            })
+            return
+        }
+        pushPermissionPreset(repo, option, settingsSnapshot.permissionRevision)
+    }
+
+    private fun pushPermissionPreset(repo: DshRepository, option: DshPermissionOption, revision: Int) {
+        settingsChoiceBusy = true
+        repo.updateSetting(
+            "permission",
+            JSONObject().apply { put("defaultPreset", option.value) },
+            revision,
+            {
+                settingsChoiceBusy = false
+                reloadSettings(showLoading = false)
+            },
+            {
+                settingsChoiceBusy = false
+                bridgeModule.toast("权限设置失败：$it")
+            },
+        )
     }
 
     private fun openDefaultModelPicker() {
@@ -4241,14 +4341,29 @@ internal class DshHomePage : BasePager() {
 
     private fun ensureConversationPanel(sessionId: String) {
         if (conversationPanelIds.contains(sessionId)) return
-        if (conversationPanelIds.size >= CONVERSATION_PANEL_CACHE_LIMIT) {
-            val evictIndex = conversationPanelIds.indexOfFirst { it != activeSessionId }
-            if (evictIndex >= 0) {
-                val evictedId = conversationPanelIds.removeAt(evictIndex)
-                messageScrollerRefs.remove(evictedId)
+        try {
+            if (conversationPanelIds.size >= CONVERSATION_PANEL_CACHE_LIMIT) {
+                val evictIndex = conversationPanelIds.indexOfFirst { it != activeSessionId }
+                if (evictIndex >= 0) {
+                    val evictedId = conversationPanelIds.removeAt(evictIndex)
+                    messageScrollerRefs.remove(evictedId)
+                }
+            }
+            conversationPanelIds.add(sessionId)
+        } catch (e: ConcurrentModificationException) {
+            // 渲染该列表期间新增 panel 会触发 Kuikly 对同一响应式列表的自注册，
+            // 迭代中修改被绑定的 observers 集合导致 CME。此时元素通常已入列，
+            // 下一消息幂等兜底收敛，避免拖垮整个页面。
+            setTimeout(pagerId, 0) {
+                runCatching {
+                    if (!conversationPanelIds.contains(sessionId) &&
+                        conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT
+                    ) {
+                        conversationPanelIds.add(sessionId)
+                    }
+                }
             }
         }
-        conversationPanelIds.add(sessionId)
     }
 
     private fun sendDraft() {
