@@ -299,7 +299,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                     // vfor 的直接子节点不能是 vif/vbind。空 List 先挂载后 addAll
                     // 时 LazyLoop 会把增量当成「加到可见范围后面」而不建 cell。
-                    vbind({ conversationListEpoch(sessionId) }) {
+                    vbind({ conversationListEpoch(sessionId) to colors() }) {
                         // 消息滚动列表：懒加载渲染该会话消息，点击/拖动收起键盘
                         vif({ messagesForSession(sessionId).isNotEmpty() }) {
                             List {
