@@ -1250,6 +1250,15 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    private fun closeSessionDrawerImmediately() {
+        if (!sessionDrawerVisible) return
+        overflowTargetSessionId = ""
+        sessionDrawerMaskAnimation = Animation.linear(0f)
+        sessionDrawerMaskAnimated = false
+        sessionDrawerAnimated = false
+        sessionDrawerVisible = false
+    }
+
     private fun toggleWorkspaceExpanded(workspaceId: String) {
         if (workspaceExpandedIds.contains(workspaceId)) {
             workspaceExpandedIds.remove(workspaceId)
@@ -1695,9 +1704,10 @@ internal class DshHomePage : BasePager() {
     private fun openSettingsPage() {
         dismissKeyboard()
         commandSheetVisible = false
-        settingsPageVisible = true
+        closeSessionDrawerImmediately()
         reloadSettings()
         loadHostVersion()
+        settingsPageVisible = true
     }
 
     private fun closeSettingsPage() {

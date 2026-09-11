@@ -1680,7 +1680,18 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 paddingRight(8f)
                 backgroundColor(colors().bgLayer2)
             }
-            View { attr { flex(1f) } }
+            View {
+                attr { flex(1f); flexDirectionRow(); alignItemsCenter() }
+                vif({ loading() }) {
+                    Text {
+                        attr {
+                            text("同步中")
+                            fontSize(12f)
+                            color(colors().labelTertiary)
+                        }
+                    }
+                }
+            }
             Text { attr { text("设置"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
             View {
                 attr { flex(1f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
@@ -1702,17 +1713,6 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 flex(1f)
                 width(pagerData.pageViewWidth)
                 backgroundColor(colors().bgLayer2)
-            }
-            vif({ loading() }) {
-                Text {
-                    attr {
-                        text("正在读取电脑端配置…")
-                        marginTop(48f)
-                        fontSize(13f)
-                        textAlignCenter()
-                        color(colors().labelTertiary)
-                    }
-                }
             }
             vif({ !loading() && error().isNotEmpty() }) {
                 View {
