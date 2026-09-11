@@ -2,7 +2,6 @@ package com.example.dsh.base
 
 import com.example.dsh.connection.*
 import com.example.dsh.theme.DshColorTokens
-import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.theme.DshThemeManager
 import com.example.dsh.infrastructure.cachedLocalTimezoneOffsetMillis
 import com.example.dsh.theme.DshThemeMode
@@ -16,9 +15,9 @@ internal abstract class BasePager : Pager() {
     private var nightModel: Boolean? by observable(null)
 
     /** 页面级主题色镜像：DshThemeManager.currentColors 的响应式副本，attr 内读取可注册依赖 */
-    protected var themeColors by observable<DshColorTokens>(DshDefaultTheme.light)
+    protected var themeColors by observable<DshColorTokens>(DshThemeManager.currentColors)
     /** 页面级主题模式镜像：随全局广播同步，设置页外观行等文字可响应式显示 */
-    protected var themeMode by observable<DshThemeMode>(DshThemeMode.LIGHT)
+    protected var themeMode by observable<DshThemeMode>(DshThemeManager.mode)
 
     override fun createExternalModules(): Map<String, Module>? {
         val externalModules = hashMapOf<String, Module>()
@@ -33,6 +32,7 @@ internal abstract class BasePager : Pager() {
 
     override fun created() {
         super.created()
+        DshThemeManager.systemDark = isNightMode()
         // JS 运行时（QuickJS）无系统时区数据，从原生侧同步查询一次并缓存，供日志时间格式化使用
         runCatching {
             acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).timezoneOffsetMillis()
@@ -42,7 +42,6 @@ internal abstract class BasePager : Pager() {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME).getItem(DshThemeManager.PREF_KEY_THEME_MODE)
         }.getOrNull().orEmpty()
         if (saved.isNotEmpty()) DshThemeManager.applyPreference(saved)
-        DshThemeManager.systemDark = isNightMode()
         DshThemeManager.addListener(::syncThemeColors)
         syncThemeColors()
     }
@@ -54,13 +53,11 @@ internal abstract class BasePager : Pager() {
         DshThemeManager.notifyChanged()
     }
 
-    /** 把全局主题色写入页面级 observable（值未变则跳过，避免无谓重绘） */
+    /** 把全局主题色写入页面级 observable（值未变则跳过，避免无谓重绘）。 */
     protected fun syncThemeColors() {
-        setTimeout(0) {
-            val next = DshThemeManager.currentColors
-            if (themeColors !== next) themeColors = next
-            if (themeMode !== DshThemeManager.mode) themeMode = DshThemeManager.mode
-        }
+        val next = DshThemeManager.currentColors
+        if (themeColors !== next) themeColors = next
+        if (themeMode !== DshThemeManager.mode) themeMode = DshThemeManager.mode
     }
 
     // 是否为夜间模式
