@@ -1160,6 +1160,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggle = onToggle
                     bodyCollapsible = false
                     compact = true
+                    bodyChrome = true
+                    bodyMaxHeight = 300f
                     contextDetail = DshContextDetail(
                         form = message.contextForm,
                         body = boundedContextText(message.contextBody),
@@ -1231,6 +1233,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     maxBodyLines = 8
                     plainBody = true
                     compact = true
+                    bodyChrome = true
+                    bodyMaxHeight = 200f
+                    bodyContentHeight = message.content.lineSequence().count() * 24f + 6f
                 }
             }
         }
@@ -1246,6 +1251,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             }
             DshDisclosureRow {
                 attr {
+                 
                     title = "Skill"
                     iconAsset = "tool-skill.svg"
                     this.colors = colors()
@@ -1328,6 +1334,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     running = message.toolRunning
                     askCard = askCardData
                     compact = true
+                    onCopyToolCommand = onCopyToolContent
                     toolDetail = if (isJson || askCardData != null) null else DshToolDetail(
                         kind = remoteTool?.kind ?: DshRemoteToolKind.GENERIC,
                         input = remoteTool?.input.orEmpty(),
@@ -1335,6 +1342,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         fallback = effectiveBody,
                         running = message.toolRunning,
                         error = message.toolError,
+                        filePath = remoteTool?.filePath,
                     )
                 }
             }
@@ -1351,6 +1359,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // 消息角色标签：你 / DeepSeek / 工具 / 错误
         Text {
             attr {
+               
                 text(when (message.role) {
                     DshMessageRole.USER -> "你"
                     DshMessageRole.TOOL -> message.toolName ?: "工具"

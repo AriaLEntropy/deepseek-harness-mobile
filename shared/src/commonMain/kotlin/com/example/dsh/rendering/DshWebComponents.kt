@@ -1,4 +1,4 @@
-﻿package com.example.dsh.rendering
+package com.example.dsh.rendering
 
 import com.example.dsh.base.*
 import com.example.dsh.chat.*
@@ -20,6 +20,7 @@ import com.tencent.kuikly.core.base.ComposeView
 import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.base.BoxShadow
+import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.base.Rotate
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
@@ -150,12 +151,110 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         }
                     }
                 }
-                vif({ ctx.attr.open }) {
+                vif({ ctx.attr.open && ctx.attr.bodyMaxHeight > 0f }) {
+                    Scroller {
+                        attr {
+                            height(if (ctx.attr.bodyContentHeight > 0f) minOf(ctx.attr.bodyContentHeight, ctx.attr.bodyMaxHeight) else ctx.attr.bodyMaxHeight)
+                        }
+                        View {
+                            attr {
+                                marginTop(6f)
+                                marginBottom(8f)
+                                flexDirectionColumn()
+                                if (ctx.attr.bodyChrome) {
+                                    padding(12f, 12f, 12f, 12f)
+                                    borderRadius(8f)
+                                    backgroundColor(c.bgModulePlatform)
+                                }
+                            }
+                        vif({ ctx.attr.askCard != null }) {
+                            DshAskQuestionCard {
+                                attr {
+                                    card = ctx.attr.askCard
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isNotEmpty() }) {
+                            DshJsonTree {
+                                attr {
+                                    content = ctx.attr.jsonContent
+                                    this.isExpanded = ctx.attr.isJsonNodeExpanded
+                                    this.onToggle = ctx.attr.onToggleJsonNode
+                                    colors = ctx.attr.colors
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail != null }) {
+                            DshContextDetails {
+                                attr {
+                                    detail = ctx.attr.contextDetail
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isNotEmpty() }) {
+                            if (ctx.attr.plainBody) {
+                                Text {
+                                    attr {
+                                        text(ctx.attr.body)
+                            fontSize(if (ctx.attr.compact) 13f else 14f)
+                                        lineHeight(24f)
+                                        color(c.labelSecondary)
+                                        marginTop(6f)
+                                        marginLeft(22f)
+                                        marginRight(22f)
+                                    }
+                                }
+                            } else {
+                                DshLongText {
+                                    attr {
+                                        content = ctx.attr.body
+                                        expanded = ctx.attr.bodyExpanded
+                                        maxLines = ctx.attr.maxBodyLines
+                                        error = ctx.attr.errorSummary
+                                        collapsible = ctx.attr.bodyCollapsible
+                                        colors = c
+                                        this.onToggle = {
+                                            ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
+                                            ctx.attr.onToggleBody()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.toolDetail != null }) {
+                            DshToolDetails {
+                                attr {
+                                    detail = ctx.attr.toolDetail
+                                    colors = c
+                                }
+                            }
+                        }
+                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
+                            Text {
+                                attr {
+                                    text("暂无输出")
+                                    fontSize(12f)
+                                    color(Color(0xFF8A9399))
+                                    margin(10f)
+                                }
+                            }
+                        }
+                        }
+                    }
+                }
+                vif({ ctx.attr.open && ctx.attr.bodyMaxHeight <= 0f }) {
                     View {
                         attr {
                             marginTop(6f)
                             marginBottom(8f)
                             flexDirectionColumn()
+                            if (ctx.attr.bodyChrome) {
+                                padding(12f, 12f, 12f, 12f)
+                                borderRadius(8f)
+                                backgroundColor(c.bgModulePlatform)
+                            }
                         }
                         vif({ ctx.attr.askCard != null }) {
                             DshAskQuestionCard {
@@ -193,6 +292,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                         color(c.labelSecondary)
                                         marginTop(6f)
                                         marginLeft(22f)
+                                        marginRight(22f)
                                     }
                                 }
                             } else {
@@ -257,12 +357,16 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var stopped: Boolean by observable(false)
     var plainBody: Boolean by observable(false)
     var bodyCollapsible: Boolean by observable(true)
+    var bodyMaxHeight: Float by observable(0f)
+    var bodyContentHeight: Float by observable(0f)
+    var bodyChrome: Boolean by observable(false)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
     var askCard: DshAskQuestionCard? by observable(null)
     /** Compact one-line chrome used by Web ToolRow/ReasoningRow equivalents. */
     var compact: Boolean by observable(false)
     var toolDetail: DshToolDetail? by observable(null)
     var contextDetail: DshContextDetail? by observable(null)
+    var onCopyToolCommand: (String) -> Unit by observable({})
 }
 
 /** The durable context fields retain their producer-specific presentation after expansion. */
@@ -292,6 +396,7 @@ internal class DshContextDetailsView : ComposeView<DshContextDetailsAttr, Compos
                 attr {
                     flexDirectionColumn()
                     marginLeft(22f)
+                    marginRight(22f)
                     marginTop(4f)
                 }
                 vif({ detail.relaySender.isNotEmpty() }) {
@@ -442,7 +547,16 @@ internal data class DshToolDetail(
     val fallback: String,
     val running: Boolean,
     val error: Boolean,
+    val filePath: String? = null,
 )
+
+
+internal fun dshExtractBashCommand(input: String): String {
+    val trimmed = input.trim()
+    if (!trimmed.startsWith("{")) return trimmed
+    return runCatching { JSONObject(trimmed).optString("command") }
+        .getOrNull()?.takeIf { it.isNotEmpty() } ?: trimmed
+}
 
 internal class DshToolDetailsView : ComposeView<DshToolDetailsAttr, ComposeEvent>() {
     override fun createAttr(): DshToolDetailsAttr = DshToolDetailsAttr()
@@ -451,7 +565,7 @@ internal class DshToolDetailsView : ComposeView<DshToolDetailsAttr, ComposeEvent
     override fun body(): ViewBuilder {
         val ctx = this
         val detail = ctx.attr.detail ?: return { View { } }
-        val output = detail.output.ifEmpty { if (detail.running) "" else detail.fallback }
+        val outputText = detail.output.ifEmpty { if (detail.running) "" else detail.fallback }
         val codeStyle = detail.kind == DshRemoteToolKind.BASH ||
             detail.kind == DshRemoteToolKind.READ ||
             detail.kind == DshRemoteToolKind.FILE_MUTATION
@@ -469,42 +583,68 @@ internal class DshToolDetailsView : ComposeView<DshToolDetailsAttr, ComposeEvent
             DshRemoteToolKind.SEARCH, DshRemoteToolKind.WEB -> "结果"
             else -> "输出"
         }
-        return {
-            View {
-                attr {
-                    flexDirectionColumn()
-                    marginLeft(22f)
-                    marginTop(2f)
-                }
-                vif({ detail.input.isNotBlank() }) {
-                    DshToolDetailSection {
-                        attr {
-                            label = inputLabel
-                            content = detail.input
-                            code = codeStyle
-                            colors = ctx.attr.colors
-                        }
+        return if (detail.kind == DshRemoteToolKind.BASH) {
+            {
+                DshTerminalCard {
+                    attr {
+                        command = dshExtractBashCommand(detail.input)
+                        output = outputText
+                        running = detail.running
+                        error = detail.error
+                        colors = ctx.attr.colors
+                        onCopy = { ctx.attr.onCopy(it) }
                     }
                 }
-                vif({ output.isNotBlank() }) {
-                    DshToolDetailSection {
-                        attr {
-                            label = outputLabel
-                            content = output
-                            code = codeStyle
-                            error = detail.error
-                            colors = ctx.attr.colors
-                        }
+            }
+        } else if (detail.kind == DshRemoteToolKind.READ) {
+            {
+                DshReadCard {
+                    attr {
+                        filePath = detail.filePath ?: ""
+                        content = outputText
+                        colors = ctx.attr.colors
+                        onCopy = { ctx.attr.onCopy(it) }
                     }
                 }
-                vif({ detail.running && output.isEmpty() }) {
-                    Text {
-                        attr {
-                            text("等待工具输出")
-                            fontSize(13f)
-                            lineHeight(20f)
-                            color(ctx.attr.colors.labelTertiary)
-                            marginTop(4f)
+            }
+        } else {
+            {
+                View {
+                    attr {
+                        flexDirectionColumn()
+                        marginLeft(22f)
+                        marginTop(2f)
+                    }
+                    vif({ detail.input.isNotBlank() }) {
+                        DshToolDetailSection {
+                            attr {
+                                label = inputLabel
+                                content = detail.input
+                                code = codeStyle
+                                colors = ctx.attr.colors
+                            }
+                        }
+                    }
+                    vif({ outputText.isNotBlank() }) {
+                        DshToolDetailSection {
+                            attr {
+                                label = outputLabel
+                                content = outputText
+                                code = codeStyle
+                                error = detail.error
+                                colors = ctx.attr.colors
+                            }
+                        }
+                    }
+                    vif({ detail.running && outputText.isEmpty() }) {
+                        Text {
+                            attr {
+                                text("等待工具输出")
+                                fontSize(13f)
+                                lineHeight(20f)
+                                color(ctx.attr.colors.labelTertiary)
+                                marginTop(4f)
+                            }
                         }
                     }
                 }
@@ -516,6 +656,7 @@ internal class DshToolDetailsView : ComposeView<DshToolDetailsAttr, ComposeEvent
 internal class DshToolDetailsAttr : ComposeAttr() {
     var detail: DshToolDetail? by observable(null)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
+    var onCopy: (String) -> Unit by observable({})
 }
 
 internal class DshToolDetailSectionView : ComposeView<DshToolDetailSectionAttr, ComposeEvent>() {
@@ -573,6 +714,262 @@ internal fun ViewContainer<*, *>.DshToolDetails(init: DshToolDetailsView.() -> U
 
 internal fun ViewContainer<*, *>.DshToolDetailSection(init: DshToolDetailSectionView.() -> Unit) {
     addChild(DshToolDetailSectionView(), init)
+}
+
+internal class DshTerminalCardAttr : ComposeAttr() {
+    var command: String by observable("")
+    var output: String by observable("")
+    var running: Boolean by observable(false)
+    var error: Boolean by observable(false)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+    var onCopy: (String) -> Unit by observable({})
+}
+
+internal class DshTerminalCardView : ComposeView<DshTerminalCardAttr, ComposeEvent>() {
+    override fun createAttr(): DshTerminalCardAttr = DshTerminalCardAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val c = ctx.attr.colors
+        val hasOutput = ctx.attr.output.isNotBlank()
+        val stateColor = if (ctx.attr.error) c.stateErrorPrimary else if (ctx.attr.running) c.stateBusinessPrimary else c.stateSuccessPrimary
+        val markdownResult = buildString {
+            appendLine("### Bash")
+            appendLine()
+            appendLine("**命令：**")
+            appendLine("```bash")
+            appendLine(ctx.attr.command)
+            appendLine("```")
+            if (hasOutput) {
+                appendLine()
+                appendLine("**输出：**")
+                appendLine("```")
+                appendLine(ctx.attr.output)
+                appendLine("```")
+            }
+            if (ctx.attr.error) {
+                appendLine()
+                appendLine("**状态：** 执行失败")
+            }
+        }
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginTop(4f)
+                    marginLeft(22f)
+                    borderRadius(12f)
+                    backgroundColor(c.markdownCodeBlock)
+                }
+                View {
+                    attr {
+                        flexDirectionRow()
+                        alignItems(FlexAlign.FLEX_START)
+                        padding(9f, 14f, 9f, 12f)
+                        backgroundColor(c.markdownCodeBlockBanner)
+                    }
+                    View {
+                        attr {
+                            width(10f)
+                            height(10f)
+                            borderRadius(5f)
+                            backgroundColor(stateColor)
+                            marginTop(6f)
+                            marginRight(8f)
+                        }
+                    }
+                    Text {
+                        attr {
+                            text(ctx.attr.command)
+                            fontSize(12f)
+                            lineHeight(22f)
+                            color(c.labelPrimary)
+                            fontFamily("monospace")
+                            flex(1f)
+                        }
+                    }
+                    View {
+                        attr {
+                            marginLeft(12f)
+                            marginTop(3f)
+                        }
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("copy.svg"))
+                                size(16f, 16f)
+                                tintColor(c.labelTertiary)
+                            }
+                        }
+                        DshTapTarget {
+                            ctx.attr.onCopy(markdownResult)
+                        }
+                    }
+                }
+                vif({ hasOutput }) {
+                    View {
+                        attr {
+                            height(1f)
+                            marginLeft(12f)
+                            marginRight(14f)
+                            backgroundColor(c.borderL2)
+                        }
+                    }
+                }
+                vif({ hasOutput }) {
+                    View {
+                        attr {
+                            padding(12f, 14f, 12f, 30f)
+                            flexDirectionColumn()
+                        }
+                        Scroller {
+                            attr {
+                                height(220f)
+                            }
+                            Text {
+                                attr {
+                                    text(ctx.attr.output)
+                                    fontSize(12f)
+                                    lineHeight(22f)
+                                    color(if (ctx.attr.error) c.stateErrorPrimary else c.labelSecondary)
+                                    fontFamily("monospace")
+                                }
+                            }
+                        }
+                    }
+                }
+                vif({ ctx.attr.running && !hasOutput }) {
+                    Text {
+                        attr {
+                            text("等待工具输出…")
+                            fontSize(12f)
+                            lineHeight(22f)
+                            color(c.labelTertiary)
+                            marginTop(4f)
+                            marginBottom(4f)
+                            marginLeft(30f)
+                            marginRight(14f)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun ViewContainer<*, *>.DshTerminalCard(init: DshTerminalCardView.() -> Unit) {
+    addChild(DshTerminalCardView(), init)
+}
+
+internal class DshReadCardAttr : ComposeAttr() {
+    var filePath: String by observable("")
+    var content: String by observable("")
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+    var onCopy: (String) -> Unit by observable({})
+}
+
+internal class DshReadCardView : ComposeView<DshReadCardAttr, ComposeEvent>() {
+    override fun createAttr(): DshReadCardAttr = DshReadCardAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val c = ctx.attr.colors
+        val lines = ctx.attr.content.lineSequence().toList()
+        val lineCount = lines.size
+        val lineNumbers = (1..lineCount).joinToString("\n")
+        val displayPath = ctx.attr.filePath.ifEmpty { "文件" }
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    marginTop(4f)
+                    marginLeft(22f)
+                    borderRadius(12f)
+                    backgroundColor(c.markdownCodeBlock)
+                }
+                View {
+                    attr {
+                        flexDirectionRow()
+                        alignItems(FlexAlign.CENTER)
+                        padding(9f, 14f, 9f, 14f)
+                        backgroundColor(c.markdownCodeBlockBanner)
+                    }
+                    Text {
+                        attr {
+                            text(displayPath)
+                            fontSize(12f)
+                            lineHeight(18f)
+                            color(c.labelPrimary)
+                            fontFamily("monospace")
+                            flex(1f)
+                            lines(1)
+                        }
+                    }
+                    Text {
+                        attr {
+                            text("$lineCount 行")
+                            fontSize(12f)
+                            lineHeight(18f)
+                            color(c.labelTertiary)
+                            marginLeft(12f)
+                        }
+                    }
+                    View {
+                        attr {
+                            marginLeft(12f)
+                        }
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("copy.svg"))
+                                size(14f, 14f)
+                                tintColor(c.labelTertiary)
+                            }
+                        }
+                        DshTapTarget {
+                            ctx.attr.onCopy(ctx.attr.content)
+                        }
+                    }
+                }
+                View {
+                    attr {
+                        flexDirectionRow()
+                        padding(12f, 14f, 12f, 0f)
+                    }
+                    Text {
+                        attr {
+                            text(lineNumbers)
+                            width(48f)
+                            marginRight(14f)
+                            fontSize(12f)
+                            lineHeight(22f)
+                            color(c.labelTertiary)
+                            fontFamily("monospace")
+                        }
+                    }
+                    Scroller {
+                        attr {
+                            height((lineCount * 22f).coerceAtMost(220f))
+                            flex(1f)
+                        }
+                        Text {
+                            attr {
+                                text(ctx.attr.content)
+                                fontSize(12f)
+                                lineHeight(22f)
+                                color(c.labelPrimary)
+                                fontFamily("monospace")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun ViewContainer<*, *>.DshReadCard(init: DshReadCardView.() -> Unit) {
+    addChild(DshReadCardView(), init)
 }
 
 /** Second-level disclosure for long terminal/read/diff bodies. */
