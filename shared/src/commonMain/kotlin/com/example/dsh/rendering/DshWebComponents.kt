@@ -1864,11 +1864,16 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
 
     override fun body(): ViewBuilder {
         val ctx = this
-        val item = ctx.attr.question?.questions?.getOrNull(ctx.attr.index)
         return {
-            vif({ item != null }) {
-                val current = item ?: return@vif
-                val total = ctx.attr.question?.questions?.size ?: 1
+            // 切换题目依赖 attr.index / attr.question，必须在响应式闭包内取值，
+            // 否则 body() 只在 didInit 执行一次，item 会永远停在初始题目。
+            // 局部函数只在 attr {} / vif {} 调用时才读取 attr，确保依赖被收集。
+            fun currentItem(): DshPendingQuestionItem? =
+                ctx.attr.question?.questions?.getOrNull(ctx.attr.index)
+
+            fun totalCount(): Int = ctx.attr.question?.questions?.size ?: 1
+
+            vif({ currentItem() != null }) {
                 View {
                     attr {
                         marginLeft(4f)
@@ -1900,14 +1905,14 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                             }
                             Text {
                                 attr {
-                                    text(current.header.ifEmpty { "确认意图" })
+                                    text(currentItem()?.header?.ifEmpty { "确认意图" } ?: "确认意图")
                                     fontSize(12f)
                                     color(ctx.attr.colors.labelTertiary)
                                 }
                             }
                             Text {
                                 attr {
-                                    text(current.question)
+                                    text(currentItem()?.question ?: "")
                                     marginTop(6f)
                                     fontSize(17f)
                                     fontWeightMedium()
@@ -1963,10 +1968,10 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                     // ===== 展开内容 =====
                     vif({ !ctx.collapsed }) {
                         // 问题描述
-                        vif({ current.detail.isNotEmpty() }) {
+                        vif({ !currentItem()?.detail.isNullOrEmpty() }) {
                             Text {
                                 attr {
-                                    text(current.detail)
+                                    text(currentItem()?.detail ?: "")
                                     marginTop(10f)
                                     fontSize(13f)
                                     lineHeight(19f)
@@ -2181,13 +2186,12 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 backgroundColor(ctx.attr.colors.bgBase)
                                 border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                                 flexDirectionRow()
-                                alignItemsFlexStart()
+                                alignItemsCenter()
                             }
                             Image {
                                 attr {
                                     src(ImageUri.commonAssets("tool-ask.svg"))
                                     size(18f, 18f)
-                                    marginTop(4f)
                                     tintColor(ctx.attr.colors.labelTertiary)
                                 }
                             }
@@ -2195,7 +2199,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 ref { it.view?.setText(ctx.attr.custom) }
                                 attr {
                                     flex(1f)
-                                    minHeight(30f)
+                                    minHeight(20f)
                                     maxHeight(90f)
                                     marginLeft(8f)
                                     placeholder("输入你的答案")
@@ -2256,7 +2260,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                 }
                                 Text {
                                     attr {
-                                        text("${ctx.attr.index + 1} / $total")
+                                        text("${ctx.attr.index + 1} / ${totalCount()}")
                                         marginLeft(6f)
                                         marginRight(6f)
                                         fontSize(13f)
@@ -2270,7 +2274,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                         borderRadius(14f)
                                         justifyContentCenter()
                                         alignItemsCenter()
-                                        opacity(if (ctx.attr.index < total - 1) 1f else 0.3f)
+                                        opacity(if (ctx.attr.index < totalCount() - 1) 1f else 0.3f)
                                     }
                                     Image {
                                         attr {
@@ -2279,7 +2283,7 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                                             tintColor(ctx.attr.colors.labelSecondary)
                                         }
                                     }
-                                    vif({ ctx.attr.index < total - 1 }) {
+                                    vif({ ctx.attr.index < totalCount() - 1 }) {
                                         DshTapTarget { ctx.attr.onNavigate(1) }
                                     }
                                 }
