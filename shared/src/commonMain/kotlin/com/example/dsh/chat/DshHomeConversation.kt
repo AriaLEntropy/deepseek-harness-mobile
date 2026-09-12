@@ -186,8 +186,6 @@ internal fun ViewContainer<*, *>.DshConversation(
     isWebTimeline: () -> Boolean,
     isDisclosureExpanded: (String) -> Boolean,
     onToggleDisclosure: (String) -> Unit,
-    isBodyDisclosureExpanded: (String) -> Boolean,
-    onToggleBodyDisclosure: (String) -> Unit,
     isJsonNodeExpanded: (String, String) -> Boolean,
     onToggleJsonNode: (String, String) -> Unit,
     onCopyToolContent: (String) -> Unit,
@@ -353,8 +351,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             isWebTimeline = isWebTimeline(),
                                             isExpanded = { isDisclosureExpanded(target.id) },
                                             onToggle = { onToggleDisclosure(target.id) },
-                                            isBodyExpanded = { isBodyDisclosureExpanded(target.id) },
-                                            onToggleBody = { onToggleBodyDisclosure(target.id) },
                                             isJsonNodeExpanded = { isJsonNodeExpanded(target.id, it) },
                                             onToggleJsonNode = { onToggleJsonNode(target.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
@@ -1247,8 +1243,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     isWebTimeline: Boolean,
     isExpanded: () -> Boolean,
     onToggle: () -> Unit,
-    isBodyExpanded: () -> Boolean = { false },
-    onToggleBody: () -> Unit = {},
     isJsonNodeExpanded: (String) -> Boolean = { false },
     onToggleJsonNode: (String) -> Unit = {},
     onCopyToolContent: (String) -> Unit = {},
@@ -1295,7 +1289,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked && message.contextCanExpand()
                     this.onToggle = onToggle
-                    bodyCollapsible = false
                     compact = true
                     bodyChrome = true
                     bodyMaxHeight = 300f
@@ -1396,9 +1389,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked && message.content.isNotEmpty()
                     this.onToggle = onToggle
-                    bodyExpanded = isBodyExpanded()
-                    this.onToggleBody = onToggleBody
-                    maxBodyLines = 8
                     running = message.toolRunning
                     compact = true
                 }
@@ -1460,9 +1450,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked
                     this.onToggle = onToggle
-                    bodyExpanded = isBodyExpanded()
-                    this.onToggleBody = onToggleBody
-                    maxBodyLines = 8
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
                     running = message.toolRunning

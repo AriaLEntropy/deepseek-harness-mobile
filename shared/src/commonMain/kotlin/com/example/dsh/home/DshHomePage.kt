@@ -230,7 +230,6 @@ internal class DshHomePage : BasePager() {
     private var followListTail = true
     private val connectionCoordinator = DshConnectionCoordinator()
     private val webDisclosureStates = mutableMapOf<String, Boolean>()
-    private val webBodyDisclosureStates = mutableMapOf<String, Boolean>()
     private val webJsonNodeStates = mutableMapOf<String, Boolean>()
     private var webDisclosureRevision by observable(0)
     private var attachmentRevision by observable(0)
@@ -588,8 +587,6 @@ internal class DshHomePage : BasePager() {
                                 isWebTimeline = { ctx.isRemoteHost },
                                 isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                                 onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
-                                isBodyDisclosureExpanded = { ctx.isWebBodyDisclosureExpanded(it) },
-                                onToggleBodyDisclosure = { ctx.toggleWebBodyDisclosure(it) },
                                 isJsonNodeExpanded = { messageId, nodeId ->
                                     ctx.isWebJsonNodeExpanded(messageId, nodeId)
                                 },
@@ -736,8 +733,6 @@ internal class DshHomePage : BasePager() {
                             isWebTimeline = { ctx.isRemoteHost },
                             isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                             onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
-                            isBodyDisclosureExpanded = { ctx.isWebBodyDisclosureExpanded(it) },
-                            onToggleBodyDisclosure = { ctx.toggleWebBodyDisclosure(it) },
                             isJsonNodeExpanded = { messageId, nodeId ->
                                 ctx.isWebJsonNodeExpanded(messageId, nodeId)
                             },
@@ -4397,20 +4392,8 @@ internal class DshHomePage : BasePager() {
         val next = webDisclosureStates[id] != true
         webDisclosureStates[id] = next
         if (!next) {
-            webBodyDisclosureStates.remove(id)
             webJsonNodeStates.keys.filter { it.startsWith("$id:") }.toList().forEach(webJsonNodeStates::remove)
         }
-        webDisclosureRevision += 1
-        refreshSessionRenderTree(activeSessionId)
-    }
-
-    private fun isWebBodyDisclosureExpanded(id: String): Boolean {
-        webDisclosureRevision
-        return webBodyDisclosureStates[id] == true
-    }
-
-    private fun toggleWebBodyDisclosure(id: String) {
-        webBodyDisclosureStates[id] = webBodyDisclosureStates[id] != true
         webDisclosureRevision += 1
         refreshSessionRenderTree(activeSessionId)
     }

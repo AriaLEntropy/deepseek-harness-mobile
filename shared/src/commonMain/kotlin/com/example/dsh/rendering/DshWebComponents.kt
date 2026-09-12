@@ -215,15 +215,8 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 DshLongText {
                                     attr {
                                         content = ctx.attr.body
-                                        expanded = ctx.attr.bodyExpanded
-                                        maxLines = ctx.attr.maxBodyLines
                                         error = ctx.attr.errorSummary
-                                        collapsible = ctx.attr.bodyCollapsible
                                         colors = ctx.attr.colors
-                                        this.onToggle = {
-                                            ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
-                                            ctx.attr.onToggleBody()
-                                        }
                                     }
                                 }
                             }
@@ -304,15 +297,8 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 DshLongText {
                                     attr {
                                         content = ctx.attr.body
-                                        expanded = ctx.attr.bodyExpanded
-                                        maxLines = ctx.attr.maxBodyLines
                                         error = ctx.attr.errorSummary
-                                        collapsible = ctx.attr.bodyCollapsible
                                         colors = ctx.attr.colors
-                                        this.onToggle = {
-                                            ctx.attr.bodyExpanded = !ctx.attr.bodyExpanded
-                                            ctx.attr.onToggleBody()
-                                        }
                                     }
                                 }
                             }
@@ -351,9 +337,6 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var open: Boolean by observable(false)
     var expandable: Boolean by observable(false)
     var onToggle: () -> Unit by observable({})
-    var bodyExpanded: Boolean by observable(false)
-    var onToggleBody: () -> Unit by observable({})
-    var maxBodyLines: Int by observable(8)
     var jsonContent: String by observable("")
     var isJsonNodeExpanded: (String) -> Boolean by observable({ false })
     var onToggleJsonNode: (String) -> Unit by observable({})
@@ -361,7 +344,6 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var running: Boolean by observable(false)
     var stopped: Boolean by observable(false)
     var plainBody: Boolean by observable(false)
-    var bodyCollapsible: Boolean by observable(true)
     var bodyMaxHeight: Float by observable(0f)
     var bodyContentHeight: Float by observable(0f)
     var bodyChrome: Boolean by observable(false)
@@ -889,7 +871,6 @@ internal class DshReadCardView : ComposeView<DshReadCardAttr, ComposeEvent>() {
         val ctx = this
         val lines = ctx.attr.content.lineSequence().toList()
         val lineCount = lines.size
-        val lineNumbers = (1..lineCount).joinToString("\n")
         val displayPath = ctx.attr.filePath.ifEmpty { "文件" }
         return {
             View {
@@ -945,19 +926,7 @@ internal class DshReadCardView : ComposeView<DshReadCardAttr, ComposeEvent>() {
                 }
                 View {
                     attr {
-                        flexDirectionRow()
-                        padding(12f, 14f, 12f, 0f)
-                    }
-                    Text {
-                        attr {
-                            text(lineNumbers)
-                            width(48f)
-                            marginRight(14f)
-                            fontSize(12f)
-                            lineHeight(22f)
-                            color(ctx.attr.colors.labelTertiary)
-                            fontFamily("monospace")
-                        }
+                        padding(12f, 14f, 12f, 14f)
                     }
                     Scroller {
                         attr {
@@ -984,23 +953,13 @@ internal fun ViewContainer<*, *>.DshReadCard(init: DshReadCardView.() -> Unit) {
     addChild(DshReadCardView(), init)
 }
 
-/** Second-level disclosure for long terminal/read/diff bodies. */
+/** Fixed-height scrollable text body used by expandable tool rows. */
 internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
     override fun createAttr(): DshLongTextAttr = DshLongTextAttr()
     override fun createEvent(): ComposeEvent = ComposeEvent()
 
     override fun body(): ViewBuilder {
         val ctx = this
-        // collapsible=false 时保留代码块样式与滑动区域，但不做行截断、不显示"其余N行/收起"。
-        val collapsible = ctx.attr.collapsible
-        val expanded = ctx.attr.expanded || !collapsible
-        val hidden = if (collapsible) ctx.attr.content.lineSequence().count() - ctx.attr.maxLines else 0
-        val capped = hidden > 0 && !expanded
-        val joined = if (expanded) {
-            ctx.attr.content
-        } else {
-            ctx.attr.content.dshCollapsedLines(ctx.attr.maxLines).joinToString("\n")
-        }
         return {
             View {
                 attr {
@@ -1012,59 +971,15 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                 }
                 Scroller {
                     attr {
-                        height(
-                            when {
-                                ctx.attr.maxHeight > 0f -> ctx.attr.maxHeight.coerceAtMost(240f)
-                                expanded -> 240f
-                                else -> (ctx.attr.maxLines * 18f).coerceAtMost(240f)
-                            },
-                        )
+                        height(if (ctx.attr.maxHeight > 0f) ctx.attr.maxHeight.coerceAtMost(240f) else 240f)
                     }
                     Text {
                         attr {
-                            text(joined)
+                            text(ctx.attr.content)
                             fontSize(12f)
                             lineHeight(18f)
                             fontFamily("monospace")
                             color(if (ctx.attr.error) ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelPrimary)
-                        }
-                    }
-                }
-                vif({ capped }) {
-                    View {
-                        attr {
-                            height(20f)
-                            marginTop(6f)
-                            justifyContentCenter()
-                        }
-                        Text {
-                            attr {
-                                text("… 其余 $hidden 行")
-                                fontSize(12f)
-                                color(ctx.attr.colors.stateBusinessPrimary)
-                            }
-                        }
-                        DshTapTarget {
-                            ctx.attr.onToggle()
-                        }
-                    }
-                }
-                vif({ expanded && hidden > 0 }) {
-                    View {
-                        attr {
-                            height(20f)
-                            marginTop(6f)
-                            justifyContentCenter()
-                        }
-                        Text {
-                            attr {
-                                text("收起")
-                                fontSize(12f)
-                                color(ctx.attr.colors.stateBusinessPrimary)
-                            }
-                        }
-                        DshTapTarget {
-                            ctx.attr.onToggle()
                         }
                     }
                 }
@@ -1075,12 +990,8 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
 
 internal class DshLongTextAttr : ComposeAttr() {
     var content: String by observable("")
-    var expanded: Boolean by observable(false)
-    var maxLines: Int by observable(16)
     var maxHeight: Float by observable(0f)
     var error: Boolean by observable(false)
-    var onToggle: () -> Unit by observable({})
-    var collapsible: Boolean by observable(true)
     var colors: DshColorTokens by observable(DshDefaultTheme.light)
 }
 
@@ -1114,14 +1025,6 @@ internal data class DshContextInjectionModel(
     val summary: String,
     val body: String,
 )
-
-internal fun String.dshCollapsedLines(maxLines: Int = 16): List<String> {
-    val lines = split('\n')
-    if (lines.size <= maxLines) return lines
-    val head = (maxLines + 1) / 2
-    val tail = maxLines - head
-    return lines.take(head) + listOf("… 其余 ${lines.size - maxLines} 行") + lines.takeLast(tail)
-}
 
 internal fun dshJsonPreview(value: String): String {
     if (value.length <= 160) return value
