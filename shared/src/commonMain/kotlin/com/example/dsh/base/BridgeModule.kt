@@ -30,12 +30,37 @@ internal class BridgeModule : Module() {
         callNativeMethod("copyToPasteboard", methodArgs, null)
     }
 
-    /** 打开系统分享面板分享导出文件（Android 已实现；iOS 接入后同名校名）。 */
-    fun shareExportFile(path: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+    /**
+     * 打开系统分享面板分享导出文件（Android 已实现；iOS 接入后同名校名）。
+     * [mime] 留空时由原生按扩展名推断。
+     */
+    fun shareExportFile(
+        path: String,
+        mime: String = "",
+        onResult: (Boolean, String) -> Unit = { _, _ -> },
+    ) {
         val methodArgs = JSONObject()
         methodArgs.put("path", path)
+        if (mime.isNotEmpty()) methodArgs.put("mime", mime)
         callNativeMethod("shareExportFile", methodArgs) { value ->
             onResult(value?.optBoolean("ok") == true, value?.optString("message").orEmpty())
+        }
+    }
+
+    /**
+     * 把自包含 HTML 渲染为 PDF 并写入导出目录，由各端原生实现。
+     * 回调：成功 {"ok":true,"path":"..."}；失败 / 不支持 {"ok":false,"message":"..."}。
+     */
+    fun htmlToPdf(html: String, filename: String, onResult: (Boolean, String, String) -> Unit) {
+        val methodArgs = JSONObject()
+        methodArgs.put("html", html)
+        methodArgs.put("filename", filename)
+        callNativeMethod("htmlToPdf", methodArgs) { value ->
+            onResult(
+                value?.optBoolean("ok") == true,
+                value?.optString("path").orEmpty(),
+                value?.optString("message").orEmpty(),
+            )
         }
     }
 

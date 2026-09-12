@@ -12,6 +12,7 @@ import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.web.*
 import com.tencent.kuikly.core.base.Border
+import com.tencent.kuikly.core.base.BorderRectRadius
 import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ComposeAttr
@@ -25,9 +26,12 @@ import com.tencent.kuikly.core.base.Rotate
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.collection.ObservableList
+import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.Scroller
@@ -38,6 +42,9 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 /** The shared compact disclosure chrome used by context and tool rows. */
 internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeEvent>() {
+    /** 展开态长内容是否已铺开全文（仅展开且限高时有效）。 */
+    private var bodyExpanded by observable(false)
+
     override fun createAttr(): DshDisclosureRowAttr = DshDisclosureRowAttr()
     override fun createEvent(): ComposeEvent = ComposeEvent()
 
@@ -60,6 +67,19 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                             },
                         )
                         border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
+                    }
+                }
+                // 左侧竖向装饰线：把连续的工具/思考过程行视觉连接起来。
+                vif({ ctx.attr.connector }) {
+                    View {
+                        attr {
+                            positionAbsolute()
+                            left(0f)
+                            top(0f)
+                            bottom(0f)
+                            width(2f)
+                            backgroundColor(ctx.attr.colors.borderL2)
+                        }
                     }
                 }
                 View {
@@ -151,94 +171,92 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                     }
                     DshTapTarget {
                         if (ctx.attr.expandable) {
-                            ctx.attr.open = !ctx.attr.open
-                            ctx.attr.onToggle()
+                            if (ctx.attr.expandInModal) {
+                                // 弹窗模式：行内不展开，交由页面底部弹层平铺明细。
+                                ctx.attr.onRequestModal(ctx.attr.dshExpandedPayload())
+                            } else {
+                                ctx.attr.open = !ctx.attr.open
+                                ctx.attr.onToggle()
+                            }
                         }
                     }
                 }
                 vif({ ctx.attr.open && !ctx.attr.headerOnly && ctx.attr.bodyMaxHeight > 0f }) {
-                    Scroller {
+                    View {
                         attr {
-                            height(if (ctx.attr.bodyContentHeight > 0f) minOf(ctx.attr.bodyContentHeight, ctx.attr.bodyMaxHeight) else ctx.attr.bodyMaxHeight)
+                            marginTop(6f)
+                            marginBottom(8f)
+                            flexDirectionColumn()
+                            if (ctx.attr.bodyChrome) {
+                                padding(12f, 12f, 12f, 12f)
+                                borderRadius(8f)
+                                backgroundColor(ctx.attr.colors.bgModulePlatform)
+                            }
                         }
+                        // 收起态限高并可内部滚动；展开态直接铺开全文。
+                        vif({ ctx.bodyExpanded }) {
+                            DshDisclosureBodyContent(
+                                askCard = { ctx.attr.askCard },
+                                jsonContent = { ctx.attr.jsonContent },
+                                contextDetail = { ctx.attr.contextDetail },
+                                body = { ctx.attr.body },
+                                plainBody = { ctx.attr.plainBody },
+                                error = { ctx.attr.errorSummary },
+                                toolDetail = { ctx.attr.toolDetail },
+                                compact = { ctx.attr.compact },
+                                isJsonNodeExpanded = ctx.attr.isJsonNodeExpanded,
+                                onToggleJsonNode = ctx.attr.onToggleJsonNode,
+                                colors = { ctx.attr.colors },
+                                webCard = { ctx.attr.webCard },
+                                searchCard = { ctx.attr.searchCard },
+                                onCopy = ctx.attr.onCopyToolCommand,
+                            )
+                        }
+                        vif({ !ctx.bodyExpanded }) {
+                            Scroller {
+                                attr {
+                                    height(if (ctx.attr.bodyContentHeight > 0f) minOf(ctx.attr.bodyContentHeight, ctx.attr.bodyMaxHeight) else ctx.attr.bodyMaxHeight)
+                                }
+                                View {
+                                    attr { flexDirectionColumn() }
+                                    DshDisclosureBodyContent(
+                                        askCard = { ctx.attr.askCard },
+                                        jsonContent = { ctx.attr.jsonContent },
+                                        contextDetail = { ctx.attr.contextDetail },
+                                        body = { ctx.attr.body },
+                                        plainBody = { ctx.attr.plainBody },
+                                        error = { ctx.attr.errorSummary },
+                                        toolDetail = { ctx.attr.toolDetail },
+                                        compact = { ctx.attr.compact },
+                                        isJsonNodeExpanded = ctx.attr.isJsonNodeExpanded,
+                                        onToggleJsonNode = ctx.attr.onToggleJsonNode,
+                                        colors = { ctx.attr.colors },
+                                        webCard = { ctx.attr.webCard },
+                                        searchCard = { ctx.attr.searchCard },
+                                        onCopy = ctx.attr.onCopyToolCommand,
+                                    )
+                                }
+                            }
+                        }
+                        // 底部展开/收起装饰：长内容可点开看全文。
                         View {
                             attr {
-                                marginTop(6f)
-                                marginBottom(8f)
-                                flexDirectionColumn()
-                                if (ctx.attr.bodyChrome) {
-                                    padding(12f, 12f, 12f, 12f)
-                                    borderRadius(8f)
-                                    backgroundColor(ctx.attr.colors.bgModulePlatform)
-                                }
+                                height(30f)
+                                allCenter()
                             }
-                        vif({ ctx.attr.askCard != null }) {
-                            DshAskQuestionCard {
-                                attr {
-                                    card = ctx.attr.askCard
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isNotEmpty() }) {
-                            DshJsonTree {
-                                attr {
-                                    content = ctx.attr.jsonContent
-                                    this.isExpanded = ctx.attr.isJsonNodeExpanded
-                                    this.onToggle = ctx.attr.onToggleJsonNode
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail != null }) {
-                            DshContextDetails {
-                                attr {
-                                    detail = ctx.attr.contextDetail
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isNotEmpty() }) {
-                            if (ctx.attr.plainBody) {
-                                Text {
+                            vbind({ ctx.bodyExpanded }) {
+                                Image {
                                     attr {
-                                        text(ctx.attr.body)
-                            fontSize(if (ctx.attr.compact) 13f else 14f)
-                                        lineHeight(24f)
-                                        color(ctx.attr.colors.labelSecondary)
-                                        marginTop(6f)
-                                        marginLeft(22f)
-                                        marginRight(22f)
-                                    }
-                                }
-                            } else {
-                                DshLongText {
-                                    attr {
-                                        content = ctx.attr.body
-                                        error = ctx.attr.errorSummary
-                                        colors = ctx.attr.colors
+                                        src(ImageUri.commonAssets("chevron-down.svg"))
+                                        size(16f, 16f)
+                                        tintColor(ctx.attr.colors.labelTertiary)
+                                        transform(Rotate(if (ctx.bodyExpanded) 180f else 0f))
                                     }
                                 }
                             }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.toolDetail != null }) {
-                            DshToolDetails {
-                                attr {
-                                    detail = ctx.attr.toolDetail
-                                    colors = ctx.attr.colors
-                                }
+                            DshTapTarget {
+                                ctx.bodyExpanded = !ctx.bodyExpanded
                             }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
-                            Text {
-                                attr {
-                                    text("暂无输出")
-                                    fontSize(12f)
-                                    color(ctx.attr.colors.labelTertiary)
-                                    margin(10f)
-                                }
-                            }
-                        }
                         }
                     }
                 }
@@ -254,73 +272,22 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 backgroundColor(ctx.attr.colors.bgModulePlatform)
                             }
                         }
-                        vif({ ctx.attr.askCard != null }) {
-                            DshAskQuestionCard {
-                                attr {
-                                    card = ctx.attr.askCard
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isNotEmpty() }) {
-                            DshJsonTree {
-                                attr {
-                                    content = ctx.attr.jsonContent
-                                    this.isExpanded = ctx.attr.isJsonNodeExpanded
-                                    this.onToggle = ctx.attr.onToggleJsonNode
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail != null }) {
-                            DshContextDetails {
-                                attr {
-                                    detail = ctx.attr.contextDetail
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isNotEmpty() }) {
-                            if (ctx.attr.plainBody) {
-                                Text {
-                                    attr {
-                                        text(ctx.attr.body)
-                            fontSize(if (ctx.attr.compact) 13f else 14f)
-                                        lineHeight(24f)
-                                        color(ctx.attr.colors.labelSecondary)
-                                        marginTop(6f)
-                                        marginLeft(22f)
-                                        marginRight(22f)
-                                    }
-                                }
-                            } else {
-                                DshLongText {
-                                    attr {
-                                        content = ctx.attr.body
-                                        error = ctx.attr.errorSummary
-                                        colors = ctx.attr.colors
-                                    }
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.toolDetail != null }) {
-                            DshToolDetails {
-                                attr {
-                                    detail = ctx.attr.toolDetail
-                                    colors = ctx.attr.colors
-                                }
-                            }
-                        }
-                        vif({ ctx.attr.askCard == null && ctx.attr.jsonContent.isEmpty() && ctx.attr.contextDetail == null && ctx.attr.body.isEmpty() && ctx.attr.toolDetail == null }) {
-                            Text {
-                                attr {
-                                    text("暂无输出")
-                                    fontSize(12f)
-                                    color(ctx.attr.colors.labelTertiary)
-                                    margin(10f)
-                                }
-                            }
-                        }
+                        DshDisclosureBodyContent(
+                            askCard = { ctx.attr.askCard },
+                            jsonContent = { ctx.attr.jsonContent },
+                            contextDetail = { ctx.attr.contextDetail },
+                            body = { ctx.attr.body },
+                            plainBody = { ctx.attr.plainBody },
+                            error = { ctx.attr.errorSummary },
+                            toolDetail = { ctx.attr.toolDetail },
+                            compact = { ctx.attr.compact },
+                            isJsonNodeExpanded = ctx.attr.isJsonNodeExpanded,
+                            onToggleJsonNode = ctx.attr.onToggleJsonNode,
+                            colors = { ctx.attr.colors },
+                            webCard = { ctx.attr.webCard },
+                            searchCard = { ctx.attr.searchCard },
+                            onCopy = ctx.attr.onCopyToolCommand,
+                        )
                     }
                 }
             }
@@ -356,6 +323,659 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var toolDetail: DshToolDetail? by observable(null)
     var contextDetail: DshContextDetail? by observable(null)
     var onCopyToolCommand: (String) -> Unit by observable({})
+    /** 结构化 web 检索/抓取卡片（优先于通用文本）。 */
+    var webCard: com.example.dsh.conversation.DshWebCard? by observable(null)
+    /** 结构化 grep/glob 结果卡片（优先于通用文本）。 */
+    var searchCard: com.example.dsh.conversation.DshSearchCard? by observable(null)
+    /** 弹窗模式：展开时不铺在行内，而是把明细交给页面用底部弹层平铺展示。 */
+    var expandInModal: Boolean by observable(false)
+    var onRequestModal: (DshExpandedPayload) -> Unit by observable({})
+    /** 工具/思考行左侧竖向装饰线，用于把连续的过程行视觉连接起来。 */
+    var connector: Boolean by observable(false)
+}
+
+/** 把当前行内明细打包给弹窗渲染，字段与 attr 的展开 body 保持一致。 */
+internal fun DshDisclosureRowAttr.dshExpandedPayload(): DshExpandedPayload = DshExpandedPayload(
+    title = title,
+    iconAsset = iconAsset,
+    body = body,
+    plainBody = plainBody,
+    error = errorSummary,
+    jsonContent = jsonContent,
+    contextDetail = contextDetail,
+    toolDetail = toolDetail,
+    askCard = askCard,
+    webCard = webCard,
+    searchCard = searchCard,
+)
+
+/**
+ * 展开明细的统一渲染：行内展开与弹窗平铺共用同一套内容，两处保持一致。
+ * 各字段用 lambda 传入，保持对 attr 的响应式依赖（不要提前求值成局部变量）。
+ */
+internal fun ViewContainer<*, *>.DshDisclosureBodyContent(
+    askCard: () -> DshAskQuestionCard?,
+    jsonContent: () -> String,
+    contextDetail: () -> DshContextDetail?,
+    body: () -> String,
+    plainBody: () -> Boolean,
+    error: () -> Boolean,
+    toolDetail: () -> DshToolDetail?,
+    compact: () -> Boolean,
+    isJsonNodeExpanded: (String) -> Boolean,
+    onToggleJsonNode: (String) -> Unit,
+    colors: () -> DshColorTokens,
+    webCard: () -> com.example.dsh.conversation.DshWebCard? = { null },
+    searchCard: () -> com.example.dsh.conversation.DshSearchCard? = { null },
+    onCopy: (String) -> Unit = {},
+) {
+    val hasStructured = { askCard() != null || webCard() != null || searchCard() != null }
+    vif({ askCard() != null }) {
+        DshAskQuestionCard {
+            attr {
+                card = askCard()
+                this.colors = colors()
+            }
+        }
+    }
+    vif({ askCard() == null && webCard() != null }) {
+        DshWebResultCard {
+            attr {
+                card = webCard()
+                this.colors = colors()
+            }
+        }
+    }
+    vif({ askCard() == null && webCard() == null && searchCard() != null }) {
+        DshSearchResultCard {
+            attr {
+                card = searchCard()
+                this.colors = colors()
+                this.onCopy = onCopy
+            }
+        }
+    }
+    vif({ !hasStructured() && jsonContent().isNotEmpty() }) {
+        DshJsonTree {
+            attr {
+                content = jsonContent()
+                this.isExpanded = isJsonNodeExpanded
+                this.onToggle = onToggleJsonNode
+                this.colors = colors()
+            }
+        }
+    }
+    vif({ !hasStructured() && jsonContent().isEmpty() && contextDetail() != null }) {
+        DshContextDetails {
+            attr {
+                detail = contextDetail()
+                this.colors = colors()
+            }
+        }
+    }
+    vif({ !hasStructured() && jsonContent().isEmpty() && contextDetail() == null && body().isNotEmpty() }) {
+        if (plainBody()) {
+            DshLinkText {
+                attr {
+                    content = body()
+                    fontSize = if (compact()) 13f else 14f
+                    lineHeight = 24f
+                    textColor = colors().labelSecondary
+                    this.colors = colors()
+                }
+            }
+        } else {
+            DshLongText {
+                attr {
+                    content = body()
+                    this.error = error()
+                    this.colors = colors()
+                }
+            }
+        }
+    }
+    vif({ !hasStructured() && jsonContent().isEmpty() && contextDetail() == null && toolDetail() != null }) {
+        DshToolDetails {
+            attr {
+                detail = toolDetail()
+                this.colors = colors()
+            }
+        }
+    }
+    vif({ !hasStructured() && jsonContent().isEmpty() && contextDetail() == null && body().isEmpty() && toolDetail() == null }) {
+        Text {
+            attr {
+                text("暂无输出")
+                fontSize(12f)
+                color(colors().labelTertiary)
+                margin(10f)
+            }
+        }
+    }
+}
+
+/** 网页链接正文：逐行渲染，含 URL 的行整行可点击并在内置 WebView 打开。 */
+internal class DshLinkTextAttr : ComposeAttr() {
+    var content: String by observable("")
+    var fontSize: Float by observable(13f)
+    var lineHeight: Float by observable(21f)
+    var textColor: Color by observable(Color(0xFF1F1F23))
+    var monospace: Boolean by observable(false)
+    var indent: Boolean by observable(true)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal class DshLinkTextView : ComposeView<DshLinkTextAttr, ComposeEvent>() {
+    override fun createAttr(): DshLinkTextAttr = DshLinkTextAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    if (ctx.attr.indent) {
+                        marginTop(6f)
+                        marginLeft(22f)
+                        marginRight(22f)
+                    }
+                }
+                vfor({ ObservableList<String>().also { it.addAll(ctx.attr.content.split("\n")) } }) { line ->
+                    val url = dshFirstUrl(line)
+                    if (url != null) {
+                        Text {
+                            attr {
+                                text(line.trim())
+                                fontSize(ctx.attr.fontSize)
+                                lineHeight(ctx.attr.lineHeight)
+                                color(ctx.attr.colors.stateBusinessPrimary)
+                                if (ctx.attr.monospace) fontFamily("monospace")
+                            }
+                            event { click { ctx.dshOpenLink(url) } }
+                        }
+                    } else {
+                        Text {
+                            attr {
+                                text(line)
+                                fontSize(ctx.attr.fontSize)
+                                lineHeight(ctx.attr.lineHeight)
+                                color(ctx.attr.textColor)
+                                if (ctx.attr.monospace) fontFamily("monospace")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun ViewContainer<*, *>.DshLinkText(init: DshLinkTextView.() -> Unit) {
+    addChild(DshLinkTextView(), init)
+}
+
+private val dshUrlRegex = Regex("https?://[^\\s)\\]}>\"']+")
+
+internal fun dshFirstUrl(text: String): String? = dshUrlRegex.find(text)?.value
+
+/** 在内置 WebView 页打开链接（与 Markdown 链接、导出等共用 link_view 页面）。 */
+internal fun ComposeView<*, *>.dshOpenLink(url: String) {
+    val target = url.trim()
+    if (target.isEmpty()) return
+    runCatching {
+        getPager().acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
+            "link_view",
+            JSONObject().apply {
+                put("pageName", "link_view")
+                put("url", target)
+            },
+        )
+    }
+}
+
+private fun dshLinkHost(url: String): String {
+    val withoutScheme = url.substringAfter("://", url)
+    val host = withoutScheme.substringBefore('/').substringBefore('?').substringBefore('#')
+    return host.ifEmpty { url }
+}
+
+/** 链接的可见文案：优先标题，其次域名（对齐 WebBlock 的 linkLabel）。 */
+private fun dshLinkLabel(url: String, title: String): String =
+    title.ifEmpty { dshLinkHost(url) }
+
+/**
+ * 结构化 web 检索/抓取卡片（对齐电脑端 WebBlock）。
+ * 检索：可选 answer + 编号来源列表（标题/域名可点、snippet、发布时间）；
+ * 抓取：URL + HTTP 状态。整体左对齐。
+ */
+internal class DshWebResultCardAttr : ComposeAttr() {
+    var card: com.example.dsh.conversation.DshWebCard? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+}
+
+internal class DshWebResultCardView : ComposeView<DshWebResultCardAttr, ComposeEvent>() {
+    override fun createAttr(): DshWebResultCardAttr = DshWebResultCardAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val card = ctx.attr.card ?: return { View { } }
+        val linkColor = ctx.attr.colors.stateBusinessPrimary
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    alignItems(FlexAlign.FLEX_START)
+                    marginTop(6f)
+                    padding(12f, 14f, 12f, 14f)
+                    borderRadius(10f)
+                    backgroundColor(ctx.attr.colors.markdownCodeBlock)
+                }
+                if (card.isFetch) {
+                    View {
+                        attr {
+                            flexDirectionRow()
+                            alignItemsCenter()
+                        }
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("icon-globe14.svg"))
+                                size(14f, 14f)
+                                tintColor(linkColor)
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(card.url)
+                                flex(1f)
+                                marginLeft(6f)
+                                fontSize(13f)
+                                lineHeight(19f)
+                                fontFamily("monospace")
+                                color(linkColor)
+                            }
+                            event { click { ctx.dshOpenLink(card.url) } }
+                        }
+                    }
+                    Text {
+                        attr {
+                            text(if (card.truncated) "HTTP ${card.statusCode} · 内容已截断" else "HTTP ${card.statusCode}")
+                            marginTop(6f)
+                            fontSize(12f)
+                            color(ctx.attr.colors.labelSecondary)
+                        }
+                    }
+                } else {
+                    if (card.answer.isNotEmpty()) {
+                        Text {
+                            attr {
+                                text(card.answer)
+                                fontSize(14f)
+                                lineHeight(21f)
+                                color(ctx.attr.colors.labelPrimary)
+                            }
+                        }
+                    }
+                    if (card.sources.isEmpty() && card.answer.isEmpty()) {
+                        Text {
+                            attr {
+                                text("未找到相关结果")
+                                fontSize(13f)
+                                color(ctx.attr.colors.labelSecondary)
+                            }
+                        }
+                    } else {
+                        card.sources.forEachIndexed { index, source ->
+                            View {
+                                attr {
+                                    flexDirectionColumn()
+                                    alignItems(FlexAlign.FLEX_START)
+                                    if (index > 0 || card.answer.isNotEmpty()) marginTop(10f)
+                                }
+                                View {
+                                    attr {
+                                        flexDirectionRow()
+                                        alignItems(FlexAlign.FLEX_START)
+                                    }
+                                    Text {
+                                        attr {
+                                            text("${index + 1}.")
+                                            fontSize(13f)
+                                            lineHeight(20f)
+                                            color(ctx.attr.colors.labelTertiary)
+                                            marginRight(6f)
+                                        }
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("icon-globe14.svg"))
+                                            size(14f, 14f)
+                                            marginTop(3f)
+                                            marginRight(5f)
+                                            tintColor(linkColor)
+                                        }
+                                    }
+                                    Text {
+                                        attr {
+                                            text(dshLinkLabel(source.url, source.title))
+                                            flex(1f)
+                                            fontSize(14f)
+                                            lineHeight(20f)
+                                            fontWeightMedium()
+                                            color(linkColor)
+                                        }
+                                        event { click { ctx.dshOpenLink(source.url) } }
+                                    }
+                                }
+                                if (source.snippet.isNotEmpty()) {
+                                    Text {
+                                        attr {
+                                            text(source.snippet)
+                                            marginTop(2f)
+                                            fontSize(13f)
+                                            lineHeight(19f)
+                                            color(ctx.attr.colors.labelSecondary)
+                                        }
+                                    }
+                                }
+                                if (source.publishedAt.isNotEmpty()) {
+                                    Text {
+                                        attr {
+                                            text(source.publishedAt)
+                                            marginTop(2f)
+                                            fontSize(12f)
+                                            color(ctx.attr.colors.labelTertiary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (card.truncated) {
+                        Text {
+                            attr {
+                                text("结果已截断")
+                                marginTop(8f)
+                                fontSize(12f)
+                                color(ctx.attr.colors.labelTertiary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun ViewContainer<*, *>.DshWebResultCard(init: DshWebResultCardView.() -> Unit) {
+    addChild(DshWebResultCardView(), init)
+}
+
+/**
+ * 结构化 grep/glob 结果卡片（对齐电脑端 SearchBlock）：
+ * 顶部横幅摘要 + 复制，正文等宽展示文件分组命中 / 路径列表，整体左对齐。
+ */
+internal class DshSearchResultCardAttr : ComposeAttr() {
+    var card: com.example.dsh.conversation.DshSearchCard? by observable(null)
+    var colors: DshColorTokens by observable(DshDefaultTheme.light)
+    var onCopy: (String) -> Unit by observable({})
+}
+
+internal class DshSearchResultCardView : ComposeView<DshSearchResultCardAttr, ComposeEvent>() {
+    override fun createAttr(): DshSearchResultCardAttr = DshSearchResultCardAttr()
+    override fun createEvent(): ComposeEvent = ComposeEvent()
+
+    override fun body(): ViewBuilder {
+        val ctx = this
+        val card = ctx.attr.card ?: return { View { } }
+        val shown = if (card.pathsOnly) card.paths.size else card.files.sumOf { it.matches.size }
+        val summary = if (card.pathsOnly) {
+            if (card.truncated) "显示 $shown / 共 ${card.total} 个路径" else "共 $shown 个路径"
+        } else {
+            if (card.truncated) "显示 $shown / 共 ${card.total} 处匹配 · ${card.files.size} 个文件"
+            else "$shown 处匹配 · ${card.files.size} 个文件"
+        }
+        val lineHeight = 22f
+        val bodyHeight = (card.rowCount * 22f).coerceIn(22f, 300f)
+        return {
+            View {
+                attr {
+                    flexDirectionColumn()
+                    alignItems(FlexAlign.FLEX_START)
+                    marginTop(6f)
+                    borderRadius(10f)
+                    backgroundColor(ctx.attr.colors.markdownCodeBlock)
+                }
+                // 横幅：摘要 + 复制（对齐 SearchBlock.header）
+                View {
+                    attr {
+                        flexDirectionRow()
+                        alignItemsCenter()
+                        padding(9f, 14f, 9f, 14f)
+                        backgroundColor(ctx.attr.colors.markdownCodeBlockBanner)
+                    }
+                    Text {
+                        attr {
+                            text(summary)
+                            flex(1f)
+                            fontSize(12f)
+                            color(ctx.attr.colors.labelSecondary)
+                        }
+                    }
+                    Text {
+                        attr {
+                            text("复制")
+                            fontSize(12f)
+                            color(ctx.attr.colors.labelSecondary)
+                        }
+                        event { click { ctx.attr.onCopy(dshSearchCardCopyText(card)) } }
+                    }
+                }
+                Scroller {
+                    attr { height(bodyHeight) }
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            alignItems(FlexAlign.FLEX_START)
+                            paddingLeft(14f)
+                            paddingRight(14f)
+                            paddingTop(8f)
+                            paddingBottom(10f)
+                        }
+                        if (card.pathsOnly) {
+                            card.paths.forEach { path ->
+                                Text {
+                                    attr {
+                                        text(path)
+                                        fontSize(12f)
+                                        lineHeight(lineHeight)
+                                        fontFamily("monospace")
+                                        color(ctx.attr.colors.labelPrimary)
+                                    }
+                                }
+                            }
+                        } else {
+                            card.files.forEach { file ->
+                                View {
+                                    attr {
+                                        flexDirectionRow()
+                                        alignItems(FlexAlign.FLEX_START)
+                                    }
+                                    Text {
+                                        attr {
+                                            text(file.path)
+                                            flex(1f)
+                                            fontSize(12f)
+                                            lineHeight(lineHeight)
+                                            fontFamily("monospace")
+                                            fontWeightBold()
+                                            color(ctx.attr.colors.labelPrimary)
+                                        }
+                                    }
+                                    Text {
+                                        attr {
+                                            text("${file.matches.size}")
+                                            marginLeft(8f)
+                                            fontSize(12f)
+                                            lineHeight(lineHeight)
+                                            color(ctx.attr.colors.labelTertiary)
+                                        }
+                                    }
+                                }
+                                file.matches.forEach { match ->
+                                    View {
+                                        attr {
+                                            flexDirectionRow()
+                                            alignItems(FlexAlign.FLEX_START)
+                                        }
+                                        Text {
+                                            attr {
+                                                text("${match.lineNumber}: ")
+                                                fontSize(12f)
+                                                lineHeight(lineHeight)
+                                                fontFamily("monospace")
+                                                color(ctx.attr.colors.labelTertiary)
+                                            }
+                                        }
+                                        Text {
+                                            attr {
+                                                text(match.line)
+                                                flex(1f)
+                                                fontSize(12f)
+                                                lineHeight(lineHeight)
+                                                fontFamily("monospace")
+                                                color(ctx.attr.colors.labelPrimary)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun ViewContainer<*, *>.DshSearchResultCard(init: DshSearchResultCardView.() -> Unit) {
+    addChild(DshSearchResultCardView(), init)
+}
+
+/** SearchBlock 的纯文本复制形式（完整结果，与卡片当前展示无关）。 */
+private fun dshSearchCardCopyText(card: com.example.dsh.conversation.DshSearchCard): String =
+    if (card.pathsOnly) {
+        card.paths.joinToString("\n")
+    } else {
+        card.files.joinToString("\n\n") { file ->
+            (listOf(file.path) + file.matches.map { "${it.lineNumber}: ${it.line}" }).joinToString("\n")
+        }
+    }
+
+/**
+ * 「弹窗查看」底部大弹层：平铺明细、去掉行内灰色容器，内容直接滚动。
+ * 与行内展开共用 [DshDisclosureBodyContent]，保证两种方式看到的内容一致。
+ */
+internal fun ViewContainer<*, *>.DshExpandedContentModal(
+    payload: () -> DshExpandedPayload?,
+    isJsonNodeExpanded: (String) -> Boolean = { false },
+    onToggleJsonNode: (String) -> Unit = {},
+    onClose: () -> Unit,
+    colors: () -> DshColorTokens = { DshDefaultTheme.light },
+) {
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            flexDirectionColumn()
+            justifyContentFlexEnd()
+            backgroundColor(Color(0x66000000))
+        }
+        View {
+            attr { flex(1f) }
+            event { click { onClose() } }
+        }
+        vif({ payload() != null }) {
+            val p = payload()!!
+            View {
+                attr {
+                    maxHeight(pagerData.pageViewHeight * 0.82f)
+                    flexDirectionColumn()
+                    backgroundColor(colors().bgLayer1)
+                    borderRadius(BorderRectRadius(18f, 18f, 0f, 0f))
+                }
+                View {
+                    attr {
+                        height(52f)
+                        flexDirectionRow()
+                        alignItemsCenter()
+                        paddingLeft(16f)
+                        paddingRight(8f)
+                    }
+                    vif({ p.iconAsset.isNotEmpty() }) {
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets(p.iconAsset))
+                                size(16f, 16f)
+                                tintColor(colors().labelTertiary)
+                            }
+                        }
+                    }
+                    Text {
+                        attr {
+                            text(p.title)
+                            flex(1f)
+                            marginLeft(8f)
+                            fontSize(15f)
+                            fontWeightMedium()
+                            color(colors().labelPrimary)
+                        }
+                    }
+                    View {
+                        attr { size(36f, 36f); allCenter() }
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("x.svg"))
+                                size(18f, 18f)
+                                tintColor(colors().labelSecondary)
+                            }
+                        }
+                        event { click { onClose() } }
+                    }
+                }
+                View {
+                    attr {
+                        height(1f)
+                        backgroundColor(colors().borderL1)
+                    }
+                }
+                Scroller {
+                    attr { flex(1f) }
+                    View {
+                        attr {
+                            flexDirectionColumn()
+                            paddingBottom(20f)
+                        }
+                        DshDisclosureBodyContent(
+                            askCard = { p.askCard },
+                            jsonContent = { p.jsonContent },
+                            contextDetail = { p.contextDetail },
+                            body = { p.body },
+                            plainBody = { p.plainBody },
+                            error = { p.error },
+                            toolDetail = { p.toolDetail },
+                            compact = { false },
+                            isJsonNodeExpanded = isJsonNodeExpanded,
+                            onToggleJsonNode = onToggleJsonNode,
+                            colors = colors,
+                            webCard = { p.webCard },
+                            searchCard = { p.searchCard },
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** The durable context fields retain their producer-specific presentation after expansion. */
@@ -674,13 +1294,26 @@ internal class DshToolDetailSectionView : ComposeView<DshToolDetailSectionAttr, 
                 }
                 Scroller {
                     attr { height(180f) }
-                    Text {
-                        attr {
-                            text(ctx.attr.content)
-                            fontSize(if (ctx.attr.code) 12f else 13f)
-                            lineHeight(if (ctx.attr.code) 18f else 21f)
-                            if (ctx.attr.code) fontFamily("monospace")
-                            color(if (ctx.attr.error) ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelSecondary)
+                    if (ctx.attr.code) {
+                        Text {
+                            attr {
+                                text(ctx.attr.content)
+                                fontSize(12f)
+                                lineHeight(18f)
+                                fontFamily("monospace")
+                                color(if (ctx.attr.error) ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelSecondary)
+                            }
+                        }
+                    } else {
+                        DshLinkText {
+                            attr {
+                                content = ctx.attr.content
+                                fontSize = 13f
+                                lineHeight = 21f
+                                textColor = if (ctx.attr.error) ctx.attr.colors.stateErrorPrimary else ctx.attr.colors.labelSecondary
+                                indent = false
+                                this.colors = ctx.attr.colors
+                            }
                         }
                     }
                 }

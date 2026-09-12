@@ -83,6 +83,31 @@ internal class DshHostRepository(
         }) { _, error -> if (error == null) onSuccess() else onError(error) }
     }
 
+    override fun loadModelsSettings(onSuccess: (DshModelsSettings) -> Unit, onError: (String) -> Unit) {
+        dshLoadModelsSettings(call = ::request, onSuccess = onSuccess, onError = onError)
+    }
+
+    override fun mutateSetting(ns: String, ops: JSONArray, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.SETTINGS_MUTATE, JSONObject().apply {
+            put("ns", ns)
+            put("ops", ops)
+            if (expectedRevision > 0) put("expectedRevision", expectedRevision)
+        }) { _, error -> if (error == null) onSuccess() else onError(error ?: "settings.mutate 失败") }
+    }
+
+    override fun setCredential(ref: String, value: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.CREDENTIALS_SET, JSONObject().apply {
+            put("ref", ref)
+            put("value", value)
+        }) { _, error -> if (error == null) onSuccess() else onError(error) }
+    }
+
+    override fun unsetCredential(ref: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        request(DshHostProtocol.CREDENTIALS_UNSET, JSONObject().apply {
+            put("ref", ref)
+        }) { _, error -> if (error == null) onSuccess() else onError(error) }
+    }
+
     override fun loadAgentPresets(onSuccess: (List<DshAgentPresetOption>) -> Unit, onError: (String) -> Unit) {
         request(DshHostProtocol.AGENT_PRESET_LIST, JSONObject()) { value, error ->
             if (error != null || value == null) {

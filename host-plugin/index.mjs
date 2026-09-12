@@ -9,6 +9,8 @@
  * - `/api/session-manager/meta`             session createdAt/cwd metadata for the
  *                                           mobile archive page's sort and project
  *                                           grouping, read from `sessionPersistence.list()`.
+ * - `/api/session-manager/unarchive`        restore one archived session to the
+ *                                           registry-global archive set.
  * - `/api/session-manager/delete`           delete one session's backend artifact.
  * - `/api/session-manager/deleteMany`       delete a batch (all / per project).
  *
@@ -29,6 +31,7 @@ export const ACTION_PATH = '/api/mobile-plugin-inventory/v1/action'
 export const SESSION_META_PATH = '/api/session-manager/meta'
 export const SESSION_DELETE_PATH = '/api/session-manager/delete'
 export const SESSION_DELETE_MANY_PATH = '/api/session-manager/deleteMany'
+export const SESSION_UNARCHIVE_PATH = '/api/session-manager/unarchive'
 const BRIDGE_NAME = 'dsh-mobile-plugin-inventory'
 const phases = ['pending', 'loading', 'active', 'failed', null, 'unloading']
 const secretKey = /token|password|passphrase|secret|authorization|api.?key|access.?ticket|private.?key|credential/i
@@ -225,6 +228,39 @@ export async function deleteSession(ctx, sessionId) {
   return sessionId
 }
 
+/**
+ * Restore one archived session. The archive set is private registry state with
+ * no public unarchive method, so this reaches the registry's own serialized
+ * write path and durable global. `setState` writes the `workspace` domain
+ * global, which emits `domain/changed`; the Host apiproxy turns that into
+ * `host/archived-sessions-changed`, so both the computer and the phone update
+ * without a manual refresh. Storage/serialization internals are still TS
+ * `private`, hence the runtime feature detection and readable refusal.
+ */
+export async function unarchiveSession(ctx, sessionId) {
+  if (typeof sessionId !== 'string' || sessionId.length === 0) throw new Error('缺少 sessionId')
+  const registry = ctx.get('workspaceRegistry')
+  if (!registry || registry.state === undefined || typeof registry.setState !== 'function') {
+    throw new Error('当前 Host 版本不支持取消归档（workspace registry 状态不可用）')
+  }
+  const task = async () => {
+    const state = registry.state
+    const current = Array.isArray(state.archivedSessionIds) ? state.archivedSessionIds : []
+    if (!current.includes(sessionId)) return sessionId
+    await registry.setState({
+      ...state,
+      archivedSessionIds: current.filter(id => id !== sessionId),
+    })
+    return sessionId
+  }
+  // Serialize against every other registry write (archive included) so a
+  // check-then-write pair cannot interleave; fall back to a direct write when
+  // the private queue is unavailable.
+  return typeof registry.enqueueOperation === 'function'
+    ? registry.enqueueOperation(task)
+    : task()
+}
+
 function createSessionHandler(ctx, kind) {
   return async (req, res) => {
     if (!guard(req, res)) return
@@ -244,6 +280,11 @@ function createSessionHandler(ctx, kind) {
     try {
       if (kind === 'delete') {
         const sessionId = await deleteSession(ctx, body.sessionId)
+        send(res, 200, { ok: true, sessionId })
+        return
+      }
+      if (kind === 'unarchive') {
+        const sessionId = await unarchiveSession(ctx, body.sessionId)
         send(res, 200, { ok: true, sessionId })
         return
       }
@@ -274,4 +315,6 @@ export function apply(ctx) {
     'mobile-session-delete.route')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: SESSION_DELETE_MANY_PATH, handler: createSessionHandler(ctx, 'deleteMany') }),
     'mobile-session-delete-many.route')
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: SESSION_UNARCHIVE_PATH, handler: createSessionHandler(ctx, 'unarchive') }),
+    'mobile-session-unarchive.route')
 }

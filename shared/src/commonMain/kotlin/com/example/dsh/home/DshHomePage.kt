@@ -80,8 +80,11 @@ internal class DshHomePage : BasePager() {
     private var exportSelectSessionId = ""
     private var pendingExportSelectionSessionId = ""
     private var pendingExportSelectionPreselect = ""
-    private var exportSelectedIds by observable(emptySet<String>())
-    private var exportFormat by observable(DshExportFormat.TXT)
+    // 以「对话组」为单位选择：key 由组内用户 Prompt（无则助手）消息 id 生成
+    private var exportSelectedGroups by observable(emptySet<String>())
+    private var exportFormat by observable(DshExportFormat.HTML)
+    private var exportMoreShareVisible by observable(false)
+    private var exportPdfBusy by observable(false)
     private var timelineReadVersion = 0
     private var pluginInventoryVisible by observable(false)
     private var pluginInventoryLoading by observable(false)
@@ -92,9 +95,10 @@ internal class DshHomePage : BasePager() {
     private var pluginInventory = emptyList<DshPluginEntry>()
     private val pluginRows by observableList<DshPluginEntry>()
     private var pluginRequestVersion = 0
-    private var pluginDetail by observable<DshPluginEntry?>(null)
+    private var pluginExpandedId by observable("")
+    private var pluginActionTarget by observable<DshPluginEntry?>(null)
     private var pluginConfirmAction by observable("")
-    private var pluginActionBusy by observable(false)
+    private var pluginBusyId by observable("")
     private var pluginActionError by observable("")
     private var pluginNotice by observable("")
     private var engineModule: DshEngineModule? = null
@@ -181,6 +185,7 @@ internal class DshHomePage : BasePager() {
     private var permissionValue by observable("workspace-write")
     private var permissionLabel by observable("工作区写入")
     private var agentModePickerVisible by observable(false)
+    private var agentModePickerTitle by observable("选择模式")
     private var agentModeValue by observable("standard")
     private var agentModeLabel by observable("标准模式")
     // 电脑端 agentPreset.list 拉取的预设（空则回退本地四项）
@@ -195,6 +200,27 @@ internal class DshHomePage : BasePager() {
     private var settingsChoiceKind by observable("")
     private var settingsChoiceBusy by observable(false)
     private val settingsChoiceOptions by observableList<DshSettingsChoice>()
+    // 个性化「对话展示」：过程折叠方式（互斥）+ 弹窗查看开关（本地持久化）
+    private var personalizationPageVisible by observable(false)
+    private var chatProcessMode by observable(DshProcessDisplayMode.UNIFIED)
+    private var chatExpandInModal by observable(false)
+    private var chatShowConnectors by observable(true)
+    private var chatShowResultCards by observable(true)
+    private var expandedPayload by observable<DshExpandedPayload?>(null)
+    // 设置页「模型」详情页（对齐电脑端 settings.models）
+    private var modelsPageVisible by observable(false)
+    private var modelsLoading by observable(false)
+    private var modelsError by observable("")
+    private var modelsWritable by observable(false)
+    private val modelsProviders by observableList<DshProviderConfig>()
+    private var modelsEditingProvider by observable("")
+    private var modelsDraftBaseUrl by observable("")
+    private var modelsDraftApiKey by observable("")
+    private val modelsDraftModels by observableList<DshProviderModel>()
+    private var modelsSaving by observable(false)
+    private var modelsSaveError by observable("")
+    private var modelsDeleteTarget by observable<DshProviderConfig?>(null)
+    private var modelsDeleting by observable(false)
     private var commandSheetVisible by observable(false)
     private var voiceActive by observable(false)
     private var inputView: TextAreaView? = null
@@ -260,13 +286,19 @@ internal class DshHomePage : BasePager() {
     private var turnStatusMark: TimeMark? = null
     private var turnStatusTickerGeneration = 0
     private var turnStatusClockBucket = -1L
-    private var workspaceBrowserVisible by observable(false)
-    private var workspaceBrowserPath by observable("")
-    private var workspaceBrowserHome by observable("")
-    private var workspaceBrowserBusy by observable(false)
-    private var workspaceBrowserError by observable("")
-    private var workspaceBrowserNewName by observable("")
-    private val workspaceDirectoryEntries by observableList<DshDirectoryEntry>()
+    // ===== 新建会话-工作区选择（最近的文件夹 / 添加文件夹） =====
+    private var workspacePickerVisible by observable(false)
+    private var workspacePickerScreen by observable(DshWorkspacePickerScreen.RECENT)
+    private var workspacePickerBusy by observable(false)
+    private var workspacePickerError by observable("")
+    private var workspaceAddPath by observable("")
+    private var workspaceAddHome by observable("")
+    private var workspaceAddBusy by observable(false)
+    private var workspaceAddNewName by observable("")
+    private val workspaceAddEntries by observableList<DshDirectoryEntry>()
+    // 「最近的文件夹」只列真实工作区（排除「未分组」占位），供 vfor 直接迭代。
+    private val workspacePickerFolders by observableList<DshWorkspaceGroup>()
+    private var workspacePickerGeneration = 0
     private var workspaceRenameTargetId by observable("")
     private var workspaceRenameDraft by observable("")
     private var workspaceDeleteTargetId by observable("")
@@ -279,9 +311,11 @@ internal class DshHomePage : BasePager() {
         override fun handleOnBackPressed() {
             when {
 
+                expandedPayload != null -> closeExpandedModal()
+                personalizationPageVisible -> closePersonalizationPage()
                 exportSelectMode -> cancelExportSelection()
                 settingsChoiceKind.isNotEmpty() -> { if (!settingsChoiceBusy) settingsChoiceKind = "" }
-                pluginInventoryVisible -> closePluginInventory()
+                pluginInventoryVisible -> handlePluginInventoryBack()
                 readableExportDialogVisible -> closeReadableExportDialog()
                 selectTextModalVisible -> closeSelectTextModal()
                 sessionDeleteVisible -> { if (!sessionDeleteBusy) sessionDeleteVisible = false }
@@ -294,9 +328,11 @@ internal class DshHomePage : BasePager() {
                 modelPickerVisible -> { if (modelEffortsVisible) modelEffortsVisible = false else modelPickerVisible = false }
                 commandSheetVisible -> commandSheetVisible = false
                 overflowMenuVisible -> closeOverflowMenu()
-                workspaceBrowserVisible -> workspaceBrowserVisible = false
+                workspacePickerVisible -> onWorkspacePickerBack()
                 credentialSetupVisible -> closeCredentialSettings()
                 sshSettingsVisible -> updateSshSettingsVisibility(false)
+                modelsDeleteTarget != null -> { if (!modelsDeleting) modelsDeleteTarget = null }
+                modelsPageVisible -> closeModelsPage()
                 settingsPageVisible -> closeSettingsPage()
 
                 sessionDrawerVisible -> closeSessionDrawer()
@@ -396,6 +432,14 @@ internal class DshHomePage : BasePager() {
         }
         registerLogPageNotifications()
         reportLastCrashIfAny()
+        // 恢复本地「对话展示」偏好（个性化子页面）。
+        runCatching {
+            val prefs = acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+            chatProcessMode = dshProcessDisplayFromValue(prefs.getItem(DSH_PREF_PROCESS_DISPLAY).orEmpty())
+            chatExpandInModal = prefs.getItem(DSH_PREF_EXPAND_MODAL) == "1"
+            chatShowConnectors = prefs.getItem(DSH_PREF_SHOW_CONNECTORS) != "0"
+            chatShowResultCards = prefs.getItem(DSH_PREF_SHOW_RESULT_CARDS) != "0"
+        }
         connectionMode = when (pageData.params.optString("connectionMode")) {
             "relay" -> DshConnectionMode.RELAY
             "ssh", "remote" -> DshConnectionMode.SSH
@@ -474,6 +518,7 @@ internal class DshHomePage : BasePager() {
                             totalCount = { ctx.exportTotalCount() },
                             allSelected = { ctx.exportAllSelected() },
                             onToggleAll = { ctx.toggleExportSelectAll() },
+                            onClose = { ctx.cancelExportSelection() },
                             colors = { this@DshHomePage.themeColors },
                         )
                     }
@@ -578,13 +623,18 @@ internal class DshHomePage : BasePager() {
                             onRetryPendingImage = { ctx.retryPendingImage(it) },
                                 onToggleVoice = { ctx.toggleVoice() },
                                 folderLabel = { ctx.composerFolderLabel() },
-                                onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
+                                onOpenWorkspacePicker = { ctx.openWorkspacePicker() },
                                 permissionValue = { ctx.permissionValue },
                                 permissionLabel = { ctx.permissionLabel },
                                 onOpenPermissions = { ctx.openPermissionPicker() },
                                 agentModeLabel = { ctx.agentModeLabel },
                                 onOpenAgentModes = { ctx.openAgentModePicker() },
                                 isWebTimeline = { ctx.isRemoteHost },
+                                processDisplayMode = { ctx.chatProcessMode },
+                                showConnectors = { ctx.chatShowConnectors },
+                                showResultCards = { ctx.chatShowResultCards },
+                                expandInModal = { ctx.chatExpandInModal },
+                                onOpenExpandedModal = { ctx.openExpandedModal(it) },
                                 isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                                 onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
                                 isJsonNodeExpanded = { messageId, nodeId ->
@@ -659,13 +709,17 @@ internal class DshHomePage : BasePager() {
                                 onDismissPreview = { ctx.previewImageUrl = null },
                                 onSaveImage = { ctx.saveImageToGallery(it) },
                                 exportSelectMode = { ctx.exportSelectMode },
-                                exportSelectedIds = { ctx.exportSelectedIds },
+                                exportSelectedIds = { ctx.exportSelectedMessageIds() },
                                 exportFormat = { ctx.exportFormat },
                                 exportSelectedCount = { ctx.exportSelectedCount() },
+                                exportMoreShareExpanded = { ctx.exportMoreShareVisible },
+                                exportPdfBusy = { ctx.exportPdfBusy },
                                 onToggleExportMessage = { ctx.toggleExportMessage(it) },
                                 onExportFormatChange = { ctx.exportFormat = it },
                                 onExportConfirm = { ctx.confirmExportSelection() },
-                                onExportCancel = { ctx.cancelExportSelection() },
+                                onExportPdf = { ctx.exportSelectionAsPdf() },
+                                onExportCopy = { ctx.copyExportSelection() },
+                                onExportMore = { ctx.toggleExportMoreShare() },
                             )
                             // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
                             //    工作目录、模型、运行状态、队列/作业数量。
@@ -729,8 +783,13 @@ internal class DshHomePage : BasePager() {
                             onRetryPendingImage = { ctx.retryPendingImage(it) },
                             onToggleVoice = { ctx.toggleVoice() },
                             folderLabel = { ctx.composerFolderLabel() },
-                            onOpenFolderBrowser = { ctx.workspaceBrowserVisible = true },
+                            onOpenWorkspacePicker = { ctx.openWorkspacePicker() },
                             isWebTimeline = { ctx.isRemoteHost },
+                            processDisplayMode = { ctx.chatProcessMode },
+                            showConnectors = { ctx.chatShowConnectors },
+                            showResultCards = { ctx.chatShowResultCards },
+                            expandInModal = { ctx.chatExpandInModal },
+                            onOpenExpandedModal = { ctx.openExpandedModal(it) },
                             isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
                             onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
                             isJsonNodeExpanded = { messageId, nodeId ->
@@ -805,13 +864,17 @@ internal class DshHomePage : BasePager() {
                             onDismissPreview = { ctx.previewImageUrl = null },
                             onSaveImage = { ctx.saveImageToGallery(it) },
                             exportSelectMode = { ctx.exportSelectMode },
-                            exportSelectedIds = { ctx.exportSelectedIds },
+                            exportSelectedIds = { ctx.exportSelectedMessageIds() },
                             exportFormat = { ctx.exportFormat },
                             exportSelectedCount = { ctx.exportSelectedCount() },
+                            exportMoreShareExpanded = { ctx.exportMoreShareVisible },
+                            exportPdfBusy = { ctx.exportPdfBusy },
                             onToggleExportMessage = { ctx.toggleExportMessage(it) },
                             onExportFormatChange = { ctx.exportFormat = it },
                             onExportConfirm = { ctx.confirmExportSelection() },
-                            onExportCancel = { ctx.cancelExportSelection() },
+                            onExportPdf = { ctx.exportSelectionAsPdf() },
+                            onExportCopy = { ctx.copyExportSelection() },
+                            onExportMore = { ctx.toggleExportMoreShare() },
                         )
                     }
 
@@ -889,6 +952,7 @@ internal class DshHomePage : BasePager() {
                         onClose = { ctx.closeArchiveList() },
                         onRefresh = { ctx.refreshArchiveList() },
                         onOpen = { ctx.openArchivedSession(it) },
+                        onUnarchive = { ctx.unarchiveArchivedSession(it) },
                         onRequestDelete = { ctx.requestArchiveDeleteSession(it) },
                         onRequestDeleteProject = { ctx.requestArchiveDeleteProject(it) },
                         onRequestDeleteAll = { ctx.requestArchiveDeleteAll() },
@@ -996,6 +1060,7 @@ internal class DshHomePage : BasePager() {
                 // 当前以本地预设为兜底；选中值存本地，未来在创建会话时随参数下发。
                 vif({ ctx.agentModePickerVisible }) {
                     DshAgentModePicker(
+                        title = { ctx.agentModePickerTitle },
                         options = {
                             ObservableList<DshAgentModeOption>().apply {
                                 if (ctx.agentPresetOptions.isEmpty()) {
@@ -1051,17 +1116,21 @@ internal class DshHomePage : BasePager() {
                         snapshot = { ctx.settingsSnapshot },
                         isRemoteHost = { ctx.isRemoteHost },
                         connectionModeLabel = { ctx.connectionModeLabel() },
-                        apiKeyConfigured = { ctx.pendingApiKey.isNotEmpty() },
+                        modelsSummary = { ctx.modelsSummary() },
                         hostVersion = { ctx.hostVersion },
                         themeMode = { this@DshHomePage.themeMode },
+                        processDisplayMode = { ctx.chatProcessMode },
+                        agentPresetLabel = { ctx.agentModeLabel },
                         onClose = { ctx.closeSettingsPage() },
                         onRetry = { ctx.reloadSettings() },
                         onOpenConnection = { ctx.openConnectionSettings() },
-                        onOpenApiKey = { ctx.openCredentialSettings() },
+                        onOpenModels = { ctx.openModelsPage() },
+                        onOpenPersonalization = { ctx.openPersonalizationPage() },
                         onPickPermission = { ctx.openSettingsChoice("permission", "工作区权限") },
                         onPickLocale = { ctx.openSettingsChoice("locale", "语言") },
                         onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
+                        onOpenAgentPresets = { ctx.openAgentModePicker("Agent 预设") },
                         onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
                         onOpenPlugins = { ctx.openPluginInventory() },
                         onDisconnect = { ctx.disconnectFromHost() },
@@ -1069,22 +1138,80 @@ internal class DshHomePage : BasePager() {
                     )
                 }
 
+                // ===== 设置页「个性化」子页面：过程展示方式（互斥）+ 弹窗查看开关 =====
+                vif({ ctx.personalizationPageVisible }) {
+                    DshPersonalizationPage(
+                        mode = { ctx.chatProcessMode },
+                        expandInModal = { ctx.chatExpandInModal },
+                        showConnectors = { ctx.chatShowConnectors },
+                        showResultCards = { ctx.chatShowResultCards },
+                        onPickMode = { ctx.applyChatProcessMode(it) },
+                        onToggleExpandInModal = { ctx.applyChatExpandInModal(it) },
+                        onToggleConnectors = { ctx.applyChatShowConnectors(it) },
+                        onToggleResultCards = { ctx.applyChatShowResultCards(it) },
+                        onClose = { ctx.closePersonalizationPage() },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+
+                // ===== 展开内容底部大弹层（「弹窗查看」开启时） =====
+                vif({ ctx.expandedPayload != null }) {
+                    DshExpandedContentModal(
+                        payload = { ctx.expandedPayload },
+                        onClose = { ctx.closeExpandedModal() },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+
                 vif({ ctx.pluginInventoryVisible }) {
                     DshPluginInventoryView(
                         rows = { ctx.pluginRows }, total = { ctx.pluginTotal }, loading = { ctx.pluginInventoryLoading },
-                        error = { ctx.pluginInventoryError }, keyword = { ctx.pluginKeyword }, phase = { ctx.pluginPhase },
-                        detail = { ctx.pluginDetail }, confirmAction = { ctx.pluginConfirmAction },
-                        actionBusy = { ctx.pluginActionBusy }, actionError = { ctx.pluginActionError },
-                        actionNotice = { ctx.pluginNotice },
+                        error = { ctx.pluginInventoryError }, keyword = { ctx.pluginKeyword },
+                        expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
+                        actionError = { ctx.pluginActionError }, actionNotice = { ctx.pluginNotice },
+                        confirmEntry = { ctx.pluginActionTarget }, confirmAction = { ctx.pluginConfirmAction },
                         onKeyword = { ctx.pluginKeyword = it; ctx.applyPluginFilters() },
-                        onPhase = { ctx.pluginPhase = it; ctx.applyPluginFilters() },
                         onRefresh = { ctx.refreshPluginInventory() }, onClose = { ctx.closePluginInventory() },
-                        onOpenDetail = { ctx.openPluginDetail(it) },
-                        onCloseDetail = { ctx.closePluginDetail() },
-                        onRequestAction = { entry, action -> ctx.requestPluginAction(entry, action) },
-                        onConfirmAction = { ctx.confirmPluginAction() },
-                        onCancelAction = { ctx.cancelPluginAction() },
+                        onToggleExpand = { ctx.togglePluginExpanded(it) },
+                        onToggleEnabled = { entry, enable -> ctx.requestPluginToggle(entry, enable) },
+                        onReload = { ctx.requestPluginReload(it) },
+                        onConfirm = { ctx.confirmPluginAction() },
+                        onCancelConfirm = { ctx.cancelPluginAction() },
                         colors = { ctx.themeColors },
+                    )
+                }
+
+                // ===== 设置页「模型」详情页（对齐电脑端 settings.models） =====
+                vif({ ctx.modelsPageVisible }) {
+                    DshModelsPage(
+                        loading = { ctx.modelsLoading },
+                        error = { ctx.modelsError },
+                        writable = { ctx.modelsWritable },
+                        providers = { ctx.modelsProviders },
+                        editingProvider = { ctx.modelsEditingProvider },
+                        draftBaseUrl = { ctx.modelsDraftBaseUrl },
+                        draftApiKey = { ctx.modelsDraftApiKey },
+                        draftModels = { ctx.modelsDraftModels },
+                        saving = { ctx.modelsSaving },
+                        saveError = { ctx.modelsSaveError },
+                        deleteTarget = { ctx.modelsDeleteTarget },
+                        deleting = { ctx.modelsDeleting },
+                        onClose = { ctx.closeModelsPage() },
+                        onRetry = { ctx.reloadModelsSettings() },
+                        onEdit = { ctx.openProviderEditor(it) },
+                        onBaseUrlChange = { ctx.modelsDraftBaseUrl = it; ctx.modelsSaveError = "" },
+                        onApiKeyChange = { ctx.modelsDraftApiKey = it; ctx.modelsSaveError = "" },
+                        onModelChange = { index, field, value ->
+                            ctx.updateDraftModel(index, field, value)
+                            ctx.modelsSaveError = ""
+                        },
+                        onAddModel = { ctx.addDraftModel() },
+                        onRemoveModel = { ctx.removeDraftModel(it) },
+                        onApply = { ctx.applyProviderEditor(it) },
+                        onRequestDelete = { ctx.requestRemoveProvider(it) },
+                        onConfirmDelete = { ctx.confirmRemoveProvider() },
+                        onCancelDelete = { ctx.modelsDeleteTarget = null },
+                        colors = { this@DshHomePage.themeColors },
                     )
                 }
 
@@ -1158,21 +1285,27 @@ internal class DshHomePage : BasePager() {
                         colors = { this@DshHomePage.themeColors },
                     )
                 }
-                // ===== 工作区浏览器弹窗 =====
-                // 仅远程模式：浏览/新建远程目录，并把当前目录设为工作区。
-                vif({ ctx.workspaceBrowserVisible && ctx.isRemoteHost }) {
-                    DshWorkspaceBrowserModal(
-                        path = { ctx.workspaceBrowserPath },
-                        home = { ctx.workspaceBrowserHome },
-                        entries = { ctx.workspaceDirectoryEntries },
-                        busy = { ctx.workspaceBrowserBusy },
-                        error = { ctx.workspaceBrowserError },
-                        newName = { ctx.workspaceBrowserNewName },
-                        onDirectorySelect = { ctx.loadDirectory(it) },
-                        onNewNameChange = { ctx.workspaceBrowserNewName = it },
-                        onCreateDirectory = { ctx.createRemoteDirectory() },
-                        onAdopt = { ctx.adoptCurrentDirectoryAsWorkspace() },
-                        onClose = { ctx.workspaceBrowserVisible = false },
+                // ===== 新建会话-工作区选择弹窗（最近的文件夹 / 添加文件夹） =====
+                // 仅远程模式、且当前会话尚未发送第一条消息（blank）时可用。
+                vif({ ctx.workspacePickerVisible && ctx.isRemoteHost }) {
+                    DshWorkspacePickerModal(
+                        screen = { ctx.workspacePickerScreen },
+                        folders = { ctx.workspacePickerFolders },
+                        activeWorkspaceId = { ctx.activeWorkspaceId() },
+                        busy = { ctx.workspacePickerBusy || ctx.workspaceAddBusy },
+                        error = { ctx.workspacePickerError },
+                        onSelectFolder = { ctx.switchWorkspaceTo(it) },
+                        onAddFolder = { ctx.openWorkspaceAddFolder() },
+                        onBack = { ctx.onWorkspacePickerBack() },
+                        onClose = { ctx.closeWorkspacePicker() },
+                        path = { ctx.workspaceAddPath },
+                        home = { ctx.workspaceAddHome },
+                        entries = { ctx.workspaceAddEntries },
+                        newName = { ctx.workspaceAddNewName },
+                        onDirectorySelect = { ctx.loadWorkspaceAddDirectory(it) },
+                        onNewNameChange = { ctx.workspaceAddNewName = it },
+                        onCreateDirectory = { ctx.createWorkspaceAddDirectory() },
+                        onAdopt = { ctx.adoptWorkspaceAddDirectory() },
                         colors = { this@DshHomePage.themeColors },
                     )
                 }
@@ -1884,6 +2017,7 @@ internal class DshHomePage : BasePager() {
         closeSessionDrawerImmediately()
         reloadSettings()
         loadHostVersion()
+        if (isRemoteHost) reloadModelsSettings(showLoading = false)
         settingsPageVisible = true
     }
 
@@ -1891,6 +2025,196 @@ internal class DshHomePage : BasePager() {
         settingsPageVisible = false
         settingsChoiceKind = ""
         settingsChoiceBusy = false
+    }
+
+    // ===== 个性化「对话展示」 =====
+    private fun openPersonalizationPage() {
+        personalizationPageVisible = true
+    }
+
+    private fun closePersonalizationPage() {
+        personalizationPageVisible = false
+    }
+
+    private fun applyChatProcessMode(mode: DshProcessDisplayMode) {
+        chatProcessMode = mode
+        runCatching {
+            acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                .setString(DSH_PREF_PROCESS_DISPLAY, dshProcessDisplayValue(mode))
+        }
+    }
+
+    private fun applyChatExpandInModal(enabled: Boolean) {
+        chatExpandInModal = enabled
+        runCatching {
+            acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                .setString(DSH_PREF_EXPAND_MODAL, if (enabled) "1" else "0")
+        }
+    }
+
+    private fun applyChatShowConnectors(enabled: Boolean) {
+        chatShowConnectors = enabled
+        runCatching {
+            acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                .setString(DSH_PREF_SHOW_CONNECTORS, if (enabled) "1" else "0")
+        }
+    }
+
+    private fun applyChatShowResultCards(enabled: Boolean) {
+        chatShowResultCards = enabled
+        runCatching {
+            acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+                .setString(DSH_PREF_SHOW_RESULT_CARDS, if (enabled) "1" else "0")
+        }
+    }
+
+    private fun openExpandedModal(payload: DshExpandedPayload) {
+        expandedPayload = payload
+    }
+
+    private fun closeExpandedModal() {
+        expandedPayload = null
+    }
+
+    /** 设置页「模型」摘要：已配置的提供方数量。 */
+    private fun modelsSummary(): String {
+        val configured = modelsProviders.count { it.configured }
+        return if (configured > 0) "已配置 $configured 个" else ""
+    }
+
+    private fun openModelsPage() {
+        dismissKeyboard()
+        modelsEditingProvider = ""
+        modelsSaveError = ""
+        modelsDeleteTarget = null
+        modelsPageVisible = true
+        reloadModelsSettings()
+    }
+
+    private fun closeModelsPage() {
+        modelsPageVisible = false
+        modelsEditingProvider = ""
+        modelsDraftApiKey = ""
+        modelsSaveError = ""
+        modelsDeleteTarget = null
+    }
+
+    private fun reloadModelsSettings(showLoading: Boolean = true) {
+        if (showLoading) {
+            modelsLoading = true
+            modelsError = ""
+        }
+        val repo = repository
+        if (repo == null) {
+            modelsLoading = false
+            if (showLoading) modelsError = "未连接电脑端"
+            return
+        }
+        repo.loadModelsSettings({
+            modelsWritable = it.writable
+            modelsProviders.clear()
+            modelsProviders.addAll(it.providers)
+            modelsError = ""
+            modelsLoading = false
+        }, {
+            modelsLoading = false
+            if (showLoading) modelsError = it else bridgeModule.toast("模型设置刷新失败：$it")
+        })
+    }
+
+    private fun openProviderEditor(provider: DshProviderConfig) {
+        if (modelsEditingProvider == provider.provider) {
+            modelsEditingProvider = ""
+            return
+        }
+        modelsEditingProvider = provider.provider
+        modelsDraftBaseUrl = provider.baseUrl
+        modelsDraftApiKey = ""
+        modelsSaveError = ""
+        modelsDraftModels.clear()
+        // 保留 raw，保存时才能带出未在编辑器展示的字段（如容量）。
+        modelsDraftModels.addAll(provider.models.map { it.copy() })
+    }
+
+    private fun updateDraftModel(index: Int, field: String, value: String) {
+        if (index !in 0 until modelsDraftModels.size) return
+        val current = modelsDraftModels[index]
+        modelsDraftModels[index] = when (field) {
+            "id" -> current.copy(id = value)
+            "name" -> current.copy(name = value)
+            else -> current
+        }
+    }
+
+    private fun addDraftModel() {
+        modelsDraftModels.add(DshProviderModel())
+    }
+
+    private fun removeDraftModel(index: Int) {
+        if (index in 0 until modelsDraftModels.size) modelsDraftModels.removeAt(index)
+    }
+
+    private fun applyProviderEditor(provider: DshProviderConfig) {
+        if (modelsSaving) return
+        if (modelsDraftModels.any { it.id.trim().isEmpty() }) {
+            modelsSaveError = "模型 ID 不能为空。"
+            return
+        }
+        val ids = modelsDraftModels.map { it.id.trim() }
+        if (ids.size != ids.toSet().size) {
+            modelsSaveError = "模型 ID 不能重复。"
+            return
+        }
+        val repo = repository
+        if (repo == null) {
+            modelsSaveError = "未连接电脑端"
+            return
+        }
+        modelsSaving = true
+        modelsSaveError = ""
+        dshSaveProviderProfile(
+            repo = repo,
+            provider = provider,
+            apiKey = modelsDraftApiKey.trim(),
+            baseUrl = modelsDraftBaseUrl,
+            models = modelsDraftModels.toList(),
+            onSuccess = {
+                modelsSaving = false
+                modelsEditingProvider = ""
+                modelsDraftApiKey = ""
+                reloadModelsSettings(showLoading = false)
+                reloadSettings(showLoading = false)
+            },
+            onError = {
+                modelsSaving = false
+                modelsSaveError = it
+            },
+        )
+    }
+
+    private fun requestRemoveProvider(provider: DshProviderConfig) {
+        modelsSaveError = ""
+        modelsDeleteTarget = provider
+    }
+
+    private fun confirmRemoveProvider() {
+        val provider = modelsDeleteTarget ?: return
+        if (modelsDeleting) return
+        val repo = repository
+        if (repo == null) {
+            bridgeModule.toast("未连接电脑端")
+            return
+        }
+        modelsDeleting = true
+        dshRemoveProviderProfile(repo, provider, {
+            modelsDeleting = false
+            modelsDeleteTarget = null
+            if (modelsEditingProvider == provider.provider) modelsEditingProvider = ""
+            reloadModelsSettings(showLoading = false)
+        }, {
+            modelsDeleting = false
+            bridgeModule.toast("删除提供方失败：$it")
+        })
     }
 
     private fun reloadSettings(showLoading: Boolean = true) {
@@ -1927,7 +2251,8 @@ internal class DshHomePage : BasePager() {
         DshConnectionMode.SSH -> "SSH 连接"
     }
 
-    private fun openAgentModePicker() {
+    private fun openAgentModePicker(title: String = "选择模式") {
+        agentModePickerTitle = title
         if (agentPresetOptions.isEmpty()) {
             val repo = repository
             repo?.loadAgentPresets({
@@ -2204,7 +2529,8 @@ internal class DshHomePage : BasePager() {
         pluginRequestVersion++
         pluginInventoryLoading = false
         pluginInventory = emptyList(); pluginRows.clear(); pluginTotal = 0
-        pluginDetail = null; pluginConfirmAction = ""; pluginActionBusy = false; pluginActionError = ""; pluginNotice = ""
+        pluginExpandedId = ""; pluginActionTarget = null; pluginConfirmAction = ""; pluginBusyId = ""
+        pluginActionError = ""; pluginNotice = ""
         if (pluginInventoryVisible) pluginInventoryError = "连接已断开，请连接 Host 后刷新"
         timelineReadVersion++
         val mode = connectionCoordinator.activeModeOr(connectionMode)
@@ -2896,6 +3222,7 @@ internal class DshHomePage : BasePager() {
     private fun refreshWorkspaceGroups() {
         if (!isRemoteHost) {
             workspaceGroups = ObservableList()
+            workspacePickerFolders.clear()
             return
         }
         val repository = repository as? DshRemoteRepository ?: return
@@ -2905,6 +3232,9 @@ internal class DshHomePage : BasePager() {
             group.copy(sessions = group.sessions.map { byId[it.id] ?: it }.sortedWith(comparator))
         }
         if (groups != workspaceGroups.toList()) workspaceGroups = ObservableList(groups.toMutableList())
+        val folders = groups.filter { it.workspaceId.isNotEmpty() }
+        workspacePickerFolders.clear()
+        workspacePickerFolders.addAll(folders)
     }
 
     private fun sessionSortComparator(): Comparator<DshSession> = when (sessionSort) {
@@ -3587,6 +3917,40 @@ internal class DshHomePage : BasePager() {
         archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.SESSION, sessionId, session.title, 1)
     }
 
+    /** 取消归档：走 host-plugin unarchive；成功后该会话回到主列表与工作区分组。 */
+    fun unarchiveArchivedSession(sessionId: String) {
+        if (archiveBusy) return
+        val remote = repository as? DshRemoteRepository ?: run {
+            archiveListError = "未连接 Host"
+            return
+        }
+        val connection = activeConnectionId
+        archiveBusy = true
+        archiveListError = ""
+        archiveNotice = ""
+        remote.unarchiveSession(sessionId) { _, error ->
+            setTimeout(pagerId, 0) {
+                if (!pageAlive || this.repository !== remote || activeConnectionId != connection) return@setTimeout
+                archiveBusy = false
+                if (error != null) {
+                    archiveListError = "取消归档失败：${error.message}"
+                    return@setTimeout
+                }
+                archiveNotice = "已取消归档"
+                archivedSessions.diffUpdate(archivedSessions.filterNot { it.id == sessionId }) { old, new -> old == new }
+                refreshVisibleSessions()
+                refreshWorkspaceGroups()
+                rebuildArchiveGroups()
+            }
+        }
+        setTimeout(pagerId, 35_000) {
+            if (pageAlive && archiveBusy) {
+                archiveBusy = false
+                archiveListError = "取消归档超时，请刷新确认结果"
+            }
+        }
+    }
+
     fun requestArchiveDeleteProject(group: DshWorkspaceGroup) {
         archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.PROJECT, group.workspaceId, group.title, group.sessions.size)
     }
@@ -3791,38 +4155,48 @@ internal class DshHomePage : BasePager() {
         refreshPluginInventory()
     }
 
+    /** 返回键：先关确认弹窗，再收起展开卡片，最后退出插件页。 */
+    private fun handlePluginInventoryBack() {
+        when {
+            pluginConfirmAction.isNotEmpty() -> cancelPluginAction()
+            pluginExpandedId.isNotEmpty() -> pluginExpandedId = ""
+            else -> closePluginInventory()
+        }
+    }
+
     private fun closePluginInventory() {
         pluginRequestVersion++
         pluginInventoryVisible = false
         pluginInventoryLoading = false
-        pluginDetail = null
+        pluginExpandedId = ""
+        pluginActionTarget = null
         pluginConfirmAction = ""
-        pluginActionBusy = false
+        pluginBusyId = ""
         pluginActionError = ""
         pluginNotice = ""
         settingsPageVisible = true
     }
 
-    private fun openPluginDetail(entry: DshPluginEntry) {
-        pluginDetail = entry
-        pluginConfirmAction = ""
-        pluginActionError = ""
-        pluginNotice = ""
+    private fun togglePluginExpanded(entry: DshPluginEntry) {
+        pluginExpandedId = if (pluginExpandedId == entry.id) "" else entry.id
     }
 
-    private fun closePluginDetail() {
-        pluginDetail = null
-        pluginConfirmAction = ""
-        pluginActionError = ""
-        pluginActionBusy = false
-    }
-
-    /** 启用无需确认；停用/重载先弹二次确认。 */
-    private fun requestPluginAction(entry: DshPluginEntry, action: String) {
-        pluginDetail = entry
+    /** 启用直接执行；停用先弹二次确认。 */
+    private fun requestPluginToggle(entry: DshPluginEntry, enable: Boolean) {
+        if (pluginBusyId.isNotEmpty()) return
+        pluginActionTarget = entry
         pluginActionError = ""
         pluginNotice = ""
-        if (action == "enable") performPluginAction(action) else pluginConfirmAction = action
+        if (enable) performPluginAction("enable") else pluginConfirmAction = "disable"
+    }
+
+    /** 重载先弹二次确认。 */
+    private fun requestPluginReload(entry: DshPluginEntry) {
+        if (pluginBusyId.isNotEmpty()) return
+        pluginActionTarget = entry
+        pluginActionError = ""
+        pluginNotice = ""
+        pluginConfirmAction = "reload"
     }
 
     private fun cancelPluginAction() {
@@ -3837,30 +4211,32 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun performPluginAction(action: String) {
-        val entry = pluginDetail ?: return
+        val entry = pluginActionTarget ?: run {
+            pluginActionError = "未选择插件"; return
+        }
         val remote = repository as? DshRemoteRepository ?: run {
             pluginActionError = "请先连接 Host"; return
         }
-        if (pluginActionBusy) return
+        if (pluginBusyId.isNotEmpty()) return
         val connection = activeConnectionId
-        pluginActionBusy = true
+        pluginBusyId = entry.id
         pluginActionError = ""
         pluginNotice = ""
         remote.pluginAction(entry.id, action, {
             if (pageAlive && connection == activeConnectionId) {
-                pluginActionBusy = false
+                pluginBusyId = ""
                 pluginNotice = "${pluginActionLabel(action)}指令已下发，正在刷新状态"
                 refreshPluginInventory()
             }
         }, { error ->
             if (pageAlive && connection == activeConnectionId) {
-                pluginActionBusy = false
+                pluginBusyId = ""
                 pluginActionError = error
             }
         })
         setTimeout(35_000) {
-            if (pageAlive && pluginActionBusy && connection == activeConnectionId) {
-                pluginActionBusy = false
+            if (pageAlive && pluginBusyId == entry.id && connection == activeConnectionId) {
+                pluginBusyId = ""
                 pluginActionError = "操作超时，请刷新确认结果"
             }
         }
@@ -3885,7 +4261,9 @@ internal class DshHomePage : BasePager() {
             if (current()) {
                 pluginInventoryLoading = false
                 pluginInventory = entries
-                pluginDetail = pluginDetail?.let { old -> entries.firstOrNull { it.id == old.id } }
+                val ids = entries.map { it.id }.toSet()
+                if (pluginExpandedId.isNotEmpty() && pluginExpandedId !in ids) pluginExpandedId = ""
+                pluginActionTarget = pluginActionTarget?.let { old -> entries.firstOrNull { it.id == old.id } }
                 applyPluginFilters()
             }
         }, { error ->
@@ -3948,9 +4326,13 @@ internal class DshHomePage : BasePager() {
     private fun enterExportSelection(sessionId: String, preselectId: String = "") {
         if (sessionId.isBlank() || sessionId != activeSessionId) return
         exportSelectSessionId = sessionId
-        val selectable = dshShareSelectableIds(sessionMessageState(sessionId))
-        exportSelectedIds = if (preselectId.isNotEmpty() && preselectId in selectable) setOf(preselectId) else emptySet()
-        exportFormat = DshExportFormat.TXT
+        // 默认选中点击消息所属的「对话组」：该条 AI 回复 + 触发它的用户 Prompt
+        val group = if (preselectId.isNotEmpty()) {
+            dshShareGroupForMessage(sessionMessageState(sessionId), preselectId)
+        } else null
+        exportSelectedGroups = group?.let { setOf(it.key) } ?: emptySet()
+        exportFormat = DshExportFormat.HTML
+        exportMoreShareVisible = false
         exportSelectMode = true
     }
 
@@ -3966,35 +4348,41 @@ internal class DshHomePage : BasePager() {
 
     private fun exportSelectionSessionId(): String = exportSelectSessionId.ifEmpty { activeSessionId }
 
+    private fun exportGroups(): List<DshShareGroup> =
+        dshShareGroups(sessionMessageState(exportSelectionSessionId()))
+
+    /** 当前多选态下需要在消息列表打勾的消息 id（同组 Prompt 与回复同时勾选）。 */
+    private fun exportSelectedMessageIds(): Set<String> =
+        exportGroups().filter { it.key in exportSelectedGroups }
+            .flatMap { it.selectableIds }.toSet()
+
     private fun toggleExportMessage(messageId: String) {
         if (!exportSelectMode || messageId.isBlank()) return
-        if (messageId !in dshShareSelectableIds(sessionMessageState(exportSelectionSessionId()))) return
-        exportSelectedIds = if (messageId in exportSelectedIds) exportSelectedIds - messageId
-        else exportSelectedIds + messageId
+        val group = dshShareGroupForMessage(sessionMessageState(exportSelectionSessionId()), messageId) ?: return
+        exportSelectedGroups = if (group.key in exportSelectedGroups) {
+            exportSelectedGroups - group.key
+        } else {
+            exportSelectedGroups + group.key
+        }
+        if (exportSelectedGroups.isEmpty()) exportMoreShareVisible = false
     }
 
-    private fun exportSelectableIds(): List<String> {
-        val state = sessionMessageState(exportSelectionSessionId())
-        val selectable = dshShareSelectableIds(state)
-        return state.filter { it.id in selectable }.map { it.id }
-    }
-
-    private fun exportTotalCount(): Int =
-        dshShareSelectableIds(sessionMessageState(exportSelectionSessionId())).size
+    private fun exportTotalCount(): Int = exportGroups().size
 
     private fun exportSelectedCount(): Int {
-        // 只统计当前列表仍存在的选中项，避免流式/历史刷新后残留 id 造成计数不一致
-        val selectable = exportSelectableIds()
-        return selectable.count { it in exportSelectedIds }
+        // 只统计当前列表仍存在的选中组，避免流式/历史刷新后残留 key 造成计数不一致
+        val keys = exportGroups().map { it.key }.toSet()
+        return exportSelectedGroups.count { it in keys }
     }
 
     private fun exportAllSelected(): Boolean {
-        val ids = exportSelectableIds()
-        return ids.isNotEmpty() && ids.all { it in exportSelectedIds }
+        val keys = exportGroups().map { it.key }
+        return keys.isNotEmpty() && keys.all { it in exportSelectedGroups }
     }
 
     private fun toggleExportSelectAll() {
-        exportSelectedIds = if (exportAllSelected()) emptySet() else exportSelectableIds().toSet()
+        exportSelectedGroups = if (exportAllSelected()) emptySet() else exportGroups().map { it.key }.toSet()
+        if (exportSelectedGroups.isEmpty()) exportMoreShareVisible = false
     }
 
     private fun cancelExportSelection() {
@@ -4002,28 +4390,53 @@ internal class DshHomePage : BasePager() {
         exportSelectSessionId = ""
         pendingExportSelectionSessionId = ""
         pendingExportSelectionPreselect = ""
-        exportSelectedIds = emptySet()
+        exportSelectedGroups = emptySet()
+        exportMoreShareVisible = false
+        exportPdfBusy = false
     }
 
-    private fun confirmExportSelection() {
+    /** 流式助手正文优先使用实时内容；其余按已结算正文导出。 */
+    private fun exportContentFor(sessionId: String, message: DshMessage): String =
+        if (streaming && activeSessionId == sessionId && streamingAssistantId == message.id &&
+            streamingAssistantContent.isNotEmpty()
+        ) {
+            streamingAssistantContent
+        } else {
+            message.content
+        }
+
+    /**
+     * 按界面顺序取出所选对话组的正文：用户 Prompt + 该轮最终助手回复。
+     * 只导出正文内容，不含工具调用、思考过程与上下文注入。
+     */
+    private fun exportSelectedMessages(sessionId: String): List<DshMessage> {
+        val messages = sessionMessageState(sessionId)
+        val selectedIds = dshShareGroups(messages)
+            .filter { it.key in exportSelectedGroups }
+            .flatMap { it.selectableIds }
+            .toSet()
+        return messages.filter { it.id in selectedIds && !it.hidden }
+    }
+
+    /** 校验多选态并返回 (sessionId, 标题, 有序消息)；无有效选择时提示并返回 null。 */
+    private fun currentExportSelection(): Triple<String, String, List<DshMessage>>? {
         val sessionId = exportSelectionSessionId()
-        if (sessionId.isBlank() || !exportSelectMode) return
-        if (exportSelectedIds.isEmpty()) { bridgeModule.toast("请先选择要分享的消息"); return }
+        if (sessionId.isBlank() || !exportSelectMode) return null
+        if (exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return null }
+        val ordered = exportSelectedMessages(sessionId)
+        if (ordered.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return null }
+        val title = sessions.firstOrNull { it.id == sessionId }?.title ?: sessionId
+        return Triple(sessionId, title, ordered)
+    }
+
+    /** 更多分享：按所选格式（默认 HTML）生成文件并打开系统分享。 */
+    private fun confirmExportSelection() {
         if (readableExportBusy) { bridgeModule.toast("正在分享，请稍候"); return }
-        val ordered = sessionMessageState(sessionId).filter { !it.hidden && it.id in exportSelectedIds }
-        if (ordered.isEmpty()) { bridgeModule.toast("请先选择要分享的消息"); return }
+        val selection = currentExportSelection() ?: return
+        val (sessionId, title, ordered) = selection
         val format = exportFormat
         val connection = activeConnectionId
-        val title = sessions.firstOrNull { it.id == sessionId }?.title ?: sessionId
-        fun contentFor(message: DshMessage): String =
-            if (streaming && activeSessionId == sessionId && streamingAssistantId == message.id &&
-                streamingAssistantContent.isNotEmpty()
-            ) {
-                streamingAssistantContent
-            } else {
-                message.content
-            }
-        val text = DshReadableContent.selection(title, sessionId, ordered, format, ::contentFor)
+        val text = DshReadableContent.selection(title, sessionId, ordered, format) { exportContentFor(sessionId, it) }
         cancelExportSelection()
         closeSessionDrawer()
         readableExportSourceText = text
@@ -4031,6 +4444,56 @@ internal class DshHomePage : BasePager() {
         readableExport = DshTextExportState(sessionId, connection, title, DshTextExportPhase.WRITING)
         readableExportDialogVisible = true
         writeReadableExport(++readableExportVersion) { text }
+    }
+
+    /** 复制内容：按可读文本复制所选对话组到剪贴板。 */
+    private fun copyExportSelection() {
+        val selection = currentExportSelection() ?: return
+        val (sessionId, title, ordered) = selection
+        val count = exportSelectedCount()
+        val text = DshReadableContent.selection(title, sessionId, ordered, DshExportFormat.TXT) {
+            exportContentFor(sessionId, it)
+        }
+        bridgeModule.copyToPasteboard(text)
+        bridgeModule.toast(if (count > 0) "已复制 $count 组对话" else "已复制所选对话")
+    }
+
+    /** 更多分享：展开/收起格式选择行。 */
+    private fun toggleExportMoreShare() {
+        if (exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return }
+        exportMoreShareVisible = !exportMoreShareVisible
+        if (exportMoreShareVisible) exportFormat = DshExportFormat.HTML
+    }
+
+    /** 生成 PDF：Android 走原生 WebView 打印，其他端暂不支持。 */
+    private fun exportSelectionAsPdf() {
+        if (exportPdfBusy) { bridgeModule.toast("正在生成 PDF，请稍候"); return }
+        if (!pageData.isAndroid) { bridgeModule.toast("当前平台暂不支持生成 PDF"); return }
+        val selection = currentExportSelection() ?: return
+        val (sessionId, title, ordered) = selection
+        val html = DshReadableContent.selection(title, sessionId, ordered, DshExportFormat.HTML) {
+            exportContentFor(sessionId, it)
+        }
+        exportPdfBusy = true
+        val filename = "dsh-session-${currentTimeMillis()}.pdf"
+        bridgeModule.htmlToPdf(html, filename) { ok, path, message ->
+            exportPdfBusy = false
+            if (!pageAlive) return@htmlToPdf
+            if (!ok) {
+                bridgeModule.toast(message.ifEmpty { "生成 PDF 失败，请重试" })
+                return@htmlToPdf
+            }
+            cancelExportSelection()
+            closeSessionDrawer()
+            if (path.isEmpty()) {
+                // Android 走系统打印（另存为 PDF），无本地路径可直接分享
+                bridgeModule.toast(message.ifEmpty { "已打开系统打印，可选择「另存为 PDF」" })
+            } else {
+                bridgeModule.shareExportFile(path, "application/pdf") { shared, shareMessage ->
+                    if (!shared) bridgeModule.toast(shareMessage.ifEmpty { "PDF 已生成，分享失败" })
+                }
+            }
+        }
     }
 
     private fun exportReadableSession(sessionId: String) {
@@ -4126,65 +4589,197 @@ internal class DshHomePage : BasePager() {
         )
     }
 
-    private fun openWorkspaceBrowser() {
+    /** 打开工作区选择：仅远程模式且当前会话尚未开始（blank）时可改工作区。 */
+    private fun openWorkspacePicker() {
         if (!isRemoteHost) return
+        if (!isBlankSession()) {
+            bridgeModule.toast("会话已开始，工作区不可修改")
+            return
+        }
         closeSessionDrawer()
-        workspaceBrowserVisible = true
-        workspaceBrowserError = ""
-        workspaceBrowserNewName = ""
-        loadDirectory(null)
+        workspacePickerGeneration++
+        workspacePickerVisible = true
+        workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+        workspacePickerBusy = false
+        workspacePickerError = ""
+        workspaceAddNewName = ""
+        refreshWorkspaceGroups()
     }
 
-    private fun loadDirectory(path: String?) {
-        val repository = repository as? DshRemoteRepository ?: return
-        workspaceBrowserBusy = true
-        workspaceBrowserError = ""
-        repository.listDirectory(path) { listing, error ->
+    private fun closeWorkspacePicker() {
+        workspacePickerGeneration++
+        workspacePickerVisible = false
+        workspacePickerBusy = false
+        workspaceAddBusy = false
+        workspacePickerError = ""
+        workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+    }
+
+    /** 返回键/左上返回：ADD 界面回 RECENT，RECENT 界面关闭弹窗。 */
+    private fun onWorkspacePickerBack() {
+        if (workspacePickerBusy || workspaceAddBusy) return
+        if (workspacePickerScreen == DshWorkspacePickerScreen.ADD) {
+            workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+            workspacePickerError = ""
+        } else {
+            closeWorkspacePicker()
+        }
+    }
+
+    /**
+     * 选中「最近文件夹」：为当前空白会话切换到该工作区并关闭弹窗。
+     * 复用该工作区下已有的空白会话；没有则 `session.create` 新建后再选中。
+     */
+    private fun switchWorkspaceTo(workspaceId: String) {
+        val remote = repository as? DshRemoteRepository ?: return
+        if (workspacePickerBusy) return
+        if (!isBlankSession()) {
+            bridgeModule.toast("会话已开始，工作区不可修改")
+            return
+        }
+        if (activeWorkspaceId() == workspaceId) {
+            closeWorkspacePicker()
+            return
+        }
+        val generation = ++workspacePickerGeneration
+        val connection = activeConnectionId
+        val sourceSession = activeSessionId
+        workspacePickerBusy = true
+        workspacePickerError = ""
+        fun current() = pageAlive && workspacePickerVisible && generation == workspacePickerGeneration &&
+            remote === this@DshHomePage.repository && connection == activeConnectionId && sourceSession == activeSessionId
+        fun fail(message: String) {
+            if (!current()) return
+            workspacePickerBusy = false
+            workspacePickerError = message
+        }
+        fun openSession(sessionId: String) {
+            remote.loadHistory(sessionId, { history ->
+                if (!current()) return@loadHistory
+                sessionMessageState(sessionId, loadFromDisk = false).diffUpdate(history) { old, new -> old == new }
+                sessionMessageReady.add(sessionId)
+                selectSession(sessionId)
+                closeWorkspacePicker()
+            }, { fail("无法读取目标会话：$it") })
+        }
+        val existing = remote.blankSessionInWorkspace(workspaceId)
+        if (existing != null) {
+            openSession(existing.id)
+            return
+        }
+        remote.createSession(workspaceId, { sessionId ->
+            if (!current()) return@createSession
+            remote.loadSessionCatalog({ catalog ->
+                if (!current()) return@loadSessionCatalog
+                sessions = catalog.sessions
+                reorderSessionsByUpdatedAt()
+                refreshVisibleSessions()
+                refreshWorkspaceGroups()
+                preferBlankHomeOnNextLoad = false
+                openSession(sessionId)
+            }, { error -> fail("无法同步工作区：${error.message}") })
+        }, { error -> fail("无法创建会话：$error") }, permission = permissionValue, agentPreset = agentModeValue)
+        setTimeout(pagerId, 35_000) {
+            if (current() && workspacePickerBusy) {
+                fail("切换超时，请重试")
+                workspacePickerGeneration++
+            }
+        }
+    }
+
+    private fun openWorkspaceAddFolder() {
+        if (!isRemoteHost) return
+        workspacePickerScreen = DshWorkspacePickerScreen.ADD
+        workspacePickerError = ""
+        workspaceAddNewName = ""
+        loadWorkspaceAddDirectory(null)
+    }
+
+    private fun loadWorkspaceAddDirectory(path: String?) {
+        val remote = repository as? DshRemoteRepository ?: return
+        if (workspacePickerBusy) return
+        val generation = ++workspacePickerGeneration
+        workspaceAddBusy = true
+        workspacePickerError = ""
+        remote.listDirectory(path) { listing, error ->
             setTimeout(pagerId, 0) {
-                workspaceBrowserBusy = false
+                if (!pageAlive || !workspacePickerVisible || workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
+                    generation != workspacePickerGeneration || remote !== this@DshHomePage.repository
+                ) return@setTimeout
+                workspaceAddBusy = false
                 if (error != null || listing == null) {
-                    workspaceBrowserError = error?.message ?: "无法读取目录"
+                    workspacePickerError = error?.message ?: "无法读取目录"
                     return@setTimeout
                 }
-                workspaceBrowserPath = listing.path
-                workspaceBrowserHome = listing.home
-                workspaceDirectoryEntries.clear()
-                workspaceDirectoryEntries.addAll(listing.entries.filterNot { it.hidden })
+                workspaceAddPath = listing.path
+                workspaceAddHome = listing.home
+                workspaceAddEntries.clear()
+                workspaceAddEntries.addAll(listing.entries.filterNot { it.hidden })
             }
         }
     }
 
-    private fun createRemoteDirectory() {
-        val repository = repository as? DshRemoteRepository ?: return
-        val name = workspaceBrowserNewName.trim()
-        if (workspaceBrowserPath.isEmpty() || name.isEmpty()) return
-        workspaceBrowserBusy = true
-        repository.createDirectory(workspaceBrowserPath, name) { createdPath, error ->
+    private fun createWorkspaceAddDirectory() {
+        val remote = repository as? DshRemoteRepository ?: return
+        if (workspacePickerBusy || workspaceAddBusy) return
+        val name = workspaceAddNewName.trim()
+        if (workspaceAddPath.isEmpty() || name.isEmpty()) return
+        val generation = workspacePickerGeneration
+        workspaceAddBusy = true
+        workspacePickerError = ""
+        remote.createDirectory(workspaceAddPath, name) { createdPath, error ->
             setTimeout(pagerId, 0) {
-                workspaceBrowserBusy = false
+                if (!pageAlive || !workspacePickerVisible || workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
+                    generation != workspacePickerGeneration || remote !== this@DshHomePage.repository
+                ) return@setTimeout
+                workspaceAddBusy = false
                 if (error != null || createdPath == null) {
-                    workspaceBrowserError = error?.message ?: "无法创建目录"
+                    workspacePickerError = error?.message ?: "无法创建目录"
                     return@setTimeout
                 }
-                workspaceBrowserNewName = ""
-                loadDirectory(createdPath)
+                workspaceAddNewName = ""
+                loadWorkspaceAddDirectory(createdPath)
             }
         }
     }
 
-    private fun adoptCurrentDirectoryAsWorkspace() {
-        val repository = repository as? DshRemoteRepository ?: return
-        if (workspaceBrowserPath.isEmpty()) return
-        workspaceBrowserBusy = true
-        repository.createWorkspace(workspaceBrowserPath) { _, error ->
+    /** 添加文件夹：注册 Host 目录为工作区，成功后直接切换过去并关闭弹窗。 */
+    private fun adoptWorkspaceAddDirectory() {
+        val remote = repository as? DshRemoteRepository ?: return
+        val path = workspaceAddPath
+        if (path.isEmpty() || workspacePickerBusy || workspaceAddBusy) return
+        workspaceAddBusy = true
+        workspacePickerError = ""
+        remote.createWorkspace(path) { value, error ->
             setTimeout(pagerId, 0) {
-                workspaceBrowserBusy = false
+                if (!pageAlive || !workspacePickerVisible || remote !== this@DshHomePage.repository) return@setTimeout
                 if (error != null) {
-                    workspaceBrowserError = error.message
+                    workspaceAddBusy = false
+                    workspacePickerError = error.message
                     return@setTimeout
                 }
-                workspaceBrowserVisible = false
-                loadRepository(preferredSessionId = activeSessionId)
+                // 重新拉取 workspace.list 基线，确保新注册工作区已进入本地投影后再解析其 id。
+                remote.loadSessionCatalog({ catalog ->
+                    if (!pageAlive || !workspacePickerVisible || remote !== this@DshHomePage.repository) return@loadSessionCatalog
+                    sessions = catalog.sessions
+                    reorderSessionsByUpdatedAt()
+                    refreshVisibleSessions()
+                    refreshWorkspaceGroups()
+                    val workspaceId = value?.optString("workspaceId")?.takeIf { it.isNotEmpty() }
+                        ?: workspaceGroups.firstOrNull { it.path == path }?.workspaceId.orEmpty()
+                    if (workspaceId.isEmpty()) {
+                        workspaceAddBusy = false
+                        workspacePickerError = "Host 尚未返回该目录对应的工作区"
+                        return@loadSessionCatalog
+                    }
+                    workspaceAddBusy = false
+                    workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+                    switchWorkspaceTo(workspaceId)
+                }, { syncError ->
+                    if (!pageAlive || !workspacePickerVisible) return@loadSessionCatalog
+                    workspaceAddBusy = false
+                    workspacePickerError = "无法同步工作区：${syncError.message}"
+                })
             }
         }
     }
@@ -4721,6 +5316,10 @@ internal class DshHomePage : BasePager() {
         // gap so LazyLoop never has to realize an empty markdown bubble.
         sessionMessageStates[sessionId] = messages
         if (wasEmpty) remountConversationList(sessionId)
+        // 第一条消息发出后会话即归属所选工作区，工作区配置入口（文件夹 chip）随即消失。
+        if (wasEmpty && isBlankSession(sessionId)) {
+            updateSessionMetadata(sessionId) { it.copy(blank = false) }
+        }
         pinFollowListTail()
         scrollMessagesToMessage(user.id)
         streamingTurnAnchorAssistantId = messages.lastOrNull(::dshIsLiveAssistantText)?.id.orEmpty()

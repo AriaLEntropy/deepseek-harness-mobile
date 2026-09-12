@@ -116,6 +116,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "startSshKeepAlive" -> startSshKeepAlive()
             "stopSshKeepAlive" -> stopSshKeepAlive()
             "shareExportFile" -> shareExportFile(params, callback)
+            "htmlToPdf" -> htmlToPdf(params, callback)
             "readLastCrash" -> readLastCrash(params)
             "clearLastCrash" -> clearLastCrash(callback)
             "getDeviceInfo" -> getDeviceInfo(params)
@@ -165,13 +166,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         if (!file.isFile) { callback?.invoke(mapOf("ok" to false, "message" to "导出文件不存在")); return }
         try {
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+            val mime = paramJSON.optString("mime").ifEmpty { mimeForFile(file) }
             val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
+                type = mime
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, file.name)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val chooser = Intent.createChooser(intent, "导出会话日志")
+            val chooser = Intent.createChooser(intent, "分享导出文件")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ctx.startActivity(chooser)
             // ACTION_SEND only confirms that the chooser opened, not that the recipient saved the file.
@@ -181,6 +183,76 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             Log.e("KRBridgeModule", "shareExportFile failed", e)
             Toast.makeText(ctx, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
             callback?.invoke(mapOf("ok" to false, "message" to "无法打开分享面板"))
+        }
+    }
+
+    private fun mimeForFile(file: File): String = when (file.extension.lowercase()) {
+        "pdf" -> "application/pdf"
+        "html", "htm" -> "text/html"
+        "md" -> "text/markdown"
+        "txt" -> "text/plain"
+        else -> "application/octet-stream"
+    }
+
+    /**
+     * 走 Android 系统打印框架把 HTML 渲染为 PDF。
+     *
+     * `PrintDocumentAdapter.LayoutResultCallback`/`WriteResultCallback` 的构造函数是包私有的，
+     * 无法在 Kotlin 中静默驱动适配器，因此使用 WebView 自带的打印适配器配合 `PrintManager`：
+     * 用户在系统面板选择「另存为 PDF」完成导出（官方支持的 HTML→PDF 路径，自动分页）。
+     */
+    private fun htmlToPdf(params: String?, callback: KuiklyRenderCallback?) {
+        val paramJSON = JSONObject(params ?: "{}")
+        val html = paramJSON.optString("html")
+        if (html.isEmpty()) {
+            callback?.invoke(mapOf("ok" to false, "message" to "缺少 HTML 内容"))
+            return
+        }
+        val ctx = context ?: KRApplication.application
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        handler.post {
+            val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+            fun finish(ok: Boolean, message: String) {
+                if (!finished.compareAndSet(false, true)) return
+                callback?.invoke(mapOf("ok" to ok, "path" to "", "message" to message))
+            }
+            try {
+                val view = android.webkit.WebView(ctx)
+                view.settings.javaScriptEnabled = false
+                view.webViewClient = object : android.webkit.WebViewClient() {
+                    override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                        try {
+                            val adapter = view?.createPrintDocumentAdapter("dsh-session")
+                            if (adapter == null) {
+                                finish(false, "无法创建打印适配器")
+                                return
+                            }
+                            val printManager = ctx.getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
+                            val attributes = android.print.PrintAttributes.Builder()
+                                .setMediaSize(android.print.PrintAttributes.MediaSize.ISO_A4)
+                                .build()
+                            printManager.print("DSH 对话", adapter, attributes)
+                            finish(true, "已打开系统打印，可选择「另存为 PDF」")
+                        } catch (e: Exception) {
+                            Log.e("KRBridgeModule", "htmlToPdf print failed", e)
+                            finish(false, "生成 PDF 失败：${e.message}")
+                        }
+                    }
+
+                    override fun onReceivedError(
+                        view: android.webkit.WebView?,
+                        request: android.webkit.WebResourceRequest?,
+                        error: android.webkit.WebResourceError?,
+                    ) {
+                        finish(false, "HTML 加载失败")
+                    }
+                }
+                view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                handler.postDelayed({ finish(false, "生成 PDF 超时，请重试") }, 20_000)
+            } catch (e: Exception) {
+                Log.e("KRBridgeModule", "htmlToPdf failed", e)
+                finish(false, "生成 PDF 失败：${e.message}")
+            }
         }
     }
 

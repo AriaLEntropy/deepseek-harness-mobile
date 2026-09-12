@@ -62,6 +62,7 @@ internal fun ViewContainer<*, *>.DshArchivedSessions(
     onClose: () -> Unit,
     onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
+    onUnarchive: (String) -> Unit,
     onRequestDelete: (String) -> Unit,
     onRequestDeleteProject: (DshWorkspaceGroup) -> Unit,
     onRequestDeleteAll: () -> Unit,
@@ -103,6 +104,7 @@ internal fun ViewContainer<*, *>.DshArchivedSessions(
             busy = busy,
             openingId = openingId,
             onOpen = onOpen,
+            onUnarchive = onUnarchive,
             onRequestDelete = onRequestDelete,
             onRequestDeleteProject = onRequestDeleteProject,
             formatDate = formatDate,
@@ -288,6 +290,7 @@ internal fun ViewContainer<*, *>.DshArchiveBody(
     busy: () -> Boolean,
     openingId: () -> String,
     onOpen: (String) -> Unit,
+    onUnarchive: (String) -> Unit,
     onRequestDelete: (String) -> Unit,
     onRequestDeleteProject: (DshWorkspaceGroup) -> Unit,
     formatDate: (Long) -> String,
@@ -316,6 +319,7 @@ internal fun ViewContainer<*, *>.DshArchiveBody(
                 busy = busy,
                 openingId = openingId,
                 onOpen = onOpen,
+                onUnarchive = onUnarchive,
                 onRequestDelete = onRequestDelete,
                 onRequestDeleteProject = onRequestDeleteProject,
                 formatDate = formatDate,
@@ -330,6 +334,7 @@ internal fun ViewContainer<*, *>.DshArchiveGroup(
     busy: () -> Boolean,
     openingId: () -> String,
     onOpen: (String) -> Unit,
+    onUnarchive: (String) -> Unit,
     onRequestDelete: (String) -> Unit,
     onRequestDeleteProject: (DshWorkspaceGroup) -> Unit,
     formatDate: (Long) -> String,
@@ -373,6 +378,15 @@ internal fun ViewContainer<*, *>.DshArchiveGroup(
                             }
                         }
                         event { click { if (!busy() && openingId().isEmpty()) onOpen(session.id) } }
+                    }
+                    View {
+                        attr {
+                            height(30f); marginRight(4f); paddingLeft(10f); paddingRight(10f); allCenter()
+                            borderRadius(8f); backgroundColor(colors().bgSkeleton)
+                            opacity(if (busy()) 0.5f else 1f)
+                        }
+                        Text { attr { text("取消归档"); fontSize(12f); color(colors().stateBusinessPrimary) } }
+                        event { click { if (!busy()) onUnarchive(session.id) } }
                     }
                     View {
                         attr { width(36f); height(36f); allCenter() }

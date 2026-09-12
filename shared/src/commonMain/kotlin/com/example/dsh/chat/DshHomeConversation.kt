@@ -177,13 +177,22 @@ internal fun ViewContainer<*, *>.DshConversation(
     onRetryPendingImage: (String) -> Unit = {},
     onToggleVoice: () -> Unit,
     folderLabel: () -> String,
-    onOpenFolderBrowser: () -> Unit,
+    onOpenWorkspacePicker: () -> Unit,
     permissionValue: () -> String,
     permissionLabel: () -> String,
     onOpenPermissions: () -> Unit,
     agentModeLabel: () -> String,
     onOpenAgentModes: () -> Unit,
     isWebTimeline: () -> Boolean,
+    /** 过程展示方式：统一折叠（对齐最新 dsh）或经典逐条（对齐 rc）。 */
+    processDisplayMode: () -> DshProcessDisplayMode = { DshProcessDisplayMode.UNIFIED },
+    /** 工具/思考之间的竖向装饰连接线。 */
+    showConnectors: () -> Boolean = { true },
+    /** 结构化结果卡片（web 检索/抓取、grep/glob）。 */
+    showResultCards: () -> Boolean = { true },
+    /** 开启后，点击展开不铺在行内，而是打开底部弹层平铺明细。 */
+    expandInModal: () -> Boolean = { false },
+    onOpenExpandedModal: (DshExpandedPayload) -> Unit = {},
     isDisclosureExpanded: (String) -> Boolean,
     onToggleDisclosure: (String) -> Unit,
     isJsonNodeExpanded: (String, String) -> Boolean,
@@ -252,12 +261,16 @@ internal fun ViewContainer<*, *>.DshConversation(
     // 导出多选态：进入后消息列表可勾选，底部弹窗覆盖输入框选择文件格式
     exportSelectMode: () -> Boolean = { false },
     exportSelectedIds: () -> Set<String> = { emptySet() },
-    exportFormat: () -> DshExportFormat = { DshExportFormat.TXT },
+    exportFormat: () -> DshExportFormat = { DshExportFormat.HTML },
     exportSelectedCount: () -> Int = { 0 },
+    exportMoreShareExpanded: () -> Boolean = { false },
+    exportPdfBusy: () -> Boolean = { false },
     onToggleExportMessage: (String) -> Unit = {},
     onExportFormatChange: (DshExportFormat) -> Unit = {},
     onExportConfirm: () -> Unit = {},
-    onExportCancel: () -> Unit = {},
+    onExportPdf: () -> Unit = {},
+    onExportCopy: () -> Unit = {},
+    onExportMore: () -> Unit = {},
 ) {
     // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
@@ -333,7 +346,10 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
                                 // 单条消息行：包一层宽度约束，内部由 DshMessageRow 渲染
                                 ) { message, _, _ ->
-                                    val processGroup = if (isWebTimeline()) {
+                                    val processGroup = if (
+                                        isWebTimeline() &&
+                                        processDisplayMode() == DshProcessDisplayMode.UNIFIED
+                                    ) {
                                         dshTurnProcessGroup(messagesForSession(sessionId), message)
                                     } else {
                                         null
@@ -395,6 +411,13 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                 )
                                             },
                                             bodyLocked = inProcess,
+                                            expandInModal = expandInModal,
+                                            onRequestModal = onOpenExpandedModal,
+                                            showResultCards = showResultCards,
+                                            showConnectors = {
+                                                showConnectors() &&
+                                                    processDisplayMode() == DshProcessDisplayMode.CLASSIC
+                                            },
                                         )
                                     }
                                     View {
@@ -445,13 +468,30 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                             height(360f)
                                                             marginTop(6f)
                                                         }
+                                                        // 过程明细：左侧竖向装饰线把所有工具/思考连接起来，
+                                                        // 展开内容各自被卡片容器包裹（对齐原版过程树）。
                                                         View {
                                                             attr {
-                                                                flexDirectionColumn()
+                                                                flexDirectionRow()
                                                                 marginBottom(8f)
                                                             }
-                                                            processGroup.members.forEach { member ->
-                                                                this.renderMessage(member, true)
+                                                            vif({ showConnectors() }) {
+                                                                View {
+                                                                    attr {
+                                                                        width(1f)
+                                                                        backgroundColor(colors().borderL2)
+                                                                        marginRight(10f)
+                                                                    }
+                                                                }
+                                                            }
+                                                            View {
+                                                                attr {
+                                                                    flex(1f)
+                                                                    flexDirectionColumn()
+                                                                }
+                                                                processGroup.members.forEach { member ->
+                                                                    this.renderMessage(member, !expandInModal())
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -689,7 +729,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     tintColor(colors().labelCaption)
                                 }
                             }
-                            DshHitButton(onOpenFolderBrowser)
+                            DshHitButton(onOpenWorkspacePicker)
                         }
                         // 模式 chip：透明药丸，dsh 语义 —— 图标 + 模式名 + 下箭头，点击打开模式选择弹窗
                         View {
@@ -994,9 +1034,13 @@ internal fun ViewContainer<*, *>.DshConversation(
                 vif({ exportSelectMode() }) {
                     DshExportSelectionSheet(
                         selectedCount = exportSelectedCount,
+                        moreExpanded = exportMoreShareExpanded,
                         format = exportFormat,
+                        pdfBusy = exportPdfBusy,
                         onPickFormat = onExportFormatChange,
-                        onClose = onExportCancel,
+                        onGeneratePdf = onExportPdf,
+                        onCopyContent = onExportCopy,
+                        onMoreShare = onExportMore,
                         onConfirm = onExportConfirm,
                         colors = colors,
                     )
@@ -1258,6 +1302,13 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     contentProvider: (() -> String)? = null,
     /** 回合过程分组展开时，成员卡片直接铺开、不可再折叠。 */
     bodyLocked: Boolean = false,
+    /** 弹窗模式：点击展开行时改为回调页面打开底部弹层。 */
+    expandInModal: () -> Boolean = { false },
+    onRequestModal: (DshExpandedPayload) -> Unit = {},
+    /** 是否用结构化结果卡片渲染 web/grep/glob 明细。 */
+    showResultCards: () -> Boolean = { true },
+    /** 是否给过程行加左侧装饰连接线（经典模式）。 */
+    showConnectors: () -> Boolean = { true },
 ) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
@@ -1289,6 +1340,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked && message.contextCanExpand()
                     this.onToggle = onToggle
+                    this.expandInModal = expandInModal()
+                    this.onRequestModal = onRequestModal
+                    this.connector = showConnectors() && isWebTimeline
                     compact = true
                     bodyChrome = true
                     bodyMaxHeight = 300f
@@ -1358,6 +1412,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked && message.content.isNotEmpty()
                     this.onToggle = onToggle
+                    this.expandInModal = expandInModal()
+                    this.onRequestModal = onRequestModal
+                    this.connector = showConnectors() && isWebTimeline
                     plainBody = true
                     compact = true
                     bodyChrome = true
@@ -1389,6 +1446,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked && message.content.isNotEmpty()
                     this.onToggle = onToggle
+                    this.expandInModal = expandInModal()
+                    this.onRequestModal = onRequestModal
+                    this.connector = showConnectors() && isWebTimeline
                     running = message.toolRunning
                     compact = true
                 }
@@ -1415,9 +1475,13 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         val askCardData = if (remoteTool?.kind == DshRemoteToolKind.ASK_QUESTION) {
             dshAskQuestionCard(remoteTool.input, remoteTool.output ?: "", askCancelled, askAborted)
         } else null
-        val effectiveBody = if (askCardData != null) "" else toolBody
+        // 结构化结果卡片（可配置开关）：web 检索/抓取、grep/glob。
+        val webResult = if (showResultCards()) remoteTool?.webCard else null
+        val searchResult = if (showResultCards()) remoteTool?.searchCard else null
+        val hasStructuredResult = askCardData != null || webResult != null || searchResult != null
+        val effectiveBody = if (hasStructuredResult) "" else toolBody
         val trimmedBody = effectiveBody.trimStart()
-        val isJson = !isRemoteSpecial &&
+        val isJson = !isRemoteSpecial && !hasStructuredResult &&
             (trimmedBody.startsWith("{") || trimmedBody.startsWith("["))
         val cardLabel = remoteTool?.title ?: when (message.toolCardType) {
             DshToolCardType.TERMINAL -> "Bash"
@@ -1450,13 +1514,18 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     open = bodyLocked || isExpanded()
                     expandable = !bodyLocked
                     this.onToggle = onToggle
+                    this.expandInModal = expandInModal()
+                    this.onRequestModal = onRequestModal
+                    this.connector = showConnectors() && isWebTimeline
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
                     running = message.toolRunning
                     askCard = askCardData
+                    webCard = webResult
+                    searchCard = searchResult
                     compact = true
                     onCopyToolCommand = onCopyToolContent
-                    toolDetail = if (isJson || askCardData != null) null else DshToolDetail(
+                    toolDetail = if (isJson || hasStructuredResult) null else DshToolDetail(
                         kind = remoteTool?.kind ?: DshRemoteToolKind.GENERIC,
                         input = remoteTool?.input.orEmpty(),
                         output = remoteTool?.output.orEmpty(),

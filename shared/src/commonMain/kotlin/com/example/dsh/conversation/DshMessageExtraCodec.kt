@@ -168,6 +168,104 @@ internal object DshMessageExtraCodec {
         put("questionTotal", tool.questionTotal)
         put("callTimeMs", tool.callTimeMs)
         put("durationMs", tool.durationMs)
+        tool.webCard?.let { put("webCard", encodeWebCard(it)) }
+        tool.searchCard?.let { put("searchCard", encodeSearchCard(it)) }
+    }
+
+    private fun encodeWebCard(card: DshWebCard): JSONObject = JSONObject().apply {
+        put("isFetch", card.isFetch)
+        put("url", card.url)
+        put("statusCode", card.statusCode)
+        put("answer", card.answer)
+        put("truncated", card.truncated)
+        put("sources", JSONArray().apply {
+            card.sources.forEach { source ->
+                put(JSONObject().apply {
+                    put("url", source.url)
+                    put("title", source.title)
+                    put("snippet", source.snippet)
+                    put("publishedAt", source.publishedAt)
+                })
+            }
+        })
+    }
+
+    private fun decodeWebCard(o: JSONObject): DshWebCard {
+        val sourcesArr = o.optJSONArray("sources") ?: JSONArray()
+        val sources = buildList {
+            for (index in 0 until sourcesArr.length()) {
+                val source = sourcesArr.optJSONObject(index) ?: continue
+                add(
+                    DshWebSource(
+                        url = source.optString("url"),
+                        title = source.optString("title"),
+                        snippet = source.optString("snippet"),
+                        publishedAt = source.optString("publishedAt"),
+                    ),
+                )
+            }
+        }
+        return DshWebCard(
+            isFetch = o.optBoolean("isFetch", false),
+            url = o.optString("url"),
+            statusCode = o.optInt("statusCode", 0),
+            answer = o.optString("answer"),
+            sources = sources,
+            truncated = o.optBoolean("truncated", false),
+        )
+    }
+
+    private fun encodeSearchCard(card: DshSearchCard): JSONObject = JSONObject().apply {
+        put("pathsOnly", card.pathsOnly)
+        put("truncated", card.truncated)
+        put("total", card.total)
+        put("paths", JSONArray().apply { card.paths.forEach { put(it) } })
+        put("files", JSONArray().apply {
+            card.files.forEach { file ->
+                put(JSONObject().apply {
+                    put("path", file.path)
+                    put("matches", JSONArray().apply {
+                        file.matches.forEach { match ->
+                            put(JSONObject().apply {
+                                put("lineNumber", match.lineNumber)
+                                put("line", match.line)
+                            })
+                        }
+                    })
+                })
+            }
+        })
+    }
+
+    private fun decodeSearchCard(o: JSONObject): DshSearchCard {
+        val pathsArr = o.optJSONArray("paths") ?: JSONArray()
+        val paths = buildList {
+            for (index in 0 until pathsArr.length()) {
+                val path = pathsArr.optString(index).orEmpty()
+                if (path.isNotEmpty()) add(path)
+            }
+        }
+        val filesArr = o.optJSONArray("files") ?: JSONArray()
+        val files = buildList {
+            for (index in 0 until filesArr.length()) {
+                val file = filesArr.optJSONObject(index) ?: continue
+                val matchesArr = file.optJSONArray("matches") ?: JSONArray()
+                val matches = buildList {
+                    for (matchIndex in 0 until matchesArr.length()) {
+                        val match = matchesArr.optJSONObject(matchIndex) ?: continue
+                        add(DshSearchMatch(match.optInt("lineNumber", 0), match.optString("line")))
+                    }
+                }
+                add(DshSearchFile(file.optString("path"), matches))
+            }
+        }
+        return DshSearchCard(
+            pathsOnly = o.optBoolean("pathsOnly", false),
+            paths = paths,
+            files = files,
+            truncated = o.optBoolean("truncated", false),
+            total = o.optInt("total", 0),
+        )
     }
 
     private fun decodeRemoteTool(o: JSONObject): DshRemoteToolCallModel = DshRemoteToolCallModel(
@@ -192,5 +290,7 @@ internal object DshMessageExtraCodec {
         questionTotal = o.optInt("questionTotal", 0),
         callTimeMs = o.optLong("callTimeMs", 0L),
         durationMs = o.optLong("durationMs", 0L),
+        webCard = o.optJSONObject("webCard")?.let(::decodeWebCard),
+        searchCard = o.optJSONObject("searchCard")?.let(::decodeSearchCard),
     )
 }

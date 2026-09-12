@@ -1288,6 +1288,7 @@ internal data class DshAgentModeOption(
 // 纵向 list：每项 模式名 + 多行描述，选中项右侧蓝勾（d888 样式）。
 internal fun ViewContainer<*, *>.DshAgentModePicker(
     options: () -> ObservableList<DshAgentModeOption>,
+    title: () -> String = { "选择模式" },
     onClose: () -> Unit,
     onSelect: (DshAgentModeOption) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
@@ -1315,7 +1316,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                 attr { height(40f); flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
-                        text("选择模式")
+                        text(title())
                         fontSize(18f)
                         fontWeightBold()
                         color(colors().labelPrimary)
@@ -1592,124 +1593,6 @@ internal fun ViewContainer<*, *>.DshDetailRow(
     }
 }
 
-internal fun ViewContainer<*, *>.DshWorkspaceBrowserModal(
-    path: () -> String,
-    home: () -> String,
-    entries: () -> ObservableList<DshDirectoryEntry>,
-    busy: () -> Boolean,
-    error: () -> String,
-    newName: () -> String,
-    onDirectorySelect: (String) -> Unit,
-    onNewNameChange: (String) -> Unit,
-    onCreateDirectory: () -> Unit,
-    onAdopt: () -> Unit,
-    onClose: () -> Unit,
-    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
-) {
-    Modal(inWindow = true) {
-        attr {
-            absolutePositionAllZero()
-            allCenter()
-            paddingLeft(20f)
-            paddingRight(20f)
-            backgroundColor(Color(0x66000000))
-        }
-        View {
-            attr {
-                width(pagerData.pageViewWidth - 40f)
-                maxWidth(560f)
-                maxHeight(pagerData.pageViewHeight - 80f)
-                flexDirectionColumn()
-                padding(18f)
-                borderRadius(16f)
-                backgroundColor(colors().bgLayer1)
-            }
-            View {
-                attr { height(36f); flexDirectionRow(); alignItemsCenter() }
-                Text {
-                    attr {
-                        text(if (path().isEmpty()) home() else path())
-                        flex(1f)
-                        lines(1)
-                        fontSize(17f)
-                        fontWeightBold()
-                        color(colors().labelPrimary)
-                    }
-                }
-                View { attr { size(32f, 32f); allCenter() }; Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }; DshHitButton { onClose() } }
-            }
-            Scroller {
-                attr {
-                    flex(1f)
-                    marginTop(12f)
-                    borderRadius(8f)
-                    backgroundColor(colors().bgBase)
-                }
-                vfor({ entries() }) { entry ->
-                    View {
-                        attr {
-                            height(42f)
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            paddingLeft(10f)
-                            paddingRight(10f)
-                        }
-                        Text {
-                            attr {
-                                text(entry.name)
-                                flex(1f)
-                                lines(1)
-                                fontSize(14f)
-                                color(colors().labelSecondary)
-                            }
-                        }
-                        event { click { if (!busy()) onDirectorySelect(entry.path) } }
-                    }
-                }
-            }
-            vif({ error().isNotEmpty() }) {
-                Text { attr { text(error()); marginTop(8f); fontSize(12f); color(colors().stateErrorPrimary) } }
-            }
-            Input {
-                attr {
-                    height(38f)
-                    marginTop(10f)
-                    fontSize(14f)
-                    placeholder("新目录名称")
-                    placeholderColor(colors().labelTertiary)
-                }
-                event { textDidChange { onNewNameChange(it.text) } }
-            }
-            View {
-                attr { height(42f); marginTop(12f); flexDirectionRow(); justifyContentFlexEnd() }
-                Text {
-                    attr {
-                        text(if (busy()) "处理中..." else "新建目录")
-                        width(88f)
-                        height(38f)
-                        textAlignCenter()
-                        fontSize(13f)
-                        color(colors().labelTertiary)
-                    }
-                    event { click { if (!busy()) onCreateDirectory() } }
-                }
-                Text {
-                    attr {
-                        text(if (busy()) "处理中..." else "使用此目录")
-                        width(112f)
-                        height(38f)
-                        marginLeft(8f)
-                        textAlignCenter()
-                        fontSize(13f)
-                        color(colors().stateBusinessPrimary)
-                    }
-                    event { click { if (!busy()) onAdopt() } }
-                }
-            }
-        }
-    }
-}
-
 // ===== 设置页（ds 风格：顶部居中标题 + 右上 ×，分组列表，行右侧当前值） =====
 internal fun ViewContainer<*, *>.DshSettingsPage(
     loading: () -> Boolean,
@@ -1717,17 +1600,21 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     snapshot: () -> DshSettingsSnapshot,
     isRemoteHost: () -> Boolean,
     connectionModeLabel: () -> String,
-    apiKeyConfigured: () -> Boolean,
+    modelsSummary: () -> String,
     hostVersion: () -> String,
     themeMode: () -> DshThemeMode,
+    processDisplayMode: () -> com.example.dsh.rendering.DshProcessDisplayMode = { com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED },
+    agentPresetLabel: () -> String,
     onClose: () -> Unit,
     onRetry: () -> Unit,
     onOpenConnection: () -> Unit,
-    onOpenApiKey: () -> Unit,
+    onOpenModels: () -> Unit,
+    onOpenPersonalization: () -> Unit = {},
     onPickPermission: () -> Unit,
     onPickLocale: () -> Unit,
     onPickTheme: () -> Unit,
     onPickDefaultModel: () -> Unit,
+    onOpenAgentPresets: () -> Unit,
     onOpenDiagnosticLogs: () -> Unit,
     onOpenPlugins: () -> Unit,
     onDisconnect: () -> Unit,
@@ -1834,7 +1721,8 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             // 账户
             DshSettingsGroupTitle("账户", colors = colors)
             DshSettingsRow("icon-link16.svg", "连接设置", connectionModeLabel, onOpenConnection, colors = colors)
-            DshSettingsRow("icon-api14.svg", "API Key", { if (apiKeyConfigured()) "已配置" else "未配置" }, onOpenApiKey, colors = colors)
+            // 与电脑端设置页「模型」板块保持一致：同一图标与名称，进入模型详情页。
+            DshSettingsRow("icon-data16.svg", "模型", modelsSummary, onOpenModels, colors = colors)
 
             // 权限
             DshSettingsGroupTitle("权限", colors = colors)
@@ -1844,9 +1732,17 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             DshSettingsGroupTitle("应用", colors = colors)
             DshSettingsRow("icon-globe14.svg", "语言", { dshSettingsLocaleLabel(snapshot()) }, onPickLocale, colors = colors)
             DshSettingsRow("icon-followsystem16.svg", "外观", { dshThemeModeLabel(themeMode()) }, onPickTheme, colors = colors)
+            DshSettingsRow(
+                "personalize.svg",
+                "个性化",
+                { com.example.dsh.rendering.dshProcessDisplayLabel(processDisplayMode()) },
+                onOpenPersonalization,
+                colors = colors,
+            )
             DshSettingsRow("icon-agentpreset16.svg", "默认模型", { dshSettingsDefaultModelLabel(snapshot()) }, onPickDefaultModel, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "Agent 预设", agentPresetLabel, onOpenAgentPresets, colors = colors)
             DshSettingsRow("log.svg", "日志", { "" }, onOpenDiagnosticLogs, colors = colors)
-            DshSettingsRow("icon-agentpreset16.svg", "Host 插件", { "只读" }, onOpenPlugins, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "Host 插件", { "启停" }, onOpenPlugins, colors = colors)
 
             // 关于
             DshSettingsGroupTitle("关于", colors = colors)
@@ -2057,5 +1953,221 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
                 }
             }
         }
+    }
+}
+
+// ===== 设置页「个性化」子页面 =====
+// 顶部与设置页一致的居中标题 + 右上 ×；下方按「选择规则」分组：
+// 「过程展示」为互斥单选，「展开方式」为可叠加开关，接近移动端设置范式。
+internal fun ViewContainer<*, *>.DshPersonalizationPage(
+    mode: () -> com.example.dsh.rendering.DshProcessDisplayMode,
+    expandInModal: () -> Boolean,
+    showConnectors: () -> Boolean,
+    showResultCards: () -> Boolean,
+    onPickMode: (com.example.dsh.rendering.DshProcessDisplayMode) -> Unit,
+    onToggleExpandInModal: (Boolean) -> Unit,
+    onToggleConnectors: (Boolean) -> Unit,
+    onToggleResultCards: (Boolean) -> Unit,
+    onClose: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            backgroundColor(colors().bgLayer2)
+        }
+        View {
+            attr {
+                height(pagerData.statusBarHeight + 52f)
+                paddingTop(pagerData.statusBarHeight)
+                flexDirectionRow()
+                alignItemsCenter()
+                paddingLeft(12f)
+                paddingRight(8f)
+                backgroundColor(colors().bgLayer2)
+            }
+            View { attr { flex(1f) } }
+            Text { attr { text("个性化"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
+            View {
+                attr { flex(1f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
+                View {
+                    attr { size(36f, 36f); allCenter() }
+                    Image {
+                        attr {
+                            src(ImageUri.commonAssets("x.svg"))
+                            size(20f, 20f)
+                            tintColor(colors().labelSecondary)
+                        }
+                    }
+                    event { click { onClose() } }
+                }
+            }
+        }
+        View {
+            attr { height(1f); backgroundColor(colors().borderL1) }
+        }
+        Scroller {
+            attr {
+                flex(1f)
+                width(pagerData.pageViewWidth)
+                backgroundColor(colors().bgLayer2)
+            }
+            DshSettingsGroupTitle("过程展示", colors = colors)
+            DshPersonalizationChoiceRow(
+                title = "统一折叠",
+                subtitle = "把一轮里的思考、工具调用与过程消息折叠成一条摘要（对齐最新 dsh）",
+                selected = mode() == com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED,
+                onClick = { onPickMode(com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED) },
+                colors = colors,
+            )
+            DshPersonalizationChoiceRow(
+                title = "经典",
+                subtitle = "思考与工具调用逐条展开，不做外层统一折叠（对齐电脑端 rc）",
+                selected = mode() == com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC,
+                onClick = { onPickMode(com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC) },
+                colors = colors,
+            )
+            DshSettingsGroupTitle("展开方式", colors = colors)
+            DshPersonalizationSwitchRow(
+                title = "弹窗查看",
+                subtitle = "点击展开时从底部弹出，内容平铺滚动，不显示灰色容器",
+                checked = expandInModal(),
+                onToggle = onToggleExpandInModal,
+                colors = colors,
+            )
+            DshSettingsGroupTitle("细节", colors = colors)
+            DshPersonalizationSwitchRow(
+                title = "装饰连接线",
+                subtitle = "在连续的工具 / 思考行左侧绘制竖向连接线",
+                checked = showConnectors(),
+                onToggle = onToggleConnectors,
+                colors = colors,
+            )
+            DshPersonalizationSwitchRow(
+                title = "结果卡片",
+                subtitle = "网页检索 / 抓取与 grep / glob 用结构化卡片展示，链接可点击",
+                checked = showResultCards(),
+                onToggle = onToggleResultCards,
+                colors = colors,
+            )
+            View { attr { height(32f) } }
+        }
+    }
+}
+
+/** 互斥单选行：标题 + 说明 + 右侧选中态圆勾。 */
+internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    View {
+        attr {
+            flexDirectionRow()
+            alignItemsCenter()
+            padding(14f, 16f, 14f, 16f)
+            backgroundColor(if (selected) colors().stateBusinessTertiary else Color(0x00000000))
+        }
+        View {
+            attr { flex(1f); flexDirectionColumn() }
+            Text {
+                attr {
+                    text(title)
+                    fontSize(15f)
+                    fontWeightMedium()
+                    color(if (selected) colors().stateBusinessPrimary else colors().labelPrimary)
+                }
+            }
+            Text {
+                attr {
+                    text(subtitle)
+                    marginTop(3f)
+                    fontSize(12f)
+                    lineHeight(18f)
+                    color(colors().labelTertiary)
+                }
+            }
+        }
+        View {
+            attr {
+                size(20f, 20f)
+                marginLeft(12f)
+                borderRadius(10f)
+                allCenter()
+                border(Border(1.5f, BorderStyle.SOLID, if (selected) colors().stateBusinessPrimary else colors().borderL2))
+                backgroundColor(if (selected) colors().stateBusinessPrimary else Color(0x00FFFFFF))
+            }
+            vif({ selected }) {
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets("check.svg"))
+                        size(13f, 13f)
+                        tintColor(Color.WHITE)
+                    }
+                }
+            }
+        }
+        event { click { onClick() } }
+    }
+    View {
+        attr { height(1f); marginLeft(16f); backgroundColor(colors().borderL2) }
+    }
+}
+
+/** 开关行：左侧标题 + 说明，右侧自绘 pill 开关。 */
+internal fun ViewContainer<*, *>.DshPersonalizationSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    View {
+        attr {
+            flexDirectionRow()
+            alignItemsCenter()
+            padding(14f, 16f, 14f, 16f)
+            backgroundColor(Color(0x00000000))
+        }
+        View {
+            attr { flex(1f); flexDirectionColumn() }
+            Text {
+                attr { text(title); fontSize(15f); fontWeightMedium(); color(colors().labelPrimary) }
+            }
+            Text {
+                attr {
+                    text(subtitle)
+                    marginTop(3f)
+                    fontSize(12f)
+                    lineHeight(18f)
+                    color(colors().labelTertiary)
+                }
+            }
+        }
+        View {
+            attr {
+                width(46f)
+                height(28f)
+                marginLeft(12f)
+                borderRadius(14f)
+                backgroundColor(if (checked) colors().stateBusinessPrimary else colors().borderL2)
+            }
+            View {
+                attr {
+                    positionAbsolute()
+                    top(3f)
+                    left(if (checked) 21f else 3f)
+                    size(22f, 22f)
+                    borderRadius(11f)
+                    backgroundColor(Color.WHITE)
+                }
+            }
+            event { click { onToggle(!checked) } }
+        }
+    }
+    View {
+        attr { height(1f); marginLeft(16f); backgroundColor(colors().borderL2) }
     }
 }

@@ -42,13 +42,14 @@ internal data class DshTextExportState(
 }
 
 /**
- * 分享多选态顶部栏：只保留左侧全选/取消全选。
- * 已选计数与关闭动作统一放进底部弹窗，避免与底部重复。
+ * 分享多选态顶部栏：左侧全选/取消全选，右侧关闭。
+ * 已选计数放进底部弹窗，避免与底部重复。
  */
 internal fun ViewContainer<*, *>.DshExportSelectionTopBar(
     totalCount: () -> Int,
     allSelected: () -> Boolean,
     onToggleAll: () -> Unit,
+    onClose: () -> Unit,
     colors: () -> DshColorTokens,
 ) {
     View {
@@ -61,28 +62,73 @@ internal fun ViewContainer<*, *>.DshExportSelectionTopBar(
         }
         // 左侧：全选 / 取消全选
         View {
-            attr { height(40f); paddingLeft(14f); paddingRight(14f); allCenter() }
+            attr { height(48f); flexDirectionRow(); alignItemsCenter(); paddingLeft(14f); paddingRight(14f) }
+            event { click { onToggleAll() } }
+            View {
+                attr {
+                    size(22f, 22f)
+                    borderRadius(11f)
+                    allCenter()
+                    backgroundColor(
+                        if (allSelected() && totalCount() > 0) colors().stateBusinessPrimary
+                        else Color(0x00FFFFFF)
+                    )
+                    border(Border(
+                        1.5f,
+                        BorderStyle.SOLID,
+                        if (allSelected() && totalCount() > 0) colors().stateBusinessPrimary
+                        else colors().borderL2,
+                    ))
+                }
+                vif({ allSelected() && totalCount() > 0 }) {
+                    Image {
+                        attr {
+                            src(ImageUri.commonAssets("check.svg"))
+                            size(14f, 14f)
+                            tintColor(Color.WHITE)
+                        }
+                    }
+                }
+            }
             Text {
                 attr {
                     text(if (allSelected() && totalCount() > 0) "取消全选" else "全选")
-                    fontSize(15f)
-                    color(colors().stateBusinessPrimary)
+                    marginLeft(10f)
+                    fontSize(16f)
+                    color(colors().labelPrimary)
                 }
             }
-            event { click { onToggleAll() } }
+        }
+        View { attr { flex(1f) } }
+        // 右侧：关闭多选态
+        View {
+            attr { size(52f, 58f); allCenter() }
+            event { click { onClose() } }
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("x.svg"))
+                    size(22f, 22f)
+                    tintColor(colors().labelSecondary)
+                }
+            }
         }
     }
 }
 
 /**
  * 分享多选态底部弹窗：无 mask，占满底部、覆盖主输入框位置。
- * 标题行居中展示已选计数、右侧关闭，下面是文件格式选择与分享动作。
+ * 顶部居中展示「已选择 N 组对话」，下方是生成 PDF / 复制内容 / 更多分享三个圆形动作；
+ * 点「更多分享」展开文件格式选择与分享按钮。
  */
 internal fun ViewContainer<*, *>.DshExportSelectionSheet(
     selectedCount: () -> Int,
+    moreExpanded: () -> Boolean,
     format: () -> DshExportFormat,
+    pdfBusy: () -> Boolean,
     onPickFormat: (DshExportFormat) -> Unit,
-    onClose: () -> Unit,
+    onGeneratePdf: () -> Unit,
+    onCopyContent: () -> Unit,
+    onMoreShare: () -> Unit,
     onConfirm: () -> Unit,
     colors: () -> DshColorTokens,
 ) {
@@ -92,71 +138,136 @@ internal fun ViewContainer<*, *>.DshExportSelectionSheet(
             flexDirectionColumn()
             paddingLeft(16f)
             paddingRight(16f)
-            paddingTop(14f)
+            paddingTop(16f)
             paddingBottom(18f)
             backgroundColor(colors().bgLayer1)
             borderTop(Border(1f, BorderStyle.SOLID, colors().borderL1))
             boxShadow(BoxShadow(0f, -6f, 18f, Color(0x14000000)))
         }
-        // 标题行：已选计数居中，右侧关闭
+        // 标题：已选组数居中
         View {
-            attr { height(32f); flexDirectionRow(); alignItemsCenter() }
-            View { attr { size(32f, 32f) } }
+            attr { height(26f); flexDirectionRow(); alignItemsCenter() }
             View {
                 attr { flex(1f); allCenter() }
                 Text {
                     attr {
-                        text(if (selectedCount() > 0) "已选 ${selectedCount()} 条" else "请选择要分享的消息")
-                        fontSize(15f)
+                        text(if (canExport()) "已选择 ${selectedCount()} 组对话" else "请选择要分享的对话")
+                        fontSize(16f)
                         fontWeightMedium()
                         color(colors().labelPrimary)
                     }
                 }
             }
+        }
+        // 三个圆形操作：生成 PDF / 复制内容 / 更多分享
+        View {
+            attr { marginTop(18f); flexDirectionRow(); justifyContentSpaceBetween(); paddingLeft(18f); paddingRight(18f) }
+            DshExportRoundAction(
+                label = { if (pdfBusy()) "生成中…" else "生成PDF" },
+                iconAsset = "file.svg",
+                primary = true,
+                enabled = { canExport() && !pdfBusy() },
+                onClick = onGeneratePdf,
+                colors = colors,
+            )
+            DshExportRoundAction(
+                label = { "复制内容" },
+                iconAsset = "copy.svg",
+                primary = true,
+                enabled = { canExport() },
+                onClick = onCopyContent,
+                colors = colors,
+            )
+            DshExportRoundAction(
+                label = { "更多分享" },
+                iconAsset = "more.svg",
+                primary = false,
+                enabled = { canExport() },
+                onClick = onMoreShare,
+                colors = colors,
+            )
+        }
+        // 更多分享：格式选择与分享按钮
+        vif({ moreExpanded() }) {
             View {
-                attr { size(32f, 32f); allCenter() }
-                event { click { onClose() } }
-                Image {
+                attr { flexDirectionColumn(); marginTop(18f) }
+                Text { attr { text("选择导出格式"); fontSize(12f); color(colors().labelTertiary) } }
+                View {
+                    attr { marginTop(8f); flexDirectionRow() }
+                    DshExportFormatChip(DshExportFormat.HTML, format, onPickFormat, first = true, colors = colors)
+                    DshExportFormatChip(DshExportFormat.MARKDOWN, format, onPickFormat, first = false, colors = colors)
+                    DshExportFormatChip(DshExportFormat.TXT, format, onPickFormat, first = false, colors = colors)
+                }
+                View {
                     attr {
-                        src(ImageUri.commonAssets("x.svg"))
-                        size(20f, 20f)
-                        tintColor(colors().labelSecondary)
+                        height(44f)
+                        marginTop(14f)
+                        allCenter()
+                        borderRadius(10f)
+                        backgroundColor(if (canExport()) colors().stateBusinessPrimary else colors().stateBusinessTertiary)
+                    }
+                    event { click { if (canExport()) onConfirm() } }
+                    Text {
+                        attr {
+                            text("分享文件")
+                            fontSize(15f)
+                            fontWeightMedium()
+                            color(if (canExport()) colors().labelPrimaryInverted else colors().stateBusinessPrimary)
+                        }
+                    }
+                }
+                Text {
+                    attr {
+                        text("分享为 ${format().label}（.${format().extension}），可多选或全选后分享。")
+                        marginTop(10f)
+                        fontSize(11f)
+                        color(colors().labelTertiary)
                     }
                 }
             }
         }
-        Text { attr { text("选择文件格式"); marginTop(14f); fontSize(12f); color(colors().labelTertiary) } }
-        View {
-            attr { marginTop(8f); flexDirectionRow() }
-            DshExportFormatChip(DshExportFormat.TXT, format, onPickFormat, first = true, colors = colors)
-            DshExportFormatChip(DshExportFormat.MARKDOWN, format, onPickFormat, first = false, colors = colors)
-            DshExportFormatChip(DshExportFormat.HTML, format, onPickFormat, first = false, colors = colors)
-        }
-        // 分享动作
+    }
+}
+
+/** 底部弹窗里的单个圆形动作：主色实心圆 + 白图标，或浅色圆 + 主色图标。 */
+internal fun ViewContainer<*, *>.DshExportRoundAction(
+    label: () -> String,
+    iconAsset: String,
+    primary: Boolean,
+    enabled: () -> Boolean,
+    onClick: () -> Unit,
+    colors: () -> DshColorTokens,
+) {
+    View {
+        attr { width(88f); flexDirectionColumn(); alignItemsCenter() }
+        event { click { onClick() } }
         View {
             attr {
-                height(44f)
-                marginTop(16f)
+                size(56f, 56f)
+                borderRadius(28f)
                 allCenter()
-                borderRadius(10f)
-                backgroundColor(if (canExport()) colors().stateBusinessPrimary else colors().stateBusinessTertiary)
+                backgroundColor(
+                    if (primary) {
+                        if (enabled()) colors().stateBusinessPrimary else colors().stateBusinessTertiary
+                    } else {
+                        colors().stateBusinessTertiary
+                    }
+                )
             }
-            Text {
+            Image {
                 attr {
-                    text(if (canExport()) "分享 ${selectedCount()} 条" else "请先选择消息")
-                    fontSize(15f)
-                    fontWeightMedium()
-                    color(if (canExport()) colors().labelPrimaryInverted else colors().stateBusinessPrimary)
+                    src(ImageUri.commonAssets(iconAsset))
+                    size(24f, 24f)
+                    tintColor(if (primary && enabled()) Color.WHITE else colors().stateBusinessPrimary)
                 }
             }
-            event { click { if (canExport()) onConfirm() } }
         }
         Text {
             attr {
-                text("分享为 ${format().label}（.${format().extension}），可多选或全选后分享。")
-                marginTop(10f)
-                fontSize(11f)
-                color(colors().labelTertiary)
+                text(label())
+                marginTop(8f)
+                fontSize(13f)
+                color(if (enabled()) colors().labelPrimary else colors().labelTertiary)
             }
         }
     }

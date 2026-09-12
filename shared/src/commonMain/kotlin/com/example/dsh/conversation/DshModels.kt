@@ -9,6 +9,7 @@ import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
 import com.example.dsh.storage.*
 import com.example.dsh.web.*
+import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 internal enum class DshConnectionMode {
     LOCAL,
@@ -480,6 +481,71 @@ internal fun dshShareSelectableIds(messages: List<DshMessage>): Set<String> {
 }
 
 /**
+ * 一条可分享的「对话组」：触发该轮的用户 Prompt 与最终助手回复，以及两者之间的完整过程。
+ *
+ * [startIndex]/[endIndex] 为该回合在消息列表中的闭区间，用于按原始顺序导出正文、
+ * 工具结果与卡片；[key] 以用户消息（无 Prompt 时用助手消息）的 id 生成。
+ */
+internal data class DshShareGroup(
+    val key: String,
+    val startIndex: Int,
+    val endIndex: Int,
+    val userMessageId: String,
+    val assistantMessageId: String?,
+) {
+    /** 组内可勾选的消息：用户 Prompt 与该轮最终助手回复（缺一可）。 */
+    val selectableIds: List<String>
+        get() = listOfNotNull(userMessageId.ifEmpty { null }, assistantMessageId)
+}
+
+/**
+ * 按「用户 Prompt + 该轮最终助手回复」划分可分享对话组。
+ *
+ * 与 [dshShareSelectableIds] 保持一致：隐藏项、上下文注入与思考不参与分组；未结算的
+ * 流式助手只挂到当前组，不单独成组；同一回合出现多段助手正文时，以最后一段作为最终回复。
+ */
+internal fun dshShareGroups(messages: List<DshMessage>): List<DshShareGroup> {
+    val groups = mutableListOf<DshShareGroup>()
+    var startIndex = -1
+    var userId = ""
+    var lastAssistantId: String? = null
+    var lastAssistantStreaming = false
+    fun flush(endIndex: Int) {
+        if (startIndex < 0) return
+        val key = if (userId.isNotEmpty()) "u:$userId" else "a:$lastAssistantId"
+        // 只有该回合最后一段助手正文且已结算时才作为最终回复；流式未结算不加入可选项。
+        val assistantId = if (!lastAssistantStreaming) lastAssistantId else null
+        groups.add(DshShareGroup(key, startIndex, endIndex, userId, assistantId))
+        startIndex = -1
+        userId = ""
+        lastAssistantId = null
+        lastAssistantStreaming = false
+    }
+    messages.forEachIndexed { index, message ->
+        if (message.hidden || message.isContextInjection || message.isReasoning) return@forEachIndexed
+        when (message.role) {
+            DshMessageRole.USER -> {
+                flush(index - 1)
+                startIndex = index
+                userId = message.id
+            }
+            DshMessageRole.ASSISTANT -> {
+                if (startIndex < 0) startIndex = index
+                lastAssistantId = message.id
+                lastAssistantStreaming = message.streaming
+            }
+            else -> Unit
+        }
+    }
+    flush(messages.lastIndex)
+    return groups
+}
+
+/** 某个消息所属的对话组；用户 Prompt 或其最终助手回复都能定位到同一组。 */
+internal fun dshShareGroupForMessage(messages: List<DshMessage>, messageId: String): DshShareGroup? =
+    dshShareGroups(messages).firstOrNull { messageId in it.selectableIds }
+
+/**
  * 一个已结算回合的「中间过程」分组：最终回答之前的思考、工具调用、上下文注入与
  * 过渡正文。默认折叠为一条摘要，点击后展开逐条明细（对齐 Codex 的过程折叠）。
  *
@@ -837,6 +903,36 @@ internal interface DshRepository {
 
     fun saveDeepSeekApiKey(
         apiKey: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    /** 设置页「模型」板块：提供方目录 × 配置 × 密钥状态联接。 */
+    fun loadModelsSettings(
+        onSuccess: (DshModelsSettings) -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    /** settings.mutate：按路径 op 写入一个 namespace 的用户层。 */
+    fun mutateSetting(
+        ns: String,
+        ops: JSONArray,
+        expectedRevision: Int,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    /** credentials.set：写入一个凭据引用（只写）。 */
+    fun setCredential(
+        ref: String,
+        value: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    )
+
+    /** credentials.unset：移除可写层中的一个凭据引用。 */
+    fun unsetCredential(
+        ref: String,
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     )

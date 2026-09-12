@@ -55,6 +55,10 @@ internal data class DshRemoteToolCallModel(
     val callTimeMs: Long = 0,
     /** Tool wall time tool/call → tool/result (ms); 0 when either side lacks timing. */
     val durationMs: Long = 0,
+    /** Web 检索/抓取的结构化结果（对齐 WebBlock）；无则回退通用文本。 */
+    val webCard: DshWebCard? = null,
+    /** grep/glob 的结构化结果（对齐 SearchBlock）；无则回退通用文本。 */
+    val searchCard: DshSearchCard? = null,
 )
 
 internal fun DshRemoteToolCallModel.toRemoteMessage(key: String): DshMessage = DshMessage(
@@ -195,6 +199,8 @@ internal object DshRemoteToolCallModels {
             questionTotal = question.total,
             callTimeMs = base.callTimeMs,
             durationMs = if (timeMs > 0 && base.callTimeMs > 0) (timeMs - base.callTimeMs).coerceAtLeast(0) else 0,
+            webCard = dshParseWebCard(view),
+            searchCard = dshParseSearchCard(view),
         )
     }
 

@@ -179,6 +179,11 @@ internal class DshRemoteRepository(
         callback: (JSONObject?, DshRpcError?) -> Unit,
     ) = delegate.archiveSession(sessionId, callback)
 
+    fun unarchiveSession(
+        sessionId: String,
+        callback: (JSONObject?, DshRpcError?) -> Unit,
+    ) = delegate.unarchiveSession(sessionId, callback)
+
     fun forkMessage(
         sessionId: String,
         message: DshMessage,
@@ -225,6 +230,18 @@ internal class DshRemoteRepository(
 
     override fun saveDeepSeekApiKey(apiKey: String, onSuccess: () -> Unit, onError: (String) -> Unit) =
         delegate.saveDeepSeekApiKey(apiKey, onSuccess, onError)
+
+    override fun loadModelsSettings(onSuccess: (DshModelsSettings) -> Unit, onError: (String) -> Unit) =
+        delegate.loadModelsSettings(onSuccess, onError)
+
+    override fun mutateSetting(ns: String, ops: JSONArray, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.mutateSetting(ns, ops, expectedRevision, onSuccess, onError)
+
+    override fun setCredential(ref: String, value: String, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.setCredential(ref, value, onSuccess, onError)
+
+    override fun unsetCredential(ref: String, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.unsetCredential(ref, onSuccess, onError)
 
     override fun loadModels(sessionId: String, onSuccess: (DshSessionModels) -> Unit, onError: (String) -> Unit) =
         delegate.loadModels(sessionId, onSuccess, onError)

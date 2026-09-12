@@ -41,8 +41,10 @@ internal object DshHostProtocol {
     const val WORKSPACE_ARCHIVE_SESSION = "workspace.archiveSession"
     const val SETTINGS_DESCRIBE = "settings.describe"
     const val SETTINGS_UPDATE = "settings.update"
+    const val SETTINGS_MUTATE = "settings.mutate"
     const val CREDENTIALS_DESCRIBE = "credentials.describe"
     const val CREDENTIALS_SET = "credentials.set"
+    const val CREDENTIALS_UNSET = "credentials.unset"
     const val LLM_PROVIDERS = "llm.providers"
     const val SKILL_LIST = "skill.list"
     const val AGENT_PRESET_LIST = "agentPreset.list"
@@ -1178,6 +1180,37 @@ internal class DshRemoteHostRepository(
         }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
     }
 
+    override fun loadModelsSettings(onSuccess: (DshModelsSettings) -> Unit, onError: (String) -> Unit) {
+        dshLoadModelsSettings(
+            call = { method, payload, callback ->
+                call(method, payload) { value, error -> callback(value, error?.message) }
+            },
+            onSuccess = onSuccess,
+            onError = onError,
+        )
+    }
+
+    override fun mutateSetting(ns: String, ops: JSONArray, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.SETTINGS_MUTATE, JSONObject().apply {
+            put("ns", ns)
+            put("ops", ops)
+            if (expectedRevision > 0) put("expectedRevision", expectedRevision)
+        }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+    }
+
+    override fun setCredential(ref: String, value: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.CREDENTIALS_SET, JSONObject().apply {
+            put("ref", ref)
+            put("value", value)
+        }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+    }
+
+    override fun unsetCredential(ref: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.CREDENTIALS_UNSET, JSONObject().apply {
+            put("ref", ref)
+        }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+    }
+
     override fun loadAgentPresets(onSuccess: (List<DshAgentPresetOption>) -> Unit, onError: (String) -> Unit) {
         call(DshHostProtocol.AGENT_PRESET_LIST, JSONObject()) { value, error ->
             if (error != null || value == null) {
@@ -1718,6 +1751,25 @@ internal class DshRemoteHostRepository(
                 sessionCatalogLoader.invalidate()
                 // This projection follows a successful Host mutation, never an optimistic local archive.
                 store.replaceWorkspaceBaseline(store.workspaceBaseline, store.archivedSessionIds + sessionId)
+            }
+            callback(value, error)
+        }
+    }
+
+    /**
+     * 取消归档：调用 host-plugin 的 `/api/session-manager/unarchive`。
+     * 官方 DSH 没有公开的 unarchive RPC，归档集合由 WorkspaceRegistry 私有持有；
+     * 成功写入会触发 `host/archived-sessions-changed`，这里也同步移除本地投影，
+     * 避免等待下一次目录刷新。
+     */
+    fun unarchiveSession(
+        sessionId: String,
+        callback: (JSONObject?, DshRpcError?) -> Unit,
+    ) {
+        callPlugin("unarchive", JSONObject().apply { put("sessionId", sessionId) }) { value, error ->
+            if (error == null) {
+                sessionCatalogLoader.invalidate()
+                store.replaceWorkspaceBaseline(store.workspaceBaseline, store.archivedSessionIds - sessionId)
             }
             callback(value, error)
         }

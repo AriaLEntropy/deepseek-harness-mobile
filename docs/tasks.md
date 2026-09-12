@@ -1,6 +1,41 @@
 # 当前任务
 
-更新：2026-09-12。此表追踪本轮可确认的任务，代码完成与平台验收分别记录。9 月 11 日记录仅沿用已有 Task3 编号；9 月 12 日起按完整原始任务集追踪。
+更新：2026-09-13。此表追踪本轮可确认的任务，代码完成与平台验收分别记录。9 月 11 日记录仅沿用已有 Task3 编号；9 月 12 日起按完整原始任务集追踪。
+
+## 2026-09-13：会话归档恢复与电脑端归档页
+
+在 Task 4 归档浏览/删除基础上补齐「取消归档」，并把归档入口与管理页带到电脑端 DSH Web。
+
+| 范围 | 实现 | 验证 / 边界 |
+| --- | --- | --- |
+| Host 桥接 | `host-plugin/index.mjs` 新增 `/api/session-manager/unarchive`：官方无公开 unarchive RPC，复用 `WorkspaceRegistry` 的 `enqueueOperation`/`setState` 仅改 `archivedSessionIds`；`setState` 触发 `domain/changed` → apiproxy 广播 `host/archived-sessions-changed` | `node --check` 通过；需安装后联调 |
+| 移动端 | `DshHostProtocol.unarchiveSession` + `DshRemoteRepository` 转发；`DshArchivedSessions` 每行新增「取消归档」，成功后该会话回到主列表/工作区分组 | `:shared:compileDebugKotlinAndroid` 通过；设备回归待做 |
+| 电脑端（非侵入） | 同一手写 `client.js` 注册 `sidebar.footer.action` 槽「已归档的聊天」，整屏管理页：搜索、项目筛选、排序、取消归档、单条/项目/全部删除；类型筛选按项目所有者要求只保留「全部聊天」；内联复用项目 SVG 与 `--dsw-alias-*` 主题 token | `node --check` 通过；真实 `dsh web` 需重启后目视 |
+
+上游结论：`deepseek-harness` 最新 `dsh-v0.1.2-alpha.3` / `origin/master` 均无归档浏览页或 unarchive API（`packages/workspace/workspace/README.md` 标注「Archiving is one-way」），故采用情况 B：保留移动端现有归档样式并给电脑端新增入口。
+
+## 2026-09-13：对话导出优化（多选组 / PDF / 底部三入口）
+
+| 范围 | 实现 | 验证 / 边界 |
+| --- | --- | --- |
+| 入口 | 长按 AI 消息菜单「分享」、消息 footer 分享图标、overflow「分享消息」统一进入多选态；footer/长按会把点击消息所在对话组设为默认选中 | 代码完成；真机交互待验收 |
+| 选择单位 | 以「对话组」（用户 Prompt + 该轮最终助手回复）为单位：`dshShareGroups` 划分，勾选任一条同组两条一起选中；计数显示「已选择 N 组对话」 | 沿用仅当前会话范围，不支持跨会话选择 |
+| 顶部栏 / 底部弹窗 | 顶部栏左侧全选/取消全选、右侧关闭；底部弹窗对齐参考图，三个圆形动作：生成PDF / 复制内容 / 更多分享；更多分享展开 TXT/Markdown/HTML 与分享按钮 | 工具调用卡样式不套用参考图，沿用现有卡片 |
+| 导出能力 | 仅导出正文（用户 Prompt + 该轮最终助手回复），不含工具调用/思考/上下文注入；HTML 为默认导出格式；复制内容输出可读文本；新增 PDF：Android 用 WebView + 系统打印「另存为 PDF」，iOS/OHOS 提示暂不支持 | `:androidApp:assembleDebug` 通过；PDF/打印真机待验收 |
+
+实现入口：`DshModels.kt` 的 `dshShareGroups`/`DshShareGroup`；`DshHomePage.kt` 组选择状态与 `exportSelectionAsPdf`/`copyExportSelection`/`toggleExportMoreShare`；`DshTextExport.kt` 选择态 UI；`BridgeModule.htmlToPdf` 与 Android `KRBridgeModule` 的 MIME 推断及系统打印。PDF 采用系统 `PrintManager` 而非静默打印：`PrintDocumentAdapter` 的结果回调构造函数为包私有，Kotlin 无法静默驱动，系统打印是官方支持的 HTML→PDF 路径且自动分页。
+
+## 2026-09-13：插件启停（电脑端 + 移动端）
+
+在 Task 5 已有只读清单与本地启停雏形上，补齐两端一致的可视化启停。
+
+| 范围 | 实现 | 验证 / 边界 |
+| --- | --- | --- |
+| Host 桥接 | `host-plugin/index.mjs` 的 `/list`、`/action`（enable/disable/reload）继续作为唯一写入口，基于公共 `Entry.update()`；拒绝桥接自身、条件表达式与上级分组禁用 | `node --check` 通过；端到端需安装后按 README 联调 |
+| 电脑端（非侵入） | `host-plugin` 增加 `dsh.client` 与手写惰性 CJS 产物 `client.js`，注册 `settings.plugins.tab` 新标签页「插件启停」（可搜索、状态点、每行开关、展开详情）；**不改**官方 `ui-settings-plugin-inventory` | 隔离校验脚本核对包解析、`./client` 导出、工厂 id、槽注册选项全部通过；真实 `dsh web` 需重启后目视 |
+| 移动端 | `DshPluginInventoryView.kt` 重写为对齐官方「插件列表」的紧凑折叠卡片：搜索、状态点/启停标签、每行开关（停用/重载二次确认）、展开详情 | `:shared:compileDebugKotlinAndroid` 通过；真机交互待验收 |
+
+设计约束：两端共用同一 Host 端点与 `canToggle` 语义；电脑端通过独立的浏览器半边标签页实现，避免 patch 官方只读页面。`Entry.update()` 的「重载」仍是停用→启用组合，非独立 restart。
 
 ## 2026-09-12：原始任务集对照（基础项 / 加分项）
 
@@ -84,13 +119,13 @@
 | 类型 | 条目 | 状态 | 备注 |
 | --- | --- | --- | --- |
 | 基础 | 拉取展示插件列表 | ✅ | `DshPluginInventoryView.kt` + `host-plugin` |
-| 基础 | 名称搜索+状态过滤 | ✅ | `DshPluginInventory.kt:31` |
-| 基础 | failed 状态+错误摘要 | ✅ | `DshPluginInventoryView.kt:73` |
-| 基础 | 空/加载/失败/无结果 UI | ✅ | `DshPluginInventoryView.kt:57` |
-| 基础 | 只读不显示启停 | ✅ | `host-plugin/index.mjs:70` |
-| 加分 | 详情页/完整配置 | ❌ | 仅一行摘要 |
-| 加分 | 刷新插件状态 | ✅ | `DshPluginInventoryView.kt:32` |
-| 加分 | 启停/重载协议 | ❌ | 仅 GET |
+| 基础 | 名称搜索+状态过滤 | ✅ | 移动端搜索名称/ID；电脑端沿用官方标签页 |
+| 基础 | failed 状态+错误摘要 | ✅ | `DshPluginInventoryView.kt` 状态点 + 失败原因 |
+| 基础 | 空/加载/失败/无结果 UI | ✅ | `DshPluginInventoryView.kt` |
+| 基础 | 只读时隐藏启停 | ✅ | 桥接以 `canToggle` 区分；不可启停的开关置灰并给出原因 |
+| 加分 | 详情页/完整配置 | ✅ | 展开卡片展示脱敏配置 / Injects / 失败原因 |
+| 加分 | 刷新插件状态 | ✅ | `DshPluginInventoryView.kt` 顶部刷新 |
+| 加分 | 启停/重载协议 | ✅ | `host-plugin` `/action` + 电脑端浏览器标签页 + 移动端开关 |
 
 ### Task 6 · 日志中心与问题反馈
 

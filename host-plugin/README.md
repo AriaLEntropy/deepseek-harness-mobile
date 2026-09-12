@@ -1,11 +1,35 @@
 # DSH 移动端 Host 桥接（插件清单 / 详情 / 启停重载 + 归档会话管理）
 
-为 App 提供两组能力：
+为移动 App 和电脑端 DSH Web 提供同一套插件启停能力：
 
-1. 「设置 → Host 插件」的真实 Loader 清单、配置摘要、失败原因与**详情**，并支持**启停 / 重载**（见「插件端点」）。
-2. 归档页的会话元数据读取与文件级删除（见「会话管理端点」）。
+1. 移动 App「设置 → Host 插件」的真实 Loader 清单、配置摘要、失败原因与**详情**，并支持**启停 / 重载**（见「插件端点」）。
+2. 电脑端 DSH Web「设置 → 插件」分区新增的**插件启停**标签页：同样的清单、搜索、状态与开关（见「Web 端插件启停标签页」）。
+3. 归档会话的元数据读取、取消归档与文件级删除（见「会话管理端点」）。
+4. 电脑端 DSH Web 侧边栏底部的**已归档的聊天**入口与管理页：搜索、项目筛选、排序、取消归档、永久删除（见「电脑端已归档的聊天页」）。
 
-均基于公共 Cordis 服务，不改 DSH 核心源码。启停/重载只用 vendored loader 的公共 `Entry.update()`，不读写私有状态。
+均基于公共 Cordis 服务，不改 DSH 核心源码。启停/重载只用 vendored loader 的公共 `Entry.update()`，不读写私有状态。取消归档是唯一例外：官方没有公开的 unarchive RPC，见「会话管理端点」的说明。电脑端也不改官方只读的「插件列表」标签页，而是由本包自身的浏览器半边注册一个新标签页。
+
+## Web 端插件启停标签页（非侵入）
+
+本包声明 `dsh.client` 并提供手写的惰性 CJS 工厂产物 `client.js`（官方 `tsdown.client.ts` 预设未发布，外部包必须自行复现该格式）。Host 启动时扫描已挂载条目，把 `client.js` 作为 `/plugins/dsh-mobile-plugin-inventory/client.js` 下发；浏览器半边用 `settings.plugins.tab` 槽注册 `mobile-plugin-switch` 标签页（order 11）。
+
+- 只读官方源码：`ui-settings-plugin-inventory` 与其 `all` 标签页原样保留；新能力以并列标签页形式提供，不 patch、不覆盖。
+- 浏览器半边只 `require('react')`（平台模块表），通过同源 `fetch` 调用下面的 `/list` 与 `/action` 端点；文案按文档语言在中/英之间切换。
+- 每行提供开关、状态点、启停标签与展开详情（Loader 条目、Cordis 状态、失败原因、脱敏配置、Injects、重载）。
+- `canToggle` 为假的条目开关置灰并展示原因（桥接自身、条件表达式、上级分组禁用）。
+- 改动 `client.js` 后重启 `dsh web` 即可生效；Host 会按内容哈希刷新 `rev`，开发期可用官方 HMR 通道热更新。
+
+## 电脑端已归档的聊天页（非侵入）
+
+官方 DSH（含 `dsh-v0.1.2-alpha.3` / `master`）只有「归档会话」动作，没有归档浏览或取消归档入口。本包在同一个手写 `client.js` 里再注册一个 `sidebar.footer.action` 槽条目：侧边栏底部的「已归档的聊天」，点击后以整屏浮层打开管理页，不替换官方任何页面。
+
+- 入口由 `sidebar.footer.action`（list 槽）承载，展开态显示图标 + 文案，折叠成 56px 轨道时只显示图标。
+- 数据直接读客户端标准 hook `useWorkspaces`（`items`、`archivedSessionIds`）与 `useSessions`（`byId`）：已归档会话按工作区 `sessionIds` 分组，未归属的进「无项目」，与官方树的分组口径一致；「创建时间」排序的 `createdAt` 由 `/api/session-manager/meta` 补充。
+- 「取消归档」调用 `/api/session-manager/unarchive`，写入归档集合后由 `host/archived-sessions-changed` 驱动两端自动刷新。
+- 永久删除复用 `/api/session-manager/deleteMany`（单条 / 项目内全部 / 全部）；已删除项在当前会话内本地过滤，重载后由 Host 列表自然消失。
+- 类型筛选按项目所有者要求只保留「全部聊天」；「本地 / 云端」在当前 Host 协议里没有对应字段，因此不展示。
+- 样式使用 `--dsw-alias-*` 语义 token，跟随 DSH 明暗主题；图标复用移动端 `shared/src/commonMain/assets` 中的 `archive/folder/delete/tool-search/chevron-down/check/more.svg`（内联为 SVG 路径）。
+- 官方只读的「插件列表」标签页与官方会话树均不改动。
 
 ## 安装
 
@@ -94,14 +118,26 @@ npx @deepseek-ai/dsh plugin --profile web add "/absolute/path/deepseek-harness-m
 响应：{ "ok": true, "deleted": ["..."], "failed": [{ "sessionId": "...", "error": "可读原因" }] }
 ```
 
+`/api/session-manager/unarchive`（POST）：
+
+```json
+请求：{ "sessionId": "..." }
+成功：{ "ok": true, "sessionId": "..." }
+```
+
+- 取消归档把会话从 registry 的归档集合移除，使其重新出现在工作区分组与「无项目」中。
+- 官方 DSH 至今没有公开的 unarchive RPC，归档集合又是 `WorkspaceRegistry` 的私有状态；本端点复用 registry 自己的串行写链（`enqueueOperation`）与状态提交（`setState`），只改 `archivedSessionIds`。`setState` 写入 `workspace` domain global 会触发 `domain/changed`，Host apiproxy 随即向所有客户端广播 `host/archived-sessions-changed`，因此电脑端与手机端都无需手动刷新。
+- 这是对 registry 运行期内部方法的最小依赖（TS `private` 在运行期可用）：实现前会探测 `state`/`setState`，缺失时返回可读错误而不是静默失败。
 - 删除是**文件级**：`sessionPersistence.locate()` 取到会话 artifact 路径后删除其所在目录；不修改 workspace 归档集合、投影缓存或会话日志之外的数据。
 - 运行中的会话拒绝删除；未知 id、当前后端无单会话 artifact 均返回可读错误。
-- 本插件**不提供取消归档**（需要 Host 的 unarchive 能力，纯插件无法改归档集合）。
 
 ## 验证
 
 ```sh
 node --check host-plugin/index.mjs
+node --check host-plugin/client.js
 ```
 
-安装桥接后，通过实际 Host → Relay/SSH → App 核对插件清单显示、失败提示和刷新行为。
+安装桥接后，通过实际 Host → Relay/SSH → App 核对插件清单显示、失败提示、刷新与启停；再打开电脑端 `dsh web` 的「设置 → 插件 → 插件启停」，核对同一插件在两端的启停状态一致（切换后另一端刷新可见）。
+
+归档：先在电脑端 `dsh web` 归档一个会话，再从侧边栏底部打开「已归档的聊天」，核对搜索、项目筛选、排序、取消归档与删除；取消归档后该会话应回到工作区树，同一 Host 的移动 App 归档页刷新后也应同步。
