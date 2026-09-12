@@ -181,6 +181,7 @@ internal class DshHomePage : BasePager() {
     private var permissionValue by observable("workspace-write")
     private var permissionLabel by observable("工作区写入")
     private var agentModePickerVisible by observable(false)
+    private var agentModePickerTitle by observable("选择模式")
     private var agentModeValue by observable("standard")
     private var agentModeLabel by observable("标准模式")
     // 电脑端 agentPreset.list 拉取的预设（空则回退本地四项）
@@ -996,6 +997,7 @@ internal class DshHomePage : BasePager() {
                 // 当前以本地预设为兜底；选中值存本地，未来在创建会话时随参数下发。
                 vif({ ctx.agentModePickerVisible }) {
                     DshAgentModePicker(
+                        title = { ctx.agentModePickerTitle },
                         options = {
                             ObservableList<DshAgentModeOption>().apply {
                                 if (ctx.agentPresetOptions.isEmpty()) {
@@ -1062,6 +1064,7 @@ internal class DshHomePage : BasePager() {
                         onPickLocale = { ctx.openSettingsChoice("locale", "语言") },
                         onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
                         onPickDefaultModel = { ctx.openDefaultModelPicker() },
+                        onOpenAgentPresets = { ctx.openAgentModePicker("Agent 预设") },
                         onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
                         onOpenPlugins = { ctx.openPluginInventory() },
                         onDisconnect = { ctx.disconnectFromHost() },
@@ -1927,7 +1930,8 @@ internal class DshHomePage : BasePager() {
         DshConnectionMode.SSH -> "SSH 连接"
     }
 
-    private fun openAgentModePicker() {
+    private fun openAgentModePicker(title: String = "选择模式") {
+        agentModePickerTitle = title
         if (agentPresetOptions.isEmpty()) {
             val repo = repository
             repo?.loadAgentPresets({

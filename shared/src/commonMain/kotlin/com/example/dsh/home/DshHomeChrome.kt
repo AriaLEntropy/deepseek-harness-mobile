@@ -1288,6 +1288,7 @@ internal data class DshAgentModeOption(
 // 纵向 list：每项 模式名 + 多行描述，选中项右侧蓝勾（d888 样式）。
 internal fun ViewContainer<*, *>.DshAgentModePicker(
     options: () -> ObservableList<DshAgentModeOption>,
+    title: () -> String = { "选择模式" },
     onClose: () -> Unit,
     onSelect: (DshAgentModeOption) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
@@ -1315,7 +1316,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
                 attr { height(40f); flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
-                        text("选择模式")
+                        text(title())
                         fontSize(18f)
                         fontWeightBold()
                         color(colors().labelPrimary)
@@ -1728,6 +1729,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     onPickLocale: () -> Unit,
     onPickTheme: () -> Unit,
     onPickDefaultModel: () -> Unit,
+    onOpenAgentPresets: () -> Unit,
     onOpenDiagnosticLogs: () -> Unit,
     onOpenPlugins: () -> Unit,
     onDisconnect: () -> Unit,
@@ -1845,6 +1847,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             DshSettingsRow("icon-globe14.svg", "语言", { dshSettingsLocaleLabel(snapshot()) }, onPickLocale, colors = colors)
             DshSettingsRow("icon-followsystem16.svg", "外观", { dshThemeModeLabel(themeMode()) }, onPickTheme, colors = colors)
             DshSettingsRow("icon-agentpreset16.svg", "默认模型", { dshSettingsDefaultModelLabel(snapshot()) }, onPickDefaultModel, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "Agent 预设", { "管理会话运行模式" }, onOpenAgentPresets, colors = colors)
             DshSettingsRow("log.svg", "日志", { "" }, onOpenDiagnosticLogs, colors = colors)
             DshSettingsRow("icon-agentpreset16.svg", "Host 插件", { "只读" }, onOpenPlugins, colors = colors)
 
