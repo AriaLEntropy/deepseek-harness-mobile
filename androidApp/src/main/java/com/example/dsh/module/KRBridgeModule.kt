@@ -117,7 +117,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "stopSshKeepAlive" -> stopSshKeepAlive()
             "shareExportFile" -> shareExportFile(params, callback)
             "readLastCrash" -> readLastCrash(params)
-            "clearLastCrash" -> clearLastCrash(params)
+            "clearLastCrash" -> clearLastCrash(callback)
             "getDeviceInfo" -> getDeviceInfo(params)
 
             else -> callback?.invoke(
@@ -189,9 +189,12 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         return if (file.exists()) file.readText() else ""
     }
 
-    private fun clearLastCrash(params: String?): Any? {
-        File(KRApplication.application.filesDir, "last_crash.txt").delete()
-        return null
+    private fun clearLastCrash(callback: KuiklyRenderCallback?) {
+        val ok = runCatching {
+            val file = File(KRApplication.application.filesDir, "last_crash.txt")
+            !file.exists() || file.delete()
+        }.getOrDefault(false)
+        callback?.invoke(mapOf("ok" to ok))
     }
 
     private fun getDeviceInfo(params: String?): String {
@@ -337,6 +340,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 }
                 requestCode = REQUEST_PICK_IMAGE
             }
@@ -373,29 +377,52 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         return Triple(options.outMimeType, options.outWidth, options.outHeight)
     }
 
-    private fun deliverPickedImage(bytes: ByteArray?, displayName: String) {
-        if (bytes == null || bytes.isEmpty()) {
+    private fun deliverPickedImages(images: List<Pair<ByteArray?, String>>) {
+        val entries = mutableListOf<Map<String, Any?>>()
+        for ((bytes, displayName) in images) {
+            if (bytes == null || bytes.isEmpty()) continue
+            val (mime, width, height) = decodeImageMeta(bytes)
+            if (mime.isNullOrEmpty() || width <= 0 || height <= 0) continue
+            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            entries.add(
+                mapOf(
+                    "dataUrl" to "data:$mime;base64,$base64",
+                    "mediaType" to mime,
+                    "name" to displayName,
+                    "bytes" to bytes.size.toString(),
+                    "width" to width.toString(),
+                    "height" to height.toString(),
+                )
+            )
+        }
+        if (entries.isEmpty()) {
             finishPickImage(mapOf("ok" to false, "error" to "无法读取图片数据"))
             return
         }
-        val (mime, width, height) = decodeImageMeta(bytes)
-        if (mime.isNullOrEmpty() || width <= 0 || height <= 0) {
-            finishPickImage(mapOf("ok" to false, "error" to "不支持的图片格式"))
-            return
+        Log.i("HRBridgePick", "picked ${entries.size} image(s)")
+        finishPickImage(mapOf("ok" to true, "images" to entries))
+    }
+
+    private fun deliverPickedImage(bytes: ByteArray?, displayName: String) =
+        deliverPickedImages(listOf(bytes to displayName))
+
+    private fun queryDisplayName(uri: Uri): String {
+        var name = "image"
+        try {
+            context?.contentResolver?.query(
+                uri,
+                arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                    if (idx >= 0) cursor.getString(idx)?.takeIf { it.isNotEmpty() }?.let { name = it }
+                }
+            }
+        } catch (e: Exception) {
+            // 保留默认名
         }
-        val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        Log.i("HRBridgePick", "dataUrl len=${base64.length} preview=yes")
-        finishPickImage(
-            mapOf(
-                "ok" to true,
-                "dataUrl" to "data:$mime;base64,$base64",
-                "mediaType" to mime,
-                "name" to displayName,
-                "bytes" to bytes.size.toString(),
-                "width" to width.toString(),
-                "height" to height.toString(),
-            )
-        )
+        return name
     }
 
     private fun saveImage(params: String?, callback: KuiklyRenderCallback?) {
@@ -510,27 +537,21 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             }
 
             REQUEST_PICK_IMAGE -> {
-                if (resultCode != android.app.Activity.RESULT_OK || data?.data == null) {
+                if (resultCode != android.app.Activity.RESULT_OK) {
                     finishPickImage(mapOf("ok" to false, "cancelled" to true))
                     return
                 }
-                val uri = data.data
-                var name = "image"
-                try {
-                    context?.contentResolver?.query(
-                        uri!!,
-                        arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
-                        null, null, null,
-                    )?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val idx = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
-                            if (idx >= 0) name = cursor.getString(idx) ?: "image"
-                        }
-                    }
-                } catch (e: Exception) {
-                    // 保留默认名
+                val uris = mutableListOf<Uri>()
+                val clip = data?.clipData
+                if (clip != null) {
+                    for (i in 0 until clip.itemCount) clip.getItemAt(i)?.uri?.let(uris::add)
                 }
-                deliverPickedImage(readPickedBytes(uri), name)
+                data?.data?.let { if (it !in uris) uris.add(it) }
+                if (uris.isEmpty()) {
+                    finishPickImage(mapOf("ok" to false, "cancelled" to true))
+                    return
+                }
+                deliverPickedImages(uris.map { uri -> readPickedBytes(uri) to queryDisplayName(uri) })
             }
 
             REQUEST_CAPTURE_PHOTO -> {

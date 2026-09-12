@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_icon_background">#FFFFFF</color>
+    <!-- 冷启动窗口背景：浅色主题；深色由 values-night 覆盖 -->
+    <color name="dsh_window_background">#FFFFFFFF</color>
 </resources>

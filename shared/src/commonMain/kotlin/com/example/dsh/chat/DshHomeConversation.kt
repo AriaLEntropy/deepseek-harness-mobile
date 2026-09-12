@@ -34,7 +34,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
 // AI 回答下方横向操作容器（footer）的可用操作项，对齐 dsh 原版 IconActions 行
-internal enum class DshMessageFooterAction { COPY, GOOD, BAD, BRANCH }
+internal enum class DshMessageFooterAction { COPY, GOOD, BAD, BRANCH, SHARE }
 
 internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
@@ -251,6 +251,15 @@ internal fun ViewContainer<*, *>.DshConversation(
     previewImageUrl: () -> String? = { null },
     onDismissPreview: () -> Unit = {},
     onSaveImage: (String) -> Unit = {},
+    // 导出多选态：进入后消息列表可勾选，底部弹窗覆盖输入框选择文件格式
+    exportSelectMode: () -> Boolean = { false },
+    exportSelectedIds: () -> Set<String> = { emptySet() },
+    exportFormat: () -> DshExportFormat = { DshExportFormat.TXT },
+    exportSelectedCount: () -> Int = { 0 },
+    onToggleExportMessage: (String) -> Unit = {},
+    onExportFormatChange: (DshExportFormat) -> Unit = {},
+    onExportConfirm: () -> Unit = {},
+    onExportCancel: () -> Unit = {},
 ) {
     // 聊天主界面根容器：整页白色纵向布局（消息区 + 浮动面板 + 输入条）
     View {
@@ -326,50 +335,51 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
                                 // 单条消息行：包一层宽度约束，内部由 DshMessageRow 渲染
                                 ) { message, _, _ ->
-                                    View {
-                                        ref { messageRef(sessionId, message.id, it) }
-                                        attr {
-                                            width((availableWidth - 36f).coerceAtLeast(0f))
-                                        }
+                                    val processGroup = if (isWebTimeline()) {
+                                        dshTurnProcessGroup(messagesForSession(sessionId), message)
+                                    } else {
+                                        null
+                                    }
+                                    // 单条消息渲染入口；过程分组展开时成员复用同一入口。
+                                    // inProcess=true 会锁开成员卡片正文（只读明细），且不显示 footer。
+                                    val renderMessage: ViewContainer<*, *>.(DshMessage, Boolean) -> Unit = { target, inProcess ->
                                         DshMessageRow(
-                                            message,
+                                            target,
                                             pageStreaming = {
-                                                streaming() &&
+                                                !inProcess && streaming() &&
                                                     activeConversationId() == sessionId &&
-                                                    streamingMessageId() == message.id
+                                                    streamingMessageId() == target.id
                                             },
                                             isWebTimeline = isWebTimeline(),
-                                            isExpanded = { isDisclosureExpanded(message.id) },
-                                            onToggle = {
-                                                onToggleDisclosure(message.id)
-                                            },
-                                            isBodyExpanded = { isBodyDisclosureExpanded(message.id) },
-                                            onToggleBody = {
-                                                onToggleBodyDisclosure(message.id)
-                                            },
-                                            isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
-                                            onToggleJsonNode = { onToggleJsonNode(message.id, it) },
+                                            isExpanded = { isDisclosureExpanded(target.id) },
+                                            onToggle = { onToggleDisclosure(target.id) },
+                                            isBodyExpanded = { isBodyDisclosureExpanded(target.id) },
+                                            onToggleBody = { onToggleBodyDisclosure(target.id) },
+                                            isJsonNodeExpanded = { isJsonNodeExpanded(target.id, it) },
+                                            onToggleJsonNode = { onToggleJsonNode(target.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
                                             onCopyMessageContent = { onCopyMessageContent(it) },
-                                            copied = { copiedMessageId() == message.id },
+                                            copied = { copiedMessageId() == target.id },
                                             colors = { colors() },
                                             onLongPress = { msg, content, px, py ->
                                                 onMessageLongPress(msg, content, px, py)
                                             },
                                             onFooterAction = { msg, action -> onFooterAction(msg, action) },
                                             // footer 只渲染"当前回合（最近一条 user 之后）最后一段
-                                            // 已结算 assistant"，中间的过渡文本/分段不会重复渲染。
-                                            // 有待处理的提问/授权交互时整个 turn 尚未结束（与 DSH 原版一致），
-                                            // 提问之间的中间输出段不显示 footer，避免每段都重复渲染操作栏
+                                            // 已结算 assistant"；过程成员一律不渲染，避免重复操作栏。
                                             isTurnTail = {
-                                                val hasInteraction =
-                                                    pendingQuestion()?.sessionId == sessionId ||
-                                                        pendingApproval()?.sessionId == sessionId
-                                                if (hasInteraction) {
+                                                if (inProcess) {
                                                     false
                                                 } else {
-                                                    val tailId = dshTurnTailAssistant(messagesForSession(sessionId))?.id
-                                                    tailId != null && tailId == message.id
+                                                    val hasInteraction =
+                                                        pendingQuestion()?.sessionId == sessionId ||
+                                                            pendingApproval()?.sessionId == sessionId
+                                                    if (hasInteraction) {
+                                                        false
+                                                    } else {
+                                                        val tailId = dshTurnTailAssistant(messagesForSession(sessionId))?.id
+                                                        tailId != null && tailId == target.id
+                                                    }
                                                 }
                                             },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
@@ -377,17 +387,119 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onPreviewImage = { onPreviewImage(it) },
                                             contentProvider = {
                                                 val stored = messagesForSession(sessionId)
-                                                    .firstOrNull { it.id == message.id }
+                                                    .firstOrNull { it.id == target.id }
                                                     ?.content
                                                     .orEmpty()
                                                 dshDisplayedAssistantContent(
                                                     stored = stored,
                                                     live = streamingContent(),
-                                                    isLiveRow = streamingMessageId() == message.id &&
+                                                    isLiveRow = !inProcess &&
+                                                        streamingMessageId() == target.id &&
                                                         activeConversationId() == sessionId,
                                                 )
                                             },
+                                            bodyLocked = inProcess,
                                         )
+                                    }
+                                    View {
+                                        ref { messageRef(sessionId, message.id, it) }
+                                        attr {
+                                            width((availableWidth - 36f).coerceAtLeast(0f))
+                                            // 用三元而非 if：Kuikly attr 在条件为 false 时不会清除
+                                            // 之前设置过的属性，退出多选态必须显式复位背景与内边距。
+                                            // 仅可分享项（用户发言 / 每轮最终回复）才留出勾选框位置。
+                                            paddingLeft(if (exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId))) 30f else 0f)
+                                            borderRadius(if (exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId))) 10f else 0f)
+                                            backgroundColor(
+                                                if (exportSelectMode() && message.id in exportSelectedIds()) {
+                                                    colors().stateBusinessTertiary
+                                                } else {
+                                                    Color(0x00FFFFFF)
+                                                },
+                                            )
+                                        }
+                                        when {
+                                            // 普通消息：直接渲染。
+                                            processGroup == null -> this.renderMessage(message, false)
+                                            // 过程分组首条：整个过程块放进同一行，避免 vforLazy
+                                            // 无法为折叠态零高度的后续行补建视图导致展开不生效。
+                                            processGroup.isFirst -> View {
+                                                attr {
+                                                    width((availableWidth - 36f).coerceAtLeast(0f))
+                                                    marginBottom(6f)
+                                                }
+                                                DshDisclosureRow {
+                                                    attr {
+                                                        title = processGroup.label
+                                                        iconAsset = "think.svg"
+                                                        this.colors = colors()
+                                                        open = isDisclosureExpanded(processGroup.key)
+                                                        expandable = true
+                                                        this.onToggle = { onToggleDisclosure(processGroup.key) }
+                                                        compact = true
+                                                        chrome = true
+                                                        headerOnly = true
+                                                    }
+                                                }
+                                                // 明细与表头同处一行，限高并可内部滚动；成员沿用各自
+                                                // 卡片（Think 已限高、工具自带滚动），宽度与列表行一致。
+                                                vif({ isDisclosureExpanded(processGroup.key) }) {
+                                                    Scroller {
+                                                        attr {
+                                                            height(360f)
+                                                            marginTop(6f)
+                                                        }
+                                                        View {
+                                                            attr {
+                                                                flexDirectionColumn()
+                                                                marginBottom(8f)
+                                                            }
+                                                            processGroup.members.forEach { member ->
+                                                                this.renderMessage(member, true)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            // 其余过程成员：始终并入首行分组，本行不渲染。
+                                            else -> Unit
+                                        }
+                                        // 多选态：左侧圆形勾选框 + 覆盖整行的点击热区（不影响列表滚动）
+                                        vif({ exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId)) }) {
+                                            View {
+                                                attr {
+                                                    positionAbsolute()
+                                                    left(0f)
+                                                    top(4f)
+                                                    size(20f, 20f)
+                                                    borderRadius(10f)
+                                                    allCenter()
+                                                    border(Border(
+                                                        1.5f,
+                                                        BorderStyle.SOLID,
+                                                        if (message.id in exportSelectedIds()) colors().stateBusinessPrimary
+                                                        else colors().borderL2,
+                                                    ))
+                                                    backgroundColor(
+                                                        if (message.id in exportSelectedIds()) colors().stateBusinessPrimary
+                                                        else Color(0x00FFFFFF),
+                                                    )
+                                                }
+                                                vif({ message.id in exportSelectedIds() }) {
+                                                    Image {
+                                                        attr {
+                                                            src(ImageUri.commonAssets("check.svg"))
+                                                            size(13f, 13f)
+                                                            tintColor(Color.WHITE)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            View {
+                                                attr { absolutePositionAllZero() }
+                                                event { click { onToggleExportMessage(message.id) } }
+                                            }
+                                        }
                                     }
                                 }
                                 // 回合状态行：当前 turn 进行中的状态提示
@@ -624,7 +736,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                 // 输入卡：DSH Web 风格，细描边 + 弥散阴影，10px 顶部内边距。
                 // 左右对称 margin 出 clearance（各 12px），宽度扣减 24 避免右侧溢出截断。
                 // 弹出提问流程面板时隐藏输入框（与 DSH 原版一致），由浮动卡片接管底部交互区
-                vif({ !questionActive() }) {
+                // 导出多选态下输入卡让位给底部格式弹窗。
+                vif({ !questionActive() && !exportSelectMode() }) {
                 View {
                     attr {
                         width((availableWidth - 24f).coerceAtLeast(0f))
@@ -879,6 +992,18 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
 
                 }
+                }
+
+                // 导出多选态底部弹窗：无遮罩，占据输入框位置，提供计数、关闭、文件格式选择与分享操作
+                vif({ exportSelectMode() }) {
+                    DshExportSelectionSheet(
+                        selectedCount = exportSelectedCount,
+                        format = exportFormat,
+                        onPickFormat = onExportFormatChange,
+                        onClose = onExportCancel,
+                        onConfirm = onExportConfirm,
+                        colors = colors,
+                    )
                 }
 
         }
@@ -1137,11 +1262,12 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     attachmentRevision: () -> Int = { 0 },
     onPreviewImage: (String) -> Unit = {},
     contentProvider: (() -> String)? = null,
+    /** 回合过程分组展开时，成员卡片直接铺开、不可再折叠。 */
+    bodyLocked: Boolean = false,
 ) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
     val isError = message.role == DshMessageRole.ERROR
-    DshStreamLog.d("row role=${message.role} id=${message.id} contentChars=${message.content.length}")
     val renderedContent = contentProvider?.invoke() ?: message.content
     if (
         message.role == DshMessageRole.ASSISTANT &&
@@ -1166,8 +1292,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.colors = colors()
                     summary = message.toolName.orEmpty()
                     body = ""
-                    open = isExpanded()
-                    expandable = message.contextCanExpand()
+                    open = bodyLocked || isExpanded()
+                    expandable = !bodyLocked && message.contextCanExpand()
                     this.onToggle = onToggle
                     bodyCollapsible = false
                     compact = true
@@ -1236,17 +1362,14 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.colors = colors()
                     summary = message.content.dshReasoningSummary(message.streaming)
                     body = message.content
-                    open = isExpanded()
-                    expandable = message.content.isNotEmpty()
+                    open = bodyLocked || isExpanded()
+                    expandable = !bodyLocked && message.content.isNotEmpty()
                     this.onToggle = onToggle
-                    bodyExpanded = isBodyExpanded()
-                    this.onToggleBody = onToggleBody
-                    maxBodyLines = 8
                     plainBody = true
                     compact = true
                     bodyChrome = true
-                    bodyMaxHeight = 200f
-                    bodyContentHeight = message.content.lineSequence().count() * 24f + 6f
+                    // 长思考限高并提供内部滚动，避免展开后撑爆消息列表。
+                    bodyMaxHeight = 320f
                 }
             }
         }
@@ -1270,8 +1393,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     errorSummary = message.toolError
                     stopped = message.toolStopped
                     body = message.content
-                    open = isExpanded()
-                    expandable = message.content.isNotEmpty()
+                    open = bodyLocked || isExpanded()
+                    expandable = !bodyLocked && message.content.isNotEmpty()
                     this.onToggle = onToggle
                     bodyExpanded = isBodyExpanded()
                     this.onToggleBody = onToggleBody
@@ -1334,8 +1457,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     stopped = message.toolStopped
                     body = ""
                     jsonContent = if (isJson) effectiveBody else ""
-                    open = isExpanded()
-                    expandable = true
+                    open = bodyLocked || isExpanded()
+                    expandable = !bodyLocked
                     this.onToggle = onToggle
                     bodyExpanded = isBodyExpanded()
                     this.onToggleBody = onToggleBody
@@ -1400,13 +1523,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
             event {
                 if (!isUser && !isError) {
                     longPress {
-                        DshStreamLog.d("longpress fired role=${message.role} id=${message.id}")
                         onLongPress(message, renderedContent, it.pageX, it.pageY)
                     }
                 }
-                register("touchDown", {
-                    DshStreamLog.d("touchdown on msg role=${message.role} id=${message.id}")
-                })
             }
             if (isUser || isError) {
                 Text {
@@ -1500,7 +1619,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     }
 }
 
-// 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支（对齐 dsh 原版）
+// 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支 / 分享（对齐 dsh 原版）
 internal fun ViewContainer<*, *>.DshMessageFooter(
     copied: Boolean = false,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
@@ -1517,6 +1636,7 @@ internal fun ViewContainer<*, *>.DshMessageFooter(
         DshFooterActionIcon("like.svg", DshMessageFooterAction.GOOD, onAction, colors = colors)
         DshFooterActionIcon("dislike.svg", DshMessageFooterAction.BAD, onAction, colors = colors)
         DshFooterActionIcon("branch.svg", DshMessageFooterAction.BRANCH, onAction, colors = colors)
+        DshFooterActionIcon("share.svg", DshMessageFooterAction.SHARE, onAction, colors = colors)
     }
 }
 

@@ -21,7 +21,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>扫描电脑上的 DSH 配对二维码</string>
+    <string>扫描电脑上的 DSH 配对二维码，或拍照作为对话图片附件</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>将您选择保存的对话图片写入系统相册</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>DSH 需要访问同一 Wi-Fi 上的电脑 Relay，才能完成扫码连接和 SSH。</string>
 	<key>NSBonjourServices</key>

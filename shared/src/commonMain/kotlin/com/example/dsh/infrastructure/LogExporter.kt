@@ -114,5 +114,72 @@ internal object LogExporter {
 internal expect fun writeExportFile(dir: String, filename: String, content: String): String
 internal expect fun appendExportFile(path: String, content: String)
 
+/** 将临时导出文件发布为最终文件；同名目标应被替换。用于「成功后才出现最终文件」。 */
+internal expect fun renameExportFile(fromPath: String, toPath: String)
+
+/** 删除导出文件；不存在时静默忽略。用于失败/取消时清理半成品。 */
+internal expect fun deleteExportFile(path: String)
+
+/** 列出目录下的文件绝对路径；不支持目录列举的平台返回空列表。 */
+internal expect fun listExportFiles(dir: String): List<String>
+
+/** Actual file length, including allocated SQLite auxiliary files; missing files contribute zero. */
+internal expect fun fileSizeBytes(path: String): Long
+
+/** Serializes publish/prune across pages, independently of the SQLite writer lock. */
+internal val exportPublishLock = DshLock()
+private val exportRegistryLock = DshLock()
+private val activePartials = mutableSetOf<String>()
+internal fun beginExport(filename: String) = exportRegistryLock.withLock {
+    check(activePartials.add("$filename.partial")) { "同名文件正在导出，请稍后重试" }
+}
+internal fun endExport(filename: String) = exportRegistryLock.withLock { activePartials.remove("$filename.partial") }
+
+internal fun databaseDiskBytes(path: String): Long =
+    listOf("", "-wal", "-shm", "-journal").sumOf { fileSizeBytes(path + it) }
+
+/**
+ * 应用内部导出缓存回收：只保留最近一次有效导出（[keepPath]）与用户自有文件，
+ * 删除更早的应用导出及其残留半成品。用户主动保存到外部位置的文件不在本目录内，
+ * 不会被回收。
+ */
+internal fun pruneExportCache(dir: String, keepPath: String) {
+    if (dir.isBlank()) return
+    runCatching {
+        for (path in listExportFiles(dir)) {
+            if (path == keepPath) continue
+            val name = path.substringAfterLast('/').substringAfterLast('\\')
+            val readable = keepPath.substringAfterLast('/').substringAfterLast('\\').startsWith("dsh-session-")
+            val active = exportRegistryLock.withLock { name in activePartials }
+            if (!active && isAppManagedExport(name) && name.startsWith("dsh-session-") == readable) runCatching { deleteExportFile(path) }
+        }
+    }
+}
+
+internal fun publishReadableExport(dir: String, filename: String, content: String, isCancelled: () -> Boolean): String {
+    beginExport(filename)
+    var temporary: String? = null
+    try {
+        if (isCancelled()) throw kotlinx.coroutines.CancellationException()
+        val path = writeExportFile(dir, "$filename.partial", content)
+        temporary = path
+        if (isCancelled()) throw kotlinx.coroutines.CancellationException()
+        val final = path.removeSuffix(".partial")
+        exportPublishLock.withLock {
+            renameExportFile(path, final)
+            pruneExportCache(dir, final)
+        }
+        return final
+    } catch (t: Throwable) {
+        temporary?.let { runCatching { deleteExportFile(it) } }
+        throw t
+    } finally { endExport(filename) }
+}
+
+private val appExportSuffixes = listOf(".txt", ".md", ".html")
+private fun isAppManagedExport(fileName: String): Boolean =
+    fileName.startsWith("dsh-") &&
+        appExportSuffixes.any { fileName.endsWith(it) || fileName.endsWith("$it.partial") }
+
 /** Open the system share sheet for a file at the given path. */
 internal expect fun shareExportFile(path: String)

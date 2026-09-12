@@ -228,6 +228,13 @@ internal class DshHostStore {
         archivedSessionIds = archived
     }
 
+    /** Null ids means the ungrouped workspace; explicit ids preserve Host workspace order. */
+    fun unarchivedBlankSession(sessionIds: List<String>? = null): DshSession? {
+        val candidates = sessionIds?.mapNotNull { sessions[it] }
+            ?: sessions.values.filter { it.cwd.isEmpty() }
+        return candidates.firstOrNull { it.blank && it.id !in archivedSessionIds }
+    }
+
     fun reorderWorkspaces(orderJson: String) {
         val order = runCatching { com.tencent.kuikly.core.nvi.serialization.json.JSONArray(orderJson) }
             .getOrNull() ?: return
@@ -344,6 +351,8 @@ internal data class DshSession(
     val updatedLabel: String,
     /** Host 会话项的 updatedAt（毫秒时间戳），用于按消息时间排序会话列表。 */
     val updatedAt: Long = 0L,
+    /** Host 会话项的 createdAt（毫秒时间戳），由 session-manager meta 端点补充；缺失为 0。 */
+    val createdAt: Long = 0L,
     val running: Boolean = false,
     val blank: Boolean = false,
     val cwd: String = "",
@@ -393,6 +402,10 @@ internal data class DshMessage(
     val imagePreviews: List<String> = emptyList(),
     /** Remote-only structured tool state; LOCAL keeps this null. */
     val remoteTool: DshRemoteToolCallModel? = null,
+    /** Ordered readable source including attachment metadata, never preview/Base64 data. */
+    val readableContent: String? = null,
+    /** Host event anchor, independent of the UI row id (live ids use local counters). */
+    val sourceSeq: Int? = null,
 )
 
 internal fun dshIsLiveAssistantText(message: DshMessage): Boolean =
@@ -437,33 +450,89 @@ internal fun dshTurnTailAssistant(messages: List<DshMessage>): DshMessage? {
     }?.value
 }
 
-internal data class DshTurnProcessSummary(
+/**
+ * 分享多选的可选项：真实用户发言 + 每个回合的最终助手正文。
+ *
+ * 排除隐藏项、上下文注入、思考（reasoning）与工具卡片；未结算的流式助手也排除。
+ * 中间过程性助手正文（后面还有同一回合的助手正文）不作为「最终回复」。
+ */
+internal fun dshShareSelectableIds(messages: List<DshMessage>): Set<String> {
+    val result = LinkedHashSet<String>()
+    messages.forEachIndexed { index, message ->
+        if (message.hidden || message.isContextInjection || message.isReasoning) return@forEachIndexed
+        when (message.role) {
+            DshMessageRole.USER -> result.add(message.id)
+            DshMessageRole.ASSISTANT -> {
+                if (message.streaming) return@forEachIndexed
+                val nextUser = (index + 1 until messages.size)
+                    .firstOrNull { messages[it].role == DshMessageRole.USER } ?: messages.size
+                val hasLaterAssistant = (index + 1 until nextUser).any { i ->
+                    val next = messages[i]
+                    next.role == DshMessageRole.ASSISTANT && !next.isReasoning &&
+                        !next.isContextInjection && !next.hidden
+                }
+                if (!hasLaterAssistant) result.add(message.id)
+            }
+            else -> Unit
+        }
+    }
+    return result
+}
+
+/**
+ * 一个已结算回合的「中间过程」分组：最终回答之前的思考、工具调用、上下文注入与
+ * 过渡正文。默认折叠为一条摘要，点击后展开逐条明细（对齐 Codex 的过程折叠）。
+ *
+ * [isFirst] 标记当前消息是否为该过程块的首条；只有首条渲染摘要头，其余成员在折叠态隐藏。
+ */
+internal data class DshTurnProcessGroup(
     val key: String,
     val label: String,
+    val members: List<DshMessage>,
+    val isFirst: Boolean,
 )
 
-/** Returns a summary for the closed-turn process members before the final answer. */
-internal fun dshTurnProcessSummary(messages: List<DshMessage>, message: DshMessage): DshTurnProcessSummary? {
-    val lastUser = messages.indexOfLast { it.role == DshMessageRole.USER }
-    if (lastUser < 0) return null
-    val tail = dshTurnTailAssistant(messages) ?: return null
-    val tailIndex = messages.indexOfFirst { it.id == tail.id }
-    if (tailIndex <= lastUser) return null
-    val members = messages.subList(lastUser + 1, tailIndex).filter {
-        it.role == DshMessageRole.TOOL || it.isReasoning || it.isContextInjection ||
-            (it.role == DshMessageRole.ASSISTANT && !it.isReasoning)
+/**
+ * 解析 [message] 所属回合的过程分组；仅对最终回答之前的中间过程成员返回非空。
+ *
+ * 回合边界按前后最近的 USER 消息划分；仅当该回合已有已结算的非推理助手回答（tail）时
+ * 才分组，因此流式进行中的回合保持逐步可见。key 固定绑定 tail.id，展开状态跨重渲染稳定。
+ */
+internal fun dshTurnProcessGroup(messages: List<DshMessage>, message: DshMessage): DshTurnProcessGroup? {
+    val index = messages.indexOfFirst { it.id == message.id }
+    if (index < 0) return null
+    val lastUser = (index - 1 downTo 0).firstOrNull { messages[it].role == DshMessageRole.USER } ?: return null
+    val nextUser = (index + 1 until messages.size).firstOrNull { messages[it].role == DshMessageRole.USER } ?: messages.size
+    val tailIndex = (nextUser - 1 downTo lastUser + 1).firstOrNull {
+        val candidate = messages[it]
+        candidate.role == DshMessageRole.ASSISTANT && !candidate.streaming &&
+            !candidate.isReasoning && !candidate.isContextInjection
+    } ?: return null
+    if (index >= tailIndex) return null
+    val processIndices = (lastUser + 1 until tailIndex).filter { i ->
+        val candidate = messages[i]
+        !candidate.hidden && (
+            candidate.role == DshMessageRole.TOOL || candidate.isReasoning ||
+                candidate.isContextInjection ||
+                (candidate.role == DshMessageRole.ASSISTANT && !candidate.isReasoning)
+            )
     }
-    if (members.isEmpty() || members.none { it.id == message.id }) return null
-    if (members.first().id != message.id) return DshTurnProcessSummary("", "")
+    if (index !in processIndices) return null
+    val members = processIndices.map { messages[it] }
     val toolCount = members.count { it.role == DshMessageRole.TOOL && !it.isContextInjection }
     val messageCount = members.count { it.role == DshMessageRole.ASSISTANT && !it.isReasoning }
     val labels = buildList {
-        if (toolCount > 0) add("$toolCount 个工具调用")
-        if (messageCount > 0) add("$messageCount 条消息")
         if (members.any { it.isReasoning }) add("思考")
+        if (toolCount > 0) add("$toolCount 个工具调用")
+        if (messageCount > 0) add("$messageCount 条过程消息")
         if (members.any { it.isContextInjection }) add("上下文")
     }
-    return DshTurnProcessSummary("turn-process-${tail.id}", labels.joinToString(" · ").ifEmpty { "思考了一会儿" })
+    return DshTurnProcessGroup(
+        key = "turn-process-${messages[tailIndex].id}",
+        label = labels.joinToString(" · ").ifEmpty { "处理过程" },
+        members = members,
+        isFirst = processIndices.first() == index,
+    )
 }
 
 /**
@@ -591,6 +660,8 @@ internal data class DshWebTimelineItem(
     val imagePreviews: List<String> = emptyList(),
     val source: com.tencent.kuikly.core.nvi.serialization.json.JSONObject? = null,
     val remoteTool: DshRemoteToolCallModel? = null,
+    val readableContent: String? = null,
+    val sourceSeq: Int? = null,
 ) {
     enum class Kind {
         USER,
@@ -644,6 +715,13 @@ internal data class DshWorkspaceGroup(
     val title: String,
     val path: String,
     val sessions: List<DshSession>,
+)
+
+/** Host session-manager `meta` 端点的单条会话元数据。 */
+internal data class DshSessionMeta(
+    val sessionId: String,
+    val createdAt: Long,
+    val cwd: String,
 )
 
 internal data class DshDirectoryEntry(

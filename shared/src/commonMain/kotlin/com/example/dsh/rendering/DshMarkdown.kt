@@ -20,6 +20,10 @@ import com.tencent.kuikly.core.reactive.ReactiveObserver
 import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.View
+import com.tencent.kuikly.core.views.Text
+import com.tencent.kuiklybase.components.DefaultComponentsBridge
+import com.tencent.kuiklybase.components.markdownComponents
+import com.tencent.kuiklybase.elements.markdownCodeFence
 import com.tencent.kuiklybase.KuiklyStreamingMarkdown
 import com.tencent.kuiklybase.config.FontWeight
 import com.tencent.kuiklybase.config.MarkdownColors
@@ -77,6 +81,40 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                                     state = ctx.streamingState,
                                     block = block,
                                     config = ctx.markdownConfig(),
+                                    components = markdownComponents(
+                                        codeFence = { model, container ->
+                                            container.View {
+                                                View {
+                                                    attr { height(32f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
+                                                    Text {
+                                                        attr { text("复制代码"); fontSize(12f); color(model.config.colors.linkColor) }
+                                                        event { click {
+                                                            val code = dshCodeFenceSource(model.content, model.node)
+                                                            val bridge = ctx.getPager().acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
+                                                            bridge.copyToPasteboard(code)
+                                                            bridge.toast("代码已复制")
+                                                        } }
+                                                    }
+                                                }
+                                                markdownCodeFence(model.content, model.node, model.typography.code, model.config)
+                                            }
+                                        },
+                                        paragraph = { model, container ->
+                                            val text = model.content.substring(model.node.startOffset, model.node.endOffset)
+                                            if (dshMathWebViewSupported() && DshMath.containsFormula(text)) {
+                                                container.DshMathParagraph {
+                                                    attr {
+                                                        content = text
+                                                        dark = ctx.attr.darkMode
+                                                        fontSize = 15f
+                                                        contentWidth = ctx.attr.contentWidth
+                                                    }
+                                                }
+                                            } else {
+                                                DefaultComponentsBridge.paragraph(model, container)
+                                            }
+                                        },
+                                    ),
                                 )
                             }
                         }
@@ -124,9 +162,6 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         if (content == lastContent && streaming == lastStreaming) return
         val endingStream = lastStreaming && !streaming
         if (content.isEmpty() && lastContent.isNotEmpty()) {
-            DshStreamLog.d(
-                "render.skip empty-wipe streaming=$streaming prevChars=${lastContent.length} prevBlocks=${blockList.size}",
-            )
             lastStreaming = streaming
             return
         }
@@ -135,14 +170,10 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             content.length < lastContent.length &&
             lastContent.startsWith(content)
         ) {
-            DshStreamLog.d(
-                "render.skip shrink streaming=$streaming prevChars=${lastContent.length} nextChars=${content.length}",
-            )
             lastStreaming = streaming
             return
         }
         if (streaming && !lastStreaming) {
-            DshStreamLog.d("render.stream-start chars=${content.length}")
             streamingState.reset()
             blockList.clear()
             blockCount = 0
@@ -152,13 +183,9 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         lastContent = content
         lastStreaming = streaming
         val input = if (content.isEmpty() && streaming) DshStreamingMarkdown.PLACEHOLDER else content
-        val toParse = if (streaming) DshStreamingMarkdown.closeOpenFence(input) else input
-        val next = streamingState.update(toParse, force = !streaming)
-        if (next == null) {
-            DshStreamLog.d("render.skip parser-null streaming=$streaming chars=${content.length}")
-            return
-        }
-        val previousCount = blockList.size
+        val closed = if (streaming) DshStreamingMarkdown.closeOpenFence(input) else input
+        val toParse = if (dshMathWebViewSupported()) closed else DshMath.transform(closed)
+        val next = streamingState.update(toParse, force = !streaming) ?: return
         blockList.diffUpdate(next) { old, new -> old.id == new.id }
         val countChanged = blockCount != blockList.size
         if (countChanged) {
@@ -172,9 +199,6 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             treeEpoch += 1
         }
         flexNode.markDirty()
-        DshStreamLog.d(
-            "render.apply streaming=$streaming uiBlocks=$previousCount→${blockList.size} ${DshStreamLog.blocks(next)}",
-        )
     }
 
     private fun markdownConfig(): MarkdownConfig {

@@ -1,0 +1,9 @@
+{
+  "name": "dsh-mobile-plugin-inventory",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.mjs",
+  "files": ["index.mjs", "cordis.patch.yml", "README.md"],
+  "engines": { "node": ">=22" },
+  "license": "MIT"
+}

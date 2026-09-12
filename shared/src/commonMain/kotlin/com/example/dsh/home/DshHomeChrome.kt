@@ -302,13 +302,20 @@ internal fun ViewContainer<*, *>.DshWordmark(
  * 打开/关闭文件夹图标与旋转箭头（收起→右、展开→下，与原版一致），会话行
  * 缩进排列；每行会话带相对时间与 ⋯ 溢出按钮（复用主页面的 DshOverflowMenu）。
  */
+/** 会话列表排序方式。 */
+internal enum class DshSessionSort(val label: String) {
+    UPDATED("更新时间"),
+    CREATED("创建时间"),
+    NAME("按字母顺序"),
+}
+
 internal fun ViewContainer<*, *>.DshSessionDrawer(
     sessions: () -> ObservableList<DshSession>,
     workspaceGroups: () -> ObservableList<DshWorkspaceGroup>,
     isWebTimeline: () -> Boolean,
     activeId: () -> String,
     animated: () -> Boolean,
-    expandedGroupIds: () -> List<String>,
+    expandedGroupIds: () -> Set<String>,
     onToggleGroup: (String) -> Unit,
     sessionPending: (String) -> Boolean,
     activeWorkspaceId: () -> String,
@@ -317,10 +324,15 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
     onOverflowSelect: (String) -> Unit,
     onDismissOverflow: () -> Unit,
     onOpenOverflowFor: (String) -> Unit,
+    sessionSort: () -> DshSessionSort = { DshSessionSort.UPDATED },
+    sortMenuOpen: () -> Boolean = { false },
+    onToggleSortMenu: () -> Unit = {},
+    onPickSessionSort: (DshSessionSort) -> Unit = {},
     statusBarHeight: Float,
     pageViewWidth: Float,
     onClose: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenArchive: () -> Unit,
     onNewSession: () -> Unit,
     onSelect: (String) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
@@ -381,13 +393,58 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 }
                 event { click { onNewSession() } }
             }
-            Text {
-                attr {
-                    text(if (isWebTimeline()) "工作区" else "会话")
-                    marginTop(16f)
-                    marginBottom(6f)
-                    fontSize(12f)
-                    color(colors().labelTertiary)
+            View {
+                attr { marginTop(16f); marginBottom(6f); flexDirectionRow(); alignItemsCenter() }
+                Text {
+                    attr {
+                        text(if (isWebTimeline()) "工作区" else "会话")
+                        flex(1f)
+                        fontSize(12f)
+                        color(colors().labelTertiary)
+                    }
+                }
+                View {
+                    attr {
+                        height(24f); paddingLeft(8f); paddingRight(8f)
+                        flexDirectionRow(); alignItemsCenter(); borderRadius(6f)
+                    }
+                    Text { attr { text(sessionSort().label); fontSize(12f); color(colors().labelSecondary) } }
+                    Image {
+                        attr {
+                            src(ImageUri.commonAssets("chevron-down.svg"))
+                            size(11f, 11f); marginLeft(2f); tintColor(colors().labelTertiary)
+                        }
+                    }
+                    event { click { onToggleSortMenu() } }
+                }
+            }
+            vif({ sortMenuOpen() }) {
+                View {
+                    attr {
+                        marginBottom(6f); borderRadius(9f)
+                        backgroundColor(colors().bgLayer1); border(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                    }
+                    DshSessionSort.entries.forEach { entry ->
+                        View {
+                            attr { height(36f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f) }
+                            Text {
+                                attr {
+                                    text(entry.label)
+                                    flex(1f); fontSize(13f)
+                                    color(if (sessionSort() == entry) colors().stateBusinessPrimary else colors().labelPrimary)
+                                }
+                            }
+                            vif({ sessionSort() == entry }) {
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("check.svg"))
+                                        size(14f, 14f); tintColor(colors().stateBusinessPrimary)
+                                    }
+                                }
+                            }
+                            event { click { onPickSessionSort(entry) } }
+                        }
+                    }
                 }
             }
             Scroller {
@@ -397,12 +454,12 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                         DshSessionDrawerRow(
                             title = session.title,
                             subtitle = session.workspace,
-                            active = activeId() == session.id,
+                            active = { activeId() == session.id },
                             running = session.running,
                             updatedAt = session.updatedAt,
                             now = currentTimeMillis(),
                             indented = false,
-                            pending = sessionPending(session.id),
+                            pending = { sessionPending(session.id) },
                             onSelect = { onSelect(session.id) },
                             onOpenOverflow = { onOpenOverflowFor(session.id) },
                             colors = colors,
@@ -467,12 +524,12 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                                     DshSessionDrawerRow(
                                         title = session.title,
                                         subtitle = "",
-                                        active = activeId() == session.id,
+                                        active = { activeId() == session.id },
                                         running = session.running,
                                         updatedAt = session.updatedAt,
                                         now = currentTimeMillis(),
                                         indented = true,
-                                        pending = sessionPending(session.id),
+                                        pending = { sessionPending(session.id) },
                                         onSelect = { onSelect(session.id) },
                                         onOpenOverflow = { onOpenOverflowFor(session.id) },
                                         colors = colors,
@@ -481,6 +538,14 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                             }
                         }
                     }
+                }
+            }
+            vif({ isWebTimeline() }) {
+                View {
+                    attr { height(44f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f) }
+                    Image { attr { src(ImageUri.commonAssets("archive.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
+                    Text { attr { text("已归档会话"); marginLeft(10f); fontSize(14f); color(colors().labelSecondary) } }
+                    event { click { onOpenArchive() } }
                 }
             }
             // 底部固定「设置」入口（不随列表滚动），使用齿轮图标，与原版侧边栏一致
@@ -561,9 +626,9 @@ internal fun dshRelativeTimeLabel(updatedAt: Long, now: Long): String {
 internal fun ViewContainer<*, *>.DshSessionDrawerRow(
     title: String,
     subtitle: String,
-    active: Boolean,
+    active: () -> Boolean,
     running: Boolean,
-    pending: Boolean,
+    pending: () -> Boolean,
     updatedAt: Long,
     now: Long,
     indented: Boolean,
@@ -580,22 +645,22 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
             paddingLeft(if (indented) 32f else 12f)
             paddingRight(4f)
             borderRadius(9f)
-            backgroundColor(if (active) colors().specificSidebarNavItemActive else Color(0x00FFFFFF))
+            backgroundColor(if (active()) colors().specificSidebarNavItemActive else Color(0x00FFFFFF))
         }
         // 状态点不常驻：待用户决策（琥珀）或进行中/有新消息（蓝）才显示；
         // 无状态时不留占位，文字靠左（与 ds 移动端一致）。
-        vif({ pending || running }) {
+        vif({ pending() || running }) {
             View {
                 attr {
                     width(7f)
                     allCenter()
                 }
-                vif({ pending || running }) {
+                vif({ pending() || running }) {
                     View {
                         attr {
                             size(7f, 7f)
                             borderRadius(4f)
-                            backgroundColor(if (pending) colors().stateWarnPrimary else colors().stateBusinessPrimary)
+                            backgroundColor(if (pending()) colors().stateWarnPrimary else colors().stateBusinessPrimary)
                         }
                     }
                 }
@@ -628,7 +693,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                 }
             }
         }
-        vif({ updatedAt > 0L && !active }) {
+        vif({ updatedAt > 0L && !active() }) {
             Text {
                 attr {
                     text(dshRelativeTimeLabel(updatedAt, now))
@@ -639,7 +704,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
             }
         }
         // 溢出按钮仅在选中行显示（ds 移动端交互：正常状态不露 ⋯）。
-        vif({ active }) {
+        vif({ active() }) {
             View {
                 attr { size(34f, 34f); marginLeft(2f); allCenter() }
                 Image {
@@ -660,12 +725,13 @@ internal fun ViewContainer<*, *>.DshModelPicker(
     options: () -> ObservableList<DshModelOption>,
     busy: () -> Boolean,
     error: () -> String,
+    showEfforts: () -> Boolean,
+    onShowEfforts: (Boolean) -> Unit,
     onClose: () -> Unit,
     onSelect: (DshModelOption) -> Unit,
     onSelectEffort: (String) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
-    var showEfforts = false
     val selectedOpt: () -> DshModelOption? = { options().firstOrNull { it.selected } }
     val selectedEfforts: () -> ObservableList<DshReasoningEffort> = {
         val sel = selectedOpt()
@@ -677,7 +743,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
             ?: sel?.reasoningEffort ?: ""
     }
     val selectedSupportsEfforts: () -> Boolean = {
-        (selectedOpt()?.reasoningEfforts?.isEmpty()) != true
+        selectedOpt()?.reasoningEfforts?.isNotEmpty() == true
     }
     Modal(inWindow = true) {
         attr {
@@ -702,7 +768,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                 attr { height(40f); flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
-                        text(if (showEfforts) "推理等级" else "选择模型")
+                        text(if (showEfforts()) "推理等级" else "选择模型")
                         fontSize(18f)
                         fontWeightBold()
                         color(colors().labelPrimary)
@@ -726,7 +792,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                     }
                 }
             }
-            if (showEfforts) {
+            vif({ showEfforts() }) {
                 // 推理等级：顶部返回栏 + 当前模型名
                 View {
                     attr {
@@ -739,7 +805,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                     View {
                         attr { size(32f, 32f); allCenter() }
                         Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f); tintColor(colors().labelSecondary) } }
-                        event { click { showEfforts = false } }
+                        event { click { onShowEfforts(false) } }
                     }
                     Text {
                         attr {
@@ -785,7 +851,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                                     }
                                 }
                             }
-                            if (effort.id == selectedOpt()?.reasoningEffort) {
+                            vif({ effort.id == selectedOpt()?.reasoningEffort }) {
                                 Image {
                                     attr {
                                         src(ImageUri.commonAssets("check.svg"))
@@ -798,7 +864,8 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                         }
                     }
                 }
-            } else {
+            }
+            velse {
                 // 当前选中模型：若支持推理等级，显示"推理等级 ›"入口行
                 vif({ selectedSupportsEfforts() }) {
                     View {
@@ -830,7 +897,7 @@ internal fun ViewContainer<*, *>.DshModelPicker(
                             }
                         }
                         Image { attr { src(ImageUri.commonAssets("chevron-right.svg")); size(14f, 14f); tintColor(colors().labelTertiary) } }
-                        event { click { showEfforts = true } }
+                        event { click { if (!busy()) onShowEfforts(true) } }
                     }
                 }
                 vif({ busy() && options().isEmpty() }) {
@@ -1401,14 +1468,14 @@ internal fun ViewContainer<*, *>.DshSessionRail(
                     flexDirectionRow()
                 }
                 vfor({ sessions() }) { session ->
-                    DshSessionButton(session, activeId() == session.id, onSelect, colors = colors)
+                    DshSessionButton(session, { activeId() == session.id }, onSelect, colors = colors)
                 }
             }
         } else {
             Scroller {
                 attr { flex(1f) }
                 vfor({ sessions() }) { session ->
-                    DshSessionButton(session, activeId() == session.id, onSelect, colors = colors)
+                    DshSessionButton(session, { activeId() == session.id }, onSelect, colors = colors)
                 }
             }
         }
@@ -1417,20 +1484,20 @@ internal fun ViewContainer<*, *>.DshSessionRail(
 
 internal fun ViewContainer<*, *>.DshSessionButton(
     session: DshSession,
-    active: Boolean,
+    active: () -> Boolean,
     onSelect: (String) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     Button {
         attr {
             height(48f)
-            width(if (active) 220f else 220f)
+            width(220f)
             marginBottom(4f)
             borderRadius(7f)
-            backgroundColor(if (active) colors().specificSidebarNavItemActive else Color(0x00000000))
+            backgroundColor(if (active()) colors().specificSidebarNavItemActive else Color(0x00000000))
             titleAttr {
                 text(session.title)
-                color(if (active) colors().stateBusinessPrimary else colors().labelPrimary)
+                color(if (active()) colors().stateBusinessPrimary else colors().labelPrimary)
                 fontSize(13f)
             }
         }
@@ -1481,22 +1548,22 @@ internal fun ViewContainer<*, *>.DshSessionDetailsPanel(
                 backgroundColor(colors().borderL1)
             }
         }
-        DshDetailRow("状态", if (running()) "运行中" else "空闲", colors = colors)
-        DshDetailRow("模型", modelLabel(), colors = colors)
+        DshDetailRow("状态", { if (running()) "运行中" else "空闲" }, colors = colors)
+        DshDetailRow("模型", modelLabel, colors = colors)
         vif({ agentPreset().isNotEmpty() }) {
-            DshDetailRow("Agent Preset", agentPreset(), colors = colors)
+            DshDetailRow("Agent Preset", agentPreset, colors = colors)
         }
-        DshDetailRow("队列", "${queueCount()} 条", colors = colors)
-        DshDetailRow("后台任务", "${jobCount()} 个", colors = colors)
+        DshDetailRow("队列", { "${queueCount()} 条" }, colors = colors)
+        DshDetailRow("后台任务", { "${jobCount()} 个" }, colors = colors)
         vif({ cwd().isNotEmpty() }) {
-            DshDetailRow("目录", cwd(), colors = colors)
+            DshDetailRow("目录", cwd, colors = colors)
         }
     }
 }
 
 internal fun ViewContainer<*, *>.DshDetailRow(
     label: String,
-    value: String,
+    value: () -> String,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     View {
@@ -1515,7 +1582,7 @@ internal fun ViewContainer<*, *>.DshDetailRow(
         }
         Text {
             attr {
-                text(value)
+                text(value())
                 marginTop(2f)
                 fontSize(13f)
                 color(colors().labelSecondary)
@@ -1662,6 +1729,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     onPickTheme: () -> Unit,
     onPickDefaultModel: () -> Unit,
     onOpenDiagnosticLogs: () -> Unit,
+    onOpenPlugins: () -> Unit,
     onDisconnect: () -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
@@ -1777,7 +1845,8 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             DshSettingsRow("icon-globe14.svg", "语言", { dshSettingsLocaleLabel(snapshot()) }, onPickLocale, colors = colors)
             DshSettingsRow("icon-followsystem16.svg", "外观", { dshThemeModeLabel(themeMode()) }, onPickTheme, colors = colors)
             DshSettingsRow("icon-agentpreset16.svg", "默认模型", { dshSettingsDefaultModelLabel(snapshot()) }, onPickDefaultModel, colors = colors)
-            DshSettingsRow("log.svg", "诊断日志", { "" }, onOpenDiagnosticLogs, colors = colors)
+            DshSettingsRow("log.svg", "日志", { "" }, onOpenDiagnosticLogs, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "Host 插件", { "只读" }, onOpenPlugins, colors = colors)
 
             // 关于
             DshSettingsGroupTitle("关于", colors = colors)

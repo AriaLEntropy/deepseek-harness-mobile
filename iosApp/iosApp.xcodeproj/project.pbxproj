@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D5A2200029A2A174009349F1 /* DshImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A2200129A2A173009349F1 /* DshImages.swift */; };
 		0474A3F329F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.m in Sources */ = {isa = PBXBuildFile; fileRef = 0474A3F229F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.m */; };
 		04E32B3E29F01975000A6BC5 /* KRRouterHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 04E32B3D29F01975000A6BC5 /* KRRouterHandler.m */; };
 		058557BB273AAA24004C7B11 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 058557BA273AAA24004C7B11 /* Assets.xcassets */; };
@@ -34,6 +35,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        D5A2200129A2A173009349F1 /* DshImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DshImages.swift; sourceTree = "<group>"; };
 		0474A3F129F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UINavigationController+FDFullscreenPopGesture.h"; sourceTree = "<group>"; };
 		0474A3F229F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UINavigationController+FDFullscreenPopGesture.m"; sourceTree = "<group>"; };
 		04E32B3C29F01971000A6BC5 /* KRRouterHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KRRouterHandler.h; sourceTree = "<group>"; };
@@ -203,6 +205,7 @@
 				D5A1101729A2A173009349F1 /* DshQrScanViewController.swift */,
 				D5A1101929A2A173009349F1 /* DshSshKeyStore.swift */,
 				D5A1101B29A2A173009349F1 /* DshNativeUi.swift */,
+                D5A2200129A2A173009349F1 /* DshImages.swift */,
 				D5A1100629A2A173009349F1 /* DshSshTunnel.m */,
 				D5A1100829A2A173009349F1 /* DshSshTunnel.h */,
 			);
@@ -370,6 +373,7 @@
 				D5A1101829A2A174009349F1 /* DshQrScanViewController.swift in Sources */,
 				D5A1101A29A2A174009349F1 /* DshSshKeyStore.swift in Sources */,
 				D5A1101C29A2A174009349F1 /* DshNativeUi.swift in Sources */,
+                D5A2200029A2A174009349F1 /* DshImages.swift in Sources */,
 				FF6B714729A2A315009349F1 /* KuiklyRenderViewPage.swift in Sources */,
 				7555FF83242A565900829871 /* ContentView.swift in Sources */,
 				FF6B715029A2A6FF009349F1 /* KuiklyRenderComponentExpandHandler.m in Sources */,

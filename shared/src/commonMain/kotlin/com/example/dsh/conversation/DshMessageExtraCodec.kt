@@ -17,7 +17,8 @@ internal object DshMessageExtraCodec {
      */
     fun encode(message: DshMessage): String? {
         val nullIfNoComposite = message.contextCatalog.isEmpty() && message.contextSections.isEmpty() &&
-            message.contextRecalls.isEmpty() && message.contextInstructions.isEmpty() && message.remoteTool == null
+            message.contextRecalls.isEmpty() && message.contextInstructions.isEmpty() && message.remoteTool == null &&
+            message.readableContent == null && message.attachmentIds.isEmpty() && message.sourceSeq == null
         if (nullIfNoComposite) return null
         val root = JSONObject()
         message.contextCatalog.takeIf { it.isNotEmpty() }?.let { root.put("catalog", encodeCatalogEntries(it)) }
@@ -25,6 +26,9 @@ internal object DshMessageExtraCodec {
         message.contextRecalls.takeIf { it.isNotEmpty() }?.let { root.put("recalls", encodeRecalls(it)) }
         message.contextInstructions.takeIf { it.isNotEmpty() }?.let { root.put("instructions", encodeInstructions(it)) }
         message.remoteTool?.let { root.put("remoteTool", encodeRemoteTool(it)) }
+        message.readableContent?.let { root.put("readableContent", it) }
+        message.sourceSeq?.let { root.put("sourceSeq", it) }
+        root.put("attachmentIds", JSONArray().apply { message.attachmentIds.forEach { put(it) } })
         return root.toString()
     }
 
@@ -41,7 +45,7 @@ internal object DshMessageExtraCodec {
         val instructions = decodeInstructions(root.optJSONArray("instructions"))
         val remoteTool = root.optJSONObject("remoteTool")?.let(::decodeRemoteTool)
         if (catalog.isEmpty() && sections.isEmpty() && recalls.isEmpty() &&
-            instructions.isEmpty() && remoteTool == null
+            instructions.isEmpty() && remoteTool == null && root.opt("readableContent") == null && root.optJSONArray("attachmentIds") == null && !root.has("sourceSeq")
         ) {
             return base
         }
@@ -51,6 +55,11 @@ internal object DshMessageExtraCodec {
             contextRecalls = recalls,
             contextInstructions = instructions,
             remoteTool = remoteTool,
+            sourceSeq = root.optInt("sourceSeq", -1).takeIf { it >= 0 } ?: base.sourceSeq,
+            readableContent = root.optString("readableContent").takeIf { root.opt("readableContent") != null },
+            attachmentIds = root.optJSONArray("attachmentIds")?.let { arr ->
+                (0 until arr.length()).mapNotNull { arr.optString(it) }
+            } ?: base.attachmentIds,
         )
     }
 

@@ -60,6 +60,9 @@ internal class DshConnectionSetupPage : BasePager() {
             }
         })
         val databaseDir = pageData.params.optString("databaseDir")
+        // 首个页面即启动应用级日志服务，覆盖随后连接探测产生的日志；
+        // 主页创建时复用同一实例，主页重建不再重新建库或重置序号。
+        runCatching { DshLogService.ensureStarted(databaseDir) }
         val prefs = prefs()
         val legacyMode = prefs.getItem(LEGACY_MODE_KEY)
         val legacyHost = prefs.getItem(LEGACY_HOST_KEY)
@@ -153,6 +156,7 @@ internal class DshConnectionSetupPage : BasePager() {
         fun fail(message: String) {
             if (settled) return
             settled = true
+            DshStreamLog.log(LogLevel.ERROR, "connect.error", "mode=relay phase=probe $message")
             busy = false
             error = message
             (probeRepository as? DshRemoteRepository)?.stop()
@@ -164,6 +168,7 @@ internal class DshConnectionSetupPage : BasePager() {
         }
         module.connect { state ->
             if (settled) return@connect
+            logConnectionProbe("relay", state.phase.name, state.message)
             when (state.phase) {
                 DshRelayPhase.READY -> {
                     if (state.localPort <= 0 || state.localToken.isEmpty()) return@connect
@@ -425,6 +430,7 @@ internal class DshConnectionSetupPage : BasePager() {
             keyId = profile.keyId,
             hostFingerprint = profile.hostFingerprint,
         )) { state ->
+            logConnectionProbe("ssh", state.phase.name, state.message)
             when (state.phase) {
                 DshSshPhase.FINGERPRINT_REQUIRED -> {
                     busy = false
@@ -491,6 +497,18 @@ internal class DshConnectionSetupPage : BasePager() {
             keyId = keyId,
             hostFingerprint = fingerprint,
         ))
+    }
+
+    private fun logConnectionProbe(mode: String, phase: String, message: String) {
+        val type = when (phase) {
+            "ERROR" -> "connect.error"
+            "READY" -> "connect.ready"
+            "RECONNECTING" -> "connect.reconnecting"
+            "STOPPED" -> "connect.stopped"
+            else -> "connect.connecting"
+        }
+        DshStreamLog.log(if (phase == "ERROR") LogLevel.ERROR else LogLevel.INFO,
+            type, "mode=$mode phase=$phase $message")
     }
 
     private fun openHome() {

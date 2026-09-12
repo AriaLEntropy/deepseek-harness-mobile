@@ -8,15 +8,18 @@ import { LogAdapter } from '../kuikly/adapter/LogAdapter';
 import { RouterAdapter } from '../kuikly/adapter/RouterAdapter';
 import { DshOhosContext } from '../kuikly/native/DshOhosContext';
 import { DshRelayRuntime } from '../kuikly/native/DshRelayRuntime';
+import { DshCrashStore } from '../kuikly/native/DshCrashStore';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onCreate');
     DshOhosContext.attach(this.context);
+    DshCrashStore.shared.attach(this.context);
     DshRelayRuntime.shared.attach();
   }
 
   onDestroy(): void {
+    DshCrashStore.shared.detach();
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 

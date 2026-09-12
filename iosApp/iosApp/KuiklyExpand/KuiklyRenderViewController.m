@@ -27,7 +27,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.fd_prefersNavigationBarHidden = YES;
-    self.view.backgroundColor = [UIColor whiteColor];
+    self.view.backgroundColor = [UIColor systemBackgroundColor];
     [_delegator viewDidLoadWithView:self.view];
     [self.navigationController setNavigationBarHidden:YES animated:NO];
 
@@ -73,13 +73,13 @@
 
 - (UIView *)createLoadingView {
     UIView *loadingView = [[UIView alloc] init];
-    loadingView.backgroundColor = [UIColor whiteColor];
+    loadingView.backgroundColor = [UIColor systemBackgroundColor];
     return loadingView;
 }
 
 - (UIView *)createErrorView {
     UIView *errorView = [[UIView alloc] init];
-    errorView.backgroundColor = [UIColor whiteColor];
+    errorView.backgroundColor = [UIColor systemBackgroundColor];
     return errorView;
 }
 

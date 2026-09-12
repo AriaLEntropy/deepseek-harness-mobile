@@ -20,26 +20,47 @@ internal object DshLogSql {
         "CREATE INDEX IF NOT EXISTS idx_dsh_log_session_seq ON dsh_log_events(session_id, seq)"
 
     const val INSERT =
-        "INSERT OR REPLACE INTO dsh_log_events (seq, time, level, type, session_id, rpc_id, message, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO dsh_log_events (seq, time, level, type, session_id, rpc_id, message, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+
+    const val CREATE_STATE = "CREATE TABLE IF NOT EXISTS dsh_log_state (slot INTEGER PRIMARY KEY CHECK(slot=1), crash_id TEXT NOT NULL)"
+    const val LAST_CRASH = "SELECT COALESCE((SELECT crash_id FROM dsh_log_state WHERE slot=1), '')"
+
+    // kuiklySqlite 1.0.0 statement.step() hides sqlite3_step errors. execute() checks rc.
+    // Numeric values are typed; text literals escape quotes and embedded NUL before C interop.
+    fun literal(value: String?): String = value?.let { "'${it.replace("\u0000", "\\0").replace("'", "''")}'" } ?: "NULL"
+    fun insertEvent(event: LogEvent): String =
+        "INSERT INTO dsh_log_events (seq,time,level,type,session_id,rpc_id,message,size) VALUES (" +
+            "${event.seq},${event.timestamp},${event.level.value},${literal(event.type)},${literal(event.sessionId)}," +
+            "${literal(event.rpcId)},${literal(event.message)},${event.size})"
+    fun markCrash(id: String): String = "INSERT OR REPLACE INTO dsh_log_state(slot,crash_id) VALUES(1,${literal(id)})"
+
+    // A terminal row distinguishes a legitimate empty result from a swallowed step() failure.
+    fun checkedSelect(sql: String): String =
+        "SELECT * FROM ($sql) UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL"
 
     const val CLEAR = "DELETE FROM dsh_log_events"
 
-    const val SIZE_BYTES =
-        "SELECT COALESCE(SUM(length(message) + length(type) + 32), 0) FROM dsh_log_events"
-
     const val MAX_SEQ = "SELECT COALESCE(MAX(seq), 0) FROM dsh_log_events"
 
-    /** 第一阶段淘汰：仅删除最旧的 DEBUG/INFO（level IN 0,1）的一半，保护 WARN/ERROR。 */
-    const val DROP_OLDEST_LOW_LEVEL =
-        "DELETE FROM dsh_log_events WHERE seq IN (" +
-            "SELECT seq FROM dsh_log_events WHERE level IN (0, 1) ORDER BY seq ASC LIMIT " +
-            "(SELECT COUNT(*) / 2 FROM dsh_log_events WHERE level IN (0, 1))" +
-            ")"
+    const val COUNT_ALL = "SELECT COUNT(*) FROM dsh_log_events"
 
-    /** 第二阶段淘汰：仍超限时，跨全部级别删除最旧的四分之一。 */
-    const val DROP_OLDEST_ALL =
+    const val COUNT_LOW_LEVEL = "SELECT COUNT(*) FROM dsh_log_events WHERE level IN (0, 1)"
+
+    /** 删除最旧的一批 DEBUG/INFO；`LIMIT ?` 由调用方给出，保证每次至少推进 1 条。 */
+    const val DELETE_OLDEST_LOW_LEVEL =
         "DELETE FROM dsh_log_events WHERE seq IN (" +
-            "SELECT seq FROM dsh_log_events ORDER BY seq ASC LIMIT " +
-            "(SELECT COUNT(*) / 4 FROM dsh_log_events)" +
-            ")"
+            "SELECT seq FROM dsh_log_events WHERE level IN (0, 1) ORDER BY seq ASC LIMIT ?)"
+
+    /** 删除最旧的一批任意级别记录；用于低级别已删空或全为高等级时的兜底推进。 */
+    const val DELETE_OLDEST_ANY =
+        "DELETE FROM dsh_log_events WHERE seq IN (" +
+            "SELECT seq FROM dsh_log_events ORDER BY seq ASC LIMIT ?)"
+
+    /** 回收 DELETE 后未释放的物理页，使实际磁盘占用下降。 */
+    const val VACUUM = "VACUUM"
+    const val CHECKPOINT = "PRAGMA wal_checkpoint(TRUNCATE)"
+
+    /** 实际已分配页数与页大小；两者相乘约等于数据库文件实际字节数。 */
+    const val PAGE_COUNT = "PRAGMA page_count"
+    const val PAGE_SIZE = "PRAGMA page_size"
 }

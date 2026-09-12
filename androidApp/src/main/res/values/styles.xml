@@ -1,4 +1,9 @@
 <resources>
 
     <style name="AppTheme" parent="android:Theme.Material.NoActionBar" />
+
+    <!-- 冷启动/加载期窗口背景跟随系统深色，避免深色下白屏 -->
+    <style name="Theme.DSH" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/dsh_window_background</item>
+    </style>
 </resources>

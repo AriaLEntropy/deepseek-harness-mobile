@@ -76,6 +76,10 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         } else if (ctx.attr.stopped) {
                             backgroundColor(ctx.attr.colors.stateWarnTertiary)
                             borderRadius(6f)
+                        } else {
+                            // 运行/失败/中断状态结束后必须显式复位，否则最后一帧底色会残留
+                            backgroundColor(Color(0x00000000))
+                            borderRadius(0f)
                         }
                     }
                     vif({ ctx.attr.errorSummary || ctx.attr.stopped }) {
@@ -152,7 +156,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         }
                     }
                 }
-                vif({ ctx.attr.open && ctx.attr.bodyMaxHeight > 0f }) {
+                vif({ ctx.attr.open && !ctx.attr.headerOnly && ctx.attr.bodyMaxHeight > 0f }) {
                     Scroller {
                         attr {
                             height(if (ctx.attr.bodyContentHeight > 0f) minOf(ctx.attr.bodyContentHeight, ctx.attr.bodyMaxHeight) else ctx.attr.bodyMaxHeight)
@@ -245,7 +249,7 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         }
                     }
                 }
-                vif({ ctx.attr.open && ctx.attr.bodyMaxHeight <= 0f }) {
+                vif({ ctx.attr.open && !ctx.attr.headerOnly && ctx.attr.bodyMaxHeight <= 0f }) {
                     View {
                         attr {
                             marginTop(6f)
@@ -365,6 +369,8 @@ internal class DshDisclosureRowAttr : ComposeAttr() {
     var askCard: DshAskQuestionCard? by observable(null)
     /** Compact one-line chrome used by Web ToolRow/ReasoningRow equivalents. */
     var compact: Boolean by observable(false)
+    /** 只渲染可点击的表头；正文由调用方在行内另行渲染（用于回合过程分组）。 */
+    var headerOnly: Boolean by observable(false)
     var toolDetail: DshToolDetail? by observable(null)
     var contextDetail: DshContextDetail? by observable(null)
     var onCopyToolCommand: (String) -> Unit by observable({})
@@ -1970,8 +1976,9 @@ internal class DshQuestionFlowView : ComposeView<DshQuestionFlowAttr, ComposeEve
                         backgroundColor(ctx.attr.colors.bgLayer1)
                         boxShadow(BoxShadow(0f, 8f, 30f, Color(0x26000000)))
                         // 选项少时卡片 wrap content（maxHeight 上限，无空白）；选项多时 flex(1f) 占满覆盖层，
-                        // 键盘弹出覆盖层收缩时卡片自动收缩，防止顶部顶到 topbar
-                        if (ctx.attr.options.size > 4) flex(1f)
+                        // 键盘弹出覆盖层收缩时卡片自动收缩，防止顶部顶到 topbar。
+                        // 用 flex 值切换而非 if，切换问题时必须复位，避免上一题占满高度残留。
+                        flex(if (ctx.attr.options.size > 4) 1f else 0f)
                         maxHeight(560f)
                     }
                     // ===== 标题栏：左侧标签+标题，右侧收起+关闭 =====

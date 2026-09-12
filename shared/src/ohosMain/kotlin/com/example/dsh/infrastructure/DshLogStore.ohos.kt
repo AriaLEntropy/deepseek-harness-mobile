@@ -8,7 +8,7 @@ import net.shantu.kuiklysqlite.SqlStatement
 
 internal actual fun createDshLogStore(path: String): DshLogStore = DshOhosLogStore(path)
 
-private class DshOhosLogStore(path: String) : DshLogStore {
+private class DshOhosLogStore(private val path: String) : DshLogStore {
     private val driver: SqlDriver by lazy {
         DatabaseManager(path, NoOpSchema).driver
     }
@@ -18,58 +18,76 @@ private class DshOhosLogStore(path: String) : DshLogStore {
         driver.execute(DshLogSql.CREATE_INDEX_TIME)
         driver.execute(DshLogSql.CREATE_INDEX_TYPE)
         driver.execute(DshLogSql.CREATE_INDEX_SESSION)
+        driver.execute(DshLogSql.CREATE_STATE)
     }
 
     override fun appendBatch(events: List<LogEvent>) {
         if (events.isEmpty()) return
         driver.transaction {
             for (event in events) {
-                val s = driver.prepare(DshLogSql.INSERT)
-                try {
-                    s.bindString(1, event.seq.toString())
-                    s.bindString(2, event.timestamp.toString())
-                    s.bindString(3, event.level.value.toString())
-                    s.bindString(4, event.type)
-                    s.bindString(5, event.sessionId)
-                    s.bindString(6, event.rpcId)
-                    s.bindString(7, event.message)
-                    s.bindString(8, event.size.toString())
-                    s.step()
-                } finally {
-                    s.close()
-                }
+                driver.execute(DshLogSql.insertEvent(event))
             }
         }
     }
 
     override fun query(filter: LogFilter, limit: Int, offset: Int): List<LogEvent> {
         val select = buildLogSelect(filter, limit, offset)
-        val s = driver.prepare(select.sql)
+        val s = driver.prepare(DshLogSql.checkedSelect(select.sql))
         return try {
             select.args.forEachIndexed { i, v -> s.bindString(i + 1, v) }
             buildList {
-                while (s.step()) add(mapEvent(s))
+                var complete = false
+                while (s.step()) {
+                    if (s.getColumnType(0) == ColumnType.NULL) { complete = true; break }
+                    add(mapEvent(s))
+                }
+                check(complete) { "日志查询未完成" }
             }
         } finally {
             s.close()
         }
     }
 
-    override fun clear() {
-        driver.execute(DshLogSql.CLEAR)
+    override fun clear() = clearAndMarkCrash(null)
+    override fun clearAndMarkCrash(id: String?) {
+        driver.transaction {
+            driver.execute(DshLogSql.CLEAR)
+            id?.let { driver.execute(DshLogSql.markCrash(it)) }
+        }
     }
-
-    override fun sizeBytes(): Long =
-        queryOne(DshLogSql.SIZE_BYTES, emptyList()) { it.getColumnLong(0) } ?: 0L
+    override fun appendCrashOnce(id: String, event: LogEvent): Boolean = driver.transaction {
+        val previous = queryOne(DshLogSql.LAST_CRASH, emptyList()) { it.getColumnString(0) }
+            ?: error("无法读取崩溃导入标记")
+        if (previous == id) false else {
+            driver.execute(DshLogSql.insertEvent(event))
+            driver.execute(DshLogSql.markCrash(id))
+            true
+        }
+    }
+    override fun close() = driver.close()
 
     override fun maxSeq(): Long =
-        queryOne(DshLogSql.MAX_SEQ, emptyList()) { it.getColumnLong(0) } ?: 0L
+        queryOne(DshLogSql.MAX_SEQ, emptyList()) { it.getColumnLong(0) } ?: error("无法读取日志序号")
 
-    override fun dropOldest(keepBytes: Long) {
-        if (sizeBytes() <= keepBytes) return
-        driver.execute(DshLogSql.DROP_OLDEST_LOW_LEVEL)
-        if (sizeBytes() <= keepBytes) return
-        driver.execute(DshLogSql.DROP_OLDEST_ALL)
+    override fun diskBytes(): Long {
+        return databaseDiskBytes(path)
+    }
+
+    override fun count(): Long =
+        queryOne(DshLogSql.COUNT_ALL, emptyList()) { it.getColumnLong(0) } ?: error("无法读取日志数量")
+
+    override fun countLowLevel(): Long =
+        queryOne(DshLogSql.COUNT_LOW_LEVEL, emptyList()) { it.getColumnLong(0) } ?: error("无法读取日志数量")
+
+    override fun deleteOldest(limit: Int, lowLevelOnly: Boolean): Int {
+        val sql = if (lowLevelOnly) DshLogSql.DELETE_OLDEST_LOW_LEVEL else DshLogSql.DELETE_OLDEST_ANY
+        driver.execute(sql.replace("?", limit.coerceAtLeast(0).toString()))
+        return driver.getChanges()
+    }
+
+    override fun compact() {
+        driver.execute(DshLogSql.VACUUM)
+        check((queryOne(DshLogSql.CHECKPOINT, emptyList()) { it.getColumnLong(0) } ?: error("日志 WAL 回收失败")) == 0L) { "日志 WAL 回收忙，稍后重试" }
     }
 
     private fun mapEvent(s: SqlStatement): LogEvent {

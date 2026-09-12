@@ -140,13 +140,16 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
                 }
                 Text { attr { text("重命名会话"); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
                 Input {
+                    // Seed once on mount. Echoing every textDidChange through
+                    // attr.text can overwrite newer native keystrokes/cursor state.
+                    ref { it.view?.setText(draft()) }
                     attr {
                         height(38f)
                         marginTop(14f)
                         fontSize(14f)
                         placeholder("会话名称")
                         placeholderColor(colors().labelTertiary)
-                        text(draft())
+                        editable(!busy())
                         color(colors().labelPrimary)
                     }
                     event { textDidChange { onDraftChange(it.text) } }
@@ -157,8 +160,8 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
                 View {
                     attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                     Text {
-                        attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(colors().labelTertiary) }
-                        event { click { onCancel() } }
+                        attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(colors().labelTertiary); opacity(if (busy()) 0.4f else 1f) }
+                        event { click { if (!busy()) onCancel() } }
                     }
                     Text {
                         attr { text(if (busy()) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(colors().stateBusinessPrimary) }
@@ -200,7 +203,7 @@ internal fun ViewContainer<*, *>.DshSessionArchiveDialog(
                 Text { attr { text("归档会话?"); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
                 Text {
                     attr {
-                        text("归档后会话会从主列表隐藏，可稍后在工作区中恢复；不会删除会话或日志。")
+                        text("归档后会话会从主列表隐藏，可在「已归档会话」中查看历史；不会删除会话或日志。")
                         marginTop(8f)
                         fontSize(13f)
                         lineHeight(20f)

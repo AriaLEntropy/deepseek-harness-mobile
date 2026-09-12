@@ -24,6 +24,15 @@ DeepSeek Harness 本身是一个插件化 Agent 运行时。本仓库提供 Andr
 - 按连接模式隔离会话列表和消息缓存；
 - 通过扫码 Relay 或 SSH 隧道连接电脑上的 DSH Host。
 
+### 日志中心
+
+日志沿用 [DSH 会话事件](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/core/session/src/types.ts)的类型和关联信息：
+
+- 会话事件保留 `turn/start`、`tool/call`、`tool/result`、`assistant/message`、`turn/end` 等原名，每个收到的事件只记录一次元数据摘要。
+- App 补充连接/重试、RPC 起止/失败、页面生命周期、会话切换、图片操作结果、交互响应结果及崩溃。新增 App 事件使用 `app.*` 前缀。
+- 按 Task 6 保留四种等级和结构性 `assistant/chunk` 的 Debug 摘要；逐 token delta、解析/渲染/触摸过程及内部性能打点不采集。正文、工具 JSON、附件 Base64 不复制进诊断日志。
+- 日志本地有界保存，支持筛选、详情、复制、脱敏导出和清空。它记录 App 观察到的事件；完整会话历史仍由 Host 管理。
+
 ## 连接模式
 
 启动后首页是「连接 DSH」。
@@ -346,6 +355,7 @@ App 先打开「连接 DSH」，不会启动内嵌内核。
 - 流式回答；
 - 取消当前请求；
 - 展示工具调用事件；
+- 图片附件发送、历史图片预览（各平台取图能力与验收状态见任务清单）；
 - 本地 SQLite 会话和消息缓存。
 
 ## 目录结构
@@ -368,11 +378,11 @@ ohosApp/                             # OpenHarmony 宿主工程
 
 比较重要的文件：
 
-- [`DshConnectionSetupPage.kt`](shared/src/commonMain/kotlin/com/example/dsh/dsh/DshConnectionSetupPage.kt)：启动时选择扫码 / SSH；
+- [`DshConnectionSetupPage.kt`](shared/src/commonMain/kotlin/com/example/dsh/connection/DshConnectionSetupPage.kt)：启动时选择扫码 / SSH；
 - [`DshRelayManager.kt`](androidApp/src/main/java/com/example/dsh/relay/DshRelayManager.kt)：扫码配对、sealed tunnel 和本机 loopback 网关；
-- [`DshHostProtocol.kt`](shared/src/commonMain/kotlin/com/example/dsh/dsh/DshHostProtocol.kt)：App 与 Host 的 RPC 和事件协议；
-- [`DshHomePage.kt`](shared/src/commonMain/kotlin/com/example/dsh/dsh/DshHomePage.kt)：聊天、会话、输入框和模型配置；
-- [`DshLocalStore.android.kt`](shared/src/androidMain/kotlin/com/example/dsh/dsh/DshLocalStore.android.kt)：按连接 scope 隔离的本地数据库。
+- [`DshHostProtocol.kt`](shared/src/commonMain/kotlin/com/example/dsh/conversation/DshHostProtocol.kt)：App 与 Host 的 RPC 和事件协议；
+- [`DshHomePage.kt`](shared/src/commonMain/kotlin/com/example/dsh/home/DshHomePage.kt)：聊天、会话、输入框和模型配置；
+- [`DshLocalStore.android.kt`](shared/src/androidMain/kotlin/com/example/dsh/storage/DshLocalStore.android.kt)：按连接 scope 隔离的本地数据库。
 
 ## 网络和通信说明
 
@@ -404,6 +414,10 @@ ohosApp/                             # OpenHarmony 宿主工程
 - 手机时间是否正确，避免 TLS 或鉴权异常。
 
 ## 开发说明
+
+当前任务、验证结果和剩余验收统一记录在 **[docs/tasks.md](docs/tasks.md)**。
+
+新增入口：消息菜单支持有序复制/选择与分享，代码块支持独立复制；会话菜单提供「导出可读文本」，会自动读取全部历史分页。设置中的「Host 插件」需要在电脑安装本仓库的只读桥接，安装方法见 **[host-plugin/README.md](host-plugin/README.md)**。
 
 修改 Kotlin 或 Kuikly 代码后，重新执行：
 

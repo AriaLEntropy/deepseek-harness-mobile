@@ -54,6 +54,22 @@ static void DshUncaughtExceptionHandler(NSException *exception) {
     pasteboard.string = content;
 }
 
+- (void)pickImage:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    [[DshImages shared] pick:params[@"source"] ?: @"album" completion:^(NSDictionary *result) {
+        if (callback) callback(result);
+    }];
+}
+
+- (void)saveImage:(NSDictionary *)args {
+    NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    [[DshImages shared] save:params[@"dataUrl"] ?: @"" completion:^(NSDictionary *result) {
+        if (callback) callback(result);
+    }];
+}
+
 - (void)log:(NSDictionary *)args {
     NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
     NSString *content = params[@"content"];
@@ -98,7 +114,10 @@ static void DshUncaughtExceptionHandler(NSException *exception) {
 }
 
 - (void)clearLastCrash:(NSDictionary *)args {
-    [[NSFileManager defaultManager] removeItemAtPath:DshLastCrashPath() error:nil];
+    NSFileManager *manager = [NSFileManager defaultManager];
+    BOOL ok = ![manager fileExistsAtPath:DshLastCrashPath()] || [manager removeItemAtPath:DshLastCrashPath() error:nil];
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    if (callback) callback(@{ @"ok": @(ok) });
 }
 
 - (NSString *)getDeviceInfo:(NSDictionary *)args {

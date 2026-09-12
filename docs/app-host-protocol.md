@@ -1,6 +1,10 @@
 # App 与 Host 协议
 
-这份文档记录 **DSH App 实际调用的 Host 协议**，方便对照代码和官方 Harness API。权威实现在 `shared/src/commonMain/kotlin/com/example/dsh/dsh/DshHostProtocol.kt`。方法名与官方 `packages/host/apiproxy` 对齐，App **不自定 JSON-RPC 方法**。
+这份文档记录 **DSH App 实际调用的 Host 协议**，方便对照代码和官方 Harness API。权威实现在 `shared/src/commonMain/kotlin/com/example/dsh/conversation/DshHostProtocol.kt`。方法名与官方 `packages/host/apiproxy` 对齐，App **不自定 JSON-RPC 方法**。
+
+插件清单新增独立的只读 HTTP 桥接：`GET /api/mobile-plugin-inventory/v1/list`，不是官方 unary RPC。契约、安装与信任边界见 [host-plugin/README.md](../host-plugin/README.md)。App 复用当前 SSH/Relay 连接，Host 桥接读取真实 Loader 状态及配置/失败摘要。
+
+远程会话历史现在按 `{sessionId,maxMessages:80,beforeSeq?}` 读取全部页；响应必须包含 `events` 和 `hasMore`。下一页使用本页最小事件 seq，事件按序去重并保留 `view`，完整读取后交付；断线/过期、空非终页或游标不前进均停止并报错。80 是单页消息预算，不是整段历史上限。可读 TXT 在 App 侧生成，图片只含属性及 attachmentId；Host 原有 ZIP 下载语义不变。
 
 扫码 Relay 的配对、密封隧道不属于 Host 协议，见 [dsh-scan-remote](https://github.com/yukiykchen/dsh-scan-remote)。配对成功后，App 只对 **本机 loopback 上的 Host** 说话，信封与 SSH 相同。
 
@@ -108,7 +112,7 @@ Authorization: Bearer <token>   // token 非空时
 | method | 主要 payload | 用途 |
 | --- | --- | --- |
 | `session.list` | `{}` | `items[]`：`sessionId`、`running`、`blank`、`cwd`、`projections.values.title`、`agentPreset` |
-| `session.create` | `{ workspaceId? }` | 返回 `sessionId` |
+| `session.create` | `{ workspaceId?, permission?, agentPreset? }` | 返回 `sessionId` |
 | `session.history` | `{ sessionId, maxMessages: 80 }` | 重放时间线；条目含 `event` 与可选 `view` |
 | `session.models` | `{ sessionId }` | 当前模型与分组列表 |
 | `session.selectModel` | `{ sessionId, provider, model, reasoningEffort? }` | 切换模型 |
@@ -119,7 +123,7 @@ Authorization: Bearer <token>   // token 非空时
 | `session.updateQueue` | `{ sessionId, itemId, action }` | 队列 `edit` / `remove` / `steer` |
 | `session.attachment` | `{ sessionId, attachmentId }` | 读历史图片：`attachment` + Base64 `data` |
 | `skill.list` | `{ sessionId }` | `/` 补全用的 skill 列表 |
-| `agentPreset.list` | （已声明常量，UI 目前只展示会话上的 preset 名） | 预留 |
+| `agentPreset.list` | `{}` | 拉取模式选择器的预设，失败时使用本地兜底项 |
 | `goal.edit` / `pause` / `resume` / `clear` | `{ sessionId, ref: { id, revision }, objective? }` | Goal 条 |
 
 导出不是 RPC：`GET /api/session.export?sessionId=&includeDescendants=`。
@@ -134,7 +138,7 @@ Authorization: Bearer <token>   // token 非空时
 
 ## 5. `session.prompt` 与流式
 
-当前 App **只发文本**：
+当前 App 支持纯文本、图片或图文混合。纯文本示例：
 
 ```json
 {
@@ -146,13 +150,15 @@ Authorization: Bearer <token>   // token 非空时
 
 `mode` 固定 `queue`。若 Host 立刻返回 `command.kind == success`，当作 slash 命令完成，不再等流。
 
-官方图片通道（尚未从输入区发出）应是同一 `content` 数组里再加：
+图片发送已通过 `streamReplyWithImages` 接入：同一 `content` 数组里增加以下条目（纯图片时不添加空文本条目）：
 
 ```json
 { "type": "image", "mediaType": "image/png", "data": "<canonical-base64>", "name": "photo.png" }
 ```
 
 只支持 PNG / JPEG / WebP / GIF。限额看 Host 的 `imageLimits` projection。PDF 等通用文件 **不在** 该协议里。
+
+输入区先做图片预检；Base64 仅用于发送草稿，历史恢复使用 Host 附件引用。Android 已接取图和保存；鸿蒙桥接代码已补齐、构建与设备验收状态见 [任务清单](tasks.md)；iOS 取图和保存桥接仍待接入。
 
 流式结果不走 prompt 的 HTTP 响应体，而走 mux 上的 `session/event`。App 用 prompt 的 `rpcId` 对上事件 `source.rpcId`。`turn/end` 结束一轮。重连后若 Host 仍在跑，用 `adoptLiveStream` 挂上现有 turn，不重新 prompt。
 
@@ -219,7 +225,7 @@ Authorization: Bearer <token>   // token 非空时
 | `DshRemoteRepository.kt` | 扫码 / SSH 门面 |
 | `DshLegacyHostRepository.kt` | 本地 HTTP + SSE / 轮询 |
 | `DshRemoteToolCallModel.kt` | `tool/call`+`result` → 卡片模型 |
-| `DshHostStore.kt` | 会话、事件、队列、pending 内存投影 |
+| `DshModels.kt` 中的 `DshHostStore` | 会话、事件、队列、pending 内存投影 |
 | `DshWebSocketModule.kt` / `DshSseModule.kt` | 传输 |
 
 官方对照：
@@ -230,7 +236,6 @@ Authorization: Bearer <token>   // token 非空时
 
 ## 8. 明确未接或未发的
 
-- 发图：`session.attachment` 已能读历史图；输入区尚未把 `type: image` 放进 `session.prompt`
 - 通用文件 / PDF 上传：官方无此 RPC
 - 插件启停：`pluginInventory/list` 只读，App 未接
 - 永久删除会话：官方归档有，删除存储需扩 Host

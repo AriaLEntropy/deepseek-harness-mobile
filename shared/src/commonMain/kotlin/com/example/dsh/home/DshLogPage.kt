@@ -3,8 +3,11 @@ package com.example.dsh.home
 import com.example.dsh.base.*
 import com.example.dsh.diagnostics.DshLogPageContract
 import com.example.dsh.diagnostics.DshLogQuery
+import com.example.dsh.diagnostics.DshLogFilters
+import com.example.dsh.diagnostics.dshLogPickerEpoch
 import com.example.dsh.diagnostics.DshLogPageResult
 import com.example.dsh.diagnostics.DshLogWork
+import com.example.dsh.diagnostics.DshCrashMarker
 import com.example.dsh.infrastructure.*
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
@@ -36,33 +39,37 @@ import kotlinx.coroutines.cancel
  * 日志查看页（独立路由 Page，替代原先堆叠在主页上的全屏 Modal）。
  *
  * 路由参数：
- * - sessionId：非空为「会话日志」模式（只看该会话）；空为「诊断日志」全局模式
+ * - sessionId：仅初始化可修改、可清除的会话筛选；所有入口共享「日志」页面
  * - exportDir / connectionMode：导出文件目录、反馈包抬头用的连接模式名
  *
- * 结构：列表态 ↔ 详情态在同一 Page 内切换（vif），时间/级别等筛选全部收
- * 底部 Sheet，页面层级恒为 1。数据源为全局 [DshStreamLog.writeBehind]，
+ * 结构：列表保留在同一 Page，详情使用覆盖面板，时间/级别等筛选收进
+ * 底部 Sheet。数据源为全局 [DshStreamLog.writeBehind]，
  * 只展示脱敏元数据；会话标题通过路由快照传入，跳回会话通过 NotifyModule 解耦。
  */
 @Page("dsh_log")
 internal class DshLogPage : BasePager() {
 
     // ---- 路由参数 ----
-    private var sessionId = ""
     private var exportDir = ""
     private var connectionMode = ""
     private val sessionTitles = mutableMapOf<String, String>()
-    private val allMode: Boolean get() = sessionId.isEmpty()
 
     // ---- 数据 ----
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // 全量刷新（统计口径 + 第一页）与游标增量读取（懒加载 / 轮询）分别持有工作句柄。
     private var queryWork: DshLogWork<DshLogPageResult>? = null
+    private var sliceWork: DshLogWork<List<LogEvent>>? = null
     private var exportWork: DshLogWork<String>? = null
     private var clearWork: DshLogWork<Unit>? = null
     private var queryVersion = -1L
     private var queryGeneration = 0
-    private var pageOffset by observable(0)
+    // 已完成一次全量统计（total/级别计数/目录），增量轮询的前置条件。
+    private var statsReady = false
+    private var lastFullRefreshMs = 0L
+    private var loadedCount by observable(0)
     private var loading by observable(false)
     private var loadError by observable("")
+    private var storageWarning by observable("")
     private var lastExportPath by observable("")
     private var alive = true
     private var filterRevision = 0
@@ -72,16 +79,35 @@ internal class DshLogPage : BasePager() {
     private val logView by observableList<LogEvent>()
     private var logTotal by observable(0)
     private val sessionOptions by observableList<String>()
+    private val typeOptions by observableList<String>()
+    private var catalogVersion = -1L
+    private var retainedTotal by observable(0)
+    private var sessionSearch by observable("")
+    private var typeSearch by observable("")
 
     // ---- 筛选（级别为多选集合：空集 = 不过滤） ----
-    private var selectedLevels by observable<Set<LogLevel>>(emptySet())
+    private var filters by observable(DshLogFilters())
+    private var selectedLevels: Set<LogLevel>
+        get() = filters.levels
+        set(value) { filters = filters.copy(levels = value) }
     // 级别计数（时间/会话/搜索词过滤后、级别过滤前的口径），供级别 Sheet 行展示
     private var levelCounts by observable<Map<LogLevel, Int>>(emptyMap())
-    // 列表时间范围始终由 customStartMs/customEndMs 决定，默认当天 00:00 - 23:59
-    private var customStartMs by observable<Long?>(null)
-    private var customEndMs by observable<Long?>(null)
-    private var selectedSessions by observable<Set<String>>(emptySet())
-    private var keyword by observable("")
+    // 默认全部保留日志，避免旧会话被隐含的“今天”条件隐藏。
+    private var customStartMs: Long?
+        get() = filters.fromTime
+        set(value) { filters = filters.copy(fromTime = value) }
+    private var customEndMs: Long?
+        get() = filters.toTime
+        set(value) { filters = filters.copy(toTime = value) }
+    private var selectedSessions: Set<String>
+        get() = filters.sessions
+        set(value) { filters = filters.copy(sessions = value) }
+    private var selectedTypes: Set<String>
+        get() = filters.types
+        set(value) { filters = filters.copy(types = value) }
+    private var keyword: String
+        get() = filters.keyword
+        set(value) { filters = filters.copy(keyword = value) }
 
     // ---- UI 状态 ----
     private var detailEntry by observable<LogEvent?>(null)
@@ -99,6 +125,9 @@ internal class DshLogPage : BasePager() {
     // 时间 Sheet 草稿：打开时从 custom* 拷贝，确定时一次性提交到生效条件；取消即作废
     private var draftStartMs by observable<Long?>(null)
     private var draftEndMs by observable<Long?>(null)
+    private var draftAllTime by observable(true)
+    private var pickerDirty = false
+    private var pickerError by observable("")
     private var pkYear by observable(0)
     private var pkMonth by observable(1)
     private var pkDay by observable(1)
@@ -111,8 +140,9 @@ internal class DshLogPage : BasePager() {
     private var newCount by observable(0)
     private var lastMaxSeq = 0L
     private var polling = false
+    private var pollGeneration = 0
 
-    private enum class SheetKind { NONE, TIME, LEVEL, SESSION, EXPORT }
+    private enum class SheetKind { NONE, TIME, LEVEL, SESSION, TYPE, EXPORT }
 
     private val backCallback = object : BackPressCallback() {
         override fun handleOnBackPressed() {
@@ -127,7 +157,7 @@ internal class DshLogPage : BasePager() {
 
     override fun created() {
         super.created()
-        sessionId = pageData.params.optString("sessionId")
+        filters = DshLogFilters.forSession(pageData.params.optString(DshLogPageContract.KEY_SESSION_ID))
         exportDir = pageData.params.optString("exportDir")
         connectionMode = pageData.params.optString("connectionMode")
         jumpRef = acquireModule<NotifyModule>(NotifyModule.MODULE_NAME).addNotify(DshLogPageContract.EVENT_JUMP_RESULT) { data ->
@@ -142,13 +172,13 @@ internal class DshLogPage : BasePager() {
                 val item = titleItems.optJSONObject(index) ?: continue
                 val id = item.optString(DshLogPageContract.KEY_SESSION_ID)
                 if (id.isNotEmpty()) {
-                    sessionTitles[id] = item.optString(DshLogPageContract.KEY_SESSION_TITLE).ifEmpty { id }
+                    sessionTitles[id] = LogSanitizer.sanitize(item.optString(DshLogPageContract.KEY_SESSION_TITLE).ifEmpty { id })
                 }
             }
         }
         getBackPressHandler().addCallback(backCallback)
-        applyTodayPreset()
-        refresh()
+        sessionOptions.addAll((sessionTitles.keys + selectedSessions + DshLogFilters.UNASSOCIATED).distinct().sorted())
+        refreshAll()
         startFollow()
     }
 
@@ -160,20 +190,47 @@ internal class DshLogPage : BasePager() {
         super.pageWillDestroy()
     }
 
+    override fun pageDidDisappear() {
+        super.pageDidDisappear()
+        polling = false
+        pollGeneration++
+        queryWork?.cancel(); queryWork = null
+        sliceWork?.cancel(); sliceWork = null
+        statsReady = false
+        queryVersion = -1
+        loading = false
+        exportWork?.cancel(); exportWork = null; exporting = false; feedbackExporting = false
+    }
+
+    override fun pageDidAppear() {
+        super.pageDidAppear()
+        refreshAll()
+        startFollow()
+    }
+
     // ===== 数据：刷新与筛选 =====
 
-    private fun refresh() {
-        if (queryWork != null || clearing) return
-        val source = DshStreamLog.writeBehind ?: run { loadError = "日志存储尚未就绪"; return }
+    /**
+     * 全量刷新：遍历一次匹配集合重算 total / 级别计数 / 会话类型目录，并重建第一页。
+     * 只在打开、切换筛选、重新显示和低频对账时调用；懒加载与轮询走 [loadMore]/[refreshNewer]，
+     * 不再为多看一页或看新日志而重复扫描整张表。
+     */
+    private fun refreshAll() {
+        if (queryWork != null || sliceWork != null || clearing) return
+        val source = DshStreamLog.writeBehind ?: run { loading = false; loadError = "日志存储尚未就绪"; return }
+        storageWarning = if (source.isDegraded()) {
+            "日志存储降级：${source.lastFailure() ?: "未知原因"}，部分日志可能未保存"
+        } else {
+            ""
+        }
         val version = source.version()
-        if (version == queryVersion) return
         queryVersion = version
         val query = currentQuery()
         val generation = queryGeneration
-        val offset = pageOffset
         loading = true
         loadError = ""
-        val work = DshLogWork(workerScope) { query.readPage(source, offset, PAGE_SIZE) }
+        val includeCatalog = catalogVersion != version
+        val work = DshLogWork(workerScope) { cancelled -> query.readPage(source, 0, PAGE_SIZE, includeCatalog, cancelled) }
         queryWork = work
         fun receive() {
             if (!alive || queryWork !== work) return
@@ -181,26 +238,91 @@ internal class DshLogPage : BasePager() {
             if (result == null) { setTimeout(50) { receive() }; return }
             queryWork = null
             loading = false
-            if (generation != queryGeneration) { queryVersion = -1; refresh(); return }
+            if (generation != queryGeneration) { queryVersion = -1; refreshAll(); return }
             result.onSuccess { page ->
                 logTotal = page.total
+                loadedCount = page.rows.size
                 levelCounts = page.levels
                 logView.diffUpdate(page.rows) { old, new -> old == new }
-                val options = (sessionTitles.keys + page.rows.map { it.sessionId ?: "__mobile__" } + "__mobile__").distinct().sorted()
-                if (sessionOptions.toList() != options) { sessionOptions.clear(); sessionOptions.addAll(options) }
-                val newest = page.rows.firstOrNull()?.seq ?: 0
-                if (lastMaxSeq > 0 && newest > lastMaxSeq) newCount += page.rows.count { it.seq > lastMaxSeq }
-                lastMaxSeq = newest
-                if (followBottom && pageOffset == 0) newCount = 0
-                if (pageOffset > 0 && pageOffset >= page.total) { pageOffset = 0; queryVersion = -1; refresh() }
+                page.catalog?.let { catalog ->
+                    catalogVersion = version
+                    retainedTotal = catalog.retained
+                    mergeCatalog(catalog.sessions, catalog.types)
+                }
+                lastMaxSeq = page.rows.firstOrNull()?.seq ?: 0L
+                newCount = 0
+                statsReady = true
+                lastFullRefreshMs = currentTimeMillis()
             }.onFailure { loadError = "读取日志失败：${LogSanitizer.sanitize(it.message.orEmpty())}"; queryVersion = -1 }
         }
         setTimeout(50) { receive() }
     }
 
+    /** 轮询增量：只拉取比 [lastMaxSeq] 更新的记录并叠加到统计与列表，避免整表扫描。 */
+    private fun refreshNewer() {
+        if (!statsReady || loading || queryWork != null || sliceWork != null || clearing) return
+        val source = DshStreamLog.writeBehind ?: return
+        val version = source.version()
+        if (version == queryVersion) return
+        queryVersion = version
+        val query = currentQuery()
+        val after = lastMaxSeq
+        val generation = queryGeneration
+        val work = DshLogWork(workerScope) { cancelled -> query.readNewer(source, after, NEWER_LIMIT, cancelled) }
+        sliceWork = work
+        fun receive() {
+            if (!alive || sliceWork !== work) return
+            val result = work.take()
+            if (result == null) { setTimeout(50) { receive() }; return }
+            sliceWork = null
+            if (generation != queryGeneration) { queryVersion = -1; refreshAll(); return }
+            result.onSuccess { rows ->
+                // 空结果（清空/淘汰）或新日志过多时，退回全量对账，避免增量口径偏差。
+                if (rows.isEmpty() || rows.size >= NEWER_LIMIT) { queryVersion = -1; refreshAll(); return }
+                applyNewer(rows)
+            }.onFailure { queryVersion = -1 }
+        }
+        setTimeout(50) { receive() }
+    }
+
+    /** 把更新的日志叠加进视图：级别计数、总数、会话/类型目录和列表头部。 */
+    private fun applyNewer(rows: List<LogEvent>) {
+        val levels = filters.levels
+        val displayed = if (levels.isEmpty()) rows else rows.filter { it.level in levels }
+        val merged = levelCounts.toMutableMap()
+        rows.forEach { merged[it.level] = (merged[it.level] ?: 0) + 1 }
+        levelCounts = merged
+        logTotal += displayed.size
+        if (displayed.isNotEmpty()) logView.addAll(0, displayed)
+        // 环形上限：持续生成时只保留最近 MAX_LOADED 条，超出部分从尾部淘汰。
+        var excess = logView.size - MAX_LOADED
+        while (excess-- > 0) logView.removeAt(logView.size - 1)
+        loadedCount = logView.size
+        lastMaxSeq = maxOf(lastMaxSeq, rows.first().seq)
+        mergeCatalog(
+            rows.map { it.sessionId?.takeIf(String::isNotEmpty) ?: DshLogFilters.UNASSOCIATED },
+            rows.map { it.type },
+        )
+        if (followBottom) newCount = 0 else newCount += displayed.size
+    }
+
+    /** 合并会话/类型下拉选项并保持排序；全量与增量共用。 */
+    private fun mergeCatalog(sessions: List<String>, types: List<String>) {
+        val options = (sessionTitles.keys + sessionOptions + sessions + selectedSessions + DshLogFilters.UNASSOCIATED).distinct().sorted()
+        sessionOptions.diffUpdate(options) { old, new -> old == new }
+        typeOptions.diffUpdate((typeOptions + types).distinct().sorted()) { old, new -> old == new }
+    }
+
     /** 按筛选条件（时间/级别集合/会话/搜索词）重算日志视图；级别计数取级别过滤前的口径。 */
     private fun recompute() {
-        pageOffset = 0
+        queryWork?.cancel(); queryWork = null
+        sliceWork?.cancel(); sliceWork = null
+        statsReady = false
+        loadedCount = 0
+        lastMaxSeq = 0
+        newCount = 0
+        loading = true
+        logView.clear()
         queryGeneration++
         val revision = ++filterRevision
         setTimeout(200) { if (alive && filterRevision == revision) reloadPage() }
@@ -209,33 +331,51 @@ internal class DshLogPage : BasePager() {
     private fun reloadPage() {
         queryGeneration++
         queryVersion = -1
-        refresh()
+        refreshAll()
     }
 
-    private fun currentQuery(all: Boolean = false): DshLogQuery = DshLogQuery(
-        LogFilter(sessionId = sessionId.takeIf { !allMode },
-            sessionIds = if (all) null else selectedSessions.toList(),
-            levels = if (all) null else selectedLevels.toList(),
-            fromTime = if (all) null else customStartMs, toTime = if (all) null else customEndMs),
-        if (all) "" else keyword,
-    )
+    /** 触底懒加载：按游标只取比当前最旧一条更早的一页，不重算统计。 */
+    private fun loadMore() {
+        if (loading || queryWork != null || sliceWork != null || clearing) return
+        if (loadedCount >= logTotal || loadedCount >= MAX_LOADED) return
+        val source = DshStreamLog.writeBehind ?: return
+        val oldest = logView.lastOrNull()?.seq ?: return
+        val query = currentQuery()
+        val generation = queryGeneration
+        loading = true
+        val work = DshLogWork(workerScope) { cancelled -> query.readOlder(source, oldest, PAGE_SIZE, cancelled) }
+        sliceWork = work
+        fun receive() {
+            if (!alive || sliceWork !== work) return
+            val result = work.take()
+            if (result == null) { setTimeout(50) { receive() }; return }
+            sliceWork = null
+            loading = false
+            if (generation != queryGeneration) { queryVersion = -1; refreshAll(); return }
+            result.onSuccess { rows ->
+                if (rows.isEmpty()) { queryVersion = -1; refreshAll(); return }
+                logView.addAll(rows)
+                loadedCount = logView.size
+            }.onFailure { loadError = "读取日志失败：${LogSanitizer.sanitize(it.message.orEmpty())}" }
+        }
+        setTimeout(50) { receive() }
+    }
+
+    private fun currentQuery(all: Boolean = false): DshLogQuery = filters.query(all)
 
     private fun clearFilters() {
-        applyTodayPreset()
-        selectedLevels = emptySet()
-        selectedSessions = emptySet()
-        keyword = ""
+        filters = DshLogFilters()
         recompute()
     }
 
     // ===== 时间筛选 =====
 
-    /** 预设区间的时间戳计算：0=今天 00:00-23:59；1=最近 1 小时；2=最近 10 小时。 */
+    /** 预设区间：0=今天；1=最近 1 小时；2=最近 15 分钟。 */
     private fun presetRange(kind: Int): Pair<Long, Long> {
         val now = currentTimeMillis()
         return when (kind) {
             1 -> now - 3_600_000L to now
-            2 -> now - 36_000_000L to now
+            2 -> now - 900_000L to now
             else -> {
                 val s = LogExporter.formatTimestamp(now)
                 val y = s.substring(0, 4).toInt()
@@ -246,15 +386,9 @@ internal class DshLogPage : BasePager() {
         }
     }
 
-    /** 将今天的区间直接写入生效条件（页面初始化 / 清除筛选用，不经过 Sheet）。 */
-    private fun applyTodayPreset() {
-        val (s, e) = presetRange(0)
-        customStartMs = s
-        customEndMs = e
-    }
-
     /** Sheet 预设 chip：把区间填入草稿两端并同步滚轮，不立即筛选。 */
     private fun applyPresetToDraft(kind: Int) {
+        draftAllTime = false
         val (s, e) = presetRange(kind)
         draftStartMs = s
         draftEndMs = e
@@ -264,15 +398,18 @@ internal class DshLogPage : BasePager() {
 
     /** 打开时间 Sheet：把生效区间拷贝进草稿，滚轮同步到开始端。 */
     private fun openTimeSheet() {
-        if (customStartMs == null || customEndMs == null) applyTodayPreset()
-        draftStartMs = customStartMs
-        draftEndMs = customEndMs
+        draftAllTime = customStartMs == null && customEndMs == null
+        val today = presetRange(0)
+        draftStartMs = customStartMs ?: today.first
+        draftEndMs = customEndMs ?: today.second
         pickerTargetStart = true
         syncPickerPkValues(true)
         sheet = SheetKind.TIME
     }
 
     private fun syncPickerPkValues(targetStart: Boolean) {
+        pickerDirty = false
+        pickerError = ""
         val target = if (targetStart) draftStartMs else draftEndMs
         val ms = target ?: currentTimeMillis()
         val s = LogExporter.formatTimestamp(ms)
@@ -284,15 +421,26 @@ internal class DshLogPage : BasePager() {
     }
 
     /** 把滚轮当前值写回正在编辑的草稿端，防止 tab 切换 / 确定时丢失。 */
-    private fun commitPickerToDraft() {
-        val v = LogExporter.parseEpoch(pkYear, pkMonth, pkDay, pkHour, pkMinute)
+    private fun commitPickerToDraft(): Boolean {
+        if (!pickerDirty) return true
+        val v = dshLogPickerEpoch(pkYear, pkMonth, pkDay, pkHour, pkMinute, end = !pickerTargetStart)
+            ?: run { pickerError = "日期无效，请检查所选月份的天数"; return false }
+        pickerError = ""
         if (pickerTargetStart) draftStartMs = v else draftEndMs = v
+        pickerDirty = false
+        return true
+    }
+
+    private fun pickerChanged() {
+        pickerDirty = true
+        draftAllTime = false
+        commitPickerToDraft()
     }
 
     /** 切换开始/结束编辑端：先保存当前端，再把另一端装载进滚轮。 */
     private fun switchPickerTarget(start: Boolean) {
         if (pickerTargetStart == start) return
-        commitPickerToDraft()
+        if (!commitPickerToDraft()) return
         pickerTargetStart = start
         syncPickerPkValues(start)
         pickerNonce++
@@ -300,7 +448,13 @@ internal class DshLogPage : BasePager() {
 
     /** 确定：草稿两端一次性提交到生效条件并重筛；起止选反时自动交换。取消/返回仅关闭 Sheet，草稿作废。 */
     private fun confirmTimeSheet() {
-        commitPickerToDraft()
+        if (draftAllTime) {
+            filters = filters.copy(fromTime = null, toTime = null)
+            recompute()
+            sheet = SheetKind.NONE
+            return
+        }
+        if (!commitPickerToDraft()) return
         val s = draftStartMs
         val e = draftEndMs
         if (s != null && e != null && s > e) {
@@ -316,6 +470,7 @@ internal class DshLogPage : BasePager() {
 
     /** 顶部时间 chip 文案：始终展示具体日期时间段，而非“今天”等预设名。 */
     private fun timeChipLabel(): String {
+        if (customStartMs == null && customEndMs == null) return "全部保留"
         val s = customStartMs?.let { formatCustomTime(it) } ?: "不限"
         val e = customEndMs?.let { formatCustomTime(it) } ?: "不限"
         return "$s ~ $e"
@@ -394,43 +549,79 @@ internal class DshLogPage : BasePager() {
 
     private fun sessionTitle(sessionId: String): String = sessionTitles[sessionId] ?: sessionId
 
+    private fun sessionLabel(sid: String): String =
+        if (sid == DshLogFilters.UNASSOCIATED) "未关联会话" else sessionTitle(sid)
+
+    private fun sessionChipLabel(): String = when (selectedSessions.size) {
+        0 -> "会话：全部"
+        1 -> "会话：${sessionLabel(selectedSessions.first())}"
+        else -> "会话：已选 ${selectedSessions.size} 项"
+    }
+
+    private fun filterSummary(): String = buildString {
+        appendLine("会话：${selectedSessions.takeIf { it.isNotEmpty() }?.joinToString { sessionLabel(it) + if (it == DshLogFilters.UNASSOCIATED) "" else " [$it]" } ?: "全部（含未关联会话）"}")
+        appendLine("时间：${timeChipLabel()}")
+        appendLine("级别：${levelChipLabel()}")
+        appendLine("事件类型：${selectedTypes.takeIf { it.isNotEmpty() }?.joinToString() ?: "全部"}")
+        appendLine("关键词（普通文本）：$keyword")
+        appendLine("RPC：${filters.rpcId.ifEmpty { "不限" }}")
+    }
+
     // ===== 跟随底部（轮询） =====
 
     private fun startFollow() {
-        polling = false
+        if (polling) return
         followBottom = true
         newCount = 0
         lastMaxSeq = logView.maxOfOrNull { it.seq } ?: 0L
         polling = true
-        setTimeout(POLL_INTERVAL_MS) { poll() }
+        val generation = ++pollGeneration
+        setTimeout(POLL_INTERVAL_MS) { poll(generation) }
     }
 
-    private fun poll() {
-        if (!polling) return
-        refresh()
-        setTimeout(POLL_INTERVAL_MS) { poll() }
+    private fun poll(generation: Int) {
+        if (!polling || generation != pollGeneration) return
+        // 常规轮询只增量拉新。仅在用户尚未向下翻页（列表仍是第一页）时，
+        // 才允许低频全量对账，避免把已加载的多页数据重置回第一页。
+        val canReconcile = logView.size <= PAGE_SIZE
+        if (canReconcile && currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS) {
+            refreshAll()
+        } else {
+            refreshNewer()
+        }
+        setTimeout(POLL_INTERVAL_MS) { poll(generation) }
     }
 
     private fun scrollToBottom() {
         val scroller = scrollerRef?.view ?: return
-        pageOffset = 0
-        reloadPage()
         scroller.setContentOffset(0f, 0f, animated = false)
     }
 
     private fun onLogScroll(params: ScrollParams) {
-        val atBottom = pageOffset == 0 && params.offsetY <= 8f
-        followBottom = atBottom
-        if (atBottom) newCount = 0
+        val atTop = params.offsetY <= 8f
+        followBottom = atTop
+        if (atTop) newCount = 0
+        val maxOffset = (params.contentHeight - params.viewHeight).coerceAtLeast(0f)
+        if (params.offsetY >= maxOffset - LOAD_MORE_SLACK_PX) loadMore()
     }
 
     // ===== 清空 =====
 
     private fun confirmClear() {
         if (clearing) return
-        val source = DshStreamLog.writeBehind ?: return
         clearing = true
-        val work = DshLogWork(workerScope) { source.clear() }
+        if (pagerData.platform == "ohos") {
+            bridgeModule.readLastCrashAsync { raw -> if (alive) clearLogsAndCrash(raw) }
+        } else {
+            runCatching { bridgeModule.readLastCrash() }.onSuccess { clearLogsAndCrash(it) }
+                .onFailure { clearing = false; bridgeModule.toast("无法确认崩溃快照状态，请重试清空") }
+        }
+    }
+
+    private fun clearLogsAndCrash(raw: String) {
+        val source = DshStreamLog.writeBehind ?: run { clearing = false; return }
+        val id = raw.takeIf { it.isNotEmpty() }?.let(DshCrashMarker::idOf)
+        val work = DshLogWork(workerScope) { _ -> source.clear(id) }
         clearWork = work
         fun receive() {
             if (!alive || clearWork !== work) return
@@ -439,9 +630,13 @@ internal class DshLogPage : BasePager() {
             clearWork = null
             clearing = false
             result.onSuccess {
+                // 清空本地日志同时清除原生最近一次崩溃快照；已导入 ID 保留，避免清除失败时旧崩溃重现。
+                bridgeModule.clearLastCrash { ok ->
+                    if (alive) bridgeModule.toast(if (ok) "已清空全部本地日志和崩溃快照"
+                        else "日志已清空，原生崩溃快照清理失败；旧快照已标记，不会重新导入")
+                }
                 clearVisible = false; detailEntry = null; newCount = 0; lastMaxSeq = 0
                 recompute()
-                bridgeModule.toast("已清空本地诊断日志")
             }.onFailure { bridgeModule.toast("清空失败，请重试") }
         }
         setTimeout(50) { receive() }
@@ -455,11 +650,11 @@ internal class DshLogPage : BasePager() {
         val source = DshStreamLog.writeBehind ?: run { bridgeModule.toast("日志存储尚未就绪"); return }
         exporting = true
         val query = currentQuery(exportAll)
-        val header = "DSH 日志导出\n会话：${if (allMode) "全部" else sessionId}\n范围：${if (exportAll) "全部保留日志" else "当前筛选 · ${timeChipLabel()} · $keyword"}\n内容已脱敏。"
-        val safeName = if (allMode) "global" else sessionId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
+        val header = "DSH 日志导出\n范围：${if (exportAll) "全部本地日志（忽略所有筛选）" else "当前筛选结果（含全部分页）\n${filterSummary()}"}\n内容已脱敏。"
+        val safeName = if (exportAll) "all" else "filtered"
         val dir = exportDir
         val filename = "dsh-$safeName-${currentTimeMillis()}-log.txt"
-        awaitExport(DshLogWork(workerScope) { query.export(source, dir, filename, header) })
+        awaitExport(DshLogWork(workerScope) { cancelled -> query.export(source, dir, filename, header, cancelled) })
     }
 
     /** 生成问题反馈包：全量日志（脱敏）+ 连接模式 + App 版本 + 设备型号，写入文件并分享。 */
@@ -479,7 +674,7 @@ internal class DshLogPage : BasePager() {
             appendLine("")
         }
         val dir = exportDir
-        awaitExport(DshLogWork(workerScope) { DshLogQuery().export(source, dir, "dsh-feedback-$stamp.txt", content) })
+        awaitExport(DshLogWork(workerScope) { cancelled -> DshLogQuery().export(source, dir, "dsh-feedback-$stamp.txt", content, cancelled) })
     }
 
     private fun awaitExport(work: DshLogWork<String>) {
@@ -510,21 +705,27 @@ internal class DshLogPage : BasePager() {
                     flexDirectionColumn()
                     backgroundColor(ctx.themeColors.bgBase)
                     paddingTop(pagerData.statusBarHeight)
+                    paddingBottom(pagerData.safeAreaInsets.bottom)
                 }
                 ctx.renderNavBar(this)
-                vif({ ctx.detailEntry == null }) {
-                    View {
-                        attr { flex(1f); flexDirectionColumn() }
-                        ctx.renderFilterBar(this)
-                        ctx.renderSearchBar(this)
-                        ctx.renderListArea(this)
-                    }
+                View {
+                    attr { flex(1f); flexDirectionColumn() }
+                    ctx.renderSearchBar(this)
+                    ctx.renderFilterBar(this)
+                    ctx.renderListArea(this)
                 }
-                vif({ ctx.detailEntry != null }) {
-                    View {
-                        attr { flex(1f); flexDirectionColumn() }
-                        ctx.renderDetail(this)
+            }
+            // Keep the list mounted behind details so returning preserves its scroll position.
+            vif({ ctx.detailEntry != null }) {
+                Modal(inWindow = true) {
+                    attr {
+                        absolutePositionAllZero(); flexDirectionColumn()
+                        paddingTop(pagerData.statusBarHeight)
+                        paddingBottom(pagerData.safeAreaInsets.bottom)
+                        backgroundColor(ctx.themeColors.bgBase)
                     }
+                    ctx.renderNavBar(this)
+                    ctx.renderDetail(this)
                 }
             }
             ctx.renderSheets(this)
@@ -532,7 +733,7 @@ internal class DshLogPage : BasePager() {
         }
     }
 
-    /** 顶部导航栏：列表态（返回 / 标题+总数 / 导出 / 清空），详情态（返回 / 日志详情 / 复制）。 */
+    /** 顶部标题始终为「日志」；详情面板显示返回与复制操作。 */
     private fun renderNavBar(container: ViewContainer<*, *>) = with(container) {
         View {
             attr {
@@ -563,7 +764,7 @@ internal class DshLogPage : BasePager() {
                 attr { flex(1f); flexDirectionRow(); alignItemsCenter(); justifyContentCenter() }
                 Text {
                     attr {
-                        text(if (this@DshLogPage.detailEntry != null) "日志详情" else if (this@DshLogPage.allMode) "诊断日志" else "会话日志")
+                        text("日志")
                         fontSize(16f)
                         fontWeightBold()
                         color(this@DshLogPage.themeColors.labelPrimary)
@@ -598,64 +799,98 @@ internal class DshLogPage : BasePager() {
         }
     }
 
-    /** 筛选 chips 行：时间 / 级别 / 会话（全局模式）+ 匹配数。 */
+    /** All filter values are read inside attr/vif; never capture an observable as a static label. */
     private fun renderFilterBar(container: ViewContainer<*, *>) = with(container) {
         View {
-            attr {
-                flexDirectionRow()
-                alignItemsCenter()
-                paddingLeft(12f)
-                paddingRight(12f)
-                paddingTop(8f)
-                paddingBottom(8f)
+            attr { paddingLeft(12f); paddingRight(12f) }
+            View {
+                attr { flexDirectionRow(); alignItemsCenter() }
+                this@DshLogPage.filterChip(this, { this@DshLogPage.sessionChipLabel() },
+                    { this@DshLogPage.selectedSessions.isNotEmpty() },
+                    { this@DshLogPage.selectedSessions = emptySet(); this@DshLogPage.recompute() }) {
+                    this@DshLogPage.sessionSearch = ""; this@DshLogPage.sheet = SheetKind.SESSION
+                }
+                this@DshLogPage.filterChip(this, { "时间：${this@DshLogPage.timeChipLabel()}" },
+                    { this@DshLogPage.customStartMs != null || this@DshLogPage.customEndMs != null },
+                    { this@DshLogPage.filters = this@DshLogPage.filters.copy(fromTime = null, toTime = null); this@DshLogPage.recompute() }) {
+                    this@DshLogPage.openTimeSheet()
+                }
             }
-            this@DshLogPage.filterChip(this, this@DshLogPage.timeChipLabel(), true) { this@DshLogPage.openTimeSheet() }
-            this@DshLogPage.filterChip(this, this@DshLogPage.levelChipLabel(), this@DshLogPage.selectedLevels.isNotEmpty()) { this@DshLogPage.sheet = SheetKind.LEVEL }
-            vif({ this@DshLogPage.allMode }) {
-                this@DshLogPage.filterChip(
-                    this,
-                    if (this@DshLogPage.selectedSessions.isEmpty()) "会话" else "会话·${this@DshLogPage.selectedSessions.size}",
-                    this@DshLogPage.selectedSessions.isNotEmpty(),
-                ) { this@DshLogPage.sheet = SheetKind.SESSION }
+            View {
+                attr { flexDirectionRow(); alignItemsCenter() }
+                this@DshLogPage.filterChip(this, { this@DshLogPage.levelChipLabel() },
+                    { this@DshLogPage.selectedLevels.isNotEmpty() },
+                    { this@DshLogPage.selectedLevels = emptySet(); this@DshLogPage.recompute() }) {
+                    this@DshLogPage.sheet = SheetKind.LEVEL
+                }
+                this@DshLogPage.filterChip(this, {
+                    when (this@DshLogPage.selectedTypes.size) {
+                        0 -> "事件类型：全部"
+                        1 -> this@DshLogPage.selectedTypes.first()
+                        else -> "事件类型：${this@DshLogPage.selectedTypes.size} 项"
+                    }
+                }, { this@DshLogPage.selectedTypes.isNotEmpty() },
+                    { this@DshLogPage.selectedTypes = emptySet(); this@DshLogPage.recompute() }) {
+                    this@DshLogPage.typeSearch = ""; this@DshLogPage.sheet = SheetKind.TYPE
+                }
             }
-            View { attr { flex(1f) } }
-            Text {
-                attr {
-                    text("${this@DshLogPage.logView.size} 匹配")
-                    fontSize(11f)
-                    color(this@DshLogPage.themeColors.labelTertiary)
+            vif({ this@DshLogPage.filters.rpcId.isNotEmpty() }) {
+                View {
+                    attr { flexDirectionRow() }
+                    this@DshLogPage.filterChip(this, { "RPC：${this@DshLogPage.filters.rpcId}" }, { true },
+                        { this@DshLogPage.filters = this@DshLogPage.filters.copy(rpcId = ""); this@DshLogPage.recompute() }) {
+                        this@DshLogPage.copyText(this@DshLogPage.filters.rpcId, "已复制 RPC ID")
+                    }
+                }
+            }
+            vif({ this@DshLogPage.customStartMs != null || this@DshLogPage.customEndMs != null }) {
+                Text { attr { text(this@DshLogPage.timeChipLabel()); fontSize(11f); marginTop(4f); color(this@DshLogPage.themeColors.labelSecondary) } }
+            }
+            View {
+                attr { flexDirectionRow(); alignItemsCenter(); minHeight(36f) }
+                Text { attr { text("本机已保留日志 · ${this@DshLogPage.retainedTotal} 条"); flex(1f); fontSize(11f); color(this@DshLogPage.themeColors.labelTertiary) } }
+                vif({ this@DshLogPage.filters.active }) {
+                    Text {
+                        attr { text("重置筛选"); fontSize(12f); color(this@DshLogPage.themeColors.stateBusinessPrimary) }
+                        event { click { this@DshLogPage.clearFilters() } }
+                    }
                 }
             }
         }
     }
 
-    private fun filterChip(container: ViewContainer<*, *>, label: String, active: Boolean, onClick: () -> Unit) = with(container) {
+    private fun filterChip(container: ViewContainer<*, *>, label: () -> String, active: () -> Boolean,
+        onClear: () -> Unit, onClick: () -> Unit) = with(container) {
         View {
             attr {
-                height(26f)
-                borderRadius(13f)
-                paddingLeft(10f)
-                paddingRight(8f)
-                marginRight(8f)
+                flex(1f)
+                height(40f)
+                borderRadius(10f)
+                marginRight(4f)
+                marginBottom(4f)
                 flexDirectionRow()
                 alignItemsCenter()
-                border(Border(1f, BorderStyle.SOLID, if (active) this@DshLogPage.themeColors.stateBusinessPrimary else this@DshLogPage.themeColors.borderL2))
-                backgroundColor(if (active) this@DshLogPage.themeColors.specificSelector else this@DshLogPage.themeColors.bgLayer2)
+                border(Border(1f, BorderStyle.SOLID, if (active()) this@DshLogPage.themeColors.stateBusinessPrimary else this@DshLogPage.themeColors.borderL2))
+                backgroundColor(if (active()) this@DshLogPage.themeColors.specificSelector else this@DshLogPage.themeColors.bgLayer2)
             }
-            event { click { onClick() } }
-            Text {
-                attr {
-                    text(label)
-                    fontSize(11f)
-                    color(if (active) this@DshLogPage.themeColors.stateBusinessPrimary else this@DshLogPage.themeColors.labelSecondary)
+            View {
+                attr { flex(1f); height(40f); paddingLeft(8f); paddingRight(4f); flexDirectionRow(); alignItemsCenter() }
+                event { click { onClick() } }
+                Text {
+                    attr {
+                        text(label()); flex(1f); lines(1); fontSize(11f)
+                        color(if (active()) this@DshLogPage.themeColors.stateBusinessPrimary else this@DshLogPage.themeColors.labelSecondary)
+                    }
+                }
+                Image {
+                    attr { src(ImageUri.commonAssets("chevron-down.svg")); size(10f, 10f); marginLeft(3f); tintColor(this@DshLogPage.themeColors.labelTertiary) }
                 }
             }
-            Image {
-                attr {
-                    src(ImageUri.commonAssets("chevron-down.svg"))
-                    size(10f, 10f)
-                    marginLeft(3f)
-                    tintColor(if (active) this@DshLogPage.themeColors.stateBusinessPrimary else this@DshLogPage.themeColors.labelTertiary)
+            vif({ active() }) {
+                View {
+                    attr { width(28f); height(40f); allCenter() }
+                    event { click { onClear() } }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(12f, 12f); tintColor(this@DshLogPage.themeColors.stateBusinessPrimary) } }
                 }
             }
         }
@@ -683,7 +918,7 @@ internal class DshLogPage : BasePager() {
                     height(32f)
                     marginLeft(6f)
                     fontSize(12f)
-                    placeholder("搜索内容、type:类型 或 正则")
+                    placeholder("搜索脱敏日志关键词（普通文本）")
                     placeholderColor(this@DshLogPage.themeColors.labelTertiary)
                     color(this@DshLogPage.themeColors.labelPrimary)
                     text(this@DshLogPage.keyword)
@@ -702,25 +937,37 @@ internal class DshLogPage : BasePager() {
 
     /** 列表区：空状态 / 无匹配 / 日志行列表 + 新日志悬浮按钮。 */
     private fun renderListArea(container: ViewContainer<*, *>) = with(container) {
-        View {
-            attr { flexDirectionRow(); alignItemsCenter(); height(36f); paddingLeft(12f); paddingRight(12f) }
-            Text {
-                attr { text("上一页"); color(this@DshLogPage.themeColors.stateBusinessPrimary); marginRight(12f) }
-                event { click { if (this@DshLogPage.pageOffset > 0) { this@DshLogPage.pageOffset = (this@DshLogPage.pageOffset - PAGE_SIZE).coerceAtLeast(0); this@DshLogPage.reloadPage() } } }
-            }
-            Text { attr { text(if (this@DshLogPage.loading) "读取中…" else "${this@DshLogPage.pageOffset / PAGE_SIZE + 1} 页 · ${this@DshLogPage.logTotal} 条匹配"); flex(1f); fontSize(12f); color(this@DshLogPage.themeColors.labelSecondary) } }
-            Text {
-                attr { text("下一页"); color(this@DshLogPage.themeColors.stateBusinessPrimary) }
-                event { click { if (this@DshLogPage.pageOffset + PAGE_SIZE < this@DshLogPage.logTotal) { this@DshLogPage.pageOffset += PAGE_SIZE; this@DshLogPage.reloadPage() } } }
+        vif({ this@DshLogPage.loading || this@DshLogPage.logTotal > 0 }) {
+            View {
+                attr { flexDirectionRow(); alignItemsCenter(); height(28f); paddingLeft(12f); paddingRight(12f) }
+                Text {
+                    attr {
+                        text(
+                            when {
+                                this@DshLogPage.loading -> "读取中…"
+                                this@DshLogPage.loadedCount >= this@DshLogPage.logTotal ->
+                                    "已显示全部 ${this@DshLogPage.logTotal} 条"
+                                this@DshLogPage.loadedCount >= MAX_LOADED ->
+                                    "已显示最近 ${this@DshLogPage.loadedCount} 条"
+                                else ->
+                                    "上滑加载更多 · 已显示 ${this@DshLogPage.loadedCount}/${this@DshLogPage.logTotal} 条"
+                            }
+                        )
+                        flex(1f); fontSize(12f); color(this@DshLogPage.themeColors.labelSecondary)
+                    }
+                }
             }
         }
         vif({ this@DshLogPage.loadError.isNotEmpty() }) {
             Text { attr { text(this@DshLogPage.loadError); color(this@DshLogPage.themeColors.stateErrorPrimary); fontSize(12f) } }
         }
-        vif({ this@DshLogPage.logTotal == 0 }) {
-            Text { attr { text("暂无日志"); marginTop(90f); alignSelfCenter(); fontSize(14f); color(this@DshLogPage.themeColors.labelTertiary) } }
+        vif({ this@DshLogPage.storageWarning.isNotEmpty() && this@DshLogPage.loadError.isEmpty() }) {
+            Text { attr { text(this@DshLogPage.storageWarning); color(this@DshLogPage.themeColors.stateWarnPrimary); fontSize(12f) } }
         }
-        vif({ this@DshLogPage.logTotal > 0 && this@DshLogPage.logView.isEmpty() }) {
+        vif({ !this@DshLogPage.loading && this@DshLogPage.loadError.isEmpty() && this@DshLogPage.retainedTotal == 0 }) {
+            Text { attr { text("本机暂无保留日志"); marginTop(60f); alignSelfCenter(); fontSize(14f); color(this@DshLogPage.themeColors.labelTertiary) } }
+        }
+        vif({ !this@DshLogPage.loading && this@DshLogPage.loadError.isEmpty() && this@DshLogPage.retainedTotal > 0 && this@DshLogPage.logTotal == 0 }) {
             View {
                 attr { flexDirectionColumn(); alignItemsCenter(); marginTop(70f) }
                 Text { attr { text("无匹配结果"); fontSize(14f); color(this@DshLogPage.themeColors.labelTertiary) } }
@@ -798,7 +1045,7 @@ internal class DshLogPage : BasePager() {
                 attr { flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
-                        text(entry.type)
+                        text("${this@DshLogPage.levelShort(entry.level)} · ${entry.type}")
                         fontSize(12f)
                         fontWeightBold()
                         color(this@DshLogPage.themeColors.labelPrimary)
@@ -808,7 +1055,7 @@ internal class DshLogPage : BasePager() {
                 }
                 Text {
                     attr {
-                        text(LogExporter.formatTimestamp(entry.timestamp).substring(11, 19))
+                        text(LogExporter.formatTimestamp(entry.timestamp).substring(5, 19))
                         fontSize(11f)
                         color(this@DshLogPage.themeColors.labelTertiary)
                         marginLeft(8f)
@@ -879,7 +1126,7 @@ internal class DshLogPage : BasePager() {
                     }
                 }
                 this@DshLogPage.detailMetaRow(this, "类型", e.type)
-                this@DshLogPage.detailMetaRow(this, "会话", if (e.sessionId.isNullOrEmpty()) "移动端" else this@DshLogPage.sessionTitle(e.sessionId))
+                this@DshLogPage.detailMetaRow(this, "会话", if (e.sessionId.isNullOrEmpty()) "未关联会话" else "${this@DshLogPage.sessionTitle(e.sessionId)}\n${e.sessionId}")
                 this@DshLogPage.detailMetaRow(this, "RPC", e.rpcId ?: "-")
                 this@DshLogPage.detailMetaRow(this, "序号 / 大小", "#${e.seq} · ${e.size} B")
             }
@@ -912,6 +1159,18 @@ internal class DshLogPage : BasePager() {
                 }
             }
             // 底部操作
+            vif({ !e.rpcId.isNullOrEmpty() }) {
+                View {
+                    attr { margin(12f); minHeight(40f); allCenter(); borderRadius(8f); backgroundColor(this@DshLogPage.themeColors.bgLayer2) }
+                    event { click {
+                        // A request drill-down intentionally replaces list restrictions with its exact ID.
+                        this@DshLogPage.filters = DshLogFilters(rpcId = e.rpcId.orEmpty())
+                        this@DshLogPage.closeDetail()
+                        this@DshLogPage.recompute()
+                    } }
+                    Text { attr { text("按此 RPC ID 筛选全部本地日志"); fontSize(14f); color(this@DshLogPage.themeColors.stateBusinessPrimary) } }
+                }
+            }
             vif({ !e.sessionId.isNullOrEmpty() }) {
                 View {
                     attr {
@@ -944,6 +1203,7 @@ internal class DshLogPage : BasePager() {
         this@DshLogPage.sheetScaffold(container, SheetKind.TIME) { this@DshLogPage.renderTimeSheet(this) }
         this@DshLogPage.sheetScaffold(container, SheetKind.LEVEL) { this@DshLogPage.renderLevelSheet(this) }
         this@DshLogPage.sheetScaffold(container, SheetKind.SESSION) { this@DshLogPage.renderSessionSheet(this) }
+        this@DshLogPage.sheetScaffold(container, SheetKind.TYPE) { this@DshLogPage.renderTypeSheet(this) }
         this@DshLogPage.sheetScaffold(container, SheetKind.EXPORT) { this@DshLogPage.renderExportSheet(this) }
     }
 
@@ -965,7 +1225,7 @@ internal class DshLogPage : BasePager() {
                     attr {
                         borderRadius(BorderRectRadius(16f, 16f, 0f, 0f))
                         backgroundColor(this@DshLogPage.themeColors.bgLayer1)
-                        paddingBottom(20f)
+                        paddingBottom(maxOf(20f, pagerData.safeAreaInsets.bottom))
                     }
                     content(this)
                 }
@@ -989,15 +1249,15 @@ internal class DshLogPage : BasePager() {
 
     private fun sheetRow(
         container: ViewContainer<*, *>,
-        label: String,
-        subtitle: String = "",
-        checked: Boolean = false,
+        label: () -> String,
+        subtitle: () -> String = { "" },
+        checked: () -> Boolean = { false },
         dotColor: Long = 0L,
         onClick: () -> Unit,
     ) = with(container) {
         View {
             attr {
-                height(if (subtitle.isEmpty()) 44f else 52f)
+                minHeight(if (subtitle().isEmpty()) 44f else 52f)
                 flexDirectionRow()
                 alignItemsCenter()
                 paddingLeft(16f)
@@ -1017,12 +1277,12 @@ internal class DshLogPage : BasePager() {
             }
             View {
                 attr { flex(1f); flexDirectionColumn() }
-                Text { attr { text(label); fontSize(14f); color(this@DshLogPage.themeColors.labelPrimary) } }
-                vif({ subtitle.isNotEmpty() }) {
-                    Text { attr { text(subtitle); fontSize(11f); color(this@DshLogPage.themeColors.labelTertiary); marginTop(2f) } }
+                Text { attr { text(label()); fontSize(14f); lines(1); color(this@DshLogPage.themeColors.labelPrimary) } }
+                vif({ subtitle().isNotEmpty() }) {
+                    Text { attr { text(subtitle()); fontSize(11f); color(this@DshLogPage.themeColors.labelTertiary); marginTop(2f); marginBottom(4f) } }
                 }
             }
-            vif({ checked }) {
+            vif({ checked() }) {
                 Image { attr { src(ImageUri.commonAssets("check.svg")); size(16f, 16f); tintColor(this@DshLogPage.themeColors.stateBusinessPrimary) } }
             }
         }
@@ -1031,42 +1291,107 @@ internal class DshLogPage : BasePager() {
     /** 时间范围 Sheet：外层“今天”预设 + 开始/结束时间滚轮，确定后应用。 */
     private fun renderTimeSheet(container: ViewContainer<*, *>) = with(container) {
         this@DshLogPage.sheetTitle(this, "时间范围")
+        this@DshLogPage.sheetRow(this, { "全部保留日志" }, checked = { this@DshLogPage.draftAllTime }) {
+            this@DshLogPage.draftAllTime = true
+        }
+        this@DshLogPage.sheetRow(this, { "指定时间范围" }, checked = { !this@DshLogPage.draftAllTime }) {
+            this@DshLogPage.draftAllTime = false
+        }
         this@DshLogPage.renderCustomRangeSection(this)
     }
 
     /** 级别多选 Sheet：空集 = 全部；点击行 toggle（不自动关闭），与“会话”Sheet 交互一致。 */
     private fun renderLevelSheet(container: ViewContainer<*, *>) = with(container) {
         this@DshLogPage.sheetTitle(this, "级别（多选）")
-        this@DshLogPage.sheetRow(this, "全部", subtitle = "${this@DshLogPage.levelCounts.values.sum()} 条", checked = this@DshLogPage.selectedLevels.isEmpty()) {
+        this@DshLogPage.sheetRow(this, { "全部" }, subtitle = { "${this@DshLogPage.levelCounts.values.sum()} 条" }, checked = { this@DshLogPage.selectedLevels.isEmpty() }) {
             this@DshLogPage.selectedLevels = emptySet()
             this@DshLogPage.recompute()
         }
         for (lv in LogLevel.entries) {
-            val checked = lv in this@DshLogPage.selectedLevels
-            this@DshLogPage.sheetRow(this, this@DshLogPage.levelShort(lv), subtitle = "${this@DshLogPage.levelCounts[lv] ?: 0} 条", checked = checked, dotColor = dshLogLevelColor(lv)) {
-                this@DshLogPage.selectedLevels = if (checked) this@DshLogPage.selectedLevels - lv else this@DshLogPage.selectedLevels + lv
+            this@DshLogPage.sheetRow(this, { this@DshLogPage.levelShort(lv) }, subtitle = { "${this@DshLogPage.levelCounts[lv] ?: 0} 条" }, checked = { lv in this@DshLogPage.selectedLevels }, dotColor = dshLogLevelColor(lv)) {
+                this@DshLogPage.selectedLevels = if (lv in this@DshLogPage.selectedLevels) this@DshLogPage.selectedLevels - lv else this@DshLogPage.selectedLevels + lv
                 this@DshLogPage.recompute()
             }
         }
+        this@DshLogPage.sheetDone(this)
     }
 
     private fun renderSessionSheet(container: ViewContainer<*, *>) = with(container) {
-        this@DshLogPage.sheetTitle(this, "会话")
-        this@DshLogPage.sheetRow(this, "全部会话", checked = this@DshLogPage.selectedSessions.isEmpty()) {
+        this@DshLogPage.sheetTitle(this, "会话（多选，按标题或 ID 搜索）")
+        this@DshLogPage.sheetSearch(this, "输入会话标题或完整 ID", { this@DshLogPage.sessionSearch }) { this@DshLogPage.sessionSearch = it }
+        this@DshLogPage.sheetRow(this, { "全部（含未关联会话）" }, checked = { this@DshLogPage.selectedSessions.isEmpty() }) {
             this@DshLogPage.selectedSessions = emptySet()
             this@DshLogPage.recompute()
         }
         Scroller {
-            attr { flex(1f); maxHeight(320f); marginTop(4f) }
+            attr { height((pagerData.pageViewHeight * 0.35f).coerceAtMost(300f)); marginTop(4f) }
             vfor({ this@DshLogPage.sessionOptions }) { sid ->
-                val label = if (sid == "__mobile__") "移动端" else this@DshLogPage.sessionTitle(sid).take(10)
-                val checked = sid in this@DshLogPage.selectedSessions
-                this@DshLogPage.sheetRow(this, label, checked = checked) {
-                    this@DshLogPage.selectedSessions = if (checked) this@DshLogPage.selectedSessions - sid else this@DshLogPage.selectedSessions + sid
-                    this@DshLogPage.recompute()
+                View {
+                    vif({ this@DshLogPage.sessionMatches(sid) }) {
+                        this@DshLogPage.sheetRow(this, { this@DshLogPage.sessionLabel(sid) },
+                            subtitle = { if (sid == DshLogFilters.UNASSOCIATED) "连接、崩溃等没有 sessionId 的日志" else sid },
+                            checked = { sid in this@DshLogPage.selectedSessions }) {
+                            this@DshLogPage.selectedSessions = if (sid in this@DshLogPage.selectedSessions) this@DshLogPage.selectedSessions - sid else this@DshLogPage.selectedSessions + sid
+                            this@DshLogPage.recompute()
+                        }
+                    }
+                }
+            }
+            vif({ this@DshLogPage.sessionOptions.none { this@DshLogPage.sessionMatches(it) } }) {
+                Text { attr { text("没有匹配的会话"); margin(16f); fontSize(13f); color(this@DshLogPage.themeColors.labelTertiary) } }
+            }
+        }
+        this@DshLogPage.sheetDone(this)
+    }
+
+    private fun sessionMatches(sid: String): Boolean = sessionSearch.trim().let {
+        sid.contains(it, ignoreCase = true) || sessionLabel(sid).contains(it, ignoreCase = true)
+    }
+
+    private fun sheetSearch(container: ViewContainer<*, *>, hint: String, value: () -> String, onChange: (String) -> Unit) = with(container) {
+        View {
+            attr { margin(12f); height(38f); borderRadius(8f); backgroundColor(this@DshLogPage.themeColors.bgSkeleton) }
+            Input {
+                attr { height(38f); marginLeft(10f); marginRight(10f); fontSize(13f); text(value()); placeholder(hint); color(this@DshLogPage.themeColors.labelPrimary); placeholderColor(this@DshLogPage.themeColors.labelTertiary) }
+                event { textDidChange { onChange(it.text) } }
+            }
+        }
+    }
+
+    private fun sheetDone(container: ViewContainer<*, *>) = with(container) {
+        this@DshLogPage.sheetRow(this, { "完成" }) { this@DshLogPage.sheet = SheetKind.NONE }
+    }
+
+    private fun renderTypeSheet(container: ViewContainer<*, *>) = with(container) {
+        this@DshLogPage.sheetTitle(this, "事件类型（多选，同一维度取并集）")
+        this@DshLogPage.sheetSearch(this, "搜索类型或常用分组", { this@DshLogPage.typeSearch }) { this@DshLogPage.typeSearch = it }
+        this@DshLogPage.sheetRow(this, { "全部事件类型" }, checked = { this@DshLogPage.selectedTypes.isEmpty() }) {
+            this@DshLogPage.selectedTypes = emptySet(); this@DshLogPage.recompute()
+        }
+        Scroller {
+            attr { height((pagerData.pageViewHeight * 0.4f).coerceAtMost(340f)) }
+            for ((name, types) in DshLogFilters.typePresets) {
+                vif({ name.contains(this@DshLogPage.typeSearch.trim(), true) || types.any { it.contains(this@DshLogPage.typeSearch.trim(), true) } }) {
+                    this@DshLogPage.sheetRow(this, { name }, subtitle = { types.joinToString(" / ") },
+                        checked = { this@DshLogPage.selectedTypes.containsAll(types) }) {
+                        this@DshLogPage.selectedTypes = if (this@DshLogPage.selectedTypes.containsAll(types)) this@DshLogPage.selectedTypes - types.toSet() else this@DshLogPage.selectedTypes + types
+                        this@DshLogPage.recompute()
+                    }
+                }
+            }
+            this@DshLogPage.sheetTitle(this, "已记录类型（包含其他 / 新增类型）")
+            vfor({ this@DshLogPage.typeOptions }) { type ->
+                View {
+                    vif({ type.contains(this@DshLogPage.typeSearch.trim(), true) }) {
+                        this@DshLogPage.sheetRow(this, { type }, checked = { type in this@DshLogPage.selectedTypes }) {
+                            this@DshLogPage.selectedTypes = if (type in this@DshLogPage.selectedTypes) this@DshLogPage.selectedTypes - type else this@DshLogPage.selectedTypes + type
+                            this@DshLogPage.recompute()
+                        }
+                    }
                 }
             }
         }
+        this@DshLogPage.sheetDone(this)
     }
 
     private fun renderExportSheet(container: ViewContainer<*, *>) = with(container) {
@@ -1085,15 +1410,15 @@ internal class DshLogPage : BasePager() {
                 }
             }
         }
-        this@DshLogPage.sheetRow(this, if (this@DshLogPage.exporting) "导出中..." else "按当前时间范围导出", subtitle = "当前范围：${this@DshLogPage.timeChipLabel()}") {
+        this@DshLogPage.sheetRow(this, { if (this@DshLogPage.exporting) "导出中..." else "导出当前筛选结果" }, subtitle = { "应用全部筛选条件，包含所有匹配分页" }) {
             this@DshLogPage.sheet = SheetKind.NONE
             this@DshLogPage.exportLogs(false)
         }
-        this@DshLogPage.sheetRow(this, if (this@DshLogPage.exporting) "导出中..." else "导出全部日志", subtitle = "包含所有本地日志，不受列表时间限制") {
+        this@DshLogPage.sheetRow(this, { if (this@DshLogPage.exporting) "导出中..." else "导出全部本地日志" }, subtitle = { "包含所有会话及未关联日志，忽略全部筛选" }) {
             this@DshLogPage.sheet = SheetKind.NONE
             this@DshLogPage.exportLogs(true)
         }
-        this@DshLogPage.sheetRow(this, if (this@DshLogPage.feedbackExporting) "生成中..." else "生成问题反馈包", subtitle = "全量日志 + 设备与连接信息，用于问题反馈") {
+        this@DshLogPage.sheetRow(this, { if (this@DshLogPage.feedbackExporting) "生成中..." else "生成问题反馈包" }, subtitle = { "全部本地日志 + 设备与连接信息（忽略筛选）" }) {
             this@DshLogPage.sheet = SheetKind.NONE
             this@DshLogPage.exportFeedbackPackage()
         }
@@ -1128,7 +1453,7 @@ internal class DshLogPage : BasePager() {
                 attr { flexDirectionRow(); alignItemsCenter(); marginBottom(8f) }
                 this@DshLogPage.rangePresetChip(this, "今天", 0)
                 this@DshLogPage.rangePresetChip(this, "最近1小时", 1)
-                this@DshLogPage.rangePresetChip(this, "最近10小时", 2)
+                this@DshLogPage.rangePresetChip(this, "最近15分钟", 2)
             }
             View {
                 attr { flexDirectionRow(); alignItemsCenter() }
@@ -1161,12 +1486,15 @@ internal class DshLogPage : BasePager() {
             }
             Text {
                 attr {
-                    text((if (this@DshLogPage.pickerTargetStart) this@DshLogPage.draftStartMs else this@DshLogPage.draftEndMs)?.let { formatCustomTime(it) } ?: "不限")
+                    text(if (this@DshLogPage.draftAllTime) "全部保留日志（确定后生效）" else "${this@DshLogPage.draftStartMs?.let { formatCustomTime(it) }} ~ ${this@DshLogPage.draftEndMs?.let { formatCustomTime(it) }}")
                     fontSize(12f)
                     color(this@DshLogPage.themeColors.labelSecondary)
                     marginTop(6f)
                     textAlignCenter()
                 }
+            }
+            vif({ !this@DshLogPage.draftAllTime && this@DshLogPage.pickerError.isNotEmpty() }) {
+                Text { attr { text(this@DshLogPage.pickerError); fontSize(12f); marginTop(6f); color(this@DshLogPage.themeColors.stateErrorPrimary) } }
             }
             View {
                 attr { height(40f); marginTop(12f); flexDirectionRow(); justifyContentFlexEnd() }
@@ -1185,23 +1513,23 @@ internal class DshLogPage : BasePager() {
     private fun renderPickerColumns(container: ViewContainer<*, *>) = with(container) {
         ScrollPicker(itemList = Array(8) { (this@DshLogPage.pkYear - 7 + it).toString() }, defaultIndex = 7) {
             attr { itemWidth = 48f; itemHeight = 40f; countPerScreen = 3; itemTextColor = this@DshLogPage.themeColors.labelPrimary }
-            event { scrollEndEvent { v, _ -> this@DshLogPage.pkYear = v.toInt() } }
+            event { scrollEndEvent { v, _ -> if (v.toInt() != this@DshLogPage.pkYear) { this@DshLogPage.pkYear = v.toInt(); this@DshLogPage.pickerChanged() } } }
         }
         ScrollPicker(itemList = Array(12) { (it + 1).toString() }, defaultIndex = this@DshLogPage.pkMonth - 1) {
             attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = this@DshLogPage.themeColors.labelPrimary }
-            event { scrollEndEvent { v, _ -> this@DshLogPage.pkMonth = v.toInt() } }
+            event { scrollEndEvent { v, _ -> if (v.toInt() != this@DshLogPage.pkMonth) { this@DshLogPage.pkMonth = v.toInt(); this@DshLogPage.pickerChanged() } } }
         }
         ScrollPicker(itemList = Array(31) { (it + 1).toString() }, defaultIndex = this@DshLogPage.pkDay - 1) {
             attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = this@DshLogPage.themeColors.labelPrimary }
-            event { scrollEndEvent { v, _ -> this@DshLogPage.pkDay = v.toInt() } }
+            event { scrollEndEvent { v, _ -> if (v.toInt() != this@DshLogPage.pkDay) { this@DshLogPage.pkDay = v.toInt(); this@DshLogPage.pickerChanged() } } }
         }
         ScrollPicker(itemList = Array(24) { (if (it < 10) "0" else "") + it }, defaultIndex = this@DshLogPage.pkHour) {
             attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = this@DshLogPage.themeColors.labelPrimary }
-            event { scrollEndEvent { v, _ -> this@DshLogPage.pkHour = v.toInt() } }
+            event { scrollEndEvent { v, _ -> if (v.toInt() != this@DshLogPage.pkHour) { this@DshLogPage.pkHour = v.toInt(); this@DshLogPage.pickerChanged() } } }
         }
         ScrollPicker(itemList = Array(60) { (if (it < 10) "0" else "") + it }, defaultIndex = this@DshLogPage.pkMinute) {
             attr { itemWidth = 42f; itemHeight = 40f; countPerScreen = 3; itemTextColor = this@DshLogPage.themeColors.labelPrimary }
-            event { scrollEndEvent { v, _ -> this@DshLogPage.pkMinute = v.toInt() } }
+            event { scrollEndEvent { v, _ -> if (v.toInt() != this@DshLogPage.pkMinute) { this@DshLogPage.pkMinute = v.toInt(); this@DshLogPage.pickerChanged() } } }
         }
         View {
             attr {
@@ -1247,10 +1575,10 @@ internal class DshLogPage : BasePager() {
                         borderRadius(16f)
                         backgroundColor(this@DshLogPage.themeColors.bgLayer1)
                     }
-                    Text { attr { text("清空本地诊断日志"); fontSize(18f); fontWeightBold(); color(this@DshLogPage.themeColors.labelPrimary) } }
+                    Text { attr { text("清空全部本地日志"); fontSize(18f); fontWeightBold(); color(this@DshLogPage.themeColors.labelPrimary) } }
                     Text {
                         attr {
-                            text("将删除手机上的全部本地诊断日志（含所有会话与移动端日志），不影响会话消息、附件和 Host 侧历史。此操作不可恢复。")
+                            text("将忽略当前筛选，删除手机上的全部本地日志（含所有会话与未关联日志），不影响会话消息、附件和 Host 侧历史。此操作不可恢复。")
                             marginTop(8f)
                             fontSize(13f)
                             lineHeight(20f)
@@ -1275,7 +1603,16 @@ internal class DshLogPage : BasePager() {
 
     companion object {
         private const val POLL_INTERVAL_MS = 1000
-        private const val PAGE_SIZE = 200
+        // 懒加载单页条数：首屏只加载一页，触底再按此游标增量追加。
+        private const val PAGE_SIZE = 100
+        // 距列表底部该像素内即视为触底，提前触发下一页加载。
+        private const val LOAD_MORE_SLACK_PX = 300f
+        // 单次增量轮询最多拉取的新日志数；超过则退回全量刷新。
+        private const val NEWER_LIMIT = 500
+        // 已加载列表的环形上限，避免长时间开启日志页时内存无界增长。
+        private const val MAX_LOADED = 2000
+        // 增量轮询下定期做一次全量对账的间隔。
+        private const val FULL_REFRESH_INTERVAL_MS = 30_000L
     }
 }
 

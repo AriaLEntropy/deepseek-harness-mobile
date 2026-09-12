@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-mobile-plugin-inventory
+      name: dsh-mobile-plugin-inventory
+      inject: [webServer, loader, sessionPersistence]

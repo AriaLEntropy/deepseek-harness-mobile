@@ -14,6 +14,8 @@ import { unifiedDataChannel } from '@kit.ArkData';
 import { jsonString, mapOf, moduleParams } from '../native/DshJson';
 import { DshSshKeyStore } from '../native/DshSshKeyStore';
 import { DshOhosContext, dshError } from '../native/DshOhosContext';
+import { DshImages } from '../native/DshImages';
+import { DshCrashStore } from '../native/DshCrashStore';
 
 export class KRBridgeModule extends KuiklyRenderBaseModule {
   static readonly MODULE_NAME = "HRBridgeModule";
@@ -85,6 +87,14 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       case 'pickSshKey':
         this.pickSshKey(callback);
         break;
+      case 'pickImage':
+        DshImages.pick(jsonString(moduleParams(params as Object), 'source', 'album'))
+          .then((result: Record<string, Object>) => callback?.(result));
+        break;
+      case 'saveImage':
+        DshImages.save(jsonString(moduleParams(params as Object), 'dataUrl'))
+          .then((result: Record<string, Object>) => callback?.(result));
+        break;
       case 'importSshKey':
         this.importSshKey(params, callback);
         break;
@@ -98,9 +108,11 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         this.shareExportFile(params, callback);
         break;
       case 'readLastCrash':
-        return this.readLastCrash();
+        DshCrashStore.shared.read().then((raw: string) => callback?.(mapOf(['raw'], [raw])));
+        break;
       case 'clearLastCrash':
-        this.clearLastCrash();
+        DshCrashStore.shared.clear().then(() => callback?.(mapOf(['ok'], [true])))
+          .catch(() => callback?.(mapOf(['ok'], [false])));
         break;
       case 'getDeviceInfo':
         return this.getDeviceInfo();
@@ -257,16 +269,6 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       dshError('shareExportFile failed', error as Object);
       callback?.(mapOf(['ok', 'message'], [false, '无法打开分享面板']));
     }
-  }
-
-  // 崩溃捕获：OHOS 侧由应用层（Ability onError / errorManager）负责写盘，此处读取文件；暂未接入时返回空。
-  private readLastCrash(): string {
-    // TODO(ohos): 接入应用异常管理后从沙箱文件读取
-    return '';
-  }
-
-  private clearLastCrash(): void {
-    // TODO(ohos): 与应用层崩溃写盘配套
   }
 
   private getDeviceInfo(): string {

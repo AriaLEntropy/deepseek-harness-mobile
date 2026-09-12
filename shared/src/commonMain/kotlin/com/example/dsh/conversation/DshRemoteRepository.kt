@@ -60,6 +60,10 @@ internal class DshRemoteRepository(
         delegate.updateSetting(ns, patch, expectedRevision, onSuccess, onError)
 
     fun isProductReady(): Boolean = delegate.isProductReady()
+    fun loadPluginInventory(onSuccess: (List<DshPluginEntry>) -> Unit, onError: (String) -> Unit) =
+        delegate.loadPluginInventory(onSuccess, onError)
+    fun pluginAction(entryId: String, action: String, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.pluginAction(entryId, action, onSuccess, onError)
     fun stop() = delegate.stop()
     fun respondApproval(
         rpcId: String,
@@ -91,7 +95,12 @@ internal class DshRemoteRepository(
         sessionId: String,
         onSuccess: (List<DshWebTimelineItem>) -> Unit,
         onError: (String) -> Unit = {},
-    ) = delegate.loadWebTimeline(sessionId, onSuccess, onError)
+        isCurrent: () -> Boolean = { true },
+    ) = delegate.loadWebTimeline(sessionId, onSuccess, onError, isCurrent)
+
+    fun loadCompleteHistory(sessionId: String, onSuccess: (JSONArray) -> Unit,
+        onError: (String) -> Unit, isCurrent: () -> Boolean = { true }) =
+        delegate.loadCompleteHistory(sessionId, onSuccess, onError, isCurrent)
 
     fun adoptLiveStream(
         sessionId: String,
@@ -132,16 +141,18 @@ internal class DshRemoteRepository(
         onError: (String) -> Unit,
     ): DshStreamHandle = delegate.streamReplyWithImages(pagerId, sessionId, prompt, images, onDelta, onComplete, onError)
 
-    companion object {
-        fun parseWebTimelineForTest(events: JSONArray): List<DshWebTimelineItem> =
-            DshWebTimelineParser.parseWebTimeline(events)
-    }
-
     fun queue(sessionId: String): List<DshQueueItem> = delegate.queue(sessionId)
 
     fun jobs(sessionId: String): List<DshJobItem> = delegate.jobs(sessionId)
 
     fun workspaceGroups(): List<DshWorkspaceGroup> = delegate.workspaceGroups()
+
+    /** 归档会话按项目分组（只含已归档会话），供归档页项目筛选与分组展示。 */
+    fun archivedWorkspaceGroups(): List<DshWorkspaceGroup> =
+        delegate.workspaceGroups(includeArchived = true, archivedOnly = true)
+
+    fun loadSessionCatalog(onSuccess: (DshSessionCatalog) -> Unit, onError: (DshRpcError) -> Unit) =
+        delegate.loadSessionCatalog(onSuccess, onError)
 
     fun workspaceIdForSession(sessionId: String): String? = delegate.workspaceIdForSession(sessionId)
 
@@ -168,11 +179,11 @@ internal class DshRemoteRepository(
         callback: (JSONObject?, DshRpcError?) -> Unit,
     ) = delegate.archiveSession(sessionId, callback)
 
-    fun forkSession(
+    fun forkMessage(
         sessionId: String,
-        atSeq: Int?,
-        callback: (JSONObject?, DshRpcError?) -> Unit,
-    ) = delegate.forkSession(sessionId, atSeq, callback)
+        message: DshMessage,
+        callback: (String?, DshRpcError?) -> Unit,
+    ) = delegate.forkMessage(sessionId, message, callback)
 
     fun sessionExportUrl(sessionId: String): String = delegate.sessionExportUrl(sessionId)
 
@@ -257,4 +268,56 @@ internal class DshRemoteRepository(
         payload: JSONObject,
         callback: (JSONObject?, DshRpcError?) -> Unit,
     ) = delegate.callPlugin(endpoint, payload, callback)
+
+    /** 读取 Host 会话元数据（createdAt/cwd），供归档页排序与项目分组。 */
+    fun loadSessionMeta(onSuccess: (List<DshSessionMeta>) -> Unit, onError: (String) -> Unit) {
+        callPlugin("meta", JSONObject()) { value, error ->
+            if (error != null || value == null) onError(error?.message ?: "Host 未返回会话元数据")
+            else runCatching { parseDshSessionMeta(value) }.onSuccess(onSuccess)
+                .onFailure { onError(it.message ?: "会话元数据解析失败") }
+        }
+    }
+
+    /** 删除单条会话（Host 文件级删除）。 */
+    fun deleteSession(sessionId: String, callback: (Boolean, String) -> Unit) {
+        callPlugin("delete", JSONObject().apply { put("sessionId", sessionId) }) { _, error ->
+            if (error != null) callback(false, error.message) else callback(true, "")
+        }
+    }
+
+    /** 批量删除会话，回调删除成功的 id 与失败原因（id to message）。 */
+    fun deleteSessions(sessionIds: List<String>, callback: (List<String>, List<Pair<String, String>>) -> Unit) {
+        val ids = JSONArray()
+        sessionIds.forEach { ids.put(it) }
+        callPlugin("deleteMany", JSONObject().apply { put("sessionIds", ids) }) { value, error ->
+            if (error != null || value == null) {
+                callback(emptyList(), sessionIds.map { it to (error?.message ?: "删除失败") })
+                return@callPlugin
+            }
+            val deletedJson = value.optJSONArray("deleted") ?: JSONArray()
+            val deleted = buildList {
+                for (i in 0 until deletedJson.length()) deletedJson.optString(i)?.takeIf { it.isNotEmpty() }?.let(::add)
+            }
+            val failedJson = value.optJSONArray("failed") ?: JSONArray()
+            val failed = buildList {
+                for (i in 0 until failedJson.length()) {
+                    val item = failedJson.optJSONObject(i) ?: continue
+                    add(item.optString("sessionId") to item.optString("error", "删除失败"))
+                }
+            }
+            callback(deleted, failed)
+        }
+    }
+}
+
+internal fun parseDshSessionMeta(value: JSONObject): List<DshSessionMeta> {
+    val items = value.optJSONArray("sessions") ?: JSONArray()
+    return buildList {
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val id = item.optString("sessionId")
+            if (id.isEmpty()) continue
+            add(DshSessionMeta(id, item.optLong("createdAt"), item.optString("cwd")))
+        }
+    }
 }

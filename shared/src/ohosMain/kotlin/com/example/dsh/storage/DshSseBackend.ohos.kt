@@ -1,4 +1,4 @@
-package com.example.dsh.storage
+package com.example.dsh.connection
 
 internal actual fun createDshSseBackend(): DshSseBackend = DshSseUnsupportedBackend()
 

@@ -42,9 +42,16 @@ internal class BridgeModule : Module() {
     /** 读取上次崩溃栈（无则空串）；由各端 native 在崩溃时写入。 */
     fun readLastCrash(): String = syncCallNativeMethod("readLastCrash", null, null)
 
+    /** 鸿蒙 HRBridgeModule 在 UI 线程运行，必须通过异步回调读取。 */
+    fun readLastCrashAsync(onResult: (String) -> Unit) {
+        callNativeMethod("readLastCrash", null) { value ->
+            onResult(value?.optString("raw").orEmpty())
+        }
+    }
+
     /** 清除已上报的崩溃记录。 */
-    fun clearLastCrash() {
-        callNativeMethod("clearLastCrash", null, null)
+    fun clearLastCrash(onResult: (Boolean) -> Unit = {}) {
+        callNativeMethod("clearLastCrash", null) { value -> onResult(value?.optBoolean("ok") == true) }
     }
 
     /** 同步获取设备本地时区偏移（毫秒，UTC→本地为正）；原生未实现时返回 null。 */
@@ -344,6 +351,7 @@ internal class BridgeModule : Module() {
     /**
      * 保存图片到系统相册。回调返回 JSON 字符串：
      * 成功 {"ok":true}
+     * 取消 {"ok":false,"cancelled":true}
      * 失败 {"ok":false,"error":"可读原因"}
      */
     fun saveImage(dataUrl: String, callback: (String) -> Unit) {

@@ -15,10 +15,11 @@ import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.View
 
 internal fun syncVisibleSessions(
-    source: ObservableList<DshSession>,
+    source: List<DshSession>,
     dest: ObservableList<DshSession>,
+    archivedIds: Set<String> = emptySet(),
 ) {
-    val next = source.toList().filterNot { it.blank }
+    val next = source.toList().filterNot { it.blank || it.id in archivedIds }
     dest.diffUpdate(next) { old, new -> old.id == new.id }
     val count = minOf(dest.size, next.size)
     for (index in 0 until count) {
