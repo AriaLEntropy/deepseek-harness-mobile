@@ -8,6 +8,8 @@ import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.BoxShadow
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewContainer
+import com.tencent.kuikly.core.base.ViewRef
+import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.collection.ObservableList
@@ -53,6 +55,9 @@ internal fun ViewContainer<*, *>.DshPluginSettingsView(
     error: () -> String,
     keyword: () -> String,
     onKeyword: (String) -> Unit,
+    hasKeyword: () -> Boolean,
+    onClearKeyword: () -> Unit,
+    onSearchInputRef: (ViewRef<InputView>) -> Unit,
     onRefresh: () -> Unit,
     onClose: () -> Unit,
     rows: () -> ObservableList<DshPluginEntry>,
@@ -136,6 +141,7 @@ internal fun ViewContainer<*, *>.DshPluginSettingsView(
         vif({ activeTab() == PLUGIN_TAB_LIST }) {
             DshPluginInventoryListView(
                 showSwitch = false, loading = loading, error = error, keyword = keyword, onKeyword = onKeyword,
+                hasKeyword = hasKeyword, onClearKeyword = onClearKeyword, onSearchInputRef = onSearchInputRef,
                 rows = rows, total = total, expandedId = expandedId, busyId = busyId,
                 onToggleExpand = onToggleExpand, actionError = actionError, actionNotice = actionNotice,
                 onToggleEnabled = onToggleEnabled, onReload = onReload, colors = colors,
@@ -144,6 +150,7 @@ internal fun ViewContainer<*, *>.DshPluginSettingsView(
         vif({ activeTab() == PLUGIN_TAB_SWITCH }) {
             DshPluginInventoryListView(
                 showSwitch = true, loading = loading, error = error, keyword = keyword, onKeyword = onKeyword,
+                hasKeyword = hasKeyword, onClearKeyword = onClearKeyword, onSearchInputRef = onSearchInputRef,
                 rows = rows, total = total, expandedId = expandedId, busyId = busyId,
                 onToggleExpand = onToggleExpand, actionError = actionError, actionNotice = actionNotice,
                 onToggleEnabled = onToggleEnabled, onReload = onReload, colors = colors,
@@ -192,6 +199,9 @@ private fun ViewContainer<*, *>.DshPluginInventoryListView(
     error: () -> String,
     keyword: () -> String,
     onKeyword: (String) -> Unit,
+    hasKeyword: () -> Boolean,
+    onClearKeyword: () -> Unit,
+    onSearchInputRef: (ViewRef<InputView>) -> Unit,
     rows: () -> ObservableList<DshPluginEntry>,
     total: () -> Int,
     expandedId: () -> String,
@@ -205,11 +215,22 @@ private fun ViewContainer<*, *>.DshPluginInventoryListView(
 ) {
     View {
         attr { height(36f); marginLeft(16f); marginRight(16f); marginTop(14f); backgroundColor(colors().bgLayer1)
-            borderRadius(8f); border(Border(1f, BorderStyle.SOLID, colors().borderL2)) }
+            borderRadius(8f); border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+            flexDirectionRow(); alignItemsCenter() }
         Input {
-            attr { flex(1f); height(36f); marginLeft(12f); marginRight(12f); fontSize(13f); text(keyword())
+            attr { flex(1f); height(36f); marginLeft(12f); fontSize(13f); text(keyword())
                 placeholder("搜索插件名称或 ID"); color(colors().labelPrimary); placeholderColor(colors().labelTertiary) }
+            ref { onSearchInputRef(it) }
             event { textDidChange { onKeyword(it.text) } }
+        }
+        vif({ hasKeyword() }) {
+            View {
+                attr { size(28f, 28f); allCenter(); marginRight(4f) }
+                Image {
+                    attr { src(ImageUri.commonAssets("x.svg")); size(16f, 16f); tintColor(colors().labelTertiary) }
+                }
+                DshHitButton { onClearKeyword() }
+            }
         }
     }
     View {

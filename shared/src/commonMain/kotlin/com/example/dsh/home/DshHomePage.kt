@@ -90,6 +90,11 @@ internal class DshHomePage : BasePager() {
     private var pluginInventoryLoading by observable(false)
     private var pluginInventoryError by observable("")
     private var pluginKeyword by observable("")
+    /** 搜索框原生文本：非响应式，只喂给 Input 的 text()，避免每次按键重设文本与原生输入互相覆盖。 */
+    private var pluginSearchInput = ""
+    /** 搜索框是否有内容，用于响应式显示清除按钮。 */
+    private var pluginSearchHasText by observable(false)
+    private var pluginSearchInputView: InputView? = null
     private var pluginPhase by observable("")
     private var pluginTotal by observable(0)
     private var pluginInventory = emptyList<DshPluginEntry>()
@@ -1194,7 +1199,9 @@ internal class DshHomePage : BasePager() {
                     DshPluginSettingsView(
                         activeTab = { ctx.pluginActiveTab }, onSelectTab = { ctx.selectPluginTab(it) },
                         loading = { ctx.pluginInventoryLoading }, error = { ctx.pluginInventoryError },
-                        keyword = { ctx.pluginKeyword }, onKeyword = { ctx.pluginKeyword = it; ctx.applyPluginFilters() },
+                        keyword = { ctx.pluginSearchInput }, onKeyword = { ctx.onPluginKeyword(it) },
+                        hasKeyword = { ctx.pluginSearchHasText }, onClearKeyword = { ctx.clearPluginKeyword() },
+                        onSearchInputRef = { ctx.pluginSearchInputView = it.view },
                         onRefresh = { ctx.refreshPluginInventory() }, onClose = { ctx.closePluginInventory() },
                         rows = { ctx.pluginRows }, total = { ctx.pluginTotal },
                         expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
@@ -2737,6 +2744,7 @@ internal class DshHomePage : BasePager() {
         pluginRequestVersion++
         pluginInventoryLoading = false
         pluginInventory = emptyList(); pluginRows.clear(); pluginTotal = 0
+        pluginSearchInput = ""; pluginSearchHasText = false; pluginKeyword = ""
         pluginExpandedId = ""; pluginActionTarget = null; pluginConfirmAction = ""; pluginBusyId = ""
         pluginActionError = ""; pluginNotice = ""
         pluginConfigLoading = false; pluginConfigCards.clear(); pluginConfigDrafts = emptyMap()
@@ -4367,6 +4375,9 @@ internal class DshHomePage : BasePager() {
         settingsPageVisible = false
         pluginInventoryVisible = true
         pluginActiveTab = "config"
+        pluginSearchInput = ""
+        pluginSearchHasText = false
+        pluginKeyword = ""
         refreshPluginInventory()
         loadPluginConfig()
     }
@@ -4602,6 +4613,23 @@ internal class DshHomePage : BasePager() {
                 pluginActionError = "操作超时，请刷新确认结果"
             }
         }
+    }
+
+    /** 搜索框回调：同步非响应式原生文本，仅用可观察的过滤词触发列表刷新。 */
+    fun onPluginKeyword(value: String) {
+        pluginSearchInput = value
+        pluginSearchHasText = value.isNotEmpty()
+        pluginKeyword = value
+        applyPluginFilters()
+    }
+
+    /** 清除搜索框：清空原生文本与过滤词，并刷新列表。 */
+    fun clearPluginKeyword() {
+        pluginSearchInput = ""
+        pluginSearchHasText = false
+        pluginKeyword = ""
+        pluginSearchInputView?.setText("")
+        applyPluginFilters()
     }
 
     private fun applyPluginFilters() {
