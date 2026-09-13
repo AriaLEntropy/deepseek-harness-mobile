@@ -1,7 +1,7 @@
 package com.example.dsh.rendering
 
 import com.example.dsh.base.DshBottomSheet
-import com.example.dsh.chat.iconAsset
+import com.example.dsh.message.iconAsset
 import com.example.dsh.export.DshSearchCard
 import com.example.dsh.export.DshWebCard
 import com.example.dsh.theme.DshColorTokens

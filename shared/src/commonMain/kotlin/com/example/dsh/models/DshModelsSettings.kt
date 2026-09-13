@@ -2,8 +2,8 @@ package com.example.dsh.models
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.example.dsh.protocol.DshHostProtocol
-import com.example.dsh.data.DshRepository
+import com.example.dsh.host.DshHostProtocol
+import com.example.dsh.host.DshRepository
 
 /**
  * 设置页「模型」板块（对齐电脑端 DSH settings.models）：

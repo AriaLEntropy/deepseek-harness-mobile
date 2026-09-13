@@ -3,8 +3,8 @@ package com.example.dsh.rendering
 import com.example.dsh.chat.DSH_CONNECTOR_GUTTER
 import com.example.dsh.chat.DSH_CONNECTOR_LINE_LEFT
 import com.example.dsh.chat.DSH_CONNECTOR_LINE_WIDTH
-import com.example.dsh.chat.boundedContextText
-import com.example.dsh.chat.iconAsset
+import com.example.dsh.message.boundedContextText
+import com.example.dsh.message.iconAsset
 import com.example.dsh.tool.DshAskQuestionCard
 import com.example.dsh.export.DshSearchCard
 import com.example.dsh.export.DshWebCard

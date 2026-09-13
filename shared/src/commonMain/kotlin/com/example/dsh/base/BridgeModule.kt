@@ -8,7 +8,7 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import com.example.dsh.infrastructure.shareExportFile
+import com.example.dsh.log.shareExportFile
 
 internal class BridgeModule : Module() {
 

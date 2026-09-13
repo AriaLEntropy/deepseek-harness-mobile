@@ -1,6 +1,6 @@
 package com.example.dsh.session
 
-import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.host.DshConnectionMode
 import com.example.dsh.models.DshModelOption
 
 internal data class DshSessionScope(

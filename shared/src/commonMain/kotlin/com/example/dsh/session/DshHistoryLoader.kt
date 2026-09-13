@@ -2,7 +2,7 @@ package com.example.dsh.session
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.example.dsh.protocol.DshRpcError
+import com.example.dsh.host.DshRpcError
 import com.example.dsh.tool.dshWireEvent
 
 /** Keeps original event envelopes (including tool views) until every page is available. */

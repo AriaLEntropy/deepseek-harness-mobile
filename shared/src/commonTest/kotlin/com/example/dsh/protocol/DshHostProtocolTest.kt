@@ -1,6 +1,6 @@
 package com.example.dsh.protocol
 
-import com.example.dsh.infrastructure.LogLevel
+import com.example.dsh.log.LogLevel
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import kotlin.test.Test
@@ -8,18 +8,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import com.example.dsh.protocol.attachmentIdsFromBlocks
-import com.example.dsh.protocol.contextSourceLabel
-import com.example.dsh.protocol.contextSummary
-import com.example.dsh.protocol.dshEncodeQueryComponent
-import com.example.dsh.protocol.dshSessionEventLevel
-import com.example.dsh.protocol.dshShouldLogSessionEvent
-import com.example.dsh.protocol.imagePreviewsFromBlocks
-import com.example.dsh.protocol.inlineImageDataUrl
-import com.example.dsh.protocol.parseRespondReceipt
-import com.example.dsh.protocol.pendingInteractionRpcId
-import com.example.dsh.protocol.textFromBlocks
-import com.example.dsh.protocol.toolCardType
+import com.example.dsh.host.attachmentIdsFromBlocks
+import com.example.dsh.host.contextSourceLabel
+import com.example.dsh.host.contextSummary
+import com.example.dsh.host.dshEncodeQueryComponent
+import com.example.dsh.host.dshSessionEventLevel
+import com.example.dsh.host.dshShouldLogSessionEvent
+import com.example.dsh.host.imagePreviewsFromBlocks
+import com.example.dsh.host.inlineImageDataUrl
+import com.example.dsh.host.parseRespondReceipt
+import com.example.dsh.host.pendingInteractionRpcId
+import com.example.dsh.host.textFromBlocks
+import com.example.dsh.host.toolCardType
 import com.example.dsh.models.DshToolCardType
 
 class DshHostProtocolTest {

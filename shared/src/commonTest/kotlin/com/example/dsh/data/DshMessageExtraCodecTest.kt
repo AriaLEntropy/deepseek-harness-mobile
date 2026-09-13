@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import com.example.dsh.message.DshMessage
-import com.example.dsh.data.DshMessageExtraCodec
+import com.example.dsh.message.DshMessageExtraCodec
 import com.example.dsh.message.DshMessageRole
 
 class DshMessageExtraCodecTest {

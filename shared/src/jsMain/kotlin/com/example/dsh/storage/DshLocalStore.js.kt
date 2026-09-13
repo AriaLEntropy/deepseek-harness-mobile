@@ -1,6 +1,6 @@
 package com.example.dsh.storage
 
-import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.host.DshConnectionMode
 import com.example.dsh.session.DshLegacyRemoteProfile
 import com.example.dsh.message.DshMessage
 import com.example.dsh.session.DshRelayProfile

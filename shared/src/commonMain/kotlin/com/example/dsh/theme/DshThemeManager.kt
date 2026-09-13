@@ -1,7 +1,7 @@
 package com.example.dsh.theme
 
-import com.example.dsh.infrastructure.cachedLocalTimezoneOffsetMillis
-import com.example.dsh.infrastructure.currentTimeMillis
+import com.example.dsh.log.cachedLocalTimezoneOffsetMillis
+import com.example.dsh.platform.currentTimeMillis
 import com.example.dsh.base.BasePager
 
 /**

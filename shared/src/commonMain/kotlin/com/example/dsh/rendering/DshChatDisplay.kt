@@ -3,7 +3,7 @@ package com.example.dsh.rendering
 import com.example.dsh.tool.DshAskQuestionCard
 import com.example.dsh.export.DshSearchCard
 import com.example.dsh.export.DshWebCard
-import com.example.dsh.chat.iconAsset
+import com.example.dsh.message.iconAsset
 
 /**
  * 移动端「对话过程展示」的两种互斥方式（App 级偏好，本地持久化）：

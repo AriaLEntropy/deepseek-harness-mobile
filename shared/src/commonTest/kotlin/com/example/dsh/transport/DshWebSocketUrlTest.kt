@@ -2,7 +2,7 @@ package com.example.dsh.transport
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import com.example.dsh.transport.dshWebSocketUrl
+import com.example.dsh.host.dshWebSocketUrl
 
 class DshWebSocketUrlTest {
 

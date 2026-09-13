@@ -1,17 +1,17 @@
 package com.example.dsh.connection
 
-import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.host.DshConnectionMode
 import com.example.dsh.session.DshLegacyRemoteProfile
 import com.example.dsh.session.DshRelayProfile
 import com.example.dsh.session.DshRemoteProfile
-import com.example.dsh.data.DshRemoteHostRepository
-import com.example.dsh.data.DshRemoteRepository
-import com.example.dsh.data.DshRepository
+import com.example.dsh.host.DshRemoteHostRepository
+import com.example.dsh.host.DshRemoteRepository
+import com.example.dsh.host.DshRepository
 import com.example.dsh.session.DshSessionScope
-import com.example.dsh.home.DshWordmark
-import com.example.dsh.infrastructure.DshLogService
-import com.example.dsh.infrastructure.DshStreamLog
-import com.example.dsh.infrastructure.LogLevel
+import com.example.dsh.connection.DshWordmark
+import com.example.dsh.log.DshLogService
+import com.example.dsh.log.DshStreamLog
+import com.example.dsh.log.LogLevel
 import com.example.dsh.storage.DshLocalStore
 import com.example.dsh.storage.createDshLocalStore
 import com.example.dsh.base.BasePager
@@ -29,8 +29,8 @@ import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.compose.Button
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.protocol.DshHostConnection
-import com.example.dsh.transport.DshWebSocketModule
+import com.example.dsh.host.DshHostConnection
+import com.example.dsh.host.DshWebSocketModule
 import com.tencent.kuikly.core.timer.setTimeout
 
 /** First page shown by the app. It only selects a host and never starts an engine. */

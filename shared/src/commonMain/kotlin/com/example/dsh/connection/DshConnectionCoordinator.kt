@@ -1,6 +1,6 @@
 package com.example.dsh.connection
 
-import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.host.DshConnectionMode
 /**
  * Small lifecycle gate for asynchronous engine and tunnel callbacks.
  * The native managers keep their own generations; this gate protects the

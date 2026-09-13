@@ -1,7 +1,7 @@
 package com.example.dsh.export
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
-import com.example.dsh.protocol.DshWebTimelineParser
+import com.example.dsh.host.DshWebTimelineParser
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
 import com.example.dsh.message.DshWebTimelineItem

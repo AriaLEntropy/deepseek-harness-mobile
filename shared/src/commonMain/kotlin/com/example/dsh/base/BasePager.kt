@@ -5,14 +5,14 @@ import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.DshSseModule
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshThemeManager
-import com.example.dsh.infrastructure.cachedLocalTimezoneOffsetMillis
+import com.example.dsh.log.cachedLocalTimezoneOffsetMillis
 import com.example.dsh.theme.DshThemeMode
 import com.tencent.kuikly.core.pager.Pager
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.*
-import com.example.dsh.transport.DshWebSocketModule
+import com.example.dsh.host.DshWebSocketModule
 import com.tencent.kuikly.core.timer.setTimeout
 
 internal abstract class BasePager : Pager() {

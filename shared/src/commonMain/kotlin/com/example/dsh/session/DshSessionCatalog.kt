@@ -1,8 +1,8 @@
 package com.example.dsh.session
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.example.dsh.protocol.DshHostProtocol
-import com.example.dsh.protocol.DshRpcError
+import com.example.dsh.host.DshHostProtocol
+import com.example.dsh.host.DshRpcError
 import com.example.dsh.session.DshSession
 
 /** A paired Host snapshot. Archived sessions remain available without entering the main list. */

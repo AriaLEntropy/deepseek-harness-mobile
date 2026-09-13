@@ -1,6 +1,6 @@
 package com.example.dsh.plugin
 
-import com.example.dsh.infrastructure.LogSanitizer
+import com.example.dsh.log.LogSanitizer
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 internal data class DshPluginEntry(

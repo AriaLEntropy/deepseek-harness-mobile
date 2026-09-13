@@ -1,8 +1,8 @@
 package com.example.dsh.diagnostics
 
-import com.example.dsh.infrastructure.LogFilter
-import com.example.dsh.infrastructure.LogLevel
-import com.example.dsh.infrastructure.LogExporter
+import com.example.dsh.log.LogFilter
+import com.example.dsh.log.LogLevel
+import com.example.dsh.log.LogExporter
 
 /** Entry parameters only seed editable filters. Empty sets mean no restriction. */
 internal data class DshLogFilters(

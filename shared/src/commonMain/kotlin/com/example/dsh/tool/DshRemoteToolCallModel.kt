@@ -3,9 +3,9 @@ package com.example.dsh.tool
 import com.example.dsh.rendering.DshAskQuestionCard
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.example.dsh.protocol.toolCardType
-import com.example.dsh.protocol.toolInputSummary
-import com.example.dsh.protocol.toolOutputSummary
+import com.example.dsh.host.toolCardType
+import com.example.dsh.host.toolInputSummary
+import com.example.dsh.host.toolOutputSummary
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
 import com.example.dsh.export.dshParseSearchCard

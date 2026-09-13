@@ -1,6 +1,6 @@
 package com.example.dsh.rendering
 
-import com.example.dsh.chat.boundedContextText
+import com.example.dsh.message.boundedContextText
 import com.example.dsh.message.DshContextCatalogEntry
 import com.example.dsh.message.DshContextInstruction
 import com.example.dsh.message.DshContextRecall

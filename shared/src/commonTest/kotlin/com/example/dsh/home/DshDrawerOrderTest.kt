@@ -2,6 +2,12 @@ package com.example.dsh.home
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import com.example.dsh.session.dshApplyOrder
+import com.example.dsh.session.DshDrawerDrag
+import com.example.dsh.session.DshDrawerDragKind
+import com.example.dsh.session.dshDropIndex
+import com.example.dsh.session.dshMoveItem
+import com.example.dsh.session.dshRowDragOffset
 
 class DshDrawerOrderTest {
 

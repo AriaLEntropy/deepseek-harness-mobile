@@ -12,6 +12,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
+import com.example.dsh.message.iconAsset
 
 /** 「+」附件/命令面板里的三个附件方块类型 */
 internal enum class DshCommandSheetTile(val label: String, val iconAsset: String) {

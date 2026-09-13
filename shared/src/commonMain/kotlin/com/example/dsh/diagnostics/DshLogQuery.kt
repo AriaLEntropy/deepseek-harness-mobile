@@ -1,20 +1,20 @@
 package com.example.dsh.diagnostics
 
-import com.example.dsh.infrastructure.DshLogWriteBehind
-import com.example.dsh.infrastructure.LogEvent
-import com.example.dsh.infrastructure.LogExporter
-import com.example.dsh.infrastructure.LogFilter
-import com.example.dsh.infrastructure.LogLevel
-import com.example.dsh.infrastructure.LogSanitizer
-import com.example.dsh.infrastructure.LogSortOrder
-import com.example.dsh.infrastructure.appendExportFile
-import com.example.dsh.infrastructure.beginExport
-import com.example.dsh.infrastructure.deleteExportFile
-import com.example.dsh.infrastructure.endExport
-import com.example.dsh.infrastructure.exportPublishLock
-import com.example.dsh.infrastructure.pruneExportCache
-import com.example.dsh.infrastructure.renameExportFile
-import com.example.dsh.infrastructure.writeExportFile
+import com.example.dsh.log.DshLogWriteBehind
+import com.example.dsh.log.LogEvent
+import com.example.dsh.log.LogExporter
+import com.example.dsh.log.LogFilter
+import com.example.dsh.log.LogLevel
+import com.example.dsh.log.LogSanitizer
+import com.example.dsh.log.LogSortOrder
+import com.example.dsh.log.appendExportFile
+import com.example.dsh.log.beginExport
+import com.example.dsh.log.deleteExportFile
+import com.example.dsh.log.endExport
+import com.example.dsh.log.exportPublishLock
+import com.example.dsh.log.pruneExportCache
+import com.example.dsh.log.renameExportFile
+import com.example.dsh.log.writeExportFile
 
 /** Immutable worker input. Keywords are literal; event types have their own filter. */
 internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search: String = "") {

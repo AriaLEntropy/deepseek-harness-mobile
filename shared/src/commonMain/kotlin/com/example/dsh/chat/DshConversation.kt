@@ -18,10 +18,10 @@ import com.example.dsh.message.dshTurnProcessGroup
 import com.example.dsh.message.dshTurnTailAssistant
 import com.example.dsh.home.CHAT_INITIAL_RENDER_COUNT
 import com.example.dsh.home.CHAT_MAX_RENDERED_MESSAGES
-import com.example.dsh.home.DshExportSelectionSheet
+import com.example.dsh.export.DshExportSelectionSheet
 import com.example.dsh.home.DshHitButton
-import com.example.dsh.home.dshPermissionIcon
-import com.example.dsh.home.dshPermissionTint
+import com.example.dsh.interaction.dshPermissionIcon
+import com.example.dsh.interaction.dshPermissionTint
 import com.example.dsh.rendering.DshApprovalPanel
 import com.example.dsh.rendering.DshDisclosureRow
 import com.example.dsh.rendering.DshExpandedPayload
@@ -57,6 +57,14 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
+import com.example.dsh.voice.DshVoiceRecordOverlay
+import com.example.dsh.voice.dshVoiceStrings
+import com.example.dsh.voice.DshVoiceStrings
+import com.example.dsh.connection.DshConnectionStatusCapsule
+import com.example.dsh.message.DshDraftFileCard
+import com.example.dsh.message.DshMessageRow
+import com.example.dsh.message.iconAsset
+import com.example.dsh.message.visibleSkillList
 
 internal fun ViewContainer<*, *>.DshConversation(
     conversationIds: () -> ObservableList<String>,

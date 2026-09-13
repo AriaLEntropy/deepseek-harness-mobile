@@ -1,10 +1,10 @@
 package com.example.dsh.storage
 
-import com.example.dsh.chat.contextRelaySender
-import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.message.contextRelaySender
+import com.example.dsh.host.DshConnectionMode
 import com.example.dsh.session.DshLegacyRemoteProfile
 import com.example.dsh.message.DshMessage
-import com.example.dsh.data.DshMessageExtraCodec
+import com.example.dsh.message.DshMessageExtraCodec
 import com.example.dsh.message.DshMessageRole
 import com.example.dsh.session.DshRelayProfile
 import com.example.dsh.session.DshRemoteProfile
@@ -18,7 +18,7 @@ import net.shantu.kuiklysqlite.SqlSchema
 import net.shantu.kuiklysqlite.SqlStatement
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.posix.time
-import com.example.dsh.protocol.toolCardType
+import com.example.dsh.host.toolCardType
 
 @OptIn(ExperimentalForeignApi::class)
 private fun nowMs(): Long = time(null) * 1000L

@@ -1,14 +1,14 @@
 package com.example.dsh.message
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.example.dsh.chat.contextInstructions
-import com.example.dsh.chat.contextRecalls
-import com.example.dsh.chat.contextRelaySender
-import com.example.dsh.chat.contextSections
+import com.example.dsh.message.contextInstructions
+import com.example.dsh.message.contextRecalls
+import com.example.dsh.message.contextRelaySender
+import com.example.dsh.message.contextSections
 import com.example.dsh.attachment.DshImageAttachmentRef
 import com.example.dsh.tool.DshRemoteToolCallModel
 import com.example.dsh.models.DshToolCardType
-import com.example.dsh.protocol.toolCardType
+import com.example.dsh.host.toolCardType
 
 internal fun dshTurnStatusLabel(reconnecting: Boolean): String =
     if (reconnecting) "Reconnecting..." else "Deep diving..."

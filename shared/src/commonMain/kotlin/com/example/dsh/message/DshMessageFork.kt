@@ -2,7 +2,7 @@ package com.example.dsh.message
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.example.dsh.message.DshMessage
-import com.example.dsh.protocol.DshRpcError
+import com.example.dsh.host.DshRpcError
 import com.example.dsh.message.visuallyEquals
 
 /** An unchanged bubble can still acquire Host identity during history reconciliation. */
