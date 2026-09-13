@@ -1,12 +1,11 @@
 package com.example.dsh.home
 
-import com.example.dsh.conversation.DshPluginConfigCard
-import com.example.dsh.conversation.DshPluginConfigField
-import com.example.dsh.conversation.DshPluginFieldKind
+import com.example.dsh.plugin.DshPluginConfigCard
+import com.example.dsh.plugin.DshPluginConfigField
+import com.example.dsh.plugin.DshPluginFieldKind
 import com.example.dsh.theme.DshColorTokens
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
-import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif

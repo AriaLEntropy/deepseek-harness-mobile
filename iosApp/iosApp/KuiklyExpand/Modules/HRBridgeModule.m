@@ -70,6 +70,29 @@ static void DshUncaughtExceptionHandler(NSException *exception) {
     }];
 }
 
+- (void)pickFile:(NSDictionary *)args {
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    [[DshFiles shared] pick:^(NSDictionary *result) {
+        if (callback) callback(result);
+    }];
+}
+
+- (void)startVoiceRecognition:(NSDictionary *)args {
+    KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
+    if (!callback) return;
+    [[DshVoiceRecognizer shared] start:^(NSDictionary *event) {
+        callback(event);
+    }];
+}
+
+- (void)stopVoiceRecognition:(NSDictionary *)args {
+    [[DshVoiceRecognizer shared] stop];
+}
+
+- (void)cancelVoiceRecognition:(NSDictionary *)args {
+    [[DshVoiceRecognizer shared] cancel];
+}
+
 - (void)log:(NSDictionary *)args {
     NSDictionary *params = [args[KR_PARAM_KEY] hr_stringToDictionary];
     NSString *content = params[@"content"];
@@ -129,6 +152,22 @@ static void DshUncaughtExceptionHandler(NSException *exception) {
     };
     NSData *data = [NSJSONSerialization dataWithJSONObject:device options:0 error:nil];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+
+- (NSString *)getScreenCornerRadius:(NSDictionary *)args {
+    // 优先取系统私有 _displayCornerRadius（单位为 point，等于 dp）；取不到时回退窗口圆角。
+    CGFloat radius = 0;
+    if ([[UIScreen mainScreen] respondsToSelector:NSSelectorFromString(@"_displayCornerRadius")]) {
+        id value = [[UIScreen mainScreen] valueForKey:@"_displayCornerRadius"];
+        if ([value respondsToSelector:@selector(floatValue)]) {
+            radius = [value floatValue];
+        }
+    }
+    if (radius <= 0) {
+        UIWindow *window = [DshNativeUi topViewController].view.window;
+        if (window.layer.cornerRadius > 0) radius = window.layer.cornerRadius;
+    }
+    return [NSString stringWithFormat:@"%f", radius];
 }
 
 - (NSString *)closeKeyboard:(NSDictionary *)args {

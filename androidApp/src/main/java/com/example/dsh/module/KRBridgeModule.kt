@@ -5,9 +5,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import android.graphics.Color
 import android.os.Build
@@ -15,13 +18,14 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
+import android.view.RoundedCorner
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import com.example.dsh.BuildConfig
 import com.example.dsh.KRApplication
-import com.example.dsh.KuiklyRenderActivity
 import com.example.dsh.ssh.DshSshForegroundService
 import com.example.dsh.ssh.DshSshKeyStore
 import org.json.JSONArray
@@ -35,7 +39,17 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     private var navigationBarContrastBeforeDim: Boolean? = null
     private var sshKeyCallback: KuiklyRenderCallback? = null
     private var pickImageCallback: KuiklyRenderCallback? = null
+    private var pickFileCallback: KuiklyRenderCallback? = null
     private var pendingCameraFile: File? = null
+    // ===== 语音识别（按住说话）=====
+    private var voiceEventCallback: KuiklyRenderCallback? = null
+    private var voiceRecognizer: android.speech.SpeechRecognizer? = null
+    private var voicePermissionPending = false
+    /** 每次录音的操作代次：停止/取消会使其失效，异步权限回调据此丢弃过期启动。 */
+    private var voiceOperationGeneration = 0
+    private var voicePermissionGeneration = -1
+    private var voiceSessionActive = false
+    private var voiceLastLevelAt = 0L
 
     init {
         activeInstance = this
@@ -95,6 +109,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 timezoneOffset()
             }
 
+            "getScreenCornerRadius" -> {
+                screenCornerRadius()
+            }
+
             "dateFormatter" -> {
                 dateFormatter(params)
             }
@@ -108,7 +126,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             }
 
             "pickImage" -> pickImage(params, callback)
+            "pickFile" -> pickFile(callback)
             "saveImage" -> saveImage(params, callback)
+            "startVoiceRecognition" -> startVoiceRecognition(callback)
+            "stopVoiceRecognition" -> stopVoiceRecognition()
+            "cancelVoiceRecognition" -> cancelVoiceRecognition()
             "pickSshKey" -> pickSshKey(callback)
             "importSshKey" -> importSshKey(params, callback)
             "validateSshKey" -> validateSshKey(params, callback)
@@ -334,6 +356,34 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         return java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()).toString()
     }
 
+    /**
+     * 设备屏幕圆角半径（dp），用于底部面板顶部圆角动态适配不同安卓机型。
+     * Android 12+ 优先读 WindowInsets 的圆角，其次读系统资源 `rounded_corner_radius`；均无则返回 0。
+     */
+    private fun screenCornerRadius(): String {
+        val ctx = context ?: KRApplication.application
+        val density = ctx.resources.displayMetrics.density
+        var radiusPx = 0f
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                val corner = wm?.currentWindowMetrics?.windowInsets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+                if (corner != null && corner.radius > 0) radiusPx = corner.radius.toFloat()
+            }
+        }
+        if (radiusPx <= 0f) {
+            runCatching {
+                val id = ctx.resources.getIdentifier("rounded_corner_radius", "dimen", "android")
+                if (id > 0) {
+                    val r = ctx.resources.getDimensionPixelSize(id)
+                    if (r > 0) radiusPx = r.toFloat()
+                }
+            }
+        }
+        val radiusDp = if (density > 0f) radiusPx / density else 0f
+        return radiusDp.toString()
+    }
+
     private fun dateFormatter(params: String?): String {
         val paramJSONObject = JSONObject(params ?: "{}")
         val data = Date(paramJSONObject.optLong("timeStamp"))
@@ -434,12 +484,34 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         pendingCameraFile = null
     }
 
-    private fun readPickedBytes(uri: Uri?): ByteArray? {
-        if (uri == null) return null
+    private sealed class PickedBytesResult {
+        class Ok(val bytes: ByteArray) : PickedBytesResult()
+        object TooLarge : PickedBytesResult()
+        object Failed : PickedBytesResult()
+    }
+
+    /**
+     * 有上限的分块读取：一旦超过 [limit] 立即停止，避免把大文件整体读入内存导致 OOM
+     * （`InputStream.readBytes()` 会先全部读入再判断大小）。
+     */
+    private fun readPickedBytes(uri: Uri?, limit: Int): PickedBytesResult {
+        if (uri == null) return PickedBytesResult.Failed
         return try {
-            context?.contentResolver?.openInputStream(uri)?.use { it.readBytes() }
+            context?.contentResolver?.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(64 * 1024)
+                val out = java.io.ByteArrayOutputStream()
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > limit) return PickedBytesResult.TooLarge
+                    out.write(buffer, 0, read)
+                }
+                PickedBytesResult.Ok(out.toByteArray())
+            } ?: PickedBytesResult.Failed
         } catch (e: Exception) {
-            null
+            PickedBytesResult.Failed
         }
     }
 
@@ -478,8 +550,64 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     private fun deliverPickedImage(bytes: ByteArray?, displayName: String) =
         deliverPickedImages(listOf(bytes to displayName))
 
-    private fun queryDisplayName(uri: Uri): String {
-        var name = "image"
+    // ===== 通用文件选择（文档选择器）=====
+    private fun pickFile(callback: KuiklyRenderCallback?) {
+        pickFileCallback = callback
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        try {
+            activity?.startActivityForResult(intent, REQUEST_PICK_FILE)
+        } catch (e: Exception) {
+            finishPickFile(mapOf("ok" to false, "error" to "无法打开文件选择器"))
+        }
+    }
+
+    private fun finishPickFile(result: Map<String, Any?>) {
+        try {
+            pickFileCallback?.invoke(result)
+        } catch (t: Throwable) {
+        }
+        pickFileCallback = null
+    }
+
+    private fun deliverPickedFiles(uris: List<Uri>) {
+        val entries = mutableListOf<Map<String, Any?>>()
+        val resolver = context?.contentResolver
+        for (uri in uris) {
+            when (val result = readPickedBytes(uri, MAX_PICK_FILE_BYTES)) {
+                is PickedBytesResult.TooLarge -> {
+                    finishPickFile(mapOf("ok" to false, "error" to "文件超过 50MB 上限"))
+                    return
+                }
+                is PickedBytesResult.Failed -> continue
+                is PickedBytesResult.Ok -> {
+                    val bytes = result.bytes
+                    if (bytes.isEmpty()) continue
+                    val mime = resolver?.getType(uri)?.takeIf { it.isNotEmpty() } ?: "application/octet-stream"
+                    val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    entries.add(
+                        mapOf(
+                            "dataUrl" to "data:$mime;base64,$base64",
+                            "mediaType" to mime,
+                            "name" to queryDisplayName(uri, "attachment"),
+                            "bytes" to bytes.size.toString(),
+                        )
+                    )
+                }
+            }
+        }
+        if (entries.isEmpty()) {
+            finishPickFile(mapOf("ok" to false, "error" to "无法读取文件数据"))
+            return
+        }
+        finishPickFile(mapOf("ok" to true, "files" to entries))
+    }
+
+    private fun queryDisplayName(uri: Uri, fallback: String = "image"): String {
+        var name = fallback
         try {
             context?.contentResolver?.query(
                 uri,
@@ -543,6 +671,189 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
+    // ===== 语音识别（Android SpeechRecognizer：系统语音转文字 + onRmsChanged 音量）=====
+
+    private fun startVoiceRecognition(callback: KuiklyRenderCallback?) {
+        voiceEventCallback = callback
+        val act = activity
+        if (act == null) {
+            emitVoiceEvent("error", message = "当前页面不可用", code = "start_failed")
+            return
+        }
+        val generation = ++voiceOperationGeneration
+        if (ContextCompat.checkSelfPermission(act, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            voicePermissionPending = true
+            voicePermissionGeneration = generation
+            ActivityCompat.requestPermissions(act, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+            return
+        }
+        act.runOnUiThread { beginRecognizer(act) }
+    }
+
+    private fun beginRecognizer(act: Activity) {
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(act)) {
+            emitVoiceEvent("error", message = "当前设备不支持语音识别", code = "unsupported")
+            return
+        }
+        val recognizer = voiceRecognizer
+            ?: android.speech.SpeechRecognizer.createSpeechRecognizer(act).also { voiceRecognizer = it }
+        recognizer.setRecognitionListener(voiceRecognitionListener)
+        val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault().toLanguageTag())
+            putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // 拉长静音判定，避免用户还在思考/换气就被提前截断
+            putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60_000L)
+            putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60_000L)
+        }
+        voiceSessionActive = true
+        try {
+            recognizer.startListening(intent)
+        } catch (e: Exception) {
+            voiceSessionActive = false
+            Log.e("KRBridgeModule", "startVoiceRecognition failed", e)
+            emitVoiceEvent("error", message = "语音识别启动失败", code = "start_failed")
+        }
+    }
+
+    private fun stopVoiceRecognition() {
+        voicePermissionPending = false
+        voiceOperationGeneration += 1
+        val work: () -> Unit = {
+            if (voiceSessionActive) {
+                try {
+                    voiceRecognizer?.stopListening()
+                } catch (e: Exception) {
+                    Log.e("KRBridgeModule", "stopVoiceRecognition failed", e)
+                    emitVoiceEvent("end")
+                }
+            } else {
+                emitVoiceEvent("end")
+            }
+        }
+        val act = activity
+        if (act != null) act.runOnUiThread(work) else work()
+    }
+
+    private fun cancelVoiceRecognition() {
+        voicePermissionPending = false
+        voiceOperationGeneration += 1
+        val work: () -> Unit = {
+            voiceSessionActive = false
+            try {
+                voiceRecognizer?.cancel()
+            } catch (e: Exception) {
+                Log.e("KRBridgeModule", "cancelVoiceRecognition failed", e)
+            }
+        }
+        val act = activity
+        if (act != null) act.runOnUiThread(work) else work()
+        voiceEventCallback = null
+    }
+
+    fun onRequestPermissionsResult(requestCode: Int, grantResults: IntArray) {
+        if (requestCode != REQUEST_RECORD_AUDIO || !voicePermissionPending) return
+        val generation = voicePermissionGeneration
+        voicePermissionPending = false
+        // 录音已在等待权限期间被停止/取消：丢弃这次迟到的授权，避免重新拉起麦克风。
+        if (generation != voiceOperationGeneration) return
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        val act = activity
+        if (granted && act != null) {
+            act.runOnUiThread { beginRecognizer(act) }
+        } else {
+            emitVoiceEvent("error", message = "需要麦克风权限才能使用语音输入", code = "permission_denied")
+        }
+    }
+
+    private fun emitVoiceEvent(event: String, text: String = "", message: String = "", code: String = "") {
+        val callback = voiceEventCallback ?: return
+        val payload = HashMap<String, Any?>()
+        payload["event"] = event
+        if (text.isNotEmpty() || event == "partial" || event == "final") payload["text"] = text
+        if (message.isNotEmpty()) payload["message"] = message
+        if (code.isNotEmpty()) payload["code"] = code
+        try {
+            callback.invoke(payload)
+        } catch (t: Throwable) {
+            Log.e("KRBridgeModule", "emitVoiceEvent failed", t)
+        }
+    }
+
+    private fun emitVoiceLevel(level: Float) {
+        val now = System.currentTimeMillis()
+        if (now - voiceLastLevelAt < 80L) return
+        voiceLastLevelAt = now
+        val callback = voiceEventCallback ?: return
+        try {
+            callback.invoke(mapOf("event" to "level", "level" to level))
+        } catch (t: Throwable) {
+            // 回调已释放时忽略
+        }
+    }
+
+    private val voiceRecognitionListener = object : android.speech.RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {
+            emitVoiceEvent("ready")
+        }
+
+        override fun onBeginningOfSpeech() {}
+
+        override fun onRmsChanged(rmsdB: Float) {
+            // rmsdB 典型范围约 -2..8（0 为最大值）；截断后归一到 0..1，避免正常说话只到半高
+            emitVoiceLevel(((rmsdB.coerceIn(-2f, 8f) + 2f) / 10f).coerceIn(0f, 1f))
+        }
+
+        override fun onBufferReceived(buffer: ByteArray?) {}
+
+        override fun onEndOfSpeech() {}
+
+        override fun onError(error: Int) {
+            voiceSessionActive = false
+            val info = voiceErrorInfo(error)
+            if (info == null) {
+                emitVoiceEvent("end")
+            } else {
+                emitVoiceEvent("error", message = info.second, code = info.first)
+            }
+        }
+
+        override fun onResults(results: Bundle?) {
+            voiceSessionActive = false
+            val text = results
+                ?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                .orEmpty()
+            if (text.isNotEmpty()) emitVoiceEvent("final", text = text)
+            emitVoiceEvent("end")
+        }
+
+        override fun onPartialResults(partialResults: Bundle?) {
+            val text = partialResults
+                ?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                .orEmpty()
+            if (text.isNotEmpty()) emitVoiceEvent("partial", text = text)
+        }
+
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    /** 返回 (错误码, 兜底中文文案)；no-match / timeout / client 等软失败返回 null，按“无内容”结束。 */
+    private fun voiceErrorInfo(error: Int): Pair<String, String>? = when (error) {
+        android.speech.SpeechRecognizer.ERROR_AUDIO -> "failed" to "录音错误"
+        android.speech.SpeechRecognizer.ERROR_CLIENT -> null
+        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "permission_denied" to "缺少麦克风权限"
+        android.speech.SpeechRecognizer.ERROR_NETWORK -> "network" to "网络错误，语音识别需要联网"
+        android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "network" to "网络超时"
+        android.speech.SpeechRecognizer.ERROR_NO_MATCH -> null
+        android.speech.SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "busy" to "语音识别服务繁忙，请稍后重试"
+        android.speech.SpeechRecognizer.ERROR_SERVER -> "failed" to "语音识别服务错误"
+        android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> null
+        else -> "failed" to "语音识别失败（$error）"
+    }
+
     private fun pickSshKey(callback: KuiklyRenderCallback?) {
         sshKeyCallback = callback
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -595,6 +906,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     override fun onDestroy() {
         if (activeInstance === this) activeInstance = null
+        voiceEventCallback = null
+        voiceSessionActive = false
+        try {
+            voiceRecognizer?.destroy()
+        } catch (e: Exception) {
+            Log.e("KRBridgeModule", "destroy recognizer failed", e)
+        }
+        voiceRecognizer = null
         restoreNavigationBar()
         super.onDestroy()
     }
@@ -623,7 +942,28 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                     finishPickImage(mapOf("ok" to false, "cancelled" to true))
                     return
                 }
-                deliverPickedImages(uris.map { uri -> readPickedBytes(uri) to queryDisplayName(uri) })
+                deliverPickedImages(uris.map { uri ->
+                    val bytes = (readPickedBytes(uri, MAX_PICK_FILE_BYTES) as? PickedBytesResult.Ok)?.bytes
+                    bytes to queryDisplayName(uri)
+                })
+            }
+
+            REQUEST_PICK_FILE -> {
+                if (resultCode != android.app.Activity.RESULT_OK) {
+                    finishPickFile(mapOf("ok" to false, "cancelled" to true))
+                    return
+                }
+                val uris = mutableListOf<Uri>()
+                val clip = data?.clipData
+                if (clip != null) {
+                    for (i in 0 until clip.itemCount) clip.getItemAt(i)?.uri?.let(uris::add)
+                }
+                data?.data?.let { if (it !in uris) uris.add(it) }
+                if (uris.isEmpty()) {
+                    finishPickFile(mapOf("ok" to false, "cancelled" to true))
+                    return
+                }
+                deliverPickedFiles(uris)
             }
 
             REQUEST_CAPTURE_PHOTO -> {
@@ -650,10 +990,19 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         const val REQUEST_SSH_KEY = 4091
         const val REQUEST_PICK_IMAGE = 4092
         const val REQUEST_CAPTURE_PHOTO = 4093
+        const val REQUEST_RECORD_AUDIO = 4094
+        const val REQUEST_PICK_FILE = 4095
+
+        /** 与 host-plugin 附件端点上限保持一致。 */
+        const val MAX_PICK_FILE_BYTES = 50 * 1024 * 1024
         private var activeInstance: KRBridgeModule? = null
 
         fun dispatchActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
             activeInstance?.onActivityResult(requestCode, resultCode, data)
+        }
+
+        fun dispatchPermissionResult(requestCode: Int, grantResults: IntArray) {
+            activeInstance?.onRequestPermissionsResult(requestCode, grantResults)
         }
     }
 }

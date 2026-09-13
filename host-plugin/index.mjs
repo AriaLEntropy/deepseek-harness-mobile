@@ -13,6 +13,11 @@
  *                                           registry-global archive set.
  * - `/api/session-manager/delete`           delete one session's backend artifact.
  * - `/api/session-manager/deleteMany`       delete a batch (all / per project).
+ * - `/api/mobile-attachment/v1/upload`      generic-file backport for pre-0.1.5
+ *                                           Hosts: store bytes under the session
+ *                                           cwd and return a readable path handle.
+ * - `/api/mobile-attachment/v1/delete`      remove one stored attachment file.
+ * - `/api/mobile-attachment/v1/config`      client pre-check limits.
  *
  * Deletion is file-level: it removes the backend-owned artifact directory and
  * refuses live sessions. It does NOT touch the workspace archive set or the
@@ -23,6 +28,7 @@
  */
 import { rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { registerAttachmentRoutes } from './attachment.mjs'
 
 export const name = 'dsh-mobile-plugin-inventory'
 export const inject = ['webServer', 'loader', 'sessionPersistence']
@@ -317,4 +323,6 @@ export function apply(ctx) {
     'mobile-session-delete-many.route')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: SESSION_UNARCHIVE_PATH, handler: createSessionHandler(ctx, 'unarchive') }),
     'mobile-session-unarchive.route')
+  // Generic-file backport for pre-0.1.5 Hosts; see attachment.mjs.
+  registerAttachmentRoutes(ctx, { guard, send, readJson, redact })
 }

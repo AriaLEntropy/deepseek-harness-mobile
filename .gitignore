@@ -10,8 +10,6 @@
 .cxx
 local.properties
 *.so
-*.js
-!host-plugin/client.js
 node_modules
 Pods
 Pods/*

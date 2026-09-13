@@ -15,8 +15,18 @@ internal const val DSH_DRAWER_ROW_HEIGHT = 48f
 /** 工作区文件夹行（含间距）高度，用于拖拽落点估算。 */
 internal const val DSH_DRAWER_WORKSPACE_HEADER_HEIGHT = 46f
 
+/** 抽屉视图选项：分组方式，对齐电脑端 WorkspaceBrowser 的 groupBy。 */
+internal const val DSH_DRAWER_GROUP_WORKSPACE = "workspace"
+internal const val DSH_DRAWER_GROUP_FLAT = "flat"
+
+/** 抽屉视图选项：排序方式，对齐电脑端 WorkspaceBrowser 的 orderBy。 */
+internal const val DSH_DRAWER_ORDER_MANUAL = "manual"
+internal const val DSH_DRAWER_ORDER_UPDATED = "updated"
+
 internal const val DSH_PREF_DRAWER_SESSION_ORDER = "dsh.drawer.session.order"
 internal const val DSH_PREF_DRAWER_WORKSPACE_ORDER = "dsh.drawer.workspace.order"
+internal const val DSH_PREF_DRAWER_GROUP_BY = "dsh.drawer.group.by"
+internal const val DSH_PREF_DRAWER_ORDER_BY = "dsh.drawer.order.by"
 
 /** 当前正在进行的拖拽状态；`kind == NONE` 表示空闲。 */
 internal data class DshDrawerDrag(
@@ -32,6 +42,10 @@ internal data class DshDrawerDrag(
 internal fun dshSessionOrderKey(scope: String): String = "$DSH_PREF_DRAWER_SESSION_ORDER.$scope"
 
 internal fun dshWorkspaceOrderKey(scope: String): String = "$DSH_PREF_DRAWER_WORKSPACE_ORDER.$scope"
+
+internal fun dshDrawerGroupByKey(scope: String): String = "$DSH_PREF_DRAWER_GROUP_BY.$scope"
+
+internal fun dshDrawerOrderByKey(scope: String): String = "$DSH_PREF_DRAWER_ORDER_BY.$scope"
 
 /** 按持久化的 id 顺序稳定重排；不在顺序中的元素保持原有相对顺序并排到最后。 */
 internal fun <T> dshApplyOrder(items: List<T>, order: List<String>, idOf: (T) -> String): List<T> {

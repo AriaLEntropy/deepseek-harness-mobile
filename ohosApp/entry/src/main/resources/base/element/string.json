@@ -19,6 +19,10 @@
     {
       "name": "dsh_network_reason",
       "value": "Pair with the computer over Wi-Fi"
+    },
+    {
+      "name": "dsh_microphone_reason",
+      "value": "Use voice input to dictate messages for the agent"
     }
   ]
 }

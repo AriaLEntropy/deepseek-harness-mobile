@@ -4,6 +4,8 @@
 
 插件清单新增独立的只读 HTTP 桥接：`GET /api/mobile-plugin-inventory/v1/list`，不是官方 unary RPC。契约、安装与信任边界见 [host-plugin/README.md](../host-plugin/README.md)。App 复用当前 SSH/Relay 连接，Host 桥接读取真实 Loader 状态及配置/失败摘要。
 
+通用文件上传（PDF/txt/docx 等）在官方 `v0.1.5-alpha.1` 起才有 `{type:'file',receiptId}` 与 `/api/session/uploadFileBinary`；本仓库联调的 Host 为 `dsh-v0.1.1-rc.2`，没有这两个入口，因此由 `host-plugin` 自带一组 `/api/mobile-attachment/v1/{upload,delete,config}` 端点做 backport：文件写入**会话工作目录** `.dsh-attachments/`，prompt 文本追加一行 `[file] name (bytes bytes) sha256:<12> path: <abs path>`，模型用现有文件工具按路径读取。与官方 `ImageAttachmentRef`/`FileAttachmentRef` 的差异及升级建议见 host-plugin README。
+
 远程会话历史现在按 `{sessionId,maxMessages:80,beforeSeq?}` 读取全部页；响应必须包含 `events` 和 `hasMore`。下一页使用本页最小事件 seq，事件按序去重并保留 `view`，完整读取后交付；断线/过期、空非终页或游标不前进均停止并报错。80 是单页消息预算，不是整段历史上限。可读 TXT 在 App 侧生成，图片只含属性及 attachmentId；Host 原有 ZIP 下载语义不变。
 
 扫码 Relay 的配对、密封隧道不属于 Host 协议，见 [dsh-scan-remote](https://github.com/yukiykchen/dsh-scan-remote)。配对成功后，App 只对 **本机 loopback 上的 Host** 说话，信封与 SSH 相同。
@@ -156,7 +158,7 @@ Authorization: Bearer <token>   // token 非空时
 { "type": "image", "mediaType": "image/png", "data": "<canonical-base64>", "name": "photo.png" }
 ```
 
-只支持 PNG / JPEG / WebP / GIF。限额看 Host 的 `imageLimits` projection。PDF 等通用文件 **不在** 该协议里。
+只支持 PNG / JPEG / WebP / GIF。限额看 Host 的 `imageLimits` projection。PDF 等通用文件**不在官方 prompt 协议里**：当前 Host 版本走 host-plugin 的 `/api/mobile-attachment/v1/upload` backport，字节不入会话日志，只在 prompt 里追加可读路径 handle。
 
 输入区先做图片预检；Base64 仅用于发送草稿，历史恢复使用 Host 附件引用。Android 已接取图和保存；鸿蒙桥接代码已补齐、构建与设备验收状态见 [任务清单](tasks.md)；iOS 取图和保存桥接仍待接入。
 
@@ -236,7 +238,7 @@ Authorization: Bearer <token>   // token 非空时
 
 ## 8. 明确未接或未发的
 
-- 通用文件 / PDF 上传：官方无此 RPC
+- 通用文件 / PDF 上传：官方 RPC 需 Host ≥ `v0.1.5-alpha.1`；当前旧 Host 走 host-plugin 附件端点 backport（见第 5 节与 host-plugin README）
 - 插件启停：`pluginInventory/list` 只读，App 未接
 - 永久删除会话：官方归档有，删除存储需扩 Host
 - `session.prompt` 的 `mode: "steer"`：队列里的 steer 走 `session.updateQueue`，不是改 prompt mode

@@ -110,6 +110,11 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         KRDshRelayModule.dispatchActivityResult(requestCode, resultCode, data)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        KRBridgeModule.dispatchPermissionResult(requestCode, grantResults)
+    }
+
     override fun onResume() {
         super.onResume()
         kuiklyRenderViewDelegator.onResume()

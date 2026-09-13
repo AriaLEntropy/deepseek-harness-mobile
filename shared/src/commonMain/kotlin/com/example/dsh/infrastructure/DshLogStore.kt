@@ -15,6 +15,8 @@ internal data class LogFilter(
     val typeQuery: String? = null,
 )
 
+internal enum class LogSortOrder { NEWEST_FIRST, OLDEST_FIRST }
+
 /**
  * Log persistence API. Implemented per platform so DB drivers (e.g. kuiklysqlite) stay off commonMain.
  *
@@ -23,7 +25,7 @@ internal data class LogFilter(
  */
 internal interface DshLogStore {
     fun appendBatch(events: List<LogEvent>)
-    fun query(filter: LogFilter, limit: Int, offset: Int): List<LogEvent>
+    fun query(filter: LogFilter, limit: Int, offset: Int, order: LogSortOrder = LogSortOrder.NEWEST_FIRST): List<LogEvent>
 
     /** 匹配 [filter] 的记录按级别分组计数；缺省级别表示 0 条。 */
     fun levelCounts(filter: LogFilter): Map<LogLevel, Long>
@@ -137,10 +139,11 @@ private fun buildLogWhere(filter: LogFilter): Pair<String, List<String?>> {
     return where to args
 }
 
-internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int): LogSelect {
+internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int, order: LogSortOrder = LogSortOrder.NEWEST_FIRST): LogSelect {
     val (where, whereArgs) = buildLogWhere(filter)
     val args = whereArgs + limit.toString() + offset.toString()
-    val sql = "SELECT seq, time, level, type, session_id, rpc_id, message, size FROM dsh_log_events $where ORDER BY seq DESC LIMIT ? OFFSET ?"
+    val direction = if (order == LogSortOrder.OLDEST_FIRST) "ASC" else "DESC"
+    val sql = "SELECT seq, time, level, type, session_id, rpc_id, message, size FROM dsh_log_events $where ORDER BY seq $direction LIMIT ? OFFSET ?"
     return LogSelect(sql, args)
 }
 

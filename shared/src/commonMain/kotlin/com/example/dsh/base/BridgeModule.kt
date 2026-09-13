@@ -2,13 +2,17 @@ package com.example.dsh.base
 
 import com.tencent.kuikly.core.base.toInt
 import com.tencent.kuikly.core.module.CallbackFn
+import com.tencent.kuikly.core.module.CallbackRef
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import com.example.dsh.infrastructure.shareExportFile
 
 internal class BridgeModule : Module() {
+
+    private var voiceEventCallbackRef: CallbackRef? = null
 
     override fun moduleName(): String {
         return MODULE_NAME
@@ -82,6 +86,10 @@ internal class BridgeModule : Module() {
     /** 同步获取设备本地时区偏移（毫秒，UTC→本地为正）；原生未实现时返回 null。 */
     fun timezoneOffsetMillis(): Long? =
         syncCallNativeMethod("timezoneOffset", null, null).toLongOrNull()
+
+    /** 设备屏幕圆角半径（dp）；原生未实现或读取失败时返回 0。 */
+    fun screenCornerRadius(): Float =
+        syncCallNativeMethod("getScreenCornerRadius", null, null).toFloatOrNull() ?: 0f
 
     /** 设备与 App 信息（version/model/os），供问题反馈包使用；不支持时返回 null。 */
     fun getDeviceInfo(): JSONObject? {
@@ -374,6 +382,18 @@ internal class BridgeModule : Module() {
     }
 
     /**
+     * 平台选择通用文件（文档选择器）。回调返回 JSON 字符串：
+     * 成功 {"ok":true,"files":[{"name":"a.pdf","mediaType":"application/pdf","bytes":123,"dataUrl":"data:...;base64,..."}]}
+     * 取消 {"ok":false,"cancelled":true}
+     * 失败 {"ok":false,"error":"可读原因"}
+     */
+    fun pickFile(callback: (String) -> Unit) {
+        callNativeMethod("pickFile", null) { value ->
+            callback(value?.toString().orEmpty())
+        }
+    }
+
+    /**
      * 保存图片到系统相册。回调返回 JSON 字符串：
      * 成功 {"ok":true}
      * 取消 {"ok":false,"cancelled":true}
@@ -383,6 +403,50 @@ internal class BridgeModule : Module() {
         callNativeMethod("saveImage", JSONObject().apply { put("dataUrl", dataUrl) }) { value ->
             callback(value?.toString().orEmpty())
         }
+    }
+
+    /**
+     * 启动语音识别（语音转文字），原生通过 [onEvent] 持续回传 JSON 字符串事件：
+     * - `{"event":"ready"}`                  麦克风就绪、开始采集
+     * - `{"event":"level","level":0.0~1.0}`  实时音量，驱动录音浮层波形
+     * - `{"event":"partial","text":"..."}`   中间识别结果
+     * - `{"event":"final","text":"..."}`     最终识别结果
+     * - `{"event":"error","message":"..."}`  失败（含权限被拒 / 设备不支持）
+     * - `{"event":"end"}`                    会话结束
+     *
+     * 同一时刻只保留一个识别会话，重复调用会先释放旧回调。
+     * 回调需跨多次事件保活，故使用 `keepCallbackAlive`。
+     */
+    fun startVoiceRecognition(onEvent: (String) -> Unit) {
+        releaseVoiceCallback()
+        val result = toNative(
+            keepCallbackAlive = true,
+            methodName = VOICE_RECOGNITION_START,
+            param = null,
+            callback = { value -> onEvent(value?.toString().orEmpty()) },
+        )
+        voiceEventCallbackRef = result.callbackRef
+    }
+
+    /** 停止采集并等待最终结果（识别可能有延迟，结果经 `final`/`end` 事件回传）。 */
+    fun stopVoiceRecognition() {
+        callNativeMethod(VOICE_RECOGNITION_STOP, null, null)
+    }
+
+    /** 取消本次识别并丢弃结果，同时释放跨事件回调。 */
+    fun cancelVoiceRecognition() {
+        callNativeMethod(VOICE_RECOGNITION_CANCEL, null, null)
+        releaseVoiceCallback()
+    }
+
+    /** 仅释放跨事件回调（不触发原生取消）；会话自然结束后调用，避免回调泄漏。 */
+    fun releaseVoiceRecognition() {
+        releaseVoiceCallback()
+    }
+
+    private fun releaseVoiceCallback() {
+        voiceEventCallbackRef?.let { removeCallback(it) }
+        voiceEventCallbackRef = null
     }
 
     fun importSshKey(uri: String, callback: (String) -> Unit) {
@@ -461,6 +525,9 @@ internal class BridgeModule : Module() {
         const val URL_DECODE = "urlDecode"
         const val SHOW_PHOTO_BROWSER = "showPhotoBrowser"
         const val HUMAN_VERIFICATION = "humanVerification"
+        const val VOICE_RECOGNITION_START = "startVoiceRecognition"
+        const val VOICE_RECOGNITION_STOP = "stopVoiceRecognition"
+        const val VOICE_RECOGNITION_CANCEL = "cancelVoiceRecognition"
     }
 
 }

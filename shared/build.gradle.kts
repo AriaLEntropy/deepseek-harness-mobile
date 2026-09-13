@@ -69,6 +69,11 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
             }
         }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
         val sseMain by creating {
             dependsOn(commonMain)
             dependencies {

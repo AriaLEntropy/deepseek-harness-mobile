@@ -4,6 +4,7 @@ import android.os.Build
 import android.util.Log
 import com.tencent.kuikly.core.render.android.adapter.IKRUncaughtExceptionHandlerAdapter
 import com.example.dsh.BuildConfig
+import com.example.dsh.KRApplication
 
 object KRUncaughtExceptionHandlerAdapter : IKRUncaughtExceptionHandlerAdapter {
 

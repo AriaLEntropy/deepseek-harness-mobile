@@ -1,23 +1,17 @@
 package com.example.dsh.chat
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.home.DshHitButton
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.TextArea
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 /**
  * 选择文本弹窗：从底部滑出的 sheet 容器（顶部大圆角、标题居中、右上角关闭）。
@@ -32,61 +26,50 @@ internal fun ViewContainer<*, *>.DshSelectTextModal(
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
-        Modal(inWindow = true) {
-            attr {
-                absolutePositionAllZero()
-                backgroundColor(Color(0x66000000))
-            }
-            // 底部 sheet 容器：顶部大圆角，贴底，固定高度让内部 flex 撑开
+        DshBottomSheet(
+            colors = colors,
+            onClose = onClose,
+            largeHeightRatio = 0.7f,
+            panelBackground = { colors().bgLayer2 },
+        ) {
+            // 头部：标题居中，右上角关闭
             View {
                 attr {
-                    width(pagerData.pageViewWidth)
-                    height(pagerData.pageViewHeight * 0.7f)
-                    positionType(FlexPositionType.ABSOLUTE)
-                    bottom(0f)
-                    flexDirectionColumn()
-                    borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
-                    backgroundColor(colors().bgLayer2)
+                    height(52f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    justifyContentCenter()
                 }
-                // 头部：标题居中，右上角关闭
-                View {
+                Text {
                     attr {
-                        height(52f)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        justifyContentCenter()
-                    }
-                    Text {
-                        attr {
-                            text("选择文本")
-                            lines(1)
-                            fontSize(17f)
-                            fontWeightBold()
-                            color(colors().labelPrimary)
-                        }
-                    }
-                    View {
-                        attr { positionType(FlexPositionType.ABSOLUTE); right(16f); size(32f, 32f); allCenter() }
-                        Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
-                        DshHitButton { onClose() }
+                        text("选择文本")
+                        lines(1)
+                        fontSize(17f)
+                        fontWeightBold()
+                        color(colors().labelPrimary)
                     }
                 }
-                // 可选中正文：外层 View 处理内边距，多行 TextArea 承载全部文本并滚动
                 View {
+                    attr { positionType(FlexPositionType.ABSOLUTE); right(16f); size(32f, 32f); allCenter() }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
+                    DshHitButton { onClose() }
+                }
+            }
+            // 可选中正文：外层 View 处理内边距，多行 TextArea 承载全部文本并滚动
+            View {
+                attr {
+                    flex(1f)
+                    padding(12f, 20f, 20f, 20f)
+                }
+                TextArea {
+                    ref { it.view?.setText(content()) }
                     attr {
                         flex(1f)
-                        padding(12f, 20f, 20f, 20f)
-                    }
-                    TextArea {
-                        ref { it.view?.setText(content()) }
-                        attr {
-                            flex(1f)
-                            textAlignLeft()
-                            useDpFontSizeDim()
-                            color(colors().labelSecondary)
-                            fontSize(14f)
-                            lineHeight(21f)
-                        }
+                        textAlignLeft()
+                        useDpFontSizeDim()
+                        color(colors().labelSecondary)
+                        fontSize(14f)
+                        lineHeight(21f)
                     }
                 }
             }

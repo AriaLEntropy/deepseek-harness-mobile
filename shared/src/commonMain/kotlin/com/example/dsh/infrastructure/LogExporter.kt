@@ -1,4 +1,5 @@
 package com.example.dsh.infrastructure
+import com.example.dsh.base.BasePager
 
 internal expect fun localTimezoneOffsetMillis(): Long
 

@@ -1,20 +1,10 @@
 package com.example.dsh.web
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
 import com.example.dsh.base.BasePager
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.BackPressCallback
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
-import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ComposeAttr
 import com.tencent.kuikly.core.base.ComposeEvent
 import com.tencent.kuikly.core.base.ComposeView
@@ -26,6 +16,8 @@ import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuiklybase.WebView
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 /** Full-screen link viewer for Markdown, file and external web links. */
 @Page("link_view")

@@ -30,8 +30,8 @@ private class DshIosLogStore(private val path: String) : DshLogStore {
         }
     }
 
-    override fun query(filter: LogFilter, limit: Int, offset: Int): List<LogEvent> {
-        val select = buildLogSelect(filter, limit, offset)
+    override fun query(filter: LogFilter, limit: Int, offset: Int, order: LogSortOrder): List<LogEvent> {
+        val select = buildLogSelect(filter, limit, offset, order)
         val s = driver.prepare(DshLogSql.checkedSelect(select.sql))
         return try {
             select.args.forEachIndexed { i, v -> s.bindString(i + 1, v) }

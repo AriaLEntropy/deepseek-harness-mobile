@@ -14,7 +14,6 @@ import org.apache.sshd.common.util.net.SshdSocketAddress
 import org.apache.sshd.common.util.io.PathUtils
 import org.apache.sshd.common.util.security.SecurityUtils
 import org.apache.sshd.common.config.keys.KeyUtils
-import java.io.File
 import java.net.SocketAddress
 import java.nio.file.Paths
 import java.security.PublicKey

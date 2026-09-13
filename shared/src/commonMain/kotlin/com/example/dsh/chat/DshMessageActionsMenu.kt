@@ -1,14 +1,6 @@
 package com.example.dsh.chat
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.home.DshHitButton
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vforIndex
@@ -17,6 +9,8 @@ import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 internal data class DshMessageActionItem(
     val label: String,

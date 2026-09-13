@@ -1,8 +1,11 @@
 {
   "name": "dsh-mobile-plugin-inventory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "index.mjs",
+  "scripts": {
+    "test": "node --test"
+  },
   "exports": {
     ".": "./index.mjs",
     "./client": "./client.js",
@@ -15,7 +18,7 @@
       "inject": ["@deepseek-ai/dsh-client-runtime"]
     }
   },
-  "files": ["index.mjs", "client.js", "cordis.patch.yml", "README.md"],
+  "files": ["index.mjs", "attachment.mjs", "client.js", "cordis.patch.yml", "README.md"],
   "engines": { "node": ">=22" },
   "license": "MIT"
 }

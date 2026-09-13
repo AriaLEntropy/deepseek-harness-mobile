@@ -2,15 +2,9 @@ package com.example.dsh.home
 
 import com.example.dsh.theme.DshColorTokens
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.models.DshProviderConfig
+import com.example.dsh.models.DshProviderModel
+import com.example.dsh.models.dshCustomRouteError
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
@@ -23,6 +17,7 @@ import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.compose.Button
+import com.example.dsh.theme.DshDefaultTheme
 
 /**
  * 设置页「模型」详情页：对齐电脑端 DSH settings.models 的右侧主内容区。
@@ -154,39 +149,32 @@ internal fun ViewContainer<*, *>.DshModelsPage(
                         attr {
                             text(savedNotice())
                             marginTop(10f)
-                            fontSize(13f)
+                            fontSize(12f)
+                            lineHeight(18f)
                             color(colors().stateSuccessPrimary)
                         }
                     }
                 }
                 vif({ !loading() && error().isNotEmpty() }) {
                     View {
-                        attr {
-                            marginTop(12f)
-                            padding(12f)
-                            borderRadius(10f)
-                            flexDirectionColumn()
-                            backgroundColor(colors().bgLayer1)
-                            border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                        }
+                        attr { flexDirectionColumn(); marginTop(12f) }
                         Text {
                             attr {
                                 text("加载提供方目录失败：${error()}")
-                                fontSize(13f)
-                                lineHeight(20f)
+                                fontSize(12f)
+                                lineHeight(18f)
                                 color(colors().stateErrorPrimary)
                             }
                         }
-                        Text {
-                            attr {
-                                text("重试")
-                                marginTop(8f)
-                                fontSize(13f)
-                                fontWeightMedium()
-                                color(colors().stateBusinessPrimary)
-                            }
-                            event { click { onRetry() } }
-                        }
+                        DshModelsPillButton(
+                            label = "重试",
+                            enabled = true,
+                            dense = false,
+                            tone = DshModelsButtonTone.SECONDARY,
+                            marginTop = 10f,
+                            onClick = onRetry,
+                            colors = colors,
+                        )
                     }
                 }
                 vif({ !loading() && error().isEmpty() && !writable() }) {
@@ -195,7 +183,8 @@ internal fun ViewContainer<*, *>.DshModelsPage(
                             text("当前部署的设置文档为只读。")
                             marginTop(10f)
                             fontSize(12f)
-                            color(colors().labelTertiary)
+                            lineHeight(18f)
+                            color(colors().stateWarnLabel)
                         }
                     }
                 }
@@ -215,11 +204,11 @@ internal fun ViewContainer<*, *>.DshModelsPage(
                         vforIndex({ configuredProviders() }) { provider, _, _ ->
                             DshModelsProviderCard(
                                 provider = provider,
-                                editing = !customAdding() && editingProvider() == provider.provider,
+                                editing = { !customAdding() && editingProvider() == provider.provider },
                                 showRowActions = true,
-                                writable = writable(),
-                                saving = saving() && editingProvider() == provider.provider,
-                                advanced = editorAdvanced(),
+                                writable = writable,
+                                saving = { saving() && editingProvider() == provider.provider },
+                                advanced = editorAdvanced,
                                 onToggleAdvanced = onToggleEditorAdvanced,
                                 draftBaseUrl = draftBaseUrl,
                                 draftApiKey = draftApiKey,
@@ -245,11 +234,11 @@ internal fun ViewContainer<*, *>.DshModelsPage(
                             if (addProvider != null) {
                                 DshModelsProviderCard(
                                     provider = addProvider,
-                                    editing = true,
+                                    editing = { true },
                                     showRowActions = false,
-                                    writable = writable(),
-                                    saving = saving(),
-                                    advanced = editorAdvanced(),
+                                    writable = writable,
+                                    saving = saving,
+                                    advanced = editorAdvanced,
                                     onToggleAdvanced = onToggleEditorAdvanced,
                                     draftBaseUrl = draftBaseUrl,
                                     draftApiKey = draftApiKey,
@@ -396,18 +385,22 @@ internal fun ViewContainer<*, *>.DshModelsPage(
             View {
                 attr {
                     width(pagerData.pageViewWidth - 40f)
-                    maxWidth(420f)
+                    maxWidth(380f)
                     flexDirectionColumn()
-                    padding(20f)
-                    borderRadius(16f)
-                    backgroundColor(colors().bgLayer3)
+                    paddingLeft(24f)
+                    paddingRight(24f)
+                    paddingTop(22f)
+                    paddingBottom(24f)
+                    borderRadius(24f)
+                    backgroundColor(colors().bgLayer2)
                 }
                 val target = deleteTarget()
                 Text {
                     attr {
                         text("删除 ${target?.displayName.orEmpty()}？")
-                        fontSize(18f)
-                        fontWeightBold()
+                        fontSize(16f)
+                        lineHeight(24f)
+                        fontWeightMedium()
                         color(colors().labelPrimary)
                     }
                 }
@@ -418,39 +411,80 @@ internal fun ViewContainer<*, *>.DshModelsPage(
                             else "删除会移除该提供方的配置；其使用的凭证（如有）由其他位置管理，将会保留。",
                         )
                         marginTop(8f)
-                        fontSize(13f)
-                        lineHeight(20f)
-                        color(colors().labelSecondary)
+                        fontSize(14f)
+                        lineHeight(22f)
+                        color(colors().labelPrimary)
                     }
                 }
                 View {
-                    attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
-                    Text {
-                        attr {
-                            text("取消")
-                            width(78f)
-                            height(38f)
-                            textAlignCenter()
-                            fontSize(14f)
-                            color(colors().labelTertiary)
-                        }
-                        event { click { if (!deleting()) onCancelDelete() } }
-                    }
-                    Text {
-                        attr {
-                            text(if (deleting()) "删除中…" else "删除")
-                            width(88f)
-                            height(38f)
-                            marginLeft(8f)
-                            textAlignCenter()
-                            fontSize(14f)
-                            color(colors().stateErrorPrimary)
-                        }
-                        event { click { if (!deleting()) onConfirmDelete() } }
-                    }
+                    attr { marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                    DshModelsPillButton(
+                        label = "取消",
+                        enabled = !deleting(),
+                        dense = false,
+                        tone = DshModelsButtonTone.SECONDARY,
+                        marginRight = 8f,
+                        onClick = onCancelDelete,
+                        colors = colors,
+                    )
+                    DshModelsPillButton(
+                        label = if (deleting()) "删除中…" else "删除",
+                        enabled = !deleting(),
+                        dense = false,
+                        tone = DshModelsButtonTone.DANGER_OUTLINE,
+                        onClick = onConfirmDelete,
+                        colors = colors,
+                    )
                 }
             }
         }
+    }
+}
+
+private enum class DshModelsButtonTone { SECONDARY, DANGER, DANGER_OUTLINE }
+
+private fun ViewContainer<*, *>.DshModelsPillButton(
+    label: String,
+    enabled: Boolean,
+    dense: Boolean,
+    tone: DshModelsButtonTone,
+    onClick: () -> Unit,
+    colors: () -> DshColorTokens,
+    marginTop: Float = 0f,
+    marginLeft: Float = 0f,
+    marginRight: Float = 0f,
+) {
+    View {
+        attr {
+            height(if (dense) 28f else 36f)
+            paddingLeft(if (dense) 10f else 14f)
+            paddingRight(if (dense) 10f else 14f)
+            marginTop(marginTop)
+            marginLeft(marginLeft)
+            marginRight(marginRight)
+            allCenter()
+            borderRadius(if (dense) 14f else 18f)
+            when (tone) {
+                DshModelsButtonTone.SECONDARY ->
+                    border(Border(0.5f, BorderStyle.SOLID, colors().borderL3))
+                DshModelsButtonTone.DANGER_OUTLINE ->
+                    border(Border(0.5f, BorderStyle.SOLID, colors().stateErrorPrimary))
+                DshModelsButtonTone.DANGER -> Unit
+            }
+            opacity(if (enabled) 1f else 0.4f)
+        }
+        Text {
+            attr {
+                text(label)
+                fontSize(if (dense) 12f else 14f)
+                lineHeight(if (dense) 18f else 22f)
+                color(when (tone) {
+                    DshModelsButtonTone.SECONDARY -> colors().labelPrimary
+                    DshModelsButtonTone.DANGER, DshModelsButtonTone.DANGER_OUTLINE -> colors().stateErrorPrimary
+                })
+            }
+        }
+        DshHitButton { if (enabled) onClick() }
     }
 }
 
@@ -465,27 +499,37 @@ private fun ViewContainer<*, *>.DshModelsAddButton(
             flex(1f)
             height(44f)
             allCenter()
-            borderRadius(12f)
-            border(Border(1f, BorderStyle.DASHED, colors().borderL3))
+            flexDirectionRow()
+            borderRadius(16f)
+            border(Border(0.5f, BorderStyle.DASHED, colors().borderL3))
+            opacity(if (enabled) 1f else 0.4f)
+        }
+        Image {
+            attr {
+                src(ImageUri.commonAssets("plus.svg"))
+                size(14f, 14f)
+                marginRight(6f)
+                tintColor(colors().labelPrimary)
+            }
         }
         Text {
             attr {
                 text(label)
                 fontSize(14f)
-                color(if (enabled) colors().stateBusinessPrimary else colors().labelTertiary)
+                color(colors().labelPrimary)
             }
         }
-        event { click { if (enabled) onClick() } }
+        DshHitButton { if (enabled) onClick() }
     }
 }
 
 private fun ViewContainer<*, *>.DshModelsProviderCard(
     provider: DshProviderConfig,
-    editing: Boolean,
+    editing: () -> Boolean,
     showRowActions: Boolean,
-    writable: Boolean,
-    saving: Boolean,
-    advanced: Boolean,
+    writable: () -> Boolean,
+    saving: () -> Boolean,
+    advanced: () -> Boolean,
     onToggleAdvanced: () -> Unit,
     draftBaseUrl: () -> String,
     draftApiKey: () -> String,
@@ -510,27 +554,15 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
             paddingBottom(12f)
             paddingLeft(14f)
             paddingRight(14f)
-            borderRadius(12f)
-            border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+            borderRadius(16f)
+            border(Border(1f, BorderStyle.SOLID, colors().borderL4))
         }
         if (showRowActions) {
             View {
                 attr { flexDirectionRow(); alignItemsCenter() }
-                val credential = provider.credential
-                if (credential != null) {
-                    View {
-                        attr {
-                            size(8f, 8f)
-                            marginRight(8f)
-                            borderRadius(4f)
-                            backgroundColor(if (credential.configured) colors().stateSuccessPrimary else colors().stateErrorPrimary)
-                        }
-                    }
-                }
                 Text {
                     attr {
                         text(provider.displayName)
-                        flex(1f)
                         fontSize(14f)
                         fontWeightMedium()
                         color(colors().labelPrimary)
@@ -543,31 +575,58 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
                             paddingRight(6f)
                             paddingTop(1f)
                             paddingBottom(1f)
-                            marginRight(4f)
+                            marginLeft(6f)
                             borderRadius(4f)
                             border(Border(1f, BorderStyle.SOLID, colors().borderL3))
                         }
-                        Text { attr { text("自定义"); fontSize(11f); color(colors().labelSecondary) } }
+                        Text { attr { text("自定义"); fontSize(11f); lineHeight(16f); color(colors().labelSecondary) } }
                     }
                 }
-                View {
-                    attr { paddingLeft(10f); paddingRight(10f); paddingTop(6f); paddingBottom(6f) }
-                    Text { attr { text("编辑"); fontSize(13f); color(colors().stateBusinessPrimary) } }
-                    event { click { onEdit() } }
-                }
-                if (provider.removable) {
+                val credential = provider.credential
+                if (credential != null) {
                     View {
-                        attr { paddingLeft(6f); paddingRight(4f); paddingTop(6f); paddingBottom(6f) }
-                        Text { attr { text("删除"); fontSize(13f); color(colors().stateErrorPrimary) } }
-                        event { click { onRequestDelete() } }
+                        attr {
+                            size(8f, 8f)
+                            marginLeft(6f)
+                            borderRadius(4f)
+                            backgroundColor(if (credential.configured) colors().stateSuccessPrimary else colors().stateErrorPrimary)
+                        }
                     }
+                }
+                View { attr { flex(1f) } }
+                DshModelsPillButton(
+                    label = "编辑",
+                    enabled = true,
+                    dense = true,
+                    tone = DshModelsButtonTone.SECONDARY,
+                    marginLeft = 4f,
+                    onClick = onEdit,
+                    colors = colors,
+                )
+                if (provider.removable) {
+                    DshModelsPillButton(
+                        label = "删除",
+                        enabled = true,
+                        dense = true,
+                        tone = DshModelsButtonTone.DANGER,
+                        marginLeft = 4f,
+                        onClick = onRequestDelete,
+                        colors = colors,
+                    )
                 }
             }
         }
-        vif({ editing }) {
+        vif({ editing() }) {
             View {
                 attr { flexDirectionColumn(); marginTop(12f); borderRadius(12f)
                     backgroundColor(colors().bgModulePlatform); padding(14f) }
+                View {
+                    attr { flexDirectionRow(); alignItemsCenter() }
+                    Text { attr { text(provider.displayName); fontSize(14f); lineHeight(22f); fontWeightMedium(); color(colors().labelPrimary) } }
+                    if (provider.provider != provider.displayName) {
+                        Text { attr { text(provider.provider); marginLeft(8f); fontSize(12f); lineHeight(18f); color(colors().labelTertiary) } }
+                    }
+                }
                 DshModelsFieldLabel("API 密钥", colors)
                 val credential = provider.credential
                 if (credential != null && !credential.writable) {
@@ -592,7 +651,7 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
                             provider.apiKeyEnv.isEmpty() -> "输入 API 密钥，或留空使用环境认证"
                             else -> "输入 API 密钥"
                         },
-                        enabled = writable && !saving,
+                        enabled = writable() && !saving(),
                         password = true,
                         marginTop = 8f,
                         onChange = onApiKeyChange,
@@ -614,16 +673,16 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
                             color(colors().labelSecondary)
                         }
                     }
-                    Text { attr { text(if (advanced) "▾" else "▸"); fontSize(11f); color(colors().labelTertiary) } }
+                    Text { attr { text(if (advanced()) "▾" else "▸"); fontSize(11f); color(colors().labelTertiary) } }
                 }
-                vif({ advanced }) {
+                vif({ advanced() }) {
                     View {
                         attr { flexDirectionColumn() }
                         DshModelsFieldLabel("API 地址", colors)
                         DshModelsInput(
                             value = draftBaseUrl,
                             placeholder = if (provider.settingsNs == "llm-deepseek") "https://api.deepseek.com" else "提供方默认",
-                            enabled = writable && !saving,
+                            enabled = writable() && !saving(),
                             password = false,
                             marginTop = 8f,
                             onChange = onBaseUrlChange,
@@ -634,7 +693,8 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
                             attr {
                                 text(if (provider.modelsOverridden) "已自定义模型目录" else "正在使用适配器默认模型")
                                 marginTop(4f)
-                                fontSize(11f)
+                                fontSize(12f)
+                                lineHeight(18f)
                                 color(colors().labelTertiary)
                             }
                         }
@@ -643,17 +703,22 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
                             vforIndex({ draftModels() }) { model, index, _ ->
                                 DshModelsModelRow(
                                     model = model,
-                                    enabled = writable && !saving,
+                                    enabled = writable() && !saving(),
                                     onChange = { field, value -> onModelChange(index, field, value) },
                                     onRemove = { onRemoveModel(index) },
                                     colors = colors,
                                 )
                             }
                         }
-                        Text {
-                            attr { text("+ 添加模型"); marginTop(8f); fontSize(13f); color(colors().stateBusinessPrimary) }
-                            event { click { if (writable && !saving) onAddModel() } }
-                        }
+                        DshModelsPillButton(
+                            label = "添加模型",
+                            enabled = writable() && !saving(),
+                            dense = true,
+                            tone = DshModelsButtonTone.SECONDARY,
+                            marginTop = 8f,
+                            onClick = onAddModel,
+                            colors = colors,
+                        )
                     }
                 }
 
@@ -669,33 +734,31 @@ private fun ViewContainer<*, *>.DshModelsProviderCard(
                     }
                 }
                 View {
-                    attr { height(40f); marginTop(16f); flexDirectionRow(); justifyContentFlexEnd() }
-                    Text {
-                        attr {
-                            text("取消")
-                            width(72f)
-                            height(38f)
-                            textAlignCenter()
-                            fontSize(14f)
-                            color(colors().labelTertiary)
-                        }
-                        event { click { if (!saving) onCancelEditor() } }
-                    }
+                    attr { marginTop(16f); flexDirectionRow(); justifyContentFlexEnd() }
+                    DshModelsPillButton(
+                        label = "取消",
+                        enabled = !saving(),
+                        dense = false,
+                        tone = DshModelsButtonTone.SECONDARY,
+                        marginRight = 8f,
+                        onClick = onCancelEditor,
+                        colors = colors,
+                    )
                     Button {
                         attr {
                             height(36f)
-                            marginLeft(8f)
-                            paddingLeft(16f)
-                            paddingRight(16f)
+                            paddingLeft(14f)
+                            paddingRight(14f)
                             borderRadius(18f)
-                            backgroundColor(if (saving || !writable) colors().buttonPrimaryDimmed else colors().buttonPrimaryFill)
+                            backgroundColor(colors().buttonPrimaryFill)
+                            opacity(if (saving() || !writable()) 0.4f else 1f)
                             titleAttr {
-                                text(if (saving) "保存中…" else "保存")
+                                text(if (saving()) "保存中…" else "保存")
                                 fontSize(14f)
                                 color(colors().labelPrimaryForeground)
                             }
                         }
-                        event { click { if (!saving && writable) onApply() } }
+                        event { click { if (!saving() && writable()) onApply() } }
                     }
                 }
             }
@@ -735,7 +798,7 @@ private fun ViewContainer<*, *>.DshModelsCustomProviderCard(
             borderRadius(12f)
             backgroundColor(colors().bgModulePlatform)
         }
-        Text { attr { text("自定义提供方"); fontSize(15f); fontWeightMedium(); color(colors().labelPrimary) } }
+        Text { attr { text("自定义提供方"); fontSize(14f); lineHeight(22f); fontWeightMedium(); color(colors().labelPrimary) } }
 
         DshModelsFieldLabel("Provider ID", colors)
         DshModelsInput(
@@ -752,7 +815,8 @@ private fun ViewContainer<*, *>.DshModelsCustomProviderCard(
             attr {
                 text(if (routeError.isNotEmpty()) routeError else "以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。")
                 marginTop(4f)
-                fontSize(11f)
+                fontSize(12f)
+                lineHeight(18f)
                 color(if (routeError.isNotEmpty()) colors().stateErrorPrimary else colors().labelTertiary)
             }
         }
@@ -826,43 +890,46 @@ private fun ViewContainer<*, *>.DshModelsCustomProviderCard(
                 )
             }
         }
-        Text {
-            attr { text("+ 添加模型"); marginTop(8f); fontSize(13f); color(colors().stateBusinessPrimary) }
-            event { click { if (writable() && !busy()) onAddModel() } }
-        }
+        DshModelsPillButton(
+            label = "添加模型",
+            enabled = writable() && !busy(),
+            dense = true,
+            tone = DshModelsButtonTone.SECONDARY,
+            marginTop = 8f,
+            onClick = onAddModel,
+            colors = colors,
+        )
 
         vif({ error().isNotEmpty() }) {
-            Text { attr { text(error()); marginTop(10f); fontSize(12f); color(colors().stateErrorPrimary) } }
+            Text { attr { text(error()); marginTop(10f); fontSize(12f); lineHeight(18f); color(colors().stateErrorPrimary) } }
         }
         View {
-            attr { height(40f); marginTop(16f); flexDirectionRow(); justifyContentFlexEnd() }
-            Text {
+            attr { marginTop(16f); flexDirectionRow(); justifyContentFlexEnd() }
+            DshModelsPillButton(
+                label = "取消",
+                enabled = !busy(),
+                dense = false,
+                tone = DshModelsButtonTone.SECONDARY,
+                marginRight = 8f,
+                onClick = onCancel,
+                colors = colors,
+            )
+            Button {
                 attr {
-                    text("取消")
-                    width(72f)
-                    height(38f)
-                    textAlignCenter()
-                    fontSize(14f)
-                    color(colors().labelTertiary)
-                }
-                event { click { if (!busy()) onCancel() } }
-            }
-                    Button {
-                        attr {
-                            height(36f)
-                            marginLeft(8f)
-                            paddingLeft(16f)
-                            paddingRight(16f)
-                            borderRadius(18f)
-                            backgroundColor(if (busy() || !writable()) colors().buttonPrimaryDimmed else colors().buttonPrimaryFill)
-                            titleAttr {
-                                text(if (busy()) "创建中…" else "创建提供方")
-                                fontSize(14f)
-                                color(colors().labelPrimaryForeground)
-                            }
-                        }
-                        event { click { if (!busy() && writable()) onApply() } }
+                    height(36f)
+                    paddingLeft(14f)
+                    paddingRight(14f)
+                    borderRadius(18f)
+                    backgroundColor(colors().buttonPrimaryFill)
+                    opacity(if (busy() || !writable()) 0.4f else 1f)
+                    titleAttr {
+                        text(if (busy()) "创建中…" else "创建提供方")
+                        fontSize(14f)
+                        color(colors().labelPrimaryForeground)
                     }
+                }
+                event { click { if (!busy() && writable()) onApply() } }
+            }
         }
     }
 }
@@ -875,15 +942,15 @@ private fun ViewContainer<*, *>.DshModelsModelRow(
     colors: () -> DshColorTokens,
 ) {
     View {
-        attr { flexDirectionRow(); alignItemsCenter(); marginTop(8f); borderRadius(8f); padding(6f)
-            border(Border(1f, BorderStyle.SOLID, colors().borderL2)) }
+        attr { flexDirectionRow(); alignItemsCenter(); marginTop(8f); borderRadius(10f); padding(6f)
+            border(Border(0.5f, BorderStyle.SOLID, colors().borderL4)) }
         DshModelsInput(
             value = { model.id },
             placeholder = "模型 ID",
             enabled = enabled,
             password = false,
             marginTop = 0f,
-            flex = 1.2f,
+            flex = 1.4f,
             onChange = { onChange("id", it) },
             colors = colors,
         )
@@ -899,11 +966,12 @@ private fun ViewContainer<*, *>.DshModelsModelRow(
             colors = colors,
         )
         View {
-            attr { size(32f, 32f); allCenter(); marginLeft(4f) }
+            attr { size(28f, 28f); allCenter(); marginLeft(4f); borderRadius(6f)
+                opacity(if (enabled) 1f else 0.4f) }
             Image {
                 attr {
                     src(ImageUri.commonAssets("delete.svg"))
-                    size(16f, 16f)
+                    size(14f, 14f)
                     tintColor(colors().labelTertiary)
                 }
             }
@@ -921,6 +989,7 @@ private fun ViewContainer<*, *>.DshModelsFieldLabel(
             text(text)
             marginTop(14f)
             fontSize(12f)
+            lineHeight(18f)
             fontWeightMedium()
             color(colors().labelSecondary)
         }
@@ -942,13 +1011,14 @@ private fun ViewContainer<*, *>.DshModelsInput(
         attr {
             flex(flex)
             marginLeft(marginLeft)
-            height(34f)
+            height(32f)
             marginTop(marginTop)
             borderRadius(8f)
-            border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+            border(Border(0.5f, BorderStyle.SOLID, colors().borderL4))
             backgroundColor(colors().bgLayer1)
             paddingLeft(10f)
             paddingRight(10f)
+            opacity(if (enabled) 1f else 0.6f)
         }
         Input {
             attr {
@@ -957,7 +1027,7 @@ private fun ViewContainer<*, *>.DshModelsInput(
                 fontSize(14f)
                 color(colors().labelPrimary)
                 placeholder(placeholder)
-                placeholderColor(colors().labelTertiary)
+                placeholderColor(colors().labelDimmed)
                 returnKeyTypeDone()
                 editable(enabled)
                 if (password) keyboardTypePassword()

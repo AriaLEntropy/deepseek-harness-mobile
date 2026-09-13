@@ -1,14 +1,6 @@
 package com.example.dsh.rendering
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.base.BridgeModule
 import com.tencent.kuikly.core.base.ComposeAttr
 import com.tencent.kuikly.core.base.ComposeEvent
 import com.tencent.kuikly.core.base.ComposeView
@@ -18,12 +10,9 @@ import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.reactive.ReactiveObserver
 import com.tencent.kuikly.core.reactive.handler.*
-import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.View
-import com.tencent.kuikly.core.views.Text
 import com.tencent.kuiklybase.components.DefaultComponentsBridge
 import com.tencent.kuiklybase.components.markdownComponents
-import com.tencent.kuiklybase.elements.markdownCodeFence
 import com.tencent.kuiklybase.KuiklyStreamingMarkdown
 import com.tencent.kuiklybase.config.FontWeight
 import com.tencent.kuiklybase.config.MarkdownColors
@@ -33,6 +22,7 @@ import com.tencent.kuiklybase.config.MarkdownTypography
 import com.tencent.kuiklybase.config.TextStyleConfig
 import com.tencent.kuiklybase.streaming.MarkdownBlock
 import com.tencent.kuiklybase.streaming.MarkdownStreamingState
+import com.tencent.kuikly.core.timer.setTimeout
 
 /**
  * 对话正文（问答）基准字号（pt）。
@@ -102,20 +92,10 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                                     config = ctx.markdownConfig(),
                                     components = markdownComponents(
                                         codeFence = { model, container ->
-                                            container.View {
-                                                View {
-                                                    attr { height(32f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
-                                                    Text {
-                                                        attr { text("复制代码"); fontSize(12f); color(model.config.colors.linkColor) }
-                                                        event { click {
-                                                            val code = dshCodeFenceSource(model.content, model.node)
-                                                            val bridge = ctx.getPager().acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
-                                                            bridge.copyToPasteboard(code)
-                                                            bridge.toast("代码已复制")
-                                                        } }
-                                                    }
-                                                }
-                                                markdownCodeFence(model.content, model.node, model.typography.code, model.config)
+                                            container.dshCodeFenceBlock(model) {
+                                                val bridge = ctx.getPager().acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
+                                                bridge.copyToPasteboard(it)
+                                                bridge.toast("代码已复制")
                                             }
                                         },
                                         paragraph = { model, container ->

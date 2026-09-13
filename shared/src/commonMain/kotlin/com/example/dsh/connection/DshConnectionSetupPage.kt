@@ -1,14 +1,19 @@
 package com.example.dsh.connection
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.session.DshLegacyRemoteProfile
+import com.example.dsh.session.DshRelayProfile
+import com.example.dsh.session.DshRemoteProfile
+import com.example.dsh.data.DshRemoteHostRepository
+import com.example.dsh.data.DshRemoteRepository
+import com.example.dsh.data.DshRepository
+import com.example.dsh.session.DshSessionScope
+import com.example.dsh.home.DshWordmark
+import com.example.dsh.infrastructure.DshLogService
+import com.example.dsh.infrastructure.DshStreamLog
+import com.example.dsh.infrastructure.LogLevel
+import com.example.dsh.storage.DshLocalStore
+import com.example.dsh.storage.createDshLocalStore
 import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
@@ -19,10 +24,13 @@ import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.compose.Button
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
+import com.example.dsh.protocol.DshHostConnection
+import com.example.dsh.transport.DshWebSocketModule
 import com.tencent.kuikly.core.timer.setTimeout
 
 /** First page shown by the app. It only selects a host and never starts an engine. */
@@ -173,7 +181,7 @@ internal class DshConnectionSetupPage : BasePager() {
                 DshRelayPhase.READY -> {
                     if (state.localPort <= 0 || state.localToken.isEmpty()) return@connect
                     if (probeRepository != null) return@connect
-                    val repository = DshRemoteRepository(
+                    val repository = DshRemoteHostRepository(
                         network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
                         webSocket = acquireModule(DshWebSocketModule.MODULE_NAME),
                         connection = DshHostConnection("http://127.0.0.1:${state.localPort}", state.localToken),
@@ -439,7 +447,7 @@ internal class DshConnectionSetupPage : BasePager() {
                     sshFingerprint = state.message
                 }
                 DshSshPhase.READY -> {
-                        val repository = DshRemoteRepository(
+                        val repository = DshRemoteHostRepository(
                         network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
                         webSocket = acquireModule(DshWebSocketModule.MODULE_NAME),
                         connection = DshHostConnection("http://127.0.0.1:${state.localPort}"),

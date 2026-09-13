@@ -1,23 +1,17 @@
 package com.example.dsh.chat
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.home.DshHitButton
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 /** 「+」附件/命令面板里的三个附件方块类型 */
 internal enum class DshCommandSheetTile(val label: String, val iconAsset: String) {
@@ -39,106 +33,94 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
-        val pageData = getPager().pageData
-        Modal(inWindow = true) {
-            attr {
-                absolutePositionAllZero()
-                backgroundColor(Color(0x66000000))
-            }
-            // 底部 sheet：顶部大圆角、贴底，高度约 62%
+        DshBottomSheet(
+            colors = colors,
+            onClose = onClose,
+            largeHeightRatio = 0.62f,
+            panelBackground = { colors().bgLayer2 },
+        ) {
+            // 头部：标题居中，右上角关闭
             View {
                 attr {
-                    width(pageData.pageViewWidth)
-                    height(pageData.pageViewHeight * 0.62f)
-                    positionType(FlexPositionType.ABSOLUTE)
-                    bottom(0f)
+                    height(52f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    justifyContentCenter()
+                }
+                Text {
+                    attr {
+                        text("命令")
+                        lines(1)
+                        fontSize(17f)
+                        fontWeightBold()
+                        color(colors().labelPrimary)
+                    }
+                }
+                View {
+                    attr { positionType(FlexPositionType.ABSOLUTE); right(16f); size(32f, 32f); allCenter() }
+                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
+                    DshHitButton { onClose() }
+                }
+            }
+            // 三个附件方块：横向排布，图标 + 下方标签
+            View {
+                attr {
+                    flexDirectionRow()
+                    paddingLeft(20f)
+                    paddingRight(20f)
+                    marginTop(4f)
+                }
+                DshCommandSheetTileRow(DshCommandSheetTile.CAMERA, onClick = { onPickTile(it) }, colors = colors)
+                View { attr { width(12f) } }
+                DshCommandSheetTileRow(DshCommandSheetTile.GALLERY, onClick = { onPickTile(it) }, colors = colors)
+                View { attr { width(12f) } }
+                DshCommandSheetTileRow(DshCommandSheetTile.FILE, onClick = { onPickTile(it) }, colors = colors)
+            }
+            // 命令列表：左命令名 + 右描述，点击写入输入框
+            View {
+                attr {
+                    flex(1f)
+                    marginTop(10f)
                     flexDirectionColumn()
-                    borderRadius(BorderRectRadius(20f, 20f, 0f, 0f))
-                    backgroundColor(colors().bgLayer2)
                 }
-                // 头部：标题居中，右上角关闭
-                View {
-                    attr {
-                        height(52f)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        justifyContentCenter()
-                    }
-                    Text {
-                        attr {
-                            text("命令")
-                            lines(1)
-                            fontSize(17f)
-                            fontWeightBold()
-                            color(colors().labelPrimary)
-                        }
-                    }
+                vforIndex({ dshCommandCatalog }) { command, index, count ->
+                    // vfor creator 只允许一个根节点：命令行内放绝对定位的分隔线
                     View {
-                        attr { positionType(FlexPositionType.ABSOLUTE); right(16f); size(32f, 32f); allCenter() }
-                        Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
-                        DshHitButton { onClose() }
-                    }
-                }
-                // 三个附件方块：横向排布，图标 + 下方标签
-                View {
-                    attr {
-                        flexDirectionRow()
-                        paddingLeft(20f)
-                        paddingRight(20f)
-                        marginTop(4f)
-                    }
-                    DshCommandSheetTileRow(DshCommandSheetTile.CAMERA, onClick = { onPickTile(it) }, colors = colors)
-                    View { attr { width(12f) } }
-                    DshCommandSheetTileRow(DshCommandSheetTile.GALLERY, onClick = { onPickTile(it) }, colors = colors)
-                    View { attr { width(12f) } }
-                    DshCommandSheetTileRow(DshCommandSheetTile.FILE, onClick = { onPickTile(it) }, colors = colors)
-                }
-                // 命令列表：左命令名 + 右描述，点击写入输入框
-                View {
-                    attr {
-                        flex(1f)
-                        marginTop(10f)
-                        flexDirectionColumn()
-                    }
-                    vforIndex({ dshCommandCatalog }) { command, index, count ->
-                        // vfor creator 只允许一个根节点：命令行内放绝对定位的分隔线
-                        View {
+                        attr {
+                            height(44f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            paddingLeft(20f)
+                            paddingRight(20f)
+                        }
+                        Text {
                             attr {
-                                height(44f)
-                                flexDirectionRow()
-                                alignItemsCenter()
-                                paddingLeft(20f)
-                                paddingRight(20f)
+                                text("/${command.name}")
+                                width(110f)
+                                fontSize(15f)
+                                fontWeightMedium()
+                                color(colors().labelPrimary)
                             }
-                            Text {
+                        }
+                        Text {
+                            attr {
+                                text(command.description)
+                                flex(1f)
+                                lines(1)
+                                fontSize(12f)
+                                color(colors().labelTertiary)
+                            }
+                        }
+                        DshHitButton { onPickCommand(command) }
+                        vif({ index < count - 1 }) {
+                            View {
                                 attr {
-                                    text("/${command.name}")
-                                    width(110f)
-                                    fontSize(15f)
-                                    fontWeightMedium()
-                                    color(colors().labelPrimary)
-                                }
-                            }
-                            Text {
-                                attr {
-                                    text(command.description)
-                                    flex(1f)
-                                    lines(1)
-                                    fontSize(12f)
-                                    color(colors().labelTertiary)
-                                }
-                            }
-                            DshHitButton { onPickCommand(command) }
-                            vif({ index < count - 1 }) {
-                                View {
-                                    attr {
-                                        positionType(FlexPositionType.ABSOLUTE)
-                                        left(20f)
-                                        right(20f)
-                                        bottom(0f)
-                                        height(0.5f)
-                                        backgroundColor(colors().borderL2)
-                                    }
+                                    positionType(FlexPositionType.ABSOLUTE)
+                                    left(20f)
+                                    right(20f)
+                                    bottom(0f)
+                                    height(0.5f)
+                                    backgroundColor(colors().borderL2)
                                 }
                             }
                         }

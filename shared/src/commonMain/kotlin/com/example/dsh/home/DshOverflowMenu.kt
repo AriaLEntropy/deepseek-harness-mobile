@@ -1,33 +1,18 @@
 package com.example.dsh.home
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.chat.iconAsset
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
-import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.directives.vfor
-import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.collection.ObservableList
-import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.List
-import com.tencent.kuikly.core.views.ScrollPicker
-import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.Modal
-import com.tencent.kuikly.core.views.ScrollParams
-import com.tencent.kuikly.core.views.ScrollerView
-import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 /** 会话 topbar overflow menu 中的一个操作项。 */
 internal data class DshOverflowAction(
@@ -53,18 +38,21 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
     pageViewWidth: Float,
     pageViewHeight: Float = 0f,
     // 点击会话行 ⋯ 时的屏幕坐标；-1 表示无锚点，回退到顶栏下方右侧定位。
-    anchorX: Float = -1f,
-    anchorY: Float = -1f,
+    // 以 lambda 传入：抽屉只在可见性翻转时重建菜单，若按值捕获会拿到旧锚点导致弹错位置。
+    anchorX: () -> Float = { -1f },
+    anchorY: () -> Float = { -1f },
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         val menuWidth = 220f
         val menuHeight = 12f + actions().size * 44f
-        val hasAnchor = anchorX >= 0f && anchorY >= 0f
+        val ax = anchorX()
+        val ay = anchorY()
+        val hasAnchor = ax >= 0f && ay >= 0f
         // 有锚点时贴着点击会话行的 ⋯ 按钮展开（在其左下方），否则回退顶栏下方右侧。
         val maxLeft = (pageViewWidth - menuWidth - 8f).coerceAtLeast(8f)
         val menuLeft = if (hasAnchor) {
-            (anchorX - menuWidth - 8f).coerceIn(8f, maxLeft)
+            (ax - menuWidth - 8f).coerceIn(8f, maxLeft)
         } else {
             pageViewWidth - menuWidth - 12f
         }
@@ -75,7 +63,7 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
             minTop
         }
         val menuTop = if (hasAnchor) {
-            (anchorY - 12f).coerceIn(minTop, maxTop)
+            (ay - 12f).coerceIn(minTop, maxTop)
         } else {
             statusBarHeight + 58f + 6f
         }
@@ -130,6 +118,153 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
     }
 }
 
+/**
+ * 抽屉「视图选项」菜单，对齐电脑端 WorkspaceBrowser 的 ViewOptionsMenu：
+ * 分组方式（按工作区 / 单列表）与排序方式（手动排序 / 最近更新），选中项右侧打勾。
+ * 默认按电脑端口径：分组方式「按工作区」、排序方式「最近更新」。
+ */
+internal fun ViewContainer<*, *>.DshViewOptionsMenu(
+    visible: () -> Boolean,
+    groupBy: () -> String,
+    orderBy: () -> String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+    statusBarHeight: Float,
+    pageViewWidth: Float,
+    pageViewHeight: Float = 0f,
+    anchorX: () -> Float = { -1f },
+    anchorY: () -> Float = { -1f },
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    vif({ visible() }) {
+        val menuWidth = 200f
+        // 上下 4 padding + 两个标题（各 32）+ 四行选项（各 40）+ 分隔线（1 + 上下 4）。
+        val menuHeight = 8f + 32f * 2f + 40f * 4f + 9f
+        // 锚点取点击按钮的中心；菜单右对齐按钮右缘、紧贴按钮下方，跟随按钮位置。
+        val ax = anchorX()
+        val ay = anchorY()
+        val hasAnchor = ax >= 0f && ay >= 0f
+        val maxLeft = (pageViewWidth - menuWidth - 8f).coerceAtLeast(8f)
+        val maxTop = if (pageViewHeight > 0f) {
+            (pageViewHeight - menuHeight - 8f).coerceAtLeast(statusBarHeight + 8f)
+        } else {
+            statusBarHeight + 8f
+        }
+        val menuLeft = if (hasAnchor) (ax + 14f - menuWidth).coerceIn(8f, maxLeft) else maxLeft
+        val menuTop = if (hasAnchor) (ay + 14f).coerceIn(statusBarHeight + 8f, maxTop) else statusBarHeight + 8f
+        // 透明点击捕获层：点击空白处关闭菜单。
+        View {
+            attr { absolutePositionAllZero() }
+            event { click { onDismiss() } }
+            View {
+                attr {
+                    positionAbsolute()
+                    left(menuLeft)
+                    top(menuTop)
+                    width(menuWidth)
+                    borderRadius(12f)
+                    border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                    backgroundColor(colors().specificMenu)
+                    boxShadow(BoxShadow(0f, 4f, 16f, Color(0x33000000)))
+                    paddingTop(4f)
+                    paddingBottom(4f)
+                }
+                event { click { } } // 消费点击，避免穿透到遮罩
+                DshViewOptionsLabel("分组方式", colors)
+                DshViewOptionsRow(
+                    label = "按工作区",
+                    selected = { groupBy() == DSH_DRAWER_GROUP_WORKSPACE },
+                    onClick = { onSelect(DSH_DRAWER_GROUP_WORKSPACE) },
+                    colors = colors,
+                )
+                DshViewOptionsRow(
+                    label = "单列表",
+                    selected = { groupBy() == DSH_DRAWER_GROUP_FLAT },
+                    onClick = { onSelect(DSH_DRAWER_GROUP_FLAT) },
+                    colors = colors,
+                )
+                View {
+                    attr {
+                        height(1f)
+                        marginTop(4f)
+                        marginBottom(4f)
+                        marginLeft(2f)
+                        marginRight(2f)
+                        backgroundColor(colors().borderL1)
+                    }
+                }
+                DshViewOptionsLabel("排序方式", colors)
+                DshViewOptionsRow(
+                    label = "手动排序",
+                    selected = { orderBy() == DSH_DRAWER_ORDER_MANUAL },
+                    onClick = { onSelect(DSH_DRAWER_ORDER_MANUAL) },
+                    colors = colors,
+                )
+                DshViewOptionsRow(
+                    label = "最近更新",
+                    selected = { orderBy() == DSH_DRAWER_ORDER_UPDATED },
+                    onClick = { onSelect(DSH_DRAWER_ORDER_UPDATED) },
+                    colors = colors,
+                )
+            }
+        }
+    }
+}
+
+/** 视图选项菜单的非交互标题行（对齐电脑端 Menu label）。 */
+private fun ViewContainer<*, *>.DshViewOptionsLabel(
+    text: String,
+    colors: () -> com.example.dsh.theme.DshColorTokens,
+) {
+    View {
+        attr {
+            height(32f)
+            paddingLeft(10f)
+            paddingRight(10f)
+            flexDirectionRow()
+            alignItemsCenter()
+        }
+        Text { attr { text(text); fontSize(12f); color(colors().labelTertiary) } }
+    }
+}
+
+/** 视图选项菜单的单行选项：选中时右侧显示对勾（对齐电脑端 Menu cell）。 */
+private fun ViewContainer<*, *>.DshViewOptionsRow(
+    label: String,
+    selected: () -> Boolean,
+    onClick: () -> Unit,
+    colors: () -> com.example.dsh.theme.DshColorTokens,
+) {
+    View {
+        attr {
+            height(40f)
+            flexDirectionRow()
+            alignItemsCenter()
+            paddingLeft(10f)
+            paddingRight(10f)
+            borderRadius(10f)
+        }
+        Text {
+            attr {
+                text(label)
+                flex(1f)
+                fontSize(14f)
+                color(colors().labelPrimary)
+            }
+        }
+        vif({ selected() }) {
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("check.svg"))
+                    size(16f, 16f)
+                    tintColor(colors().labelPrimary)
+                }
+            }
+        }
+        DshHitButton { onClick() }
+    }
+}
+
 /** 重命名会话 弹窗：输入新标题 → session.rename。 */
 internal fun ViewContainer<*, *>.DshSessionRenameDialog(
     visible: () -> Boolean,
@@ -155,37 +290,73 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
                 attr {
                     width(pageViewWidth - 40f)
                     maxWidth(420f)
-                    padding(20f)
                     borderRadius(16f)
                     backgroundColor(colors().bgLayer1)
                 }
-                Text { attr { text("重命名会话"); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
-                Input {
-                    // Seed once on mount. Echoing every textDidChange through
-                    // attr.text can overwrite newer native keystrokes/cursor state.
-                    ref { it.view?.setText(draft()) }
+                Text {
                     attr {
-                        height(38f)
-                        marginTop(14f)
-                        fontSize(14f)
-                        placeholder("会话名称")
-                        placeholderColor(colors().labelTertiary)
-                        editable(!busy())
+                        text("重命名对话")
+                        marginTop(22f)
+                        alignSelfCenter()
+                        fontSize(18f)
+                        fontWeightBold()
                         color(colors().labelPrimary)
                     }
-                    event { textDidChange { onDraftChange(it.text) } }
-                }
-                vif({ error().isNotEmpty() }) {
-                    Text { attr { text(error()); marginTop(8f); fontSize(12f); color(colors().stateErrorPrimary) } }
                 }
                 View {
-                    attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                    attr {
+                        height(50f)
+                        marginTop(18f)
+                        marginLeft(20f)
+                        marginRight(20f)
+                        paddingLeft(14f)
+                        paddingRight(14f)
+                        borderRadius(12f)
+                        backgroundColor(colors().specificSelector)
+                    }
+                    Input {
+                        // Seed once on mount. Echoing every textDidChange through
+                        // attr.text can overwrite newer native keystrokes/cursor state.
+                        ref { it.view?.setText(draft()) }
+                        attr {
+                            flex(1f)
+                            fontSize(15f)
+                            placeholder("会话名称")
+                            placeholderColor(colors().labelTertiary)
+                            editable(!busy())
+                            color(colors().labelPrimary)
+                        }
+                        event { textDidChange { onDraftChange(it.text) } }
+                    }
+                }
+                vif({ error().isNotEmpty() }) {
                     Text {
-                        attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(colors().labelTertiary); opacity(if (busy()) 0.4f else 1f) }
+                        attr {
+                            text(error())
+                            marginTop(8f)
+                            marginLeft(20f)
+                            marginRight(20f)
+                            fontSize(12f)
+                            color(colors().stateErrorPrimary)
+                        }
+                    }
+                }
+                View { attr { marginTop(18f); height(1f); backgroundColor(colors().borderL1) } }
+                View {
+                    attr { height(54f); flexDirectionRow() }
+                    View {
+                        attr { flex(1f); allCenter() }
+                        Text {
+                            attr { text("取消"); fontSize(16f); color(colors().labelSecondary); opacity(if (busy()) 0.4f else 1f) }
+                        }
                         event { click { if (!busy()) onCancel() } }
                     }
-                    Text {
-                        attr { text(if (busy()) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(colors().stateBusinessPrimary) }
+                    View { attr { width(1f); backgroundColor(colors().borderL1) } }
+                    View {
+                        attr { flex(1f); allCenter() }
+                        Text {
+                            attr { text(if (busy()) "保存中..." else "确认"); fontSize(16f); fontWeightMedium(); color(colors().stateBusinessPrimary); opacity(if (busy()) 0.5f else 1f) }
+                        }
                         event { click { if (!busy()) onSave() } }
                     }
                 }

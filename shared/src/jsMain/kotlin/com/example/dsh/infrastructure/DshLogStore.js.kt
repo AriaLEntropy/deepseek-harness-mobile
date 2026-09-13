@@ -5,7 +5,7 @@ internal actual fun createDshLogStore(path: String): DshLogStore = EmptyDshLogSt
 
 private object EmptyDshLogStore : DshLogStore {
     override fun appendBatch(events: List<LogEvent>) = Unit
-    override fun query(filter: LogFilter, limit: Int, offset: Int): List<LogEvent> = emptyList()
+    override fun query(filter: LogFilter, limit: Int, offset: Int, order: LogSortOrder): List<LogEvent> = emptyList()
     override fun levelCounts(filter: LogFilter): Map<LogLevel, Long> = emptyMap()
     override fun distinctSessions(): List<String> = emptyList()
     override fun distinctTypes(): List<String> = emptyList()

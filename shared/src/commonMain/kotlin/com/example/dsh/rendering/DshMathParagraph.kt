@@ -7,9 +7,9 @@ import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.base.ViewRef
 import com.tencent.kuikly.core.reactive.handler.observable
-import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuiklybase.KuiklyWebView
 import com.tencent.kuiklybase.WebView
+import com.tencent.kuikly.core.timer.setTimeout
 
 /** 当前平台是否用 WebView + KaTeX 承载公式段落；未验证的平台返回 false，走 Unicode 降级。 */
 internal expect fun dshMathWebViewSupported(): Boolean

@@ -1,14 +1,8 @@
 package com.example.dsh.home
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.session.DshDirectoryEntry
+import com.example.dsh.session.DshWorkspaceGroup
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
@@ -16,19 +10,20 @@ import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 /** 工作区选择弹窗的两个界面：最近文件夹 / 添加文件夹。 */
 internal enum class DshWorkspacePickerScreen { RECENT, ADD }
 
-/** 参考图中的文件夹图标为暖黄色，浅色/深色主题下都可辨识。 */
+/** deepseek app中的文件夹图标为暖黄色，浅色/深色主题下都可辨识。 */
 private val DSH_FOLDER_ICON_TINT = Color(0xFFF3B44C)
 
 /**
- * 新建会话-工作区选择弹窗（对齐参考图「最近的文件夹」）。
+ * 新建会话-工作区选择弹窗（对齐deepseek app「最近的文件夹」）。
  *
  * - RECENT：列出 Host 已注册工作区（最近文件夹），单选圆圈标记当前工作区，点按立即切换。
  * - ADD：复用 Host 目录浏览（`host.listDirectory`，走 SSH/Relay 隧道）添加新文件夹。
@@ -54,39 +49,11 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
     onAdopt: () -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
-    Modal(inWindow = true) {
-        attr {
-            absolutePositionAllZero()
-            flexDirectionColumn()
-            justifyContentFlexEnd()
-            backgroundColor(Color(0x55000000))
-        }
-        // 点击遮罩关闭
-        View {
-            attr { flex(1f) }
-            event { click { onClose() } }
-        }
-        View {
-            attr {
-                width(pagerData.pageViewWidth)
-                height((pagerData.pageViewHeight * 0.82f).coerceAtLeast(320f))
-                flexDirectionColumn()
-                borderRadius(20f)
-                backgroundColor(colors().bgLayer1)
-                paddingBottom(maxOf(12f, pagerData.safeAreaInsets.bottom))
-            }
-            // 顶部拖拽把手
-            View {
-                attr { height(18f); allCenter() }
-                View {
-                    attr {
-                        width(36f)
-                        height(4f)
-                        borderRadius(2f)
-                        backgroundColor(colors().borderL2)
-                    }
-                }
-            }
+    DshBottomSheet(
+        colors = colors,
+        onClose = onClose,
+        largeHeightRatio = 0.82f,
+    ) {
             // 头部：左侧圆形返回按钮 + 居中标题
             View {
                 attr {
@@ -386,7 +353,6 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                 }
             }
         }
-    }
 }
 
 /** 计算目录的上一级；兼容 Windows 盘符根（`C:\`）与 Unix 根（`/`）。 */

@@ -1,6 +1,6 @@
 package com.example.dsh.home
 
-import com.example.dsh.conversation.DshWorkspaceGroup
+import com.example.dsh.session.DshWorkspaceGroup
 import com.example.dsh.theme.DshColorTokens
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle

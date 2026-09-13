@@ -74,6 +74,16 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.MICROPHONE",
+        "reason": "$string:dsh_microphone_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "metadata": [

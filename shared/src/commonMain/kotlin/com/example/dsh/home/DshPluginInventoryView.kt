@@ -1,7 +1,7 @@
 package com.example.dsh.home
 
-import com.example.dsh.conversation.DshPluginConfigCard
-import com.example.dsh.conversation.DshPluginEntry
+import com.example.dsh.plugin.DshPluginConfigCard
+import com.example.dsh.plugin.DshPluginEntry
 import com.example.dsh.theme.DshColorTokens
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
@@ -96,13 +96,23 @@ internal fun ViewContainer<*, *>.DshPluginSettingsView(
             paddingTop(pagerData.statusBarHeight); paddingBottom(pagerData.safeAreaInsets.bottom) }
         View {
             attr { height(52f); flexDirectionRow(); alignItemsCenter(); paddingLeft(16f); paddingRight(16f) }
-            Text { attr { text("返回"); fontSize(14f); color(colors().labelPrimary) }; event { click { onClose() } } }
+            View {
+                attr { width(56f); height(44f); flexDirectionRow(); alignItemsCenter() }
+                event { click { onClose() } }
+                Image {
+                    attr { src(ImageUri.commonAssets("chevron-left.svg")); size(18f, 18f)
+                        tintColor(colors().labelPrimary) }
+                }
+            }
             Text { attr { text("插件"); flex(1f); textAlignCenter(); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
             View {
-                attr { width(48f); flexDirectionRow(); justifyContentFlexEnd() }
+                attr { width(56f); height(44f); flexDirectionRow(); alignItemsCenter(); justifyContentFlexEnd() }
                 vif({ activeTab() != PLUGIN_TAB_CONFIG }) {
-                    Text { attr { text(if (loading()) "读取中" else "刷新"); fontSize(14f); color(colors().stateBusinessPrimary) }
-                        event { click { if (!loading()) onRefresh() } } }
+                    Image {
+                        attr { src(ImageUri.commonAssets("icon-refresh16.svg")); size(18f, 18f)
+                            tintColor(colors().labelSecondary); opacity(if (loading()) 0.4f else 1f) }
+                        event { click { if (!loading()) onRefresh() } }
+                    }
                 }
             }
         }

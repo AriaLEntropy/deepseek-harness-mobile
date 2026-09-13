@@ -92,6 +92,42 @@ npx @deepseek-ai/dsh plugin --profile web add "/absolute/path/deepseek-harness-m
 
 源码兼容性核对：DSH `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` 的 `vendor/loader/src/config/entry.ts`、`vendor/cordis/src/fiber.ts`、`packages/host/webserver/src/index.ts`。其他 Host 版本需安装后核对清单显示。
 
+## 通用文件附件端点（pre-0.1.5 backport）
+
+DSH `v0.1.5-alpha.1` 起，官方 prompt 协议才有 `{type:'file',receiptId}` 与 `/api/session/uploadFileBinary`。在更早的 Host（本仓库联调的是 `dsh-v0.1.1-rc.2`）上，这两个入口都不存在，所以本桥接自带一套最小存储与引用：
+
+- `POST /api/mobile-attachment/v1/upload`
+
+```json
+请求：{ "sessionId": "...", "name": "报告 v2.pdf", "mediaType": "application/pdf", "data": "<规范 Base64>" }
+成功：{ "ok": true, "version": 1, "attachment": {
+  "attachmentId": "sha256:<digest>", "sessionId": "...", "name": "报告 v2.pdf",
+  "storedName": "<sha8>-报告 v2.pdf", "bytes": 12345, "mediaType": "application/pdf",
+  "sha256": "<digest>", "path": "/home/.../项目/.dsh-attachments/<sha8>-报告 v2.pdf",
+  "handle": "[file] 报告 v2.pdf (12345 bytes) sha256:<12位> path: /home/.../项目/.dsh-attachments/<sha8>-报告 v2.pdf"
+} }
+失败：{ "ok": false, "error": { "code": "file-too-large" | "bad-encoded" | "bad-request" | "attachment-failed", "message": "可读原因" } }
+```
+
+- `POST /api/mobile-attachment/v1/delete`：请求 `{ "sessionId": "...", "path": "..." }`，只允许删除该会话 `.dsh-attachments/` 目录内的文件。
+- `GET|POST /api/mobile-attachment/v1/config`：返回 `{ "ok": true, "version": 1, "maxBytes": 52428800, "directory": ".dsh-attachments", "handlePrefix": "[file]" }`，供 App 发送前预检。
+
+实现约定：
+
+- 文件优先写入**会话工作目录**（`sessionPersistence` 的 `header.cwd`）下的 `.dsh-attachments/`；会话未绑定工作目录时回退到 Host home 的 `.dsh-mobile-attachments/<sessionId>/`，保证空白会话也能用。文件名取 `<sha256 前 8 位>-<净化后的原名>`；相同内容复用同一路径。
+- 原名只取 `basename`，过滤控制字符与 `/\:*?"<>|`，防止路径穿越；单文件解码后上限 50 MiB。
+- 字节**不进入**会话日志：prompt 文本里只追加插件返回的 `handle` 行，模型用现有文件工具按 `path` 读取。历史回看由 App 解析该行还原卡片。
+- 会话未绑定工作目录时返回 `no-workspace`，不写任何回退目录。
+- 与官方 `ImageAttachmentRef` 的差异：这里是插件自有的路径型引用（无 `FileAttachmentRef`、无 Host admission、不进 Host 附件存储），行为绑定本仓库安装的 Host 版本，升级到 ≥0.1.5 后应改用官方 `uploadFileBinary` + `{type:'file',receiptId}`。
+- 新增 `attachment.mjs` 后需重新安装或重启 `dsh web`（`npx @deepseek-ai/dsh plugin --profile web add <path>` 后重启），旧进程不会自动加载新文件。
+
+验证：
+
+```sh
+node --check host-plugin/index.mjs
+node --check host-plugin/attachment.mjs
+```
+
 ## 会话管理端点（归档页）
 
 供 App「已归档的聊天」使用，全部回环 + Bearer，返回 JSON。插件因此 `inject` 增加 `sessionPersistence`。

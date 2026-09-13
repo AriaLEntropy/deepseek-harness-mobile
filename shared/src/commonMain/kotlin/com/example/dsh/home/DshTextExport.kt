@@ -1,10 +1,10 @@
 package com.example.dsh.home
 
-import com.example.dsh.conversation.DshExportFormat
+import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.export.DshExportFormat
 import com.example.dsh.theme.DshColorTokens
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
-import com.tencent.kuikly.core.base.BoxShadow
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.base.attr.ImageUri
@@ -13,6 +13,7 @@ import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.chat.iconAsset
 
 internal enum class DshTextExportPhase { IDLE, READING, WRITING, SHARING, READY, FAILED, CANCELLED }
 
@@ -130,20 +131,25 @@ internal fun ViewContainer<*, *>.DshExportSelectionSheet(
     onCopyContent: () -> Unit,
     onMoreShare: () -> Unit,
     onConfirm: () -> Unit,
+    onClose: () -> Unit = {},
     colors: () -> DshColorTokens,
 ) {
     val canExport = { selectedCount() > 0 }
-    View {
-        attr {
-            flexDirectionColumn()
-            paddingLeft(16f)
-            paddingRight(16f)
-            paddingTop(16f)
-            paddingBottom(18f)
-            backgroundColor(colors().bgLayer1)
-            borderTop(Border(1f, BorderStyle.SOLID, colors().borderL1))
-            boxShadow(BoxShadow(0f, -6f, 18f, Color(0x14000000)))
-        }
+    DshBottomSheet(
+        colors = colors,
+        onClose = onClose,
+        largeHeightRatio = 0.58f,
+        modal = false,
+    ) {
+        View {
+            attr {
+                flex(1f)
+                flexDirectionColumn()
+                paddingLeft(16f)
+                paddingRight(16f)
+                paddingTop(8f)
+                paddingBottom(8f)
+            }
         // 标题：已选组数居中
         View {
             attr { height(26f); flexDirectionRow(); alignItemsCenter() }
@@ -225,6 +231,7 @@ internal fun ViewContainer<*, *>.DshExportSelectionSheet(
                     }
                 }
             }
+        }
         }
     }
 }

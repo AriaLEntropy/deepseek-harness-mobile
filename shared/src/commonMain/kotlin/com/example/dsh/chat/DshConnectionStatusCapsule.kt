@@ -7,6 +7,8 @@ import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.example.dsh.theme.DshColorTokens
+import com.example.dsh.theme.DshDefaultTheme
 
 /**
  * 连接状态胶囊（Overlay）

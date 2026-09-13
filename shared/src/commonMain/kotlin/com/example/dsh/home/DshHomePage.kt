@@ -1,20 +1,127 @@
 package com.example.dsh.home
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
+import com.example.dsh.base.setTimeout
+import com.example.dsh.chat.DSH_VOICE_DECAY_GAP_MS
+import com.example.dsh.chat.DSH_VOICE_DECAY_TICK_MS
+import com.example.dsh.chat.DSH_VOICE_LEVEL_INTERVAL_MS
+import com.example.dsh.chat.DSH_VOICE_STOP_TIMEOUT_MS
+import com.example.dsh.chat.DshCommand
+import com.example.dsh.chat.DshCommandSheetTile
+import com.example.dsh.chat.DshConversation
+import com.example.dsh.chat.DshMessageActionItem
+import com.example.dsh.chat.DshMessageActionsMenu
+import com.example.dsh.chat.DshMessageFooterAction
+import com.example.dsh.chat.DshMessageRow
+import com.example.dsh.chat.DshSelectTextModal
+import com.example.dsh.chat.TURN_STATUS_CLOCK_AFTER_MS
+import com.example.dsh.chat.buildQuestionAnswer
+import com.example.dsh.chat.contextCatalogEntries
+import com.example.dsh.chat.contextInstructions
+import com.example.dsh.chat.contextRecalls
+import com.example.dsh.chat.contextRelaySender
+import com.example.dsh.chat.contextSections
+import com.example.dsh.chat.dshVoiceErrorMessage
+import com.example.dsh.chat.dshVoiceStrings
+import com.example.dsh.chat.isRemoteCatalogInvalidationEvent
+import com.example.dsh.chat.parseGoalProjection
+import com.example.dsh.connection.DshConnectionCoordinator
+import com.example.dsh.connection.DshEngineModule
+import com.example.dsh.connection.DshRelayModule
+import com.example.dsh.connection.DshRelayPhase
+import com.example.dsh.connection.DshSseModule
+import com.example.dsh.connection.DshSshConfig
+import com.example.dsh.connection.DshSshPhase
+import com.example.dsh.connection.supportsRelayBridge
+import com.example.dsh.models.DshAgentPresetOption
+import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.session.DshDirectoryEntry
+import com.example.dsh.export.DshExportFormat
+import com.example.dsh.attachment.DshFileDraftState
+import com.example.dsh.session.DshGoalSnapshot
+import com.example.dsh.data.DshHostRepository
+import com.example.dsh.data.DshRemoteHostRepository
+import com.example.dsh.protocol.DshHostRuntimePhase
+import com.example.dsh.protocol.DshHostRuntimeState
+import com.example.dsh.attachment.DshImageDraftState
+import com.example.dsh.attachment.DshImageLimits
+import com.example.dsh.session.DshJobItem
+import com.example.dsh.message.DshMessage
+import com.example.dsh.message.DshMessageRole
+import com.example.dsh.models.DshModelOption
+import com.example.dsh.interaction.DshPendingApproval
+import com.example.dsh.attachment.DshPendingFile
+import com.example.dsh.attachment.DshPendingImage
+import com.example.dsh.interaction.DshPendingQuestion
+import com.example.dsh.plugin.DshPluginConfigCard
+import com.example.dsh.plugin.DshPluginConfigSave
+import com.example.dsh.plugin.DshPluginEntry
+import com.example.dsh.plugin.DshPluginFieldKind
+import com.example.dsh.models.DshProviderConfig
+import com.example.dsh.models.DshProviderModel
+import com.example.dsh.interaction.DshQuestionDraft
+import com.example.dsh.session.DshQueueItem
+import com.example.dsh.data.DshRawSessionEvent
+import com.example.dsh.export.DshReadableContent
+import com.example.dsh.session.DshRemoteProfile
+import com.example.dsh.data.DshRemoteRepository
+import com.example.dsh.tool.DshRemoteToolCallModels
+import com.example.dsh.data.DshRepository
+import com.example.dsh.protocol.DshRpcError
+import com.example.dsh.session.DshSession
+import com.example.dsh.session.DshSessionCacheState
+import com.example.dsh.session.DshSessionCatalog
+import com.example.dsh.session.DshSessionCatalogLoader
+import com.example.dsh.session.DshSessionScope
+import com.example.dsh.models.DshSettingsChoice
+import com.example.dsh.models.DshSettingsSnapshot
+import com.example.dsh.message.DshShareGroup
+import com.example.dsh.session.DshSkill
+import com.example.dsh.data.DshStreamHandle
+import com.example.dsh.models.DshToolCardType
+import com.example.dsh.message.DshWebTimelineItem
+import com.example.dsh.session.DshWorkspaceGroup
+import com.example.dsh.models.dshCreateCustomProvider
+import com.example.dsh.message.dshHistoryTailToResume
+import com.example.dsh.message.dshIsLiveAssistantText
+import com.example.dsh.protocol.dshIsTransportInterrupt
+import com.example.dsh.message.dshMessagesVisuallyEqual
+import com.example.dsh.models.dshRemoveProviderProfile
+import com.example.dsh.models.dshSaveProviderProfile
+import com.example.dsh.message.dshShareGroupForMessage
+import com.example.dsh.message.dshSyncMessageForkAnchor
+import com.example.dsh.tool.dshWireEvent
+import com.example.dsh.plugin.filterDshPlugins
+import com.example.dsh.message.isRuntimeContextSnapshot
+import com.example.dsh.tool.toRemoteMessage
 import com.example.dsh.diagnostics.DshCrashMarker
 import com.example.dsh.diagnostics.DshLogWork
 import com.example.dsh.diagnostics.DshLogPageContract
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.theme.*
-import com.example.dsh.web.*
+import com.example.dsh.infrastructure.DshLogService
+import com.example.dsh.infrastructure.DshLogWriteBehind
+import com.example.dsh.infrastructure.DshStreamLog
+import com.example.dsh.infrastructure.LogEvent
+import com.example.dsh.infrastructure.LogLevel
+import com.example.dsh.infrastructure.LogSanitizer
+import com.example.dsh.infrastructure.currentTimeMillis
+import com.example.dsh.infrastructure.publishReadableExport
+import com.example.dsh.infrastructure.shareExportFile
+import com.example.dsh.rendering.DSH_PREF_EXPAND_MODAL
+import com.example.dsh.rendering.DSH_PREF_PROCESS_DISPLAY
+import com.example.dsh.rendering.DSH_PREF_SHOW_CONNECTORS
+import com.example.dsh.rendering.DSH_PREF_SHOW_RESULT_CARDS
+import com.example.dsh.rendering.DshExpandedContentModal
+import com.example.dsh.rendering.DshExpandedPayload
+import com.example.dsh.rendering.DshMarkdown
+import com.example.dsh.rendering.DshProcessDisplayMode
+import com.example.dsh.rendering.dshLiveJobs
+import com.example.dsh.rendering.dshProcessDisplayFromValue
+import com.example.dsh.rendering.dshProcessDisplayValue
+import com.example.dsh.storage.DshLocalStore
+import com.example.dsh.storage.createDshLocalStore
+import com.example.dsh.theme.DshThemeManager
 import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
+import com.example.dsh.base.blurModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.scrollToPosition
@@ -35,13 +142,13 @@ import com.tencent.kuikly.core.module.NotifyModule
 import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.base.BackPressCallback
+import com.tencent.kuikly.core.datetime.DateTime
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
-import com.tencent.kuikly.core.timer.setTimeout
+import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.views.ScrollParams
-import com.tencent.kuikly.core.views.ScrollerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,8 +156,41 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
+import com.example.dsh.attachment.DshAttachmentIntake
+import com.example.dsh.export.DshExportSelection
+import com.example.dsh.attachment.DshFileIntake
+import com.example.dsh.attachment.DshImageIntake
+import com.example.dsh.search.DshSessionSearch
+import com.example.dsh.voice.DshVoiceWaveform
+import com.example.dsh.home.composePromptWithFiles
+import com.example.dsh.home.dshConnectionModeLabel
+import com.example.dsh.home.dshReconnectLabel
+import com.example.dsh.home.dshSyncBusyLabel
+import com.example.dsh.home.dshValidateCustomProvider
+import com.example.dsh.home.dshValidateProviderDraft
+import com.example.dsh.voice.dshVoiceCancelArmed
+import com.example.dsh.voice.dshVoiceResolvedText
+import com.example.dsh.voice.dshVoiceShouldCommit
+import com.example.dsh.home.interactionFailureLabel
+import com.example.dsh.home.messageRowKey
+import com.example.dsh.home.parsePickedFiles
+import com.example.dsh.home.parsePickedImages
+import com.example.dsh.home.selectedReasoningEffortName
+import com.example.dsh.protocol.attachmentIdsFromBlocks
+import com.example.dsh.protocol.contextSummary
+import com.example.dsh.protocol.DshHostConnection
+import com.example.dsh.transport.DshWebSocketModule
+import com.example.dsh.protocol.inlineImageDataUrl
+import com.example.dsh.protocol.textFromBlocks
+import com.example.dsh.protocol.toolCardType
+import com.example.dsh.base.setTimeout
+import com.example.dsh.home.DshSshSettingsValidation
+import com.example.dsh.home.dshValidateSshSettings
+import com.tencent.kuikly.core.timer.setTimeout
 
 private const val SESSION_CACHE_WARM_LIMIT = 7
+/** 会话搜索结果行上限，避免超长列表拖慢渲染。 */
+private const val SESSION_SEARCH_HIT_LIMIT = 80
 private const val SESSION_CACHE_WARM_INTERVAL_MS = 16
 private const val SESSION_CACHE_WARM_START_DELAY_MS = 600
 private const val CONVERSATION_PANEL_CACHE_LIMIT = 8
@@ -62,6 +202,13 @@ private const val FOLLOW_LIST_SLACK_PX = 72f
 @Page("home")
 internal class DshHomePage : BasePager() {
     private var repository: DshRepository? = null
+    /** 仅远程模式可用的能力面；本地模式为 null。 */
+    private val remoteRepo: DshRemoteRepository? get() = repository as? DshRemoteRepository
+
+    /** 下一帧执行：统一 Kuikly 的 setTimeout(pagerId, 0) 写法，明确“稍后执行”意图。 */
+    private inline fun postToUi(crossinline block: () -> Unit) {
+        setTimeout(pagerId, 0) { block() }
+    }
     private var localStore: DshLocalStore? = null
     private var logJumpNotifyRef: CallbackRef? = null
 
@@ -179,8 +326,6 @@ internal class DshHomePage : BasePager() {
     private var credentialSetupTitle by observable("添加一个 API Key 开始使用")
     private var sessionDrawerVisible by observable(false)
     private var sessionDrawerAnimated by observable(false)
-    private var sessionDrawerMaskAnimated by observable(false)
-    private var sessionDrawerMaskAnimation by observable(Animation.linear(0f))
     // 会话抽屉：工作区文件夹的展开/收起状态（内嵌菜单，会话内记忆）
     private var workspaceExpandedIds by observable(emptySet<String>())
     private var pendingSessionIds by observable(emptySet<String>())
@@ -256,6 +401,33 @@ internal class DshHomePage : BasePager() {
     private var modelsCustomError by observable("")
     private var commandSheetVisible by observable(false)
     private var voiceActive by observable(false)
+    // ===== 语音输入（按住说话 → 原生语音识别 → 转文字填入输入框）=====
+    /** 录音浮层是否可见（按下「按住说话」到松手/取消之间为真）。 */
+    private var voiceRecording by observable(false)
+    /** 手指上滑是否已进入取消区间（跟随移动实时更新）。 */
+    private var voiceCancelArmed by observable(false)
+    /** 录音过程中的中间识别文本。 */
+    private var voicePartialText by observable("")
+    /** 滚动音量窗口（0..1），驱动浮层蓝色方块高度。 */
+    private val voiceWaveformModel = DshVoiceWaveform()
+    /** 每次音量采样 +1，驱动波形整体重绘。 */
+    private var voiceWaveformRevision by observable(0)
+    /** 录音会话代次，防止衰减定时器跨会话重复运行。 */
+    private var voiceDecayGeneration = 0
+    /** 按下点 pageY，用于计算上滑取消。 */
+    private var voiceHoldStartY = 0f
+    /** 已松手（等待原生最终结果）。 */
+    private var voiceStopping = false
+    /** 已请求取消，结果不入输入框。 */
+    private var voiceCancelRequested = false
+    /** 已到达的最终识别文本。 */
+    private var voiceCommittedText = ""
+    /** 松手兜底计时是否已排期。 */
+    private var voiceStopFallbackScheduled = false
+    /** 音量事件节流时间戳。 */
+    private var voiceLastLevelAt = 0L
+    /** 语音转文字结果：待输入框挂载后回填到原生 TextArea。 */
+    private var pendingVoiceDraft: String? = null
     private var inputView: TextAreaView? = null
     private var apiKeyInputView: InputView? = null
     private var streamHandle: DshStreamHandle? = null
@@ -297,6 +469,8 @@ internal class DshHomePage : BasePager() {
     private val pendingAttachmentReads = mutableSetOf<String>()
     // ===== Task 3 附件：输入区图片草稿（仅内存，不落盘）与 Host 下发限额 =====
     private val pendingImages by observableList<DshPendingImage>()
+    // 通用文件草稿：旧 Host 无文件 content 类型，发送前经 host-plugin 落盘并写入 prompt handle。
+    private val pendingFiles by observableList<DshPendingFile>()
     private var attachmentEpoch by observable(0)
     private var imageLimits by observable<DshImageLimits?>(null)
     private var queueDockExpanded by observable(false)
@@ -371,6 +545,7 @@ internal class DshHomePage : BasePager() {
                 modelsPageVisible -> closeModelsPage()
                 settingsPageVisible -> closeSettingsPage()
 
+                sessionSearchVisible -> closeSessionSearch()
                 sessionDrawerVisible -> closeSessionDrawer()
                 else -> acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
             }
@@ -401,14 +576,26 @@ internal class DshHomePage : BasePager() {
     private val archiveGroups by observableList<DshWorkspaceGroup>()
     private val archiveProjectOptions by observableList<DshArchiveProjectOption>()
     private var sessionCreatedAt by observable<Map<String, Long>>(emptyMap())
-    private var sessionSort by observable(DshSessionSort.UPDATED)
-    private var sessionSortMenuOpen by observable(false)
-    // ===== 会话抽屉拖拽排序 =====
-    private var sessionReorderMode by observable(false)
+    // ===== 全屏会话搜索 =====
+    /** 搜索界面是否展示（由抽屉顶部搜索入口打开）。 */
+    private var sessionSearchVisible by observable(false)
+    /** 搜索框原生文本：非响应式，只喂给 Input 的 text()，避免每次按键重设文本与原生输入互相覆盖。 */
+    private var sessionSearchInput = ""
+    /** 搜索框是否有内容，驱动结果列表与清除按钮。 */
+    private var sessionSearchActive by observable(false)
+    private val sessionSearchHits by observableList<DshSessionSearchHit>()
+    private var sessionSearchInputView: InputView? = null
+    // ===== 会话抽屉长按拖拽排序 =====
     private var drawerDrag by observable(DshDrawerDrag())
     private var sessionManualOrder by observable<Map<String, List<String>>>(emptyMap())
     private var workspaceManualOrder by observable<List<String>>(emptyList())
     private var drawerOrderScope = ""
+    // ===== 抽屉视图选项（对齐电脑端 WorkspaceBrowser）=====
+    private var drawerViewGroupBy by observable(DSH_DRAWER_GROUP_WORKSPACE)
+    private var drawerViewOrderBy by observable(DSH_DRAWER_ORDER_UPDATED)
+    private var drawerViewOptionsVisible by observable(false)
+    private var drawerViewOptionsX by observable(-1f)
+    private var drawerViewOptionsY by observable(-1f)
     private var dragOriginPageY = 0f
     private var prefsModule: SharedPreferencesModule? = null
     private var catalogRequestGeneration = 0L
@@ -426,6 +613,8 @@ internal class DshHomePage : BasePager() {
     private var messageActionsMessage by observable<DshMessage?>(null)
     private var messageForkBusy = false
     private var messageForkVersion = 0
+    /** 附件上传阶段的发送防重入：上传完成后用首次点击的快照继续发送。 */
+    private var sendInFlight = false
     private var messageActionsX by observable(0f)
     private var messageActionsY by observable(0f)
     private var menuBlurUri by observable("")
@@ -503,7 +692,7 @@ internal class DshHomePage : BasePager() {
         setTimeout(pagerId, SESSION_CACHE_WARM_START_DELAY_MS) {
             warmRecentSessionCache(scrollToEndAfterLoad = false)
         }
-        setTimeout(pagerId, 0) { startConnection() }
+        postToUi { startConnection() }
         getBackPressHandler().addCallback(overlayBackCallback)
         DshStreamLog.i("app.page.created page=home mode=$connectionMode")
     }
@@ -527,6 +716,12 @@ internal class DshHomePage : BasePager() {
 
     override fun pageWillDestroy() {
         pageAlive = false
+        if (voiceRecording) {
+            bridgeModule.cancelVoiceRecognition()
+            voiceRecording = false
+        } else {
+            bridgeModule.releaseVoiceRecognition()
+        }
         stopCurrentEngine()
         DshStreamLog.i("app.page.destroyed page=home")
         // 只刷盘，不停止/清空应用级日志服务：主页重建后仍复用同一写入器与序号。
@@ -538,7 +733,6 @@ internal class DshHomePage : BasePager() {
 
     override fun body(): ViewBuilder {
         val ctx = this
-        val wide = pagerData.pageViewWidth >= 720f
         return {
             // ===== 根容器 =====
             // 整页的根 View：纵向布局撑满剩余空间，背景色 BG，顶部留出系统状态栏高度。
@@ -550,240 +744,109 @@ internal class DshHomePage : BasePager() {
                     paddingTop(pagerData.statusBarHeight)
                 }
 
-                // ===== 顶部栏 =====
-                // 58dp 高的标题栏容器（zIndex 置顶），内部是 DshTopBar：
-                // 左侧菜单/标题点击打开会话抽屉，右上角 overflow menu 打开会话管理菜单。
-                View {
-                    attr {
-                        height(58f)
-                        zIndex(3)
-                    }
-                    vif({ ctx.exportSelectMode }) {
-                        DshExportSelectionTopBar(
-                            totalCount = { ctx.exportTotalCount() },
-                            allSelected = { ctx.exportAllSelected() },
-                            onToggleAll = { ctx.toggleExportSelectAll() },
-                            onClose = { ctx.cancelExportSelection() },
-                            colors = { this@DshHomePage.themeColors },
-                        )
-                    }
-                    velse {
-                        DshTopBar(
-                            title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "DeepSeek Harness" },
-                            onOpenDrawer = {
-                                ctx.dismissKeyboard()
-                                ctx.openSessionDrawer()
-                            },
-                            onNewSession = { ctx.createSession() },
-                            colors = { this@DshHomePage.themeColors },
-                        )
-                    }
-                }
+                this@DshHomePage.bodyTopBar().invoke(this)
+                this@DshHomePage.bodyMainContent().invoke(this)
+                this@DshHomePage.bodySessionDrawer().invoke(this)
+                this@DshHomePage.bodySessionSearchAndArchive().invoke(this)
+                this@DshHomePage.bodyPickers().invoke(this)
+                this@DshHomePage.bodySettingsOverlays().invoke(this)
+                this@DshHomePage.bodySettingsChoiceAndCredentials().invoke(this)
+                this@DshHomePage.bodyWorkspaceDialogs().invoke(this)
+                this@DshHomePage.bodyMessageOverlays().invoke(this)
+            }
+        }
+    }
 
-                // ===== 主内容容器 =====
-                // 撑满剩余空间，容纳下方的会话栏/对话区/详情面板与抽屉遮罩。
-                // 会话抽屉打开时整体右移（translate），露出右侧变暗的边缘，带位移动画。
-                View {
-                    attr {
-                        flex(1f)
-                        flexDirectionColumn()
-                        // Push the conversation with the drawer, leaving the
-                        // dimmed right edge visible like the reference UI.
-                        transform(Translate(
-                            0f,
-                            offsetX = if (ctx.sessionDrawerAnimated) {
-                                (pagerData.pageViewWidth - 44f).coerceAtMost(340f)
-                            } else {
-                                0f
-                            },
-                        ))
-                        animation(Animation.easeOut(ANIMATION_DURATION_S), ctx.sessionDrawerAnimated)
-                    }
-                    if (wide) {
-                        // ==== 宽屏（平板/桌面）三栏布局容器 ====
-                        View {
-                            attr {
-                                flex(1f)
-                                flexDirectionRow()
-                                backgroundColor(this@DshHomePage.themeColors.bgBase)
-                            }
-                            // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
-                            vif({ ctx.isRemoteHost }) {
-                                DshSessionRail(
-                                    sessions = { ctx.visibleSessions },
-                                    activeId = { ctx.activeSessionId },
-                                    compact = false,
-                                    onSelect = { id ->
-                                        ctx.closeSessionDrawer()
-                                        setTimeout(ctx.pagerId, 0) { ctx.selectSession(id) }
-                                    },
-                                    colors = { this@DshHomePage.themeColors },
-                                )
-                            }
-                            // centerWidth：中间对话区可用宽度 = 总宽 - 左会话栏(236) - 右详情面板(280)，最小 360。
-                            val centerWidth = if (ctx.isRemoteHost) {
-                                (ctx.pagerData.pageViewWidth - 236f - 280f).coerceAtLeast(360f)
-                            } else {
-                                ctx.pagerData.pageViewWidth
-                            }
-                            // -- 中间「对话区」--：核心聊天界面 = 消息列表 + 底部输入区。
-                            //    输入区内含技能、模型选择、附件、语音、停止按钮，
-                            //    以及远程模式下的任务队列/作业面板/目标/审批与提问等。
-                            DshConversation(
-                                conversationIds = { ctx.conversationPanelIds },
-                                activeConversationId = { ctx.activeSessionId },
-                                messagesForSession = { ctx.sessionMessageState(it) },
-                                streaming = { ctx.streaming },
-                                streamingMessageId = { ctx.streamingAssistantId },
-                                streamingContent = { ctx.streamingAssistantContent },
-                                scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
-                                messageRef = { sessionId, messageId, ref ->
-                                    ctx.messageRowRefs[ctx.messageRowKey(sessionId, messageId)] = ref
-                                },
-                                draft = { ctx.draft },
-                                skills = { ctx.skills },
-                                onPickSkill = { ctx.insertDraftText("/$it ") },
-                                keyboardHeight = { ctx.keyboardHeight },
-                                stopButtonVisible = { ctx.stopButtonVisible },
-                                inputRef = { ctx.inputView = it.view },
-                                onInputFocusChange = { ctx.inputFocused = it },
-                                onDraftChange = { ctx.draft = it },
-                                keyboardAnimation = { ctx.keyboardAnimation },
-                                onKeyboardHeightChange = { ctx.updateKeyboard(it) },
-                                onSend = { ctx.sendDraft() },
-                                onStop = { ctx.stopStream() },
-                                onDismissKeyboard = { ctx.dismissKeyboard() },
-                                onUserListScroll = { ctx.onConversationUserScroll(it) },
-                                modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
-                                commandSheetVisible = { ctx.commandSheetVisible },
-                                voiceActive = { ctx.voiceActive },
-                                onOpenModels = { ctx.openModelPicker() },
-                                onToggleCommandSheet = { ctx.toggleCommandSheet() },
-                                onPickCommand = { ctx.insertCommand(it) },
-                                onAttachmentTile = { ctx.onAttachmentTile(it) },
-                            attachmentEpoch = { ctx.attachmentEpoch },
-                            attachmentRevision = { ctx.attachmentRevision },
-                            pendingImages = { ctx.pendingImages },
-                            onRemovePendingImage = { ctx.removePendingImage(it) },
-                            onRetryPendingImage = { ctx.retryPendingImage(it) },
-                                onToggleVoice = { ctx.toggleVoice() },
-                                folderLabel = { ctx.composerFolderLabel() },
-                                onOpenWorkspacePicker = { ctx.openWorkspacePicker() },
-                                permissionValue = { ctx.permissionValue },
-                                permissionLabel = { ctx.permissionLabel },
-                                onOpenPermissions = { ctx.openPermissionPicker() },
-                                agentModeLabel = { ctx.agentModeLabel },
-                                onOpenAgentModes = { ctx.openAgentModePicker() },
-                                isWebTimeline = { ctx.isRemoteHost },
-                                processDisplayMode = { ctx.chatProcessMode },
-                                showConnectors = { ctx.chatShowConnectors },
-                                showResultCards = { ctx.chatShowResultCards },
-                                expandInModal = { ctx.chatExpandInModal },
-                                onOpenExpandedModal = { ctx.openExpandedModal(it) },
-                                isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
-                                onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
-                                isJsonNodeExpanded = { messageId, nodeId ->
-                                    ctx.isWebJsonNodeExpanded(messageId, nodeId)
-                                },
-                                onToggleJsonNode = { messageId, nodeId ->
-                                    ctx.toggleWebJsonNode(messageId, nodeId)
-                                },
-                                onCopyToolContent = {
-                                    ctx.bridgeModule.copyToPasteboard(it)
-                                    ctx.bridgeModule.toast("已复制")
-                                },
-                                onCopyMessageContent = { msg -> ctx.copyMessageBody(msg) },
-                                copiedMessageId = { ctx.copiedMessageId },
-                                colors = { this@DshHomePage.themeColors },
-                                onMessageLongPress = { msg, content, px, py ->
-                                    ctx.openMessageActions(msg, content, px, py)
-                                },
-                                onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
-                                 attachmentDataUrl = { ctx.attachmentDataUrl(it) },
-                                 queueItems = { ctx.queueItems },
-                                 jobItems = { ctx.jobItems },
-                                 liveJobItems = { ctx.liveJobItems },
-                                 goal = { ctx.goalSnapshot },
-                                goalActionBusy = { ctx.goalActionBusy },
-                                goalActionError = { ctx.goalActionError },
-                                onPauseGoal = { ctx.pauseGoal() },
-                                onResumeGoal = { ctx.resumeGoal() },
-                                onEditGoal = { text, done -> ctx.editGoal(text, done) },
-                                onClearGoal = { ctx.clearGoal() },
-                                jobsPanelExpanded = { ctx.jobsPanelExpanded },
-                                jobsNow = { ctx.jobsNow },
-                                onToggleJobsPanel = { ctx.toggleJobsPanel() },
-                                queueExpanded = { ctx.queueDockExpanded },
-                                queueEditingId = { ctx.queueEditingId },
-                                queueActionBusy = { ctx.queueActionBusy },
-                                queueEditingText = { ctx.queueEditingText },
-                                sessionRunning = { ctx.sessionRunning },
-                                isBlankConversation = { ctx.isBlankSession() },
-                                conversationListEpoch = { ctx.conversationListEpochFor(it) },
-                                turnReconnecting = { isReconnectLabel(ctx.connectionLabel) },
-                                turnElapsedMs = { ctx.turnElapsedMs },
-                                onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
-                                onEditQueueItem = { ctx.editQueueItem(it) },
-                                onQueueEditingTextChange = { ctx.queueEditingText = it },
-                                onSaveQueueItem = { ctx.saveQueueItem(it) },
-                                onCancelQueueItemEdit = { ctx.cancelQueueItemEdit() },
-                                onRemoveQueueItem = { ctx.removeQueueItem(it) },
-                                onSteerQueueItem = { ctx.steerQueueItem(it) },
-                                pendingApproval = { ctx.pendingApproval },
-                                pendingQuestion = { ctx.pendingQuestion },
-                                interactionBusy = { ctx.interactionBusy },
-                                selectedQuestionOptions = { ctx.selectedQuestionOptions },
-                                questionCustom = { ctx.questionCustom },
-                                questionIndex = { ctx.questionIndex },
-                                questionError = { ctx.questionError },
-                                questionHasSelection = { ctx.questionHasSelection },
-                                onAnswerApproval = { ctx.answerApproval(it) },
-                                onToggleQuestionOption = { ctx.toggleQuestionOption(it) },
-                                onQuestionCustomChange = { ctx.updateQuestionCustom(it) },
-                                onQuestionNavigate = { ctx.navigateQuestion(it) },
-                                onQuestionSkip = { ctx.skipQuestion() },
-                                onSubmitQuestion = { ctx.submitQuestion() },
-                                onDismissQuestion = { ctx.cancelQuestion() },
-                                availableWidth = centerWidth,
-                                connectionLabel = { ctx.connectionLabel },
-                                connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
-                                connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
-                                connectionCapsuleFadeOutAnimation = { ctx.connectionCapsuleFadeOutAnimation },
-                                onPreviewImage = { ctx.previewImageUrl = it },
-                                previewImageUrl = { ctx.previewImageUrl },
-                                onDismissPreview = { ctx.previewImageUrl = null },
-                                onSaveImage = { ctx.saveImageToGallery(it) },
-                                exportSelectMode = { ctx.exportSelectMode },
-                                exportSelectedIds = { ctx.exportSelectedMessageIds() },
-                                exportFormat = { ctx.exportFormat },
-                                exportSelectedCount = { ctx.exportSelectedCount() },
-                                exportMoreShareExpanded = { ctx.exportMoreShareVisible },
-                                exportPdfBusy = { ctx.exportPdfBusy },
-                                onToggleExportMessage = { ctx.toggleExportMessage(it) },
-                                onExportFormatChange = { ctx.exportFormat = it },
-                                onExportConfirm = { ctx.confirmExportSelection() },
-                                onExportPdf = { ctx.exportSelectionAsPdf() },
-                                onExportCopy = { ctx.copyExportSelection() },
-                                onExportMore = { ctx.toggleExportMoreShare() },
-                            )
-                            // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
-                            //    工作目录、模型、运行状态、队列/作业数量。
-                            vif({ ctx.isRemoteHost }) {
-                                DshSessionDetailsPanel(
-                                    title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "尚无标题" },
-                                    cwd = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.cwd ?: "" },
-                                    modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
-                                    agentPreset = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.agentPreset.orEmpty() },
-                                    running = { ctx.sessionRunning },
-                                    queueCount = { ctx.queueItems.size },
-                                    jobCount = { ctx.jobItems.size },
-                                    colors = { this@DshHomePage.themeColors },
-                                )
-                            }
+
+    private fun bodyTopBar(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 顶部栏 =====
+            // 58dp 高的标题栏容器（zIndex 置顶），内部是 DshTopBar：
+            // 左侧菜单/标题点击打开会话抽屉，右上角 overflow menu 打开会话管理菜单。
+            View {
+                attr {
+                    height(58f)
+                    zIndex(3)
+                }
+                vif({ ctx.exportSelectMode }) {
+                    DshExportSelectionTopBar(
+                        totalCount = { ctx.exportTotalCount() },
+                        allSelected = { ctx.exportAllSelected() },
+                        onToggleAll = { ctx.toggleExportSelectAll() },
+                        onClose = { ctx.cancelExportSelection() },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+                velse {
+                    DshTopBar(
+                        title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "DeepSeek Harness" },
+                        onOpenDrawer = {
+                            ctx.dismissKeyboard()
+                            ctx.openSessionDrawer()
+                        },
+                        onNewSession = { ctx.createSession() },
+                        colors = { this@DshHomePage.themeColors },
+                    )
+                }
+            }
+
+        }
+    }
+
+    private fun bodyMainContent(): ViewBuilder {
+        val ctx = this
+        val wide = pagerData.pageViewWidth >= 720f
+        return {
+            // ===== 主内容容器 =====
+            // 撑满剩余空间，容纳下方的会话栏/对话区/详情面板与抽屉遮罩。
+            // 会话抽屉打开时整体右移（translate），露出右侧被半透明遮罩覆盖的内容边缘，带位移动画。
+            View {
+                attr {
+                    flex(1f)
+                    flexDirectionColumn()
+                    // Push the conversation with the drawer, leaving the
+                    // dimmed right edge visible like the reference UI.
+                    transform(Translate(
+                        0f,
+                        offsetX = if (ctx.sessionDrawerAnimated) {
+                            (pagerData.pageViewWidth - 44f).coerceAtMost(340f)
+                        } else {
+                            0f
+                        },
+                    ))
+                    animation(Animation.easeOut(ANIMATION_DURATION_S), ctx.sessionDrawerAnimated)
+                }
+                if (wide) {
+                    // ==== 宽屏（平板/桌面）三栏布局容器 ====
+                    View {
+                        attr {
+                            flex(1f)
+                            flexDirectionRow()
+                            backgroundColor(this@DshHomePage.themeColors.bgBase)
                         }
-                    } else {
-                        // ==== 窄屏（手机）单栏布局 ====
-                        // 不显示会话栏/详情面板，对话区直接铺满整宽。
+                        // -- 左侧「会话栏」--：仅远程（扫码/SSH）模式显示，列出所有会话，点击切换。
+                        vif({ ctx.isRemoteHost }) {
+                            DshSessionRail(
+                                sessions = { ctx.visibleSessions },
+                                activeId = { ctx.activeSessionId },
+                                compact = false,
+                                onSelect = { id ->
+                                    ctx.closeSessionDrawer()
+                                    setTimeout(ctx.pagerId, 0) { ctx.selectSession(id) }
+                                },
+                                colors = { this@DshHomePage.themeColors },
+                            )
+                        }
+                        // centerWidth：中间对话区可用宽度 = 总宽 - 左会话栏(236) - 右详情面板(280)，最小 360。
+                        val centerWidth = if (ctx.isRemoteHost) {
+                            (ctx.pagerData.pageViewWidth - 236f - 280f).coerceAtLeast(360f)
+                        } else {
+                            ctx.pagerData.pageViewWidth
+                        }
+                        // -- 中间「对话区」--：核心聊天界面 = 消息列表 + 底部输入区。
+                        //    输入区内含技能、模型选择、附件、语音、停止按钮，
+                        //    以及远程模式下的任务队列/作业面板/目标/审批与提问等。
                         DshConversation(
                             conversationIds = { ctx.conversationPanelIds },
                             activeConversationId = { ctx.activeSessionId },
@@ -793,14 +856,14 @@ internal class DshHomePage : BasePager() {
                             streamingContent = { ctx.streamingAssistantContent },
                             scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
                             messageRef = { sessionId, messageId, ref ->
-                                ctx.messageRowRefs[ctx.messageRowKey(sessionId, messageId)] = ref
+                                ctx.messageRowRefs[messageRowKey(sessionId, messageId)] = ref
                             },
                             draft = { ctx.draft },
                             skills = { ctx.skills },
                             onPickSkill = { ctx.insertDraftText("/$it ") },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
-                            inputRef = { ctx.inputView = it.view },
+                            inputRef = { ctx.onInputViewCreated(it.view) },
                             onInputFocusChange = { ctx.inputFocused = it },
                             onDraftChange = { ctx.draft = it },
                             keyboardAnimation = { ctx.keyboardAnimation },
@@ -813,22 +876,34 @@ internal class DshHomePage : BasePager() {
                             commandSheetVisible = { ctx.commandSheetVisible },
                             voiceActive = { ctx.voiceActive },
                             onOpenModels = { ctx.openModelPicker() },
+                            onToggleCommandSheet = { ctx.toggleCommandSheet() },
+                            onPickCommand = { ctx.insertCommand(it) },
+                            onAttachmentTile = { ctx.onAttachmentTile(it) },
+                        attachmentEpoch = { ctx.attachmentEpoch },
+                        attachmentRevision = { ctx.attachmentRevision },
+                        pendingImages = { ctx.pendingImages },
+                        onRemovePendingImage = { ctx.removePendingImage(it) },
+                        onRetryPendingImage = { ctx.retryPendingImage(it) },
+                        pendingFiles = { ctx.pendingFiles },
+                        onRemovePendingFile = { ctx.removePendingFile(it) },
+                        onRetryPendingFile = { ctx.retryPendingFile(it) },
+                            onToggleVoice = { ctx.toggleVoice() },
+                            voiceRecording = { ctx.voiceRecording },
+                            voiceCancelArmed = { ctx.voiceCancelArmed },
+                            voicePartialText = { ctx.voicePartialText },
+                            voiceWaveform = { ctx.voiceWaveformModel.levels },
+                            voiceWaveformRevision = { ctx.voiceWaveformRevision },
+                            voiceStrings = { dshVoiceStrings(ctx.settingsSnapshot.localeValue) },
+                            onVoiceHoldStart = { ctx.beginVoiceRecord(it) },
+                            onVoiceHoldMove = { ctx.updateVoiceHold(it) },
+                            onVoiceHoldEnd = { ctx.endVoiceRecord() },
+                            folderLabel = { ctx.composerFolderLabel() },
+                            onOpenWorkspacePicker = { ctx.openWorkspacePicker() },
                             permissionValue = { ctx.permissionValue },
                             permissionLabel = { ctx.permissionLabel },
                             onOpenPermissions = { ctx.openPermissionPicker() },
                             agentModeLabel = { ctx.agentModeLabel },
                             onOpenAgentModes = { ctx.openAgentModePicker() },
-                            onToggleCommandSheet = { ctx.toggleCommandSheet() },
-                            onPickCommand = { ctx.insertCommand(it) },
-                            onAttachmentTile = { ctx.onAttachmentTile(it) },
-                            attachmentEpoch = { ctx.attachmentEpoch },
-                            attachmentRevision = { ctx.attachmentRevision },
-                            pendingImages = { ctx.pendingImages },
-                            onRemovePendingImage = { ctx.removePendingImage(it) },
-                            onRetryPendingImage = { ctx.retryPendingImage(it) },
-                            onToggleVoice = { ctx.toggleVoice() },
-                            folderLabel = { ctx.composerFolderLabel() },
-                            onOpenWorkspacePicker = { ctx.openWorkspacePicker() },
                             isWebTimeline = { ctx.isRemoteHost },
                             processDisplayMode = { ctx.chatProcessMode },
                             showConnectors = { ctx.chatShowConnectors },
@@ -853,7 +928,7 @@ internal class DshHomePage : BasePager() {
                             onMessageLongPress = { msg, content, px, py ->
                                 ctx.openMessageActions(msg, content, px, py)
                             },
-                                onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
+                            onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
                              attachmentDataUrl = { ctx.attachmentDataUrl(it) },
                              queueItems = { ctx.queueItems },
                              jobItems = { ctx.jobItems },
@@ -899,7 +974,7 @@ internal class DshHomePage : BasePager() {
                             onQuestionSkip = { ctx.skipQuestion() },
                             onSubmitQuestion = { ctx.submitQuestion() },
                             onDismissQuestion = { ctx.cancelQuestion() },
-                            availableWidth = ctx.pagerData.pageViewWidth,
+                            availableWidth = centerWidth,
                             connectionLabel = { ctx.connectionLabel },
                             connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
                             connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
@@ -920,664 +995,872 @@ internal class DshHomePage : BasePager() {
                             onExportPdf = { ctx.exportSelectionAsPdf() },
                             onExportCopy = { ctx.copyExportSelection() },
                             onExportMore = { ctx.toggleExportMoreShare() },
+                            onExportClose = { ctx.cancelExportSelection() },
                         )
-                    }
-
-                    // -- 会话抽屉「遮罩层」--：全屏半透明黑盖在主内容上，点击关闭抽屉。
-                    vif({ ctx.sessionDrawerVisible }) {
-                        View {
-                            attr {
-                                absolutePositionAllZero()
-                                backgroundColor(Color(0x55000000))
-                                opacity(if (ctx.sessionDrawerMaskAnimated) 1f else 0f)
-                                animation(ctx.sessionDrawerMaskAnimation, ctx.sessionDrawerMaskAnimated)
-                            }
-                            event { click { ctx.closeSessionDrawer() } }
+                        // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
+                        //    工作目录、模型、运行状态、队列/作业数量。
+                        vif({ ctx.isRemoteHost }) {
+                            DshSessionDetailsPanel(
+                                title = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.title ?: "尚无标题" },
+                                cwd = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.cwd ?: "" },
+                                modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
+                                agentPreset = { ctx.sessions.firstOrNull { it.id == ctx.activeSessionId }?.agentPreset.orEmpty() },
+                                running = { ctx.sessionRunning },
+                                queueCount = { ctx.queueItems.size },
+                                jobCount = { ctx.jobItems.size },
+                                colors = { this@DshHomePage.themeColors },
+                            )
                         }
                     }
-                }
-
-                // ===== 会话抽屉 =====
-                // 从左侧滑出的侧栏（覆盖在主内容之上）：会话列表、工作区分组、
-                // 新建会话、连接设置入口；点击遮罩或选择会话后关闭。
-                vif({ ctx.sessionDrawerVisible }) {
-                    DshSessionDrawer(
-                        sessions = { ctx.visibleSessions },
-                        workspaceGroups = { ctx.workspaceGroups },
+                } else {
+                    // ==== 窄屏（手机）单栏布局 ====
+                    // 不显示会话栏/详情面板，对话区直接铺满整宽。
+                    DshConversation(
+                        conversationIds = { ctx.conversationPanelIds },
+                        activeConversationId = { ctx.activeSessionId },
+                        messagesForSession = { ctx.sessionMessageState(it) },
+                        streaming = { ctx.streaming },
+                        streamingMessageId = { ctx.streamingAssistantId },
+                        streamingContent = { ctx.streamingAssistantContent },
+                        scrollerRef = { id, ref -> ctx.messageScrollerRefs[id] = ref },
+                        messageRef = { sessionId, messageId, ref ->
+                            ctx.messageRowRefs[messageRowKey(sessionId, messageId)] = ref
+                        },
+                        draft = { ctx.draft },
+                        skills = { ctx.skills },
+                        onPickSkill = { ctx.insertDraftText("/$it ") },
+                        keyboardHeight = { ctx.keyboardHeight },
+                        stopButtonVisible = { ctx.stopButtonVisible },
+                        inputRef = { ctx.onInputViewCreated(it.view) },
+                        onInputFocusChange = { ctx.inputFocused = it },
+                        onDraftChange = { ctx.draft = it },
+                        keyboardAnimation = { ctx.keyboardAnimation },
+                        onKeyboardHeightChange = { ctx.updateKeyboard(it) },
+                        onSend = { ctx.sendDraft() },
+                        onStop = { ctx.stopStream() },
+                        onDismissKeyboard = { ctx.dismissKeyboard() },
+                        onUserListScroll = { ctx.onConversationUserScroll(it) },
+                        modelLabel = { if (ctx.selectedEffortLabel.isEmpty()) ctx.selectedModelLabel else "${ctx.selectedModelLabel} · ${ctx.selectedEffortLabel}" },
+                        commandSheetVisible = { ctx.commandSheetVisible },
+                        voiceActive = { ctx.voiceActive },
+                        onOpenModels = { ctx.openModelPicker() },
+                        permissionValue = { ctx.permissionValue },
+                        permissionLabel = { ctx.permissionLabel },
+                        onOpenPermissions = { ctx.openPermissionPicker() },
+                        agentModeLabel = { ctx.agentModeLabel },
+                        onOpenAgentModes = { ctx.openAgentModePicker() },
+                        onToggleCommandSheet = { ctx.toggleCommandSheet() },
+                        onPickCommand = { ctx.insertCommand(it) },
+                        onAttachmentTile = { ctx.onAttachmentTile(it) },
+                        attachmentEpoch = { ctx.attachmentEpoch },
+                        attachmentRevision = { ctx.attachmentRevision },
+                        pendingImages = { ctx.pendingImages },
+                        onRemovePendingImage = { ctx.removePendingImage(it) },
+                        onRetryPendingImage = { ctx.retryPendingImage(it) },
+                        pendingFiles = { ctx.pendingFiles },
+                        onRemovePendingFile = { ctx.removePendingFile(it) },
+                        onRetryPendingFile = { ctx.retryPendingFile(it) },
+                        onToggleVoice = { ctx.toggleVoice() },
+                            voiceRecording = { ctx.voiceRecording },
+                            voiceCancelArmed = { ctx.voiceCancelArmed },
+                            voicePartialText = { ctx.voicePartialText },
+                            voiceWaveform = { ctx.voiceWaveformModel.levels },
+                            voiceWaveformRevision = { ctx.voiceWaveformRevision },
+                            voiceStrings = { dshVoiceStrings(ctx.settingsSnapshot.localeValue) },
+                            onVoiceHoldStart = { ctx.beginVoiceRecord(it) },
+                            onVoiceHoldMove = { ctx.updateVoiceHold(it) },
+                            onVoiceHoldEnd = { ctx.endVoiceRecord() },
+                        folderLabel = { ctx.composerFolderLabel() },
+                        onOpenWorkspacePicker = { ctx.openWorkspacePicker() },
                         isWebTimeline = { ctx.isRemoteHost },
-                        activeId = { ctx.activeSessionId },
-                        animated = { ctx.sessionDrawerAnimated },
-                        expandedGroupIds = { ctx.workspaceExpandedIds },
-                        onToggleGroup = { ctx.toggleWorkspaceExpanded(it) },
-                        sessionPending = { ctx.sessionPending(it) },
-                        activeWorkspaceId = { ctx.activeWorkspaceId() },
-                        overflowVisible = { ctx.overflowMenuVisible },
-                        overflowActions = { ctx.overflowActions() },
-                        onOverflowSelect = { ctx.onOverflowAction(it) },
-                        onDismissOverflow = { ctx.closeOverflowMenu() },
-                        onOpenOverflowFor = { id, x, y -> ctx.openOverflowMenuFor(id, x, y) },
-                        overflowAnchorX = ctx.overflowAnchorX,
-                        overflowAnchorY = ctx.overflowAnchorY,
-                        sessionSort = { ctx.sessionSort },
-                        sortMenuOpen = { ctx.sessionSortMenuOpen },
-                        onToggleSortMenu = { ctx.toggleSessionSortMenu() },
-                        onPickSessionSort = { ctx.pickSessionSort(it) },
-                        reorderMode = { ctx.sessionReorderMode },
-                        dragState = { ctx.drawerDrag },
-                        onToggleReorderMode = { ctx.toggleSessionReorderMode() },
-                        onSessionDragStart = { groupKey, sessionId, index, pageY ->
-                            ctx.beginSessionDrag(groupKey, sessionId, index, pageY)
-                        },
-                        onWorkspaceDragStart = { workspaceId, index, itemHeight, pageY ->
-                            ctx.beginWorkspaceDrag(workspaceId, index, itemHeight, pageY)
-                        },
-                        onDragMove = { pageY, heights -> ctx.updateDrawerDrag(pageY, heights) },
-                        onDragEnd = { ctx.endDrawerDrag() },
-                        statusBarHeight = ctx.pagerData.statusBarHeight,
-                        pageViewWidth = ctx.pagerData.pageViewWidth,
-                        pageViewHeight = ctx.pagerData.pageViewHeight,
-                        onClose = { ctx.closeSessionDrawer() },
-                        onOpenSettings = { ctx.openSettingsPage() },
-                        onOpenArchive = { ctx.openArchiveList() },
-                        onNewSession = { ctx.createSession() },
-                        onSelect = { id ->
-                            ctx.closeSessionDrawer()
-                            setTimeout(ctx.pagerId, 0) {
-                                ctx.selectSession(id)
-                            }
-                        },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                vif({ ctx.archiveListVisible }) {
-                    DshArchivedSessions(
-                        groups = { ctx.archiveGroups },
-                        projectOptions = { ctx.archiveProjectOptions },
-                        selectedProject = { ctx.archiveProjectFilter },
-                        sort = { ctx.archiveSort },
-                        openMenu = { ctx.archiveMenu },
-                        search = { ctx.archiveSearch },
-                        loading = { ctx.archiveListLoading },
-                        error = { ctx.archiveListError },
-                        notice = { ctx.archiveNotice },
-                        busy = { ctx.archiveBusy },
-                        openingId = { ctx.archiveOpeningId },
-                        confirm = { ctx.archiveConfirm },
-                        onSearch = { ctx.onArchiveSearch(it) },
-                        onToggleMenu = { ctx.onArchiveToggleMenu(it) },
-                        onPickProject = { ctx.onArchivePickProject(it) },
-                        onPickSort = { ctx.onArchivePickSort(it) },
-                        onClose = { ctx.closeArchiveList() },
-                        onOpen = { ctx.openArchivedSession(it) },
-                        onUnarchive = { ctx.unarchiveArchivedSession(it) },
-                        onRequestDelete = { ctx.requestArchiveDeleteSession(it) },
-                        onRequestDeleteProject = { ctx.requestArchiveDeleteProject(it) },
-                        onRequestDeleteAll = { ctx.requestArchiveDeleteAll() },
-                        onConfirmDelete = { ctx.confirmArchiveDelete() },
-                        onCancelConfirm = { ctx.cancelArchiveConfirm() },
-                        formatDate = { ctx.archiveDateLabel(it) },
-                        colors = { ctx.themeColors },
-                    )
-                }
-
-                // ===== 模型选择弹窗 =====
-                // 选择当前会话使用的模型。
-                vif({ ctx.modelPickerVisible }) {
-                    DshModelPicker(
-                        options = { ctx.modelOptions },
-                        busy = { ctx.modelPickerBusy },
-                        error = { ctx.modelPickerError },
-                        showEfforts = { ctx.modelEffortsVisible },
-                        onShowEfforts = { ctx.modelEffortsVisible = it },
-                        onClose = { ctx.modelPickerVisible = false },
-                        onSelect = { option ->
-                            if (ctx.settingsPageVisible) {
-                                ctx.applyDefaultModel(option)
-                            } else {
-                                ctx.selectModel(option)
-                            }
-                        },
-                        onSelectEffort = { ctx.selectModelEffort(it) },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                // ===== 权限选择弹窗 =====
-                // 选择「默认权限预设」：选项优先取 host settings 动态枚举（与设置页一致），
-                // 未连接/不支持时回退本地三项。选择动作走 settings.update 全局设置通道，
-                // 与设置页「工作区权限」同一入口，影响之后新建的会话。
-                vif({ ctx.permissionPickerVisible }) {
-                    DshPermissionPicker(
-                        options = {
-                            ObservableList<DshPermissionOption>().apply {
-                                val choices = ctx.settingsSnapshot.permissionChoices
-                                if (choices.isNotEmpty()) {
-                                    addAll(choices.map {
-                                        DshPermissionOption(
-                                            it.value,
-                                            it.label,
-                                            it.value == ctx.settingsSnapshot.permissionPreset,
-                                        )
-                                    })
-                                } else {
-                                    addAll(listOf(
-                                        DshPermissionOption("read-only", "只读", ctx.permissionValue == "read-only"),
-                                        DshPermissionOption("workspace-write", "工作区写入", ctx.permissionValue == "workspace-write"),
-                                        DshPermissionOption("danger-full-access", "完全访问", ctx.permissionValue == "danger-full-access"),
-                                    ))
-                                }
-                            }
-                        },
-                        onClose = { ctx.permissionPickerVisible = false },
-                        onSelect = { option ->
-                            if (option.value == "danger-full-access") {
-                                ctx.pendingDangerPermission = option
-                                ctx.riskAcknowledged = false
-                                ctx.riskConfirmVisible = true
-                            } else {
-                                ctx.permissionValue = option.value
-                                ctx.permissionLabel = option.label
-                                ctx.permissionPickerVisible = false
-                                ctx.applyPermissionPreset(option)
-                            }
-                        },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                // ===== Full access 风险确认弹窗（对齐 dsh 原版 RiskConfirmation）=====
-                vif({ ctx.riskConfirmVisible }) {
-                    DshRiskConfirmationModal(
-                        title = "确认启用 Full access？",
-                        description = "启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
-                        acknowledgeLabel = "我已了解风险，并愿意继续",
-                        cancelLabel = "取消",
-                        confirmLabel = "启用 Full access",
-                        acknowledged = { ctx.riskAcknowledged },
-                        busy = { ctx.settingsChoiceBusy },
-                        onAcknowledgedChange = { ctx.riskAcknowledged = it },
-                        onCancel = { ctx.riskConfirmVisible = false },
-                        onConfirm = {
-                            val option = ctx.pendingDangerPermission
-                            if (option != null) {
-                                ctx.riskConfirmVisible = false
-                                ctx.pendingDangerPermission = null
-                                ctx.permissionPickerVisible = false
-                                ctx.permissionValue = option.value
-                                ctx.permissionLabel = option.label
-                                ctx.applyPermissionPreset(option)
-                            }
-                        },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                // ===== 模式选择弹窗 =====
-                // 会话开始前选择 Agent 模式（agentPreset）。host 有 agentPreset.list，
-                // 当前以本地预设为兜底；选中值存本地，未来在创建会话时随参数下发。
-                vif({ ctx.agentModePickerVisible }) {
-                    DshAgentModePicker(
-                        title = { ctx.agentModePickerTitle },
-                        options = {
-                            ObservableList<DshAgentModeOption>().apply {
-                                if (ctx.agentPresetOptions.isEmpty()) {
-                                    addAll(listOf(
-                                        DshAgentModeOption(
-                                            "standard", "标准模式",
-                                            "功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流",
-                                            ctx.agentModeValue == "standard",
-                                        ),
-                                        DshAgentModeOption(
-                                            "ptc", "PTC 模式",
-                                            "具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作",
-                                            ctx.agentModeValue == "ptc",
-                                        ),
-                                        DshAgentModeOption(
-                                            "minimal", "极简模式",
-                                            "仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent",
-                                            ctx.agentModeValue == "minimal",
-                                        ),
-                                        DshAgentModeOption(
-                                            "creator", "创造模式",
-                                            "用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导",
-                                            ctx.agentModeValue == "creator",
-                                        ),
-                                    ))
-                                } else {
-                                    for (preset in ctx.agentPresetOptions) {
-                                        add(DshAgentModeOption(
-                                            preset.id,
-                                            preset.name,
-                                            preset.description,
-                                            ctx.agentModeValue == preset.id,
-                                        ))
-                                    }
-                                }
-                            }
-                        },
-                        onClose = { ctx.agentModePickerVisible = false },
-                        onSelect = { option ->
-                            ctx.agentModeValue = option.value
-                            ctx.agentModeLabel = option.label
-                            ctx.agentModePickerVisible = false
-                        },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                // ===== 设置页（ds 风格：顶部居中标题，账户/权限/应用/关于分组） =====
-                vif({ ctx.settingsPageVisible }) {
-                    DshSettingsPage(
-                        loading = { ctx.settingsLoading },
-                        error = { ctx.settingsError },
-                        snapshot = { ctx.settingsSnapshot },
-                        isRemoteHost = { ctx.isRemoteHost },
-                        connectionModeLabel = { ctx.connectionModeLabel() },
-                        modelsSummary = { ctx.modelsSummary() },
-                        hostVersion = { ctx.hostVersion },
-                        themeMode = { this@DshHomePage.themeMode },
                         processDisplayMode = { ctx.chatProcessMode },
-                        agentPresetLabel = { ctx.agentModeLabel },
-                        onClose = { ctx.closeSettingsPage() },
-                        onRetry = { ctx.reloadSettings() },
-                        onOpenConnection = { ctx.openConnectionSettings() },
-                        onOpenModels = { ctx.openModelsPage() },
-                        onOpenPersonalization = { ctx.openPersonalizationPage() },
-                        onPickPermission = { ctx.openSettingsChoice("permission", "工作区权限") },
-                        onPickLocale = { ctx.openSettingsChoice("locale", "语言") },
-                        onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
-                        onPickDefaultModel = { ctx.openDefaultModelPicker() },
-                        onOpenAgentPresets = { ctx.openAgentModePicker("Agent 预设") },
-                        onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
-                        onOpenPlugins = { ctx.openPluginInventory() },
-                        onDisconnect = { ctx.disconnectFromHost() },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                // ===== 设置页「个性化」子页面：过程展示方式（互斥）+ 弹窗查看开关 =====
-                vif({ ctx.personalizationPageVisible }) {
-                    DshPersonalizationPage(
-                        mode = { ctx.chatProcessMode },
-                        expandInModal = { ctx.chatExpandInModal },
                         showConnectors = { ctx.chatShowConnectors },
                         showResultCards = { ctx.chatShowResultCards },
-                        onPickMode = { ctx.applyChatProcessMode(it) },
-                        onToggleExpandInModal = { ctx.applyChatExpandInModal(it) },
-                        onToggleConnectors = { ctx.applyChatShowConnectors(it) },
-                        onToggleResultCards = { ctx.applyChatShowResultCards(it) },
-                        onClose = { ctx.closePersonalizationPage() },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                // ===== 展开内容底部大弹层（「弹窗查看」开启时） =====
-                vif({ ctx.expandedPayload != null }) {
-                    DshExpandedContentModal(
-                        payload = { ctx.expandedPayload },
-                        onClose = { ctx.closeExpandedModal() },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-
-                vif({ ctx.pluginInventoryVisible }) {
-                    DshPluginSettingsView(
-                        activeTab = { ctx.pluginActiveTab }, onSelectTab = { ctx.selectPluginTab(it) },
-                        loading = { ctx.pluginInventoryLoading }, error = { ctx.pluginInventoryError },
-                        keyword = { ctx.pluginSearchInput }, onKeyword = { ctx.onPluginKeyword(it) },
-                        hasKeyword = { ctx.pluginSearchHasText }, onClearKeyword = { ctx.clearPluginKeyword() },
-                        onSearchInputRef = { ctx.pluginSearchInputView = it.view },
-                        onRefresh = { ctx.refreshPluginInventory() }, onClose = { ctx.closePluginInventory() },
-                        rows = { ctx.pluginRows }, total = { ctx.pluginTotal },
-                        expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
-                        onToggleExpand = { ctx.togglePluginExpanded(it) },
-                        actionError = { ctx.pluginActionError }, actionNotice = { ctx.pluginNotice },
-                        onToggleEnabled = { entry, enable -> ctx.requestPluginToggle(entry, enable) },
-                        onReload = { ctx.requestPluginReload(it) },
-                        confirmEntry = { ctx.pluginActionTarget }, confirmAction = { ctx.pluginConfirmAction },
-                        onConfirm = { ctx.confirmPluginAction() }, onCancelConfirm = { ctx.cancelPluginAction() },
-                        configCards = { ctx.pluginConfigCards }, configLoading = { ctx.pluginConfigLoading },
-                        configError = { ctx.pluginConfigError }, configWritable = { ctx.pluginConfigWritable },
-                        configDraft = { ns, key -> ctx.pluginConfigDraft(ns, key) },
-                        configSecretDraft = { ns -> ctx.pluginConfigSecretDraft(ns) },
-                        configCollapsed = { ns -> ctx.isPluginConfigCollapsed(ns) },
-                        configBusyNamespace = { ctx.pluginConfigBusyNamespace },
-                        configCardError = { ns -> ctx.pluginConfigCardError[ns] ?: "" },
-                        configCardNotice = { ns -> ctx.pluginConfigCardNotice[ns] ?: "" },
-                        configHasChanges = { ns -> ctx.hasPluginConfigChanges(ns) },
-                        onConfigDraft = { ns, key, value -> ctx.onPluginConfigDraft(ns, key, value) },
-                        onConfigSecretDraft = { ns, value -> ctx.onPluginConfigSecretDraft(ns, value) },
-                        onConfigToggleCollapse = { ctx.togglePluginConfigCollapsed(it) },
-                        onConfigSave = { ctx.savePluginConfigCard(it) },
-                        onConfigDiscard = { ctx.discardPluginConfigCard(it) },
-                        colors = { ctx.themeColors },
-                    )
-                }
-
-                // ===== 设置页「模型」详情页（对齐电脑端 settings.models） =====
-                vif({ ctx.modelsPageVisible }) {
-                    DshModelsPage(
-                        loading = { ctx.modelsLoading },
-                        error = { ctx.modelsError },
-                        writable = { ctx.modelsWritable },
-                        configuredProviders = { ctx.modelsConfiguredProviders },
-                        addableProviders = { ctx.modelsAddableProviders },
-                        editingProvider = { ctx.modelsEditingProvider },
-                        pickerVisible = { ctx.modelsPickerVisible },
-                        customAdding = { ctx.modelsCustomAdding },
-                        savedNotice = { ctx.modelsSavedNotice },
-                        editorAdvanced = { ctx.modelsEditorAdvanced },
-                        onToggleEditorAdvanced = { ctx.modelsEditorAdvanced = !ctx.modelsEditorAdvanced },
-                        draftBaseUrl = { ctx.modelsDraftBaseUrl },
-                        draftApiKey = { ctx.modelsDraftApiKey },
-                        draftModels = { ctx.modelsDraftModels },
-                        saving = { ctx.modelsSaving },
-                        saveError = { ctx.modelsSaveError },
-                        customProtocols = { ctx.modelsProtocols },
-                        customRoute = { ctx.modelsCustomRoute },
-                        customName = { ctx.modelsCustomName },
-                        customBaseUrl = { ctx.modelsCustomBaseUrl },
-                        customProtocol = { ctx.modelsCustomProtocol },
-                        customApiKey = { ctx.modelsCustomApiKey },
-                        customModels = { ctx.modelsCustomModels },
-                        customBusy = { ctx.modelsCustomBusy },
-                        customError = { ctx.modelsCustomError },
-                        deleteTarget = { ctx.modelsDeleteTarget },
-                        deleting = { ctx.modelsDeleting },
-                        onClose = { ctx.closeModelsPage() },
-                        onRetry = { ctx.reloadModelsSettings() },
-                        onEdit = { ctx.openProviderEditor(it) },
-                        onCancelAdd = { ctx.cancelAddProvider() },
-                        onOpenPicker = { ctx.modelsPickerVisible = true },
-                        onClosePicker = { ctx.modelsPickerVisible = false },
-                        onSelectAddable = { ctx.selectAddableProvider(it) },
-                        onOpenCustom = { ctx.openCustomProvider() },
-                        onCancelCustom = { ctx.cancelCustomProvider() },
-                        onBaseUrlChange = { ctx.modelsDraftBaseUrl = it; ctx.modelsSaveError = "" },
-                        onApiKeyChange = { ctx.modelsDraftApiKey = it; ctx.modelsSaveError = "" },
-                        onModelChange = { index, field, value ->
-                            ctx.updateDraftModel(index, field, value)
-                            ctx.modelsSaveError = ""
+                        expandInModal = { ctx.chatExpandInModal },
+                        onOpenExpandedModal = { ctx.openExpandedModal(it) },
+                        isDisclosureExpanded = { ctx.isWebDisclosureExpanded(it) },
+                        onToggleDisclosure = { ctx.toggleWebDisclosure(it) },
+                        isJsonNodeExpanded = { messageId, nodeId ->
+                            ctx.isWebJsonNodeExpanded(messageId, nodeId)
                         },
-                        onAddModel = { ctx.addDraftModel() },
-                        onRemoveModel = { ctx.removeDraftModel(it) },
-                        onApply = { ctx.applyProviderEditor(it) },
-                        onCustomRoute = { ctx.modelsCustomRoute = it; ctx.modelsCustomError = "" },
-                        onCustomName = { ctx.modelsCustomName = it },
-                        onCustomBaseUrl = { ctx.modelsCustomBaseUrl = it; ctx.modelsCustomError = "" },
-                        onCustomProtocol = { ctx.modelsCustomProtocol = it },
-                        onCustomApiKey = { ctx.modelsCustomApiKey = it },
-                        onCustomModelChange = { index, field, value -> ctx.updateCustomModel(index, field, value) },
-                        onCustomAddModel = { ctx.modelsCustomModels.add(DshProviderModel()) },
-                        onCustomRemoveModel = { ctx.removeCustomModel(it) },
-                        onApplyCustom = { ctx.applyCustomProvider() },
-                        onRequestDelete = { ctx.requestRemoveProvider(it) },
-                        onConfirmDelete = { ctx.confirmRemoveProvider() },
-                        onCancelDelete = { ctx.modelsDeleteTarget = null },
+                        onToggleJsonNode = { messageId, nodeId ->
+                            ctx.toggleWebJsonNode(messageId, nodeId)
+                        },
+                        onCopyToolContent = {
+                            ctx.bridgeModule.copyToPasteboard(it)
+                            ctx.bridgeModule.toast("已复制")
+                        },
+                        onCopyMessageContent = { msg -> ctx.copyMessageBody(msg) },
+                        copiedMessageId = { ctx.copiedMessageId },
                         colors = { this@DshHomePage.themeColors },
+                        onMessageLongPress = { msg, content, px, py ->
+                            ctx.openMessageActions(msg, content, px, py)
+                        },
+                            onFooterAction = { msg, action -> ctx.onMessageFooterAction(msg, action) },
+                         attachmentDataUrl = { ctx.attachmentDataUrl(it) },
+                         queueItems = { ctx.queueItems },
+                         jobItems = { ctx.jobItems },
+                         liveJobItems = { ctx.liveJobItems },
+                         goal = { ctx.goalSnapshot },
+                        goalActionBusy = { ctx.goalActionBusy },
+                        goalActionError = { ctx.goalActionError },
+                        onPauseGoal = { ctx.pauseGoal() },
+                        onResumeGoal = { ctx.resumeGoal() },
+                        onEditGoal = { text, done -> ctx.editGoal(text, done) },
+                        onClearGoal = { ctx.clearGoal() },
+                        jobsPanelExpanded = { ctx.jobsPanelExpanded },
+                        jobsNow = { ctx.jobsNow },
+                        onToggleJobsPanel = { ctx.toggleJobsPanel() },
+                        queueExpanded = { ctx.queueDockExpanded },
+                        queueEditingId = { ctx.queueEditingId },
+                        queueActionBusy = { ctx.queueActionBusy },
+                        queueEditingText = { ctx.queueEditingText },
+                        sessionRunning = { ctx.sessionRunning },
+                        isBlankConversation = { ctx.isBlankSession() },
+                        conversationListEpoch = { ctx.conversationListEpochFor(it) },
+                        turnReconnecting = { isReconnectLabel(ctx.connectionLabel) },
+                        turnElapsedMs = { ctx.turnElapsedMs },
+                        onToggleQueue = { ctx.queueDockExpanded = !ctx.queueDockExpanded },
+                        onEditQueueItem = { ctx.editQueueItem(it) },
+                        onQueueEditingTextChange = { ctx.queueEditingText = it },
+                        onSaveQueueItem = { ctx.saveQueueItem(it) },
+                        onCancelQueueItemEdit = { ctx.cancelQueueItemEdit() },
+                        onRemoveQueueItem = { ctx.removeQueueItem(it) },
+                        onSteerQueueItem = { ctx.steerQueueItem(it) },
+                        pendingApproval = { ctx.pendingApproval },
+                        pendingQuestion = { ctx.pendingQuestion },
+                        interactionBusy = { ctx.interactionBusy },
+                        selectedQuestionOptions = { ctx.selectedQuestionOptions },
+                        questionCustom = { ctx.questionCustom },
+                        questionIndex = { ctx.questionIndex },
+                        questionError = { ctx.questionError },
+                        questionHasSelection = { ctx.questionHasSelection },
+                        onAnswerApproval = { ctx.answerApproval(it) },
+                        onToggleQuestionOption = { ctx.toggleQuestionOption(it) },
+                        onQuestionCustomChange = { ctx.updateQuestionCustom(it) },
+                        onQuestionNavigate = { ctx.navigateQuestion(it) },
+                        onQuestionSkip = { ctx.skipQuestion() },
+                        onSubmitQuestion = { ctx.submitQuestion() },
+                        onDismissQuestion = { ctx.cancelQuestion() },
+                        availableWidth = ctx.pagerData.pageViewWidth,
+                        connectionLabel = { ctx.connectionLabel },
+                        connectionCapsuleVisible = { ctx.connectionCapsuleVisible },
+                        connectionCapsuleFadeOut = { ctx.connectionCapsuleFadeOut },
+                        connectionCapsuleFadeOutAnimation = { ctx.connectionCapsuleFadeOutAnimation },
+                        onPreviewImage = { ctx.previewImageUrl = it },
+                        previewImageUrl = { ctx.previewImageUrl },
+                        onDismissPreview = { ctx.previewImageUrl = null },
+                        onSaveImage = { ctx.saveImageToGallery(it) },
+                        exportSelectMode = { ctx.exportSelectMode },
+                        exportSelectedIds = { ctx.exportSelectedMessageIds() },
+                        exportFormat = { ctx.exportFormat },
+                        exportSelectedCount = { ctx.exportSelectedCount() },
+                        exportMoreShareExpanded = { ctx.exportMoreShareVisible },
+                        exportPdfBusy = { ctx.exportPdfBusy },
+                        onToggleExportMessage = { ctx.toggleExportMessage(it) },
+                        onExportFormatChange = { ctx.exportFormat = it },
+                        onExportConfirm = { ctx.confirmExportSelection() },
+                        onExportPdf = { ctx.exportSelectionAsPdf() },
+                        onExportCopy = { ctx.copyExportSelection() },
+                        onExportMore = { ctx.toggleExportMoreShare() },
+                        onExportClose = { ctx.cancelExportSelection() },
                     )
                 }
+            }
 
-                // ===== 设置项选择器（权限预设 / 语言 / 外观） =====
-                vif({ ctx.settingsChoiceKind.isNotEmpty() }) {
-                    DshSettingsChoicePicker(
-                        title = ctx.settingsChoiceTitle,
-                        options = { ctx.settingsChoiceOptions },
-                        selectedValue = {
-                            when (ctx.settingsChoiceKind) {
-                                "permission" -> ctx.settingsSnapshot.permissionPreset
-                                "locale" -> ctx.settingsSnapshot.localeValue
-                                "theme" -> DshThemeManager.preferenceValue
-                                else -> ""
-                            }
-                        },
-                        busy = { ctx.settingsChoiceBusy },
-                        onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
-                        onSelect = { ctx.applySettingsChoice(it) },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
+        }
+    }
 
-                // ===== API Key 设置弹窗 =====
-                // 输入并保存 DeepSeek API Key（也可用于修改远程 DSH 的 Key）。
-                vif({ ctx.credentialSetupVisible }) {
-                    DshCredentialSetupModal(
-                        title = { ctx.credentialSetupTitle },
-                        busy = { ctx.credentialSetupBusy },
-                        error = { ctx.credentialSetupError },
-                        inputRef = {
-                            ctx.apiKeyInputView = it.view
-                            ctx.apiKeyInputView?.setText(ctx.apiKeyDraft)
-                        },
-                        onApiKeyChange = {
-                            ctx.apiKeyDraft = it
-                            ctx.credentialSetupError = ""
-                        },
-                        onSave = { ctx.saveDeepSeekApiKey() },
-                        onClose = { ctx.closeCredentialSettings() },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-                // ===== 连接设置弹窗 =====
-                // 配置连接方式（扫码 RELAY / SSH）：主机、端口、用户名、私钥导入、指纹确认、DSH 端口。
-                vif({ ctx.sshSettingsVisible }) {
-                    DshConnectionSettingsModal(
-                        sshMode = { ctx.sshMode },
-                        host = { ctx.sshHost },
-                        user = { ctx.sshUser },
-                        port = { ctx.sshPort },
-                        dshPort = { ctx.sshDshPort },
-                        keyLabel = { ctx.sshKeyLabel },
-                        keyPassphrase = { ctx.sshKeyPassphrase },
-                        busy = { ctx.sshSettingsBusy },
-                        error = { ctx.sshSettingsError },
-                        onModeChange = { ctx.setConnectionMode(it) },
-                        onHostChange = { ctx.sshHost = it; ctx.sshSettingsError = "" },
-                        onUserChange = { ctx.sshUser = it; ctx.sshSettingsError = "" },
-                        onPortChange = { ctx.sshPort = it; ctx.sshSettingsError = "" },
-                        onDshPortChange = { ctx.sshDshPort = it; ctx.sshSettingsError = "" },
-                        onPickKey = { ctx.pickSshKey() },
-                        onPassphraseChange = { ctx.sshKeyPassphrase = it },
-                        onTrustFingerprint = { ctx.trustSshFingerprint() },
-                        onSave = { ctx.saveConnectionSettings() },
-                        onClose = { ctx.updateSshSettingsVisibility(false) },
-                        onOpenApiKey = {
-                            ctx.updateSshSettingsVisibility(false)
-                            ctx.openCredentialSettings()
-                        },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-                // ===== 新建会话-工作区选择弹窗（最近的文件夹 / 添加文件夹） =====
-                // 仅远程模式、且当前会话尚未发送第一条消息（blank）时可用。
-                vif({ ctx.workspacePickerVisible && ctx.isRemoteHost }) {
-                    DshWorkspacePickerModal(
-                        screen = { ctx.workspacePickerScreen },
-                        folders = { ctx.workspacePickerFolders },
-                        activeWorkspaceId = { ctx.activeWorkspaceId() },
-                        busy = { ctx.workspacePickerBusy || ctx.workspaceAddBusy },
-                        error = { ctx.workspacePickerError },
-                        onSelectFolder = { ctx.switchWorkspaceTo(it) },
-                        onAddFolder = { ctx.openWorkspaceAddFolder() },
-                        onBack = { ctx.onWorkspacePickerBack() },
-                        onClose = { ctx.closeWorkspacePicker() },
-                        path = { ctx.workspaceAddPath },
-                        home = { ctx.workspaceAddHome },
-                        entries = { ctx.workspaceAddEntries },
-                        newName = { ctx.workspaceAddNewName },
-                        onDirectorySelect = { ctx.loadWorkspaceAddDirectory(it) },
-                        onNewNameChange = { ctx.workspaceAddNewName = it },
-                        onCreateDirectory = { ctx.createWorkspaceAddDirectory() },
-                        onAdopt = { ctx.adoptWorkspaceAddDirectory() },
-                        colors = { this@DshHomePage.themeColors },
-                    )
-                }
-                // ===== 重命名工作区 弹窗 =====
-                // 内嵌 Modal：输入新名称 → 保存/取消；错误信息红字显示。
-                vif({ ctx.workspaceRenameTargetId.isNotEmpty() && ctx.isRemoteHost }) {
-                    Modal(inWindow = true) {
-                        attr {
-                            absolutePositionAllZero()
-                            allCenter()
-                            paddingLeft(20f)
-                            paddingRight(20f)
-                            backgroundColor(Color(0x66000000))
-                        }
-                        View {
-                            attr {
-                                width(pagerData.pageViewWidth - 40f)
-                                maxWidth(420f)
-                                padding(20f)
-                                borderRadius(16f)
-                                backgroundColor(this@DshHomePage.themeColors.bgLayer3)
-                            }
-                            Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
-                            Input {
-                                attr {
-                                    height(38f)
-                                    marginTop(14f)
-                                    fontSize(14f)
-                                    placeholder("工作区名称")
-                                    placeholderColor(this@DshHomePage.themeColors.labelTertiary)
-                                    text(ctx.workspaceRenameDraft)
-                                }
-                                event { textDidChange { ctx.workspaceRenameDraft = it.text } }
-                            }
-                            vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
-                            }
-                            View {
-                                attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
-                                Text {
-                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
-                                    event { click { ctx.workspaceRenameTargetId = ""; ctx.workspaceActionError = "" } }
-                                }
-                                Text {
-                                    attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateBusinessPrimary) }
-                                    event { click { if (!ctx.workspaceActionBusy) ctx.saveWorkspaceRename() } }
-                                }
-                            }
-                        }
-                    }
-                }
-                // ===== 删除工作区注册 确认弹窗 =====
-                // 仅从列表移除注册，不删除实际目录/会话/日志；红色「删除注册」按钮。
-                vif({ ctx.workspaceDeleteTargetId.isNotEmpty() && ctx.isRemoteHost }) {
-                    Modal(inWindow = true) {
-                        attr {
-                            absolutePositionAllZero()
-                            allCenter()
-                            paddingLeft(20f)
-                            paddingRight(20f)
-                            backgroundColor(Color(0x66000000))
-                        }
-                        View {
-                            attr {
-                                width(pagerData.pageViewWidth - 40f)
-                                maxWidth(420f)
-                                padding(20f)
-                                borderRadius(16f)
-                                backgroundColor(this@DshHomePage.themeColors.bgLayer3)
-                            }
-                            Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
-                            Text {
-                                attr {
-                                    text("只会从列表移除注册，不会删除目录、会话或日志。")
-                                    marginTop(8f)
-                                    fontSize(13f)
-                                    lineHeight(20f)
-                                    color(this@DshHomePage.themeColors.labelSecondary)
-                                }
-                            }
-                            vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                                Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
-                            }
-                            View {
-                                attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
-                                Text {
-                                    attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
-                                    event { click { ctx.workspaceDeleteTargetId = ""; ctx.workspaceActionError = "" } }
-                                }
-                                Text {
-                                    attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateErrorPrimary) }
-                                    event { click { if (!ctx.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
-                                }
-                            }
-                        }
-                    }
-                }
-                // ===== 消息长按操作菜单 =====
-                // 长按 AI 输出消息时弹出的底部操作菜单（复制/选择文本/反馈/分支/分享）。
-                DshMessageActionsMenu(
-                    visible = { ctx.messageActionsMessage != null },
-                    items = { ctx.messageActionsItems() },
-                    blurUri = { ctx.menuBlurUri },
-                    x = { ctx.messageActionsX },
-                    y = { ctx.messageActionsY },
-                    onDismiss = { ctx.closeMessageActions() },
-                    colors = { this@DshHomePage.themeColors },
-                )
-                // ===== 选择文本弹窗 =====
-                // 「选择文本」以单个可选中文本节点承载完整正文，供原生选区复制。
-                DshSelectTextModal(
-                    visible = { ctx.selectTextModalVisible },
-                    content = { ctx.selectTextModalContent },
-                    onClose = { ctx.closeSelectTextModal() },
-                    colors = { this@DshHomePage.themeColors },
-                )
-                // ===== 会话 overflow menu 与会话管理动作 =====
-                DshOverflowMenu(
-                    visible = { ctx.overflowMenuVisible },
-                    actions = { ctx.overflowActions() },
-                    onSelect = { ctx.onOverflowAction(it) },
-                    onDismiss = { ctx.closeOverflowMenu() },
+    private fun bodySessionDrawer(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 会话抽屉 =====
+            // 从左侧滑出的侧栏（覆盖在主内容之上）：顶部搜索框、会话列表/工作区分组、
+            // 已归档会话与设置入口；点击遮罩或选择会话后关闭。
+            vif({ ctx.sessionDrawerVisible }) {
+                DshSessionDrawer(
+                    sessions = { ctx.visibleSessions },
+                    workspaceGroups = { ctx.workspaceGroups },
+                    isWebTimeline = { ctx.isRemoteHost },
+                    activeId = { ctx.activeSessionId },
+                    animated = { ctx.sessionDrawerAnimated },
+                    expandedGroupIds = { ctx.workspaceExpandedIds },
+                    onToggleGroup = { ctx.toggleWorkspaceExpanded(it) },
+                    sessionPending = { ctx.sessionPending(it) },
+                    activeWorkspaceId = { ctx.activeWorkspaceId() },
+                    overflowVisible = { ctx.overflowMenuVisible },
+                    overflowActions = { ctx.overflowActions() },
+                    onOverflowSelect = { ctx.onOverflowAction(it) },
+                    onDismissOverflow = { ctx.closeOverflowMenu() },
+                    onOpenOverflowFor = { id, x, y -> ctx.openOverflowMenuFor(id, x, y) },
+                    overflowAnchorX = { ctx.overflowAnchorX },
+                    overflowAnchorY = { ctx.overflowAnchorY },
+                    dragState = { ctx.drawerDrag },
+                    onSessionDragStart = { groupKey, sessionId, index, pageY ->
+                        ctx.beginSessionDrag(groupKey, sessionId, index, pageY)
+                    },
+                    onWorkspaceDragStart = { workspaceId, index, itemHeight, pageY ->
+                        ctx.beginWorkspaceDrag(workspaceId, index, itemHeight, pageY)
+                    },
+                    onDragMove = { pageY, heights -> ctx.updateDrawerDrag(pageY, heights) },
+                    onDragEnd = { ctx.endDrawerDrag() },
+                    onDragCancel = { ctx.cancelDrawerDrag() },
+                    viewGroupBy = { ctx.drawerViewGroupBy },
+                    viewOrderBy = { ctx.drawerViewOrderBy },
+                    viewOptionsVisible = { ctx.drawerViewOptionsVisible },
+                    viewOptionsAnchorX = { ctx.drawerViewOptionsX },
+                    viewOptionsAnchorY = { ctx.drawerViewOptionsY },
+                    onViewOptionsOpen = { x, y -> ctx.openDrawerViewOptions(x, y) },
+                    onViewOptionsSelect = { ctx.selectDrawerViewOption(it) },
+                    onViewOptionsDismiss = { ctx.closeDrawerViewOptions() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
                     pageViewHeight = ctx.pagerData.pageViewHeight,
-                    anchorX = ctx.overflowAnchorX,
-                    anchorY = ctx.overflowAnchorY,
-                    colors = { this@DshHomePage.themeColors },
-                )
-                DshSessionRenameDialog(
-                    visible = { ctx.sessionRenameVisible },
-                    draft = { ctx.sessionRenameDraft },
-                    busy = { ctx.sessionRenameBusy },
-                    error = { ctx.sessionRenameError },
-                    onDraftChange = { ctx.sessionRenameDraft = it },
-                    onCancel = { ctx.cancelSessionRename() },
-                    onSave = { ctx.saveSessionRename() },
-                    pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = { this@DshHomePage.themeColors },
-                )
-                vif({ ctx.readableExportDialogVisible }) {
-                    DshTextExportDialog(
-                        state = { ctx.readableExport },
-                        onClose = { ctx.closeReadableExportDialog() },
-                        onRetry = { ctx.retryReadableExport() },
-                        onShare = { ctx.shareReadableExport() },
-                        colors = { ctx.themeColors },
-                    )
-                }
-                DshSessionArchiveDialog(
-                    visible = { ctx.sessionArchiveVisible },
-                    busy = { ctx.sessionArchiveBusy },
-                    error = { ctx.sessionArchiveError },
-                    onCancel = { if (!ctx.sessionArchiveBusy) { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" } },
-                    onConfirm = { ctx.confirmSessionArchive() },
-                    pageViewWidth = ctx.pagerData.pageViewWidth,
-                    colors = { this@DshHomePage.themeColors },
-                )
-                DshSessionDeleteDialog(
-                    visible = { ctx.sessionDeleteVisible },
-                    busy = { ctx.sessionDeleteBusy },
-                    error = { ctx.sessionDeleteError },
-                    onCancel = { if (!ctx.sessionDeleteBusy) { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" } },
-                    onConfirm = { ctx.confirmSessionDelete() },
-                    pageViewWidth = ctx.pagerData.pageViewWidth,
+                    onClose = { ctx.closeSessionDrawer() },
+                    onOpenSettings = { ctx.openSettingsPage() },
+                    onOpenArchive = { ctx.openArchiveList() },
+                    onSelect = { id ->
+                        ctx.closeSessionDrawer()
+                        setTimeout(ctx.pagerId, 0) {
+                            ctx.selectSession(id)
+                        }
+                    },
+                    onOpenSearch = { ctx.openSessionSearch() },
                     colors = { this@DshHomePage.themeColors },
                 )
             }
+
+        }
+    }
+
+    private fun bodySessionSearchAndArchive(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 独立全屏搜索界面 =====
+            // 从抽屉搜索入口打开，顶部返回箭头 + 输入框，下方为命中结果。
+            vif({ ctx.sessionSearchVisible }) {
+                DshSessionSearchOverlay(
+                    input = { ctx.sessionSearchInput },
+                    hasInput = { ctx.sessionSearchActive },
+                    results = { ctx.sessionSearchHits },
+                    activeId = { ctx.activeSessionId },
+                    onInput = { ctx.onSessionSearch(it) },
+                    onClear = { ctx.clearSessionSearch() },
+                    onBack = { ctx.closeSessionSearch() },
+                    onSelect = { id ->
+                        ctx.closeSessionSearch()
+                        ctx.closeSessionDrawerImmediately()
+                        setTimeout(ctx.pagerId, 0) {
+                            ctx.selectSession(id)
+                        }
+                    },
+                    onInputRef = { ctx.sessionSearchInputView = it.view },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            vif({ ctx.archiveListVisible }) {
+                DshArchivedSessions(
+                    groups = { ctx.archiveGroups },
+                    projectOptions = { ctx.archiveProjectOptions },
+                    selectedProject = { ctx.archiveProjectFilter },
+                    sort = { ctx.archiveSort },
+                    openMenu = { ctx.archiveMenu },
+                    search = { ctx.archiveSearch },
+                    loading = { ctx.archiveListLoading },
+                    error = { ctx.archiveListError },
+                    notice = { ctx.archiveNotice },
+                    busy = { ctx.archiveBusy },
+                    openingId = { ctx.archiveOpeningId },
+                    confirm = { ctx.archiveConfirm },
+                    onSearch = { ctx.onArchiveSearch(it) },
+                    onToggleMenu = { ctx.onArchiveToggleMenu(it) },
+                    onPickProject = { ctx.onArchivePickProject(it) },
+                    onPickSort = { ctx.onArchivePickSort(it) },
+                    onClose = { ctx.closeArchiveList() },
+                    onOpen = { ctx.openArchivedSession(it) },
+                    onUnarchive = { ctx.unarchiveArchivedSession(it) },
+                    onRequestDelete = { ctx.requestArchiveDeleteSession(it) },
+                    onRequestDeleteProject = { ctx.requestArchiveDeleteProject(it) },
+                    onRequestDeleteAll = { ctx.requestArchiveDeleteAll() },
+                    onConfirmDelete = { ctx.confirmArchiveDelete() },
+                    onCancelConfirm = { ctx.cancelArchiveConfirm() },
+                    formatDate = { ctx.archiveDateLabel(it) },
+                    colors = { ctx.themeColors },
+                )
+            }
+
+        }
+    }
+
+    private fun bodyPickers(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 模型选择弹窗 =====
+            // 选择当前会话使用的模型。
+            vif({ ctx.modelPickerVisible }) {
+                DshModelPicker(
+                    options = { ctx.modelOptions },
+                    busy = { ctx.modelPickerBusy },
+                    error = { ctx.modelPickerError },
+                    showEfforts = { ctx.modelEffortsVisible },
+                    onShowEfforts = { ctx.modelEffortsVisible = it },
+                    onClose = { ctx.modelPickerVisible = false },
+                    onSelect = { option ->
+                        ctx.selectModel(option)
+                    },
+                    onSelectEffort = { ctx.selectModelEffort(it) },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            // ===== 权限选择弹窗 =====
+            // 选择「默认权限预设」：选项优先取 host settings 动态枚举（与设置页一致），
+            // 未连接/不支持时回退本地三项。选择动作走 settings.update 全局设置通道，
+            // 与设置页「工作区权限」同一入口，影响之后新建的会话。
+            vif({ ctx.permissionPickerVisible }) {
+                DshPermissionPicker(
+                    options = {
+                        ObservableList<DshPermissionOption>().apply {
+                            val choices = ctx.settingsSnapshot.permissionChoices
+                            if (choices.isNotEmpty()) {
+                                addAll(choices.map {
+                                    DshPermissionOption(
+                                        it.value,
+                                        it.label,
+                                        it.value == ctx.settingsSnapshot.permissionPreset,
+                                    )
+                                })
+                            } else {
+                                addAll(listOf(
+                                    DshPermissionOption("read-only", "只读", ctx.permissionValue == "read-only"),
+                                    DshPermissionOption("workspace-write", "工作区写入", ctx.permissionValue == "workspace-write"),
+                                    DshPermissionOption("danger-full-access", "完全访问", ctx.permissionValue == "danger-full-access"),
+                                ))
+                            }
+                        }
+                    },
+                    onClose = { ctx.permissionPickerVisible = false },
+                    onSelect = { option ->
+                        if (option.value == "danger-full-access") {
+                            ctx.pendingDangerPermission = option
+                            ctx.riskAcknowledged = false
+                            ctx.riskConfirmVisible = true
+                        } else {
+                            ctx.permissionValue = option.value
+                            ctx.permissionLabel = option.label
+                            ctx.permissionPickerVisible = false
+                            ctx.applyPermissionPreset(option)
+                        }
+                    },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            // ===== Full access 风险确认弹窗（对齐 dsh 原版 RiskConfirmation）=====
+            vif({ ctx.riskConfirmVisible }) {
+                DshRiskConfirmationModal(
+                    title = "确认启用 Full access？",
+                    description = "启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
+                    acknowledgeLabel = "我已了解风险，并愿意继续",
+                    cancelLabel = "取消",
+                    confirmLabel = "启用 Full access",
+                    acknowledged = { ctx.riskAcknowledged },
+                    busy = { ctx.settingsChoiceBusy },
+                    onAcknowledgedChange = { ctx.riskAcknowledged = it },
+                    onCancel = { ctx.riskConfirmVisible = false },
+                    onConfirm = {
+                        val option = ctx.pendingDangerPermission
+                        if (option != null) {
+                            ctx.riskConfirmVisible = false
+                            ctx.pendingDangerPermission = null
+                            ctx.permissionPickerVisible = false
+                            ctx.permissionValue = option.value
+                            ctx.permissionLabel = option.label
+                            ctx.applyPermissionPreset(option)
+                        }
+                    },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            // ===== 模式选择弹窗 =====
+            // 会话开始前选择 Agent 模式（agentPreset）。host 有 agentPreset.list，
+            // 当前以本地预设为兜底；选中值存本地，未来在创建会话时随参数下发。
+            vif({ ctx.agentModePickerVisible }) {
+                DshAgentModePicker(
+                    title = { ctx.agentModePickerTitle },
+                    options = {
+                        ObservableList<DshAgentModeOption>().apply {
+                            if (ctx.agentPresetOptions.isEmpty()) {
+                                addAll(listOf(
+                                    DshAgentModeOption(
+                                        "standard", "标准模式",
+                                        "功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流",
+                                        ctx.agentModeValue == "standard",
+                                    ),
+                                    DshAgentModeOption(
+                                        "ptc", "PTC 模式",
+                                        "具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作",
+                                        ctx.agentModeValue == "ptc",
+                                    ),
+                                    DshAgentModeOption(
+                                        "minimal", "极简模式",
+                                        "仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent",
+                                        ctx.agentModeValue == "minimal",
+                                    ),
+                                    DshAgentModeOption(
+                                        "creator", "创造模式",
+                                        "用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导",
+                                        ctx.agentModeValue == "creator",
+                                    ),
+                                ))
+                            } else {
+                                for (preset in ctx.agentPresetOptions) {
+                                    add(DshAgentModeOption(
+                                        preset.id,
+                                        preset.name,
+                                        preset.description,
+                                        ctx.agentModeValue == preset.id,
+                                    ))
+                                }
+                            }
+                        }
+                    },
+                    onClose = { ctx.agentModePickerVisible = false },
+                    onSelect = { option ->
+                        ctx.agentModeValue = option.value
+                        ctx.agentModeLabel = option.label
+                        ctx.agentModePickerVisible = false
+                    },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+        }
+    }
+
+    private fun bodySettingsOverlays(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 设置页（ds 风格：顶部居中标题，账户/权限/应用/关于分组） =====
+            vif({ ctx.settingsPageVisible }) {
+                DshSettingsPage(
+                    loading = { ctx.settingsLoading },
+                    error = { ctx.settingsError },
+                    snapshot = { ctx.settingsSnapshot },
+                    isRemoteHost = { ctx.isRemoteHost },
+                    connectionModeLabel = { ctx.connectionModeLabel() },
+                    modelsSummary = { ctx.modelsSummary() },
+                    hostVersion = { ctx.hostVersion },
+                    themeMode = { this@DshHomePage.themeMode },
+                    processDisplayMode = { ctx.chatProcessMode },
+                    agentPresetLabel = { ctx.agentModeLabel },
+                    onClose = { ctx.closeSettingsPage() },
+                    onRetry = { ctx.reloadSettings() },
+                    onOpenConnection = { ctx.openConnectionSettings() },
+                    onOpenModels = { ctx.openModelsPage() },
+                    onOpenPersonalization = { ctx.openPersonalizationPage() },
+                    onPickPermission = { ctx.openSettingsChoice("permission", "工作区权限") },
+                    onPickLocale = { ctx.openSettingsChoice("locale", "语言") },
+                    onPickTheme = { ctx.openSettingsChoice("theme", "外观") },
+                    onOpenAgentPresets = { ctx.openAgentModePicker("Agent 预设") },
+                    onOpenDiagnosticLogs = { ctx.openDiagnosticLogs() },
+                    onOpenPlugins = { ctx.openPluginInventory() },
+                    onDisconnect = { ctx.disconnectFromHost() },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            // ===== 设置页「个性化」子页面：过程展示方式（互斥）+ 弹窗查看开关 =====
+            vif({ ctx.personalizationPageVisible }) {
+                DshPersonalizationPage(
+                    mode = { ctx.chatProcessMode },
+                    expandInModal = { ctx.chatExpandInModal },
+                    showConnectors = { ctx.chatShowConnectors },
+                    showResultCards = { ctx.chatShowResultCards },
+                    onPickMode = { ctx.applyChatProcessMode(it) },
+                    onToggleExpandInModal = { ctx.applyChatExpandInModal(it) },
+                    onToggleConnectors = { ctx.applyChatShowConnectors(it) },
+                    onToggleResultCards = { ctx.applyChatShowResultCards(it) },
+                    onClose = { ctx.closePersonalizationPage() },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            // ===== 展开内容底部大弹层（「弹窗查看」开启时） =====
+            vif({ ctx.expandedPayload != null }) {
+                DshExpandedContentModal(
+                    payload = { ctx.expandedPayload },
+                    onClose = { ctx.closeExpandedModal() },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            vif({ ctx.pluginInventoryVisible }) {
+                DshPluginSettingsView(
+                    activeTab = { ctx.pluginActiveTab }, onSelectTab = { ctx.selectPluginTab(it) },
+                    loading = { ctx.pluginInventoryLoading }, error = { ctx.pluginInventoryError },
+                    keyword = { ctx.pluginSearchInput }, onKeyword = { ctx.onPluginKeyword(it) },
+                    hasKeyword = { ctx.pluginSearchHasText }, onClearKeyword = { ctx.clearPluginKeyword() },
+                    onSearchInputRef = { ctx.pluginSearchInputView = it.view },
+                    onRefresh = { ctx.refreshPluginInventory() }, onClose = { ctx.closePluginInventory() },
+                    rows = { ctx.pluginRows }, total = { ctx.pluginTotal },
+                    expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
+                    onToggleExpand = { ctx.togglePluginExpanded(it) },
+                    actionError = { ctx.pluginActionError }, actionNotice = { ctx.pluginNotice },
+                    onToggleEnabled = { entry, enable -> ctx.requestPluginToggle(entry, enable) },
+                    onReload = { ctx.requestPluginReload(it) },
+                    confirmEntry = { ctx.pluginActionTarget }, confirmAction = { ctx.pluginConfirmAction },
+                    onConfirm = { ctx.confirmPluginAction() }, onCancelConfirm = { ctx.cancelPluginAction() },
+                    configCards = { ctx.pluginConfigCards }, configLoading = { ctx.pluginConfigLoading },
+                    configError = { ctx.pluginConfigError }, configWritable = { ctx.pluginConfigWritable },
+                    configDraft = { ns, key -> ctx.pluginConfigDraft(ns, key) },
+                    configSecretDraft = { ns -> ctx.pluginConfigSecretDraft(ns) },
+                    configCollapsed = { ns -> ctx.isPluginConfigCollapsed(ns) },
+                    configBusyNamespace = { ctx.pluginConfigBusyNamespace },
+                    configCardError = { ns -> ctx.pluginConfigCardError[ns] ?: "" },
+                    configCardNotice = { ns -> ctx.pluginConfigCardNotice[ns] ?: "" },
+                    configHasChanges = { ns -> ctx.hasPluginConfigChanges(ns) },
+                    onConfigDraft = { ns, key, value -> ctx.onPluginConfigDraft(ns, key, value) },
+                    onConfigSecretDraft = { ns, value -> ctx.onPluginConfigSecretDraft(ns, value) },
+                    onConfigToggleCollapse = { ctx.togglePluginConfigCollapsed(it) },
+                    onConfigSave = { ctx.savePluginConfigCard(it) },
+                    onConfigDiscard = { ctx.discardPluginConfigCard(it) },
+                    colors = { ctx.themeColors },
+                )
+            }
+
+            // ===== 设置页「模型」详情页（对齐电脑端 settings.models） =====
+            vif({ ctx.modelsPageVisible }) {
+                DshModelsPage(
+                    loading = { ctx.modelsLoading },
+                    error = { ctx.modelsError },
+                    writable = { ctx.modelsWritable },
+                    configuredProviders = { ctx.modelsConfiguredProviders },
+                    addableProviders = { ctx.modelsAddableProviders },
+                    editingProvider = { ctx.modelsEditingProvider },
+                    pickerVisible = { ctx.modelsPickerVisible },
+                    customAdding = { ctx.modelsCustomAdding },
+                    savedNotice = { ctx.modelsSavedNotice },
+                    editorAdvanced = { ctx.modelsEditorAdvanced },
+                    onToggleEditorAdvanced = { ctx.modelsEditorAdvanced = !ctx.modelsEditorAdvanced },
+                    draftBaseUrl = { ctx.modelsDraftBaseUrl },
+                    draftApiKey = { ctx.modelsDraftApiKey },
+                    draftModels = { ctx.modelsDraftModels },
+                    saving = { ctx.modelsSaving },
+                    saveError = { ctx.modelsSaveError },
+                    customProtocols = { ctx.modelsProtocols },
+                    customRoute = { ctx.modelsCustomRoute },
+                    customName = { ctx.modelsCustomName },
+                    customBaseUrl = { ctx.modelsCustomBaseUrl },
+                    customProtocol = { ctx.modelsCustomProtocol },
+                    customApiKey = { ctx.modelsCustomApiKey },
+                    customModels = { ctx.modelsCustomModels },
+                    customBusy = { ctx.modelsCustomBusy },
+                    customError = { ctx.modelsCustomError },
+                    deleteTarget = { ctx.modelsDeleteTarget },
+                    deleting = { ctx.modelsDeleting },
+                    onClose = { ctx.closeModelsPage() },
+                    onRetry = { ctx.reloadModelsSettings() },
+                    onEdit = { ctx.openProviderEditor(it) },
+                    onCancelAdd = { ctx.cancelAddProvider() },
+                    onOpenPicker = { ctx.modelsPickerVisible = true },
+                    onClosePicker = { ctx.modelsPickerVisible = false },
+                    onSelectAddable = { ctx.selectAddableProvider(it) },
+                    onOpenCustom = { ctx.openCustomProvider() },
+                    onCancelCustom = { ctx.cancelCustomProvider() },
+                    onBaseUrlChange = { ctx.modelsDraftBaseUrl = it; ctx.modelsSaveError = "" },
+                    onApiKeyChange = { ctx.modelsDraftApiKey = it; ctx.modelsSaveError = "" },
+                    onModelChange = { index, field, value ->
+                        ctx.updateDraftModel(index, field, value)
+                        ctx.modelsSaveError = ""
+                    },
+                    onAddModel = { ctx.addDraftModel() },
+                    onRemoveModel = { ctx.removeDraftModel(it) },
+                    onApply = { ctx.applyProviderEditor(it) },
+                    onCustomRoute = { ctx.modelsCustomRoute = it; ctx.modelsCustomError = "" },
+                    onCustomName = { ctx.modelsCustomName = it },
+                    onCustomBaseUrl = { ctx.modelsCustomBaseUrl = it; ctx.modelsCustomError = "" },
+                    onCustomProtocol = { ctx.modelsCustomProtocol = it },
+                    onCustomApiKey = { ctx.modelsCustomApiKey = it },
+                    onCustomModelChange = { index, field, value -> ctx.updateCustomModel(index, field, value) },
+                    onCustomAddModel = { ctx.modelsCustomModels.add(DshProviderModel()) },
+                    onCustomRemoveModel = { ctx.removeCustomModel(it) },
+                    onApplyCustom = { ctx.applyCustomProvider() },
+                    onRequestDelete = { ctx.requestRemoveProvider(it) },
+                    onConfirmDelete = { ctx.confirmRemoveProvider() },
+                    onCancelDelete = { ctx.modelsDeleteTarget = null },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+        }
+    }
+
+    private fun bodySettingsChoiceAndCredentials(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 设置项选择器（权限预设 / 语言 / 外观） =====
+            vif({ ctx.settingsChoiceKind.isNotEmpty() }) {
+                DshSettingsChoicePicker(
+                    title = ctx.settingsChoiceTitle,
+                    options = { ctx.settingsChoiceOptions },
+                    selectedValue = {
+                        when (ctx.settingsChoiceKind) {
+                            "permission" -> ctx.settingsSnapshot.permissionPreset
+                            "locale" -> ctx.settingsSnapshot.localeValue
+                            "theme" -> DshThemeManager.preferenceValue
+                            else -> ""
+                        }
+                    },
+                    busy = { ctx.settingsChoiceBusy },
+                    onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
+                    onSelect = { ctx.applySettingsChoice(it) },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+
+            // ===== API Key 设置弹窗 =====
+            // 输入并保存 DeepSeek API Key（也可用于修改远程 DSH 的 Key）。
+            vif({ ctx.credentialSetupVisible }) {
+                DshCredentialSetupModal(
+                    title = { ctx.credentialSetupTitle },
+                    busy = { ctx.credentialSetupBusy },
+                    error = { ctx.credentialSetupError },
+                    inputRef = {
+                        ctx.apiKeyInputView = it.view
+                        ctx.apiKeyInputView?.setText(ctx.apiKeyDraft)
+                    },
+                    onApiKeyChange = {
+                        ctx.apiKeyDraft = it
+                        ctx.credentialSetupError = ""
+                    },
+                    onSave = { ctx.saveDeepSeekApiKey() },
+                    onClose = { ctx.closeCredentialSettings() },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+            // ===== 连接设置弹窗 =====
+            // 配置连接方式（扫码 RELAY / SSH）：主机、端口、用户名、私钥导入、指纹确认、DSH 端口。
+            vif({ ctx.sshSettingsVisible }) {
+                DshConnectionSettingsModal(
+                    sshMode = { ctx.sshMode },
+                    host = { ctx.sshHost },
+                    user = { ctx.sshUser },
+                    port = { ctx.sshPort },
+                    dshPort = { ctx.sshDshPort },
+                    keyLabel = { ctx.sshKeyLabel },
+                    keyPassphrase = { ctx.sshKeyPassphrase },
+                    busy = { ctx.sshSettingsBusy },
+                    error = { ctx.sshSettingsError },
+                    onModeChange = { ctx.setConnectionMode(it) },
+                    onHostChange = { ctx.sshHost = it; ctx.sshSettingsError = "" },
+                    onUserChange = { ctx.sshUser = it; ctx.sshSettingsError = "" },
+                    onPortChange = { ctx.sshPort = it; ctx.sshSettingsError = "" },
+                    onDshPortChange = { ctx.sshDshPort = it; ctx.sshSettingsError = "" },
+                    onPickKey = { ctx.pickSshKey() },
+                    onPassphraseChange = { ctx.sshKeyPassphrase = it },
+                    onTrustFingerprint = { ctx.trustSshFingerprint() },
+                    onSave = { ctx.saveConnectionSettings() },
+                    onClose = { ctx.updateSshSettingsVisibility(false) },
+                    onOpenApiKey = {
+                        ctx.updateSshSettingsVisibility(false)
+                        ctx.openCredentialSettings()
+                    },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+        }
+    }
+
+    private fun bodyWorkspaceDialogs(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 新建会话-工作区选择弹窗（最近的文件夹 / 添加文件夹） =====
+            // 仅远程模式、且当前会话尚未发送第一条消息（blank）时可用。
+            vif({ ctx.workspacePickerVisible && ctx.isRemoteHost }) {
+                DshWorkspacePickerModal(
+                    screen = { ctx.workspacePickerScreen },
+                    folders = { ctx.workspacePickerFolders },
+                    activeWorkspaceId = { ctx.activeWorkspaceId() },
+                    busy = { ctx.workspacePickerBusy || ctx.workspaceAddBusy },
+                    error = { ctx.workspacePickerError },
+                    onSelectFolder = { ctx.switchWorkspaceTo(it) },
+                    onAddFolder = { ctx.openWorkspaceAddFolder() },
+                    onBack = { ctx.onWorkspacePickerBack() },
+                    onClose = { ctx.closeWorkspacePicker() },
+                    path = { ctx.workspaceAddPath },
+                    home = { ctx.workspaceAddHome },
+                    entries = { ctx.workspaceAddEntries },
+                    newName = { ctx.workspaceAddNewName },
+                    onDirectorySelect = { ctx.loadWorkspaceAddDirectory(it) },
+                    onNewNameChange = { ctx.workspaceAddNewName = it },
+                    onCreateDirectory = { ctx.createWorkspaceAddDirectory() },
+                    onAdopt = { ctx.adoptWorkspaceAddDirectory() },
+                    colors = { this@DshHomePage.themeColors },
+                )
+            }
+            // ===== 重命名工作区 弹窗 =====
+            // 内嵌 Modal：输入新名称 → 保存/取消；错误信息红字显示。
+            vif({ ctx.workspaceRenameTargetId.isNotEmpty() && ctx.isRemoteHost }) {
+                Modal(inWindow = true) {
+                    attr {
+                        absolutePositionAllZero()
+                        allCenter()
+                        paddingLeft(20f)
+                        paddingRight(20f)
+                        backgroundColor(Color(0x66000000))
+                    }
+                    View {
+                        attr {
+                            width(pagerData.pageViewWidth - 40f)
+                            maxWidth(420f)
+                            padding(20f)
+                            borderRadius(16f)
+                            backgroundColor(this@DshHomePage.themeColors.bgLayer3)
+                        }
+                        Text { attr { text("重命名工作区"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
+                        Input {
+                            attr {
+                                height(38f)
+                                marginTop(14f)
+                                fontSize(14f)
+                                placeholder("工作区名称")
+                                placeholderColor(this@DshHomePage.themeColors.labelTertiary)
+                                text(ctx.workspaceRenameDraft)
+                            }
+                            event { textDidChange { ctx.workspaceRenameDraft = it.text } }
+                        }
+                        vif({ ctx.workspaceActionError.isNotEmpty() }) {
+                            Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
+                        }
+                        View {
+                            attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                            Text {
+                                attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
+                                event { click { ctx.workspaceRenameTargetId = ""; ctx.workspaceActionError = "" } }
+                            }
+                            Text {
+                                attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateBusinessPrimary) }
+                                event { click { if (!ctx.workspaceActionBusy) ctx.saveWorkspaceRename() } }
+                            }
+                        }
+                    }
+                }
+            }
+            // ===== 删除工作区注册 确认弹窗 =====
+            // 仅从列表移除注册，不删除实际目录/会话/日志；红色「删除注册」按钮。
+            vif({ ctx.workspaceDeleteTargetId.isNotEmpty() && ctx.isRemoteHost }) {
+                Modal(inWindow = true) {
+                    attr {
+                        absolutePositionAllZero()
+                        allCenter()
+                        paddingLeft(20f)
+                        paddingRight(20f)
+                        backgroundColor(Color(0x66000000))
+                    }
+                    View {
+                        attr {
+                            width(pagerData.pageViewWidth - 40f)
+                            maxWidth(420f)
+                            padding(20f)
+                            borderRadius(16f)
+                            backgroundColor(this@DshHomePage.themeColors.bgLayer3)
+                        }
+                        Text { attr { text("删除工作区注册?"); fontSize(18f); fontWeightBold(); color(this@DshHomePage.themeColors.labelPrimary) } }
+                        Text {
+                            attr {
+                                text("只会从列表移除注册，不会删除目录、会话或日志。")
+                                marginTop(8f)
+                                fontSize(13f)
+                                lineHeight(20f)
+                                color(this@DshHomePage.themeColors.labelSecondary)
+                            }
+                        }
+                        vif({ ctx.workspaceActionError.isNotEmpty() }) {
+                            Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(this@DshHomePage.themeColors.stateErrorPrimary) } }
+                        }
+                        View {
+                            attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
+                            Text {
+                                attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.labelTertiary) }
+                                event { click { ctx.workspaceDeleteTargetId = ""; ctx.workspaceActionError = "" } }
+                            }
+                            Text {
+                                attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(this@DshHomePage.themeColors.stateErrorPrimary) }
+                                event { click { if (!ctx.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun bodyMessageOverlays(): ViewBuilder {
+        val ctx = this
+        return {
+            // ===== 消息长按操作菜单 =====
+            // 长按 AI 输出消息时弹出的底部操作菜单（复制/选择文本/反馈/分支/分享）。
+            DshMessageActionsMenu(
+                visible = { ctx.messageActionsMessage != null },
+                items = { ctx.messageActionsItems() },
+                blurUri = { ctx.menuBlurUri },
+                x = { ctx.messageActionsX },
+                y = { ctx.messageActionsY },
+                onDismiss = { ctx.closeMessageActions() },
+                colors = { this@DshHomePage.themeColors },
+            )
+            // ===== 选择文本弹窗 =====
+            // 「选择文本」以单个可选中文本节点承载完整正文，供原生选区复制。
+            DshSelectTextModal(
+                visible = { ctx.selectTextModalVisible },
+                content = { ctx.selectTextModalContent },
+                onClose = { ctx.closeSelectTextModal() },
+                colors = { this@DshHomePage.themeColors },
+            )
+            // ===== 会话管理动作 =====
+            // overflow menu 由会话抽屉（DshSessionDrawer）内实例渲染，锚定到点击的会话行 ⋯，
+            // 这里不再重复渲染，避免同时弹出两个菜单。
+            DshSessionRenameDialog(
+                visible = { ctx.sessionRenameVisible },
+                draft = { ctx.sessionRenameDraft },
+                busy = { ctx.sessionRenameBusy },
+                error = { ctx.sessionRenameError },
+                onDraftChange = { ctx.sessionRenameDraft = it },
+                onCancel = { ctx.cancelSessionRename() },
+                onSave = { ctx.saveSessionRename() },
+                pageViewWidth = ctx.pagerData.pageViewWidth,
+                colors = { this@DshHomePage.themeColors },
+            )
+            vif({ ctx.readableExportDialogVisible }) {
+                DshTextExportDialog(
+                    state = { ctx.readableExport },
+                    onClose = { ctx.closeReadableExportDialog() },
+                    onRetry = { ctx.retryReadableExport() },
+                    onShare = { ctx.shareReadableExport() },
+                    colors = { ctx.themeColors },
+                )
+            }
+            DshSessionArchiveDialog(
+                visible = { ctx.sessionArchiveVisible },
+                busy = { ctx.sessionArchiveBusy },
+                error = { ctx.sessionArchiveError },
+                onCancel = { if (!ctx.sessionArchiveBusy) { ctx.sessionArchiveVisible = false; ctx.sessionArchiveError = "" } },
+                onConfirm = { ctx.confirmSessionArchive() },
+                pageViewWidth = ctx.pagerData.pageViewWidth,
+                colors = { this@DshHomePage.themeColors },
+            )
+            DshSessionDeleteDialog(
+                visible = { ctx.sessionDeleteVisible },
+                busy = { ctx.sessionDeleteBusy },
+                error = { ctx.sessionDeleteError },
+                onCancel = { if (!ctx.sessionDeleteBusy) { ctx.sessionDeleteVisible = false; ctx.sessionDeleteError = "" } },
+                onConfirm = { ctx.confirmSessionDelete() },
+                pageViewWidth = ctx.pagerData.pageViewWidth,
+                colors = { this@DshHomePage.themeColors },
+            )
         }
     }
 
@@ -1590,6 +1873,7 @@ internal class DshHomePage : BasePager() {
 
     private fun openSessionDrawer() {
         if (sessionDrawerVisible) return
+        dismissKeyboard()
         if (isConnectionReadyLabel(connectionLabel)) {
             connectionCapsuleVisible = false
             connectionCapsuleFadeOut = false
@@ -1598,18 +1882,14 @@ internal class DshHomePage : BasePager() {
         // 否则切换会话后菜单仍会残留。
         closeMessageActions()
         closeSelectTextModal()
-        ensureSessionCreatedAt()
-        // 每次打开抽屉回到普通浏览态，避免上次的拖拽排序模式残留。
-        sessionReorderMode = false
+        // 重置上次可能残留的拖拽状态。
         drawerDrag = DshDrawerDrag()
-        // Mount transparent first, then start drawer and mask on the same frame.
-        sessionDrawerMaskAnimation = Animation.easeInOut(0.24f)
-        sessionDrawerMaskAnimated = false
+        drawerViewOptionsVisible = false
+        // Mount transparent first, then start drawer on the same frame.
         sessionDrawerAnimated = false
         sessionDrawerVisible = true
         setTimeout(pagerId, 16) {
             sessionDrawerAnimated = true
-            sessionDrawerMaskAnimated = true
         }
         // 首次打开且未手动展开过任何文件夹时，自动展开当前会话所在工作区（与原版一致）
         if (isRemoteHost && workspaceExpandedIds.isEmpty()) {
@@ -1626,9 +1906,8 @@ internal class DshHomePage : BasePager() {
         if (!sessionDrawerVisible) return
         // 关闭抽屉时清掉会话行溢出菜单的目标会话，避免残留指向已关闭的会话
         overflowTargetSessionId = ""
-        // Reverse the opening transition: fade the mask out while the drawer closes.
-        sessionDrawerMaskAnimation = Animation.easeInOut(ANIMATION_DURATION_S)
-        sessionDrawerMaskAnimated = false
+        drawerViewOptionsVisible = false
+        // Reverse the opening transition: drawer slides back out.
         sessionDrawerAnimated = false
         setTimeout(pagerId, ANIMATION_DURATION_MS) {
             sessionDrawerVisible = false
@@ -1638,10 +1917,71 @@ internal class DshHomePage : BasePager() {
     private fun closeSessionDrawerImmediately() {
         if (!sessionDrawerVisible) return
         overflowTargetSessionId = ""
-        sessionDrawerMaskAnimation = Animation.linear(0f)
-        sessionDrawerMaskAnimated = false
         sessionDrawerAnimated = false
         sessionDrawerVisible = false
+    }
+
+    /** 从抽屉搜索入口进入独立搜索界面，挂载后聚焦输入框。 */
+    private fun openSessionSearch() {
+        dismissKeyboard()
+        sessionSearchInput = ""
+        if (sessionSearchHits.isNotEmpty()) sessionSearchHits.clear()
+        sessionSearchActive = false
+        sessionSearchVisible = true
+        postToUi {
+            if (pageAlive && sessionSearchVisible) sessionSearchInputView?.focus()
+        }
+    }
+
+    /** 退出搜索界面：清空输入与结果并收起键盘。 */
+    private fun closeSessionSearch() {
+        sessionSearchInput = ""
+        sessionSearchInputView?.setText("")
+        sessionSearchInputView?.blur()
+        if (sessionSearchHits.isNotEmpty()) sessionSearchHits.clear()
+        sessionSearchActive = false
+        sessionSearchVisible = false
+    }
+
+    /**
+     * 搜索输入变化：仅用可观察的命中列表驱动 UI，原生文本单独保存，
+     * 避免每次按键重设 Input 文本导致光标跳动。
+     */
+    private fun onSessionSearch(value: String) {
+        sessionSearchInput = value
+        rebuildSessionSearch(value)
+    }
+
+    /** 清空搜索框：保留搜索界面，仅重置输入与结果。 */
+    private fun clearSessionSearch() {
+        sessionSearchInput = ""
+        sessionSearchInputView?.setText("")
+        if (sessionSearchHits.isNotEmpty()) sessionSearchHits.clear()
+        sessionSearchActive = false
+    }
+
+    private fun sessionSearchDateLabel(timestamp: Long): String =
+        if (timestamp <= 0L) "" else bridgeModule.dateFormatter(timestamp, "yyyy年M月d日")
+
+    /**
+     * 本地搜索：命中计算委托给纯函数 [DshSessionSearch.build]，
+     * 这里只负责读取内存缓存并把结果灌进 observable 列表（先收集再一次 diffUpdate）。
+     */
+    private fun rebuildSessionSearch(rawQuery: String) {
+        if (rawQuery.isBlank()) {
+            if (sessionSearchHits.isNotEmpty()) sessionSearchHits.clear()
+            sessionSearchActive = false
+            return
+        }
+        val hits = DshSessionSearch.build(
+            sessions = visibleSessions,
+            messagesFor = { sessionMessageStates[it] },
+            rawQuery = rawQuery,
+            hitLimit = SESSION_SEARCH_HIT_LIMIT,
+            dateLabel = { sessionSearchDateLabel(it) },
+        )
+        sessionSearchHits.diffUpdate(hits)
+        sessionSearchActive = true
     }
 
     private fun toggleWorkspaceExpanded(workspaceId: String) {
@@ -1666,21 +2006,21 @@ internal class DshHomePage : BasePager() {
 
     private fun refreshVisibleSessions() {
         ensureDrawerOrdersLoaded()
-        val archived = (repository as? DshRemoteRepository)?.store?.archivedSessionIds.orEmpty()
+        val archived = (remoteRepo)?.archivedSessionIds.orEmpty()
         val visible = sessions.filterNot { it.blank || it.id in archived }
-        val ordered = if (sessionSort == DshSessionSort.MANUAL) {
-            val order = sessionManualOrder[""].orEmpty()
-            if (order.isEmpty()) visible.sortedByDescending { it.updatedAt }
-            else dshApplyOrder(visible, order) { it.id }
-        } else {
-            visible
+        val order = if (drawerViewOrderBy == DSH_DRAWER_ORDER_MANUAL) sessionManualOrder[""].orEmpty() else emptyList()
+        val ordered = when {
+            order.isNotEmpty() -> dshApplyOrder(visible, order) { it.id }
+            drawerViewOrderBy == DSH_DRAWER_ORDER_UPDATED ->
+                visible.sortedWith(compareByDescending<DshSession> { it.updatedAt }.thenBy { it.id })
+            else -> visible
         }
         syncVisibleSessions(ordered, visibleSessions, archived)
         refreshPendingSessionIds()
     }
 
     private fun refreshPendingSessionIds() {
-        val remote = repository as? DshRemoteRepository
+        val remote = remoteRepo
         pendingSessionIds = sessions.filter { session ->
             val pending = remote?.pendingInteractions(session.id)
             pending?.first != null || pending?.second != null
@@ -1830,7 +2170,7 @@ internal class DshHomePage : BasePager() {
                 }
                 DshRelayPhase.RECONNECTING -> {
                     relayEngineEndpoint = ""
-                    (repository as? DshRemoteRepository)?.stop()
+                    (remoteRepo)?.stop()
                     repository = null
                     connectionLabel = "扫码连接重试中"
                     syncTurnStatusTicker()
@@ -1838,7 +2178,7 @@ internal class DshHomePage : BasePager() {
                 DshRelayPhase.STOPPED -> {
                     engineReady = false
                     relayEngineEndpoint = ""
-                    (repository as? DshRemoteRepository)?.stop()
+                    (remoteRepo)?.stop()
                     repository = null
                     connectionLabel = "扫码连接已断开"
                 }
@@ -1905,8 +2245,8 @@ internal class DshHomePage : BasePager() {
         sessionArchiveVisible = false
         sessionArchiveBusy = false
         sessionArchiveError = ""
-        (repository as? DshRemoteRepository)?.stop()
-        repository = DshRemoteRepository(
+        (remoteRepo)?.stop()
+        repository = DshRemoteHostRepository(
             network = acquireModule<NetworkModule>(NetworkModule.MODULE_NAME),
             webSocket = acquireModule<DshWebSocketModule>(DshWebSocketModule.MODULE_NAME),
             connection = DshHostConnection(baseUrl, token),
@@ -2084,7 +2424,7 @@ internal class DshHomePage : BasePager() {
                 return
             }
             hostRepository.saveDeepSeekApiKey(key, {
-                setTimeout(pagerId, 0) {
+                postToUi {
                     apiKeyDraft = ""
                     apiKeyInputView?.setText("")
                     credentialSetupBusy = false
@@ -2094,7 +2434,7 @@ internal class DshHomePage : BasePager() {
                     loadRepository()
                 }
             }, { error ->
-                setTimeout(pagerId, 0) {
+                postToUi {
                     credentialSetupBusy = false
                     credentialSetupError = "无法修改电脑端 DSH：$error"
                 }
@@ -2149,6 +2489,7 @@ internal class DshHomePage : BasePager() {
 
     // ===== 个性化「对话展示」 =====
     private fun openPersonalizationPage() {
+        dismissKeyboard()
         personalizationPageVisible = true
     }
 
@@ -2339,27 +2680,16 @@ internal class DshHomePage : BasePager() {
         if (modelsCustomBusy) return
         val route = modelsCustomRoute.trim()
         val taken = modelsConfiguredProviders.map { it.provider } + modelsAddableProviders.map { it.provider }
-        val routeError = dshCustomRouteError(route, taken)
-        if (route.isEmpty() || routeError.isNotEmpty()) {
-            modelsCustomError = routeError.ifEmpty { "请填写 Provider ID。" }
-            return
-        }
         val baseUrl = modelsCustomBaseUrl.trim()
-        if (baseUrl.isEmpty()) {
-            modelsCustomError = "自定义提供方需要填写 API 地址。"
-            return
-        }
-        if (modelsCustomProtocol.isEmpty()) {
-            modelsCustomError = "请选择 API 协议。"
-            return
-        }
-        if (modelsCustomModels.isEmpty() || modelsCustomModels.any { it.id.trim().isEmpty() }) {
-            modelsCustomError = "自定义提供方至少需要一个模型，且模型 ID 不能为空。"
-            return
-        }
-        val ids = modelsCustomModels.map { it.id.trim() }
-        if (ids.size != ids.toSet().size) {
-            modelsCustomError = "模型 ID 不能重复。"
+        val validationError = dshValidateCustomProvider(
+            route = route,
+            baseUrl = baseUrl,
+            protocol = modelsCustomProtocol,
+            models = modelsCustomModels,
+            takenRoutes = taken,
+        )
+        if (validationError != null) {
+            modelsCustomError = validationError
             return
         }
         val repo = repository ?: run { modelsCustomError = "未连接电脑端"; return }
@@ -2408,13 +2738,9 @@ internal class DshHomePage : BasePager() {
 
     private fun applyProviderEditor(provider: DshProviderConfig) {
         if (modelsSaving) return
-        if (modelsDraftModels.any { it.id.trim().isEmpty() }) {
-            modelsSaveError = "模型 ID 不能为空。"
-            return
-        }
-        val ids = modelsDraftModels.map { it.id.trim() }
-        if (ids.size != ids.toSet().size) {
-            modelsSaveError = "模型 ID 不能重复。"
+        val draftError = dshValidateProviderDraft(modelsDraftModels)
+        if (draftError != null) {
+            modelsSaveError = draftError
             return
         }
         val repo = repository
@@ -2502,11 +2828,7 @@ internal class DshHomePage : BasePager() {
         repo.loadHostVersion({ hostVersion = it }, { })
     }
 
-    private fun connectionModeLabel(): String = when (connectionMode) {
-        DshConnectionMode.LOCAL -> "本地模式"
-        DshConnectionMode.RELAY -> "扫码连接"
-        DshConnectionMode.SSH -> "SSH 连接"
-    }
+    private fun connectionModeLabel(): String = dshConnectionModeLabel(connectionMode)
 
     private fun openAgentModePicker(title: String = "选择模式") {
         agentModePickerTitle = title
@@ -2536,8 +2858,9 @@ internal class DshHomePage : BasePager() {
             }
             "theme" -> {
                 settingsChoiceOptions.add(DshSettingsChoice("system", "跟随系统"))
-                settingsChoiceOptions.add(DshSettingsChoice("light", "浅色"))
+                settingsChoiceOptions.add(DshSettingsChoice("sunrise-sunset", "日出日落"))
                 settingsChoiceOptions.add(DshSettingsChoice("dark", "深色"))
+                settingsChoiceOptions.add(DshSettingsChoice("light", "浅色"))
             }
         }
         settingsChoiceKind = kind
@@ -2591,6 +2914,8 @@ internal class DshHomePage : BasePager() {
             )
             "theme" -> {
                 settingsChoiceBusy = false
+                // 日出日落为移动端本地模式，电脑端不支持该偏好，不做同步。
+                if (choice.value == "sunrise-sunset") return
                 // 顺带同步电脑端外观（失败仅提示，不影响移动端）
                 repo.updateSetting(
                     "ui-theme",
@@ -2655,37 +2980,6 @@ internal class DshHomePage : BasePager() {
         )
     }
 
-    private fun openDefaultModelPicker() {
-        val sessionId = activeSessionId
-        if (sessionId.isEmpty()) return
-        val repo = repository ?: return
-        repo.loadModels(sessionId, {
-            if (!pageAlive || repository !== repo || activeSessionId != sessionId) return@loadModels
-            modelOptions = ObservableList(it.options.toMutableList())
-            modelPickerError = ""
-            modelEffortsVisible = false
-            modelPickerVisible = true
-        }, {
-            modelPickerError = it
-        })
-    }
-
-    private fun applyDefaultModel(option: DshModelOption) {
-        val repo = repository ?: return
-        val patch = JSONObject().apply {
-            put("provider", option.provider)
-            put("model", option.model)
-            option.reasoningEffort?.let { put("reasoningEffort", it) }
-        }
-        repo.updateSetting("agent-default-model", patch, settingsSnapshot.defaultModelRevision, {
-            modelPickerVisible = false
-            reloadSettings(showLoading = false)
-        }, {
-            modelPickerVisible = false
-            bridgeModule.toast("默认模型设置失败：$it")
-        })
-    }
-
     private fun disconnectFromHost() {
         DshStreamLog.log(LogLevel.INFO, "connect.disconnect", "connect.disconnect by user", null, null)
         closeSettingsPage()
@@ -2717,7 +3011,7 @@ internal class DshHomePage : BasePager() {
             if (uri.isEmpty()) return@pickSshKey
             sshSettingsBusy = true
             bridgeModule.importSshKey(uri) { keyId ->
-                setTimeout(pagerId, 0) {
+                postToUi {
                     sshSettingsBusy = false
                     if (keyId.isEmpty()) {
                         sshSettingsError = "无法导入 SSH 私钥"
@@ -2749,20 +3043,14 @@ internal class DshHomePage : BasePager() {
 
     private fun saveConnectionSettings() {
         if (sshMode) {
-            val port = sshPort.toIntOrNull()
-            val dshPort = sshDshPort.toIntOrNull()
-            when {
-                sshHost.isBlank() -> sshSettingsError = "请输入 SSH 主机地址"
-                sshUser.isBlank() -> sshSettingsError = "请输入 SSH 用户名"
-                port == null || port !in 1..65535 -> sshSettingsError = "SSH 端口无效"
-                dshPort == null || dshPort !in 1..65535 -> sshSettingsError = "远程 DSH 端口无效"
-                sshKeyId.isBlank() -> sshSettingsError = "请先导入 SSH 私钥"
-                else -> {
+            when (val validation = dshValidateSshSettings(sshHost, sshUser, sshPort, sshDshPort, sshKeyId)) {
+                is DshSshSettingsValidation.Invalid -> sshSettingsError = validation.message
+                is DshSshSettingsValidation.Valid -> {
                     runCatching { localStore?.saveRemoteProfile(DshRemoteProfile(
                         host = sshHost.trim(),
-                        sshPort = port,
+                        sshPort = validation.sshPort,
                         username = sshUser.trim(),
-                        remoteDshPort = dshPort,
+                        remoteDshPort = validation.dshPort,
                         keyId = sshKeyId,
                         hostFingerprint = sshFingerprint,
                     )) }
@@ -2796,7 +3084,7 @@ internal class DshHomePage : BasePager() {
         timelineReadVersion++
         val mode = connectionCoordinator.activeModeOr(connectionMode)
         connectionCoordinator.stop()
-        (repository as? DshRemoteRepository)?.stop()
+        (remoteRepo)?.stop()
         repository = null
         goalSnapshot = null
         goalActionBusy = false
@@ -2816,12 +3104,12 @@ internal class DshHomePage : BasePager() {
         onDone: (Boolean) -> Unit = {},
     ) {
         val goal = goalSnapshot ?: return
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         if (goalActionBusy) return
         goalActionBusy = true
         goalActionError = ""
         action(remote, goal) { error ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 goalActionBusy = false
                 if (error != null) goalActionError = "${error.message} (${error.code})"
                 else goalActionError = ""
@@ -2920,7 +3208,7 @@ internal class DshHomePage : BasePager() {
                 applyActiveSessionChrome()
             }
             loadSkills(blankSession.id)
-            setTimeout(pagerId, 0) { loadModels(blankSession.id) }
+            postToUi { loadModels(blankSession.id) }
             return
         }
         hostRepository.createSession(currentWorkspaceId, { sessionId ->
@@ -2960,7 +3248,7 @@ internal class DshHomePage : BasePager() {
                     applyActiveSessionChrome()
                 }, { /* 忽略：会话已创建，本地已保留 */ })
             }
-            setTimeout(pagerId, 0) {
+            postToUi {
                 if (activeSessionId == sessionId) {
                     loadSkills(sessionId)
                     loadModels(sessionId)
@@ -3030,7 +3318,7 @@ internal class DshHomePage : BasePager() {
         forceReplace: Boolean = false,
         afterApply: () -> Unit = {},
     ) {
-        val hostRepository = repository as? DshRemoteRepository ?: return
+        val hostRepository = remoteRepo ?: return
         val requestVersion = ++timelineReadVersion
         val scopeId = activeConnectionId
         fun current() = pageAlive && repository === hostRepository && activeConnectionId == scopeId &&
@@ -3200,7 +3488,7 @@ internal class DshHomePage : BasePager() {
             releaseStreamingUi()
         }
         persistMessages(sessionId)
-        (repository as? DshRemoteRepository)?.detachLiveStreams(sessionId)
+        (remoteRepo)?.detachLiveStreams(sessionId)
         streamHandle = null
     }
 
@@ -3245,7 +3533,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun attachAdoptedLiveStream(sessionId: String) {
-        val hostRepository = repository as? DshRemoteRepository ?: return
+        val hostRepository = remoteRepo ?: return
         streamHandle = hostRepository.adoptLiveStream(
             sessionId = sessionId,
             onDelta = { delta, isReasoning ->
@@ -3295,7 +3583,7 @@ internal class DshHomePage : BasePager() {
             skills.clear()
             return
         }
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         skills.clear()
         remote.loadSkills(sessionId, onSuccess = { loaded ->
             if (!isRemoteHost || activeSessionId != sessionId) return@loadSkills
@@ -3306,7 +3594,7 @@ internal class DshHomePage : BasePager() {
 
     private fun loadAttachment(sessionId: String, attachmentId: String) {
         if (attachmentDataUrl(attachmentId) != null || !pendingAttachmentReads.add(attachmentId)) return
-        val hostRepository = repository as? DshRemoteRepository ?: return
+        val hostRepository = remoteRepo ?: return
         hostRepository.loadAttachment(sessionId, attachmentId) { dataUrl, error ->
             if (error != null || dataUrl == null) {
                 pendingAttachmentReads.remove(attachmentId)
@@ -3389,7 +3677,7 @@ internal class DshHomePage : BasePager() {
             when (block.optString("type")) {
                 "image" -> {
                     val attachmentId = block.optJSONObject("attachment")?.optString("attachmentId").orEmpty()
-                    val inlineUrl = com.example.dsh.conversation.inlineImageDataUrl(block)
+                    val inlineUrl = inlineImageDataUrl(block)
                     if (attachmentId.isEmpty() && inlineUrl == null) continue
                     val id = "image-${event.seq}-$index"
                     if (messages.none { it.id == id }) {
@@ -3450,7 +3738,7 @@ internal class DshHomePage : BasePager() {
             queueItems = ObservableList()
             return
         }
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val items = repository.queue(activeSessionId)
         queueItems = ObservableList(items.toMutableList())
         if (items.isEmpty()) {
@@ -3468,7 +3756,7 @@ internal class DshHomePage : BasePager() {
             jobsPanelExpanded = false
             return
         }
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val items = repository.jobs(activeSessionId)
         jobItems = ObservableList(items.toMutableList())
         liveJobItems = ObservableList(dshLiveJobs(items).toMutableList())
@@ -3505,16 +3793,20 @@ internal class DshHomePage : BasePager() {
             workspacePickerFolders.clear()
             return
         }
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val byId = sessions.associateBy { it.id }
         val groups = repository.workspaceGroups().map { group ->
             val resolved = group.sessions.map { byId[it.id] ?: it }
-            val orderedSessions = if (sessionSort == DshSessionSort.MANUAL) {
-                val order = sessionManualOrder[group.workspaceId].orEmpty()
-                if (order.isEmpty()) resolved.sortedByDescending { it.updatedAt }
-                else dshApplyOrder(resolved, order) { it.id }
+            val order = if (drawerViewOrderBy == DSH_DRAWER_ORDER_MANUAL) {
+                sessionManualOrder[group.workspaceId].orEmpty()
             } else {
-                resolved.sortedWith(sessionSortComparator())
+                emptyList()
+            }
+            val orderedSessions = when {
+                order.isNotEmpty() -> dshApplyOrder(resolved, order) { it.id }
+                drawerViewOrderBy == DSH_DRAWER_ORDER_UPDATED ->
+                    resolved.sortedWith(compareByDescending<DshSession> { it.updatedAt }.thenBy { it.id })
+                else -> resolved
             }
             group.copy(sessions = orderedSessions)
         }
@@ -3529,22 +3821,6 @@ internal class DshHomePage : BasePager() {
         workspacePickerFolders.addAll(folders)
     }
 
-    private fun sessionSortComparator(): Comparator<DshSession> = when (sessionSort) {
-        DshSessionSort.UPDATED -> compareByDescending { it.updatedAt }
-        DshSessionSort.CREATED -> compareByDescending { sessionCreatedAt[it.id] ?: it.createdAt }
-        DshSessionSort.NAME -> compareBy { it.title.lowercase() }
-        DshSessionSort.MANUAL -> compareBy { 0 }
-    }
-
-    fun toggleSessionSortMenu() { sessionSortMenuOpen = !sessionSortMenuOpen }
-
-    fun pickSessionSort(value: DshSessionSort) {
-        sessionSort = value
-        sessionSortMenuOpen = false
-        refreshWorkspaceGroups()
-        refreshVisibleSessions()
-    }
-
     // ===== 会话抽屉拖拽排序 =====
 
     /** 首次使用时按连接范围加载本地保存的自定义顺序。 */
@@ -3555,6 +3831,12 @@ internal class DshHomePage : BasePager() {
         drawerOrderScope = scope
         sessionManualOrder = dshDecodeSessionOrder(runCatching { prefs.getItem(dshSessionOrderKey(scope)) }.getOrNull())
         workspaceManualOrder = dshDecodeOrder(runCatching { prefs.getItem(dshWorkspaceOrderKey(scope)) }.getOrNull())
+        drawerViewGroupBy = runCatching { prefs.getItem(dshDrawerGroupByKey(scope)) }.getOrNull()
+            ?.takeIf { it == DSH_DRAWER_GROUP_WORKSPACE || it == DSH_DRAWER_GROUP_FLAT }
+            ?: DSH_DRAWER_GROUP_WORKSPACE
+        drawerViewOrderBy = runCatching { prefs.getItem(dshDrawerOrderByKey(scope)) }.getOrNull()
+            ?.takeIf { it == DSH_DRAWER_ORDER_MANUAL || it == DSH_DRAWER_ORDER_UPDATED }
+            ?: DSH_DRAWER_ORDER_UPDATED
     }
 
     private fun persistSessionManualOrder() {
@@ -3567,23 +3849,37 @@ internal class DshHomePage : BasePager() {
         runCatching { prefs.setItem(dshWorkspaceOrderKey(activeConnectionId), dshEncodeOrder(workspaceManualOrder)) }
     }
 
-    /** 进入/退出拖拽排序模式；进入时切换到「自定义排序」，退出时保留顺序。 */
-    fun toggleSessionReorderMode() {
-        val entering = !sessionReorderMode
-        sessionReorderMode = entering
-        sessionSortMenuOpen = false
-        if (!entering) {
-            drawerDrag = DshDrawerDrag()
-            return
-        }
-        if (sessionSort != DshSessionSort.MANUAL) {
-            sessionSort = DshSessionSort.MANUAL
-            refreshWorkspaceGroups()
-            refreshVisibleSessions()
-        }
+    private fun persistDrawerViewOptions() {
+        val prefs = prefsModule ?: return
+        runCatching { prefs.setItem(dshDrawerGroupByKey(activeConnectionId), drawerViewGroupBy) }
+        runCatching { prefs.setItem(dshDrawerOrderByKey(activeConnectionId), drawerViewOrderBy) }
     }
 
-    /** 会话行拖拽开始；groupKey 为空表示本地（非工作区分组）的扁平列表。 */
+    /** 打开抽屉「视图选项」菜单，锚定到点击的按钮坐标（对齐电脑端 ViewOptionsMenu）。 */
+    fun openDrawerViewOptions(pageX: Float, pageY: Float) {
+        drawerViewOptionsX = pageX
+        drawerViewOptionsY = pageY
+        drawerViewOptionsVisible = true
+    }
+
+    fun closeDrawerViewOptions() {
+        drawerViewOptionsVisible = false
+    }
+
+    /** 视图选项选择：workspace/flat 切换分组，manual/updated 切换排序。 */
+    fun selectDrawerViewOption(id: String) {
+        when (id) {
+            DSH_DRAWER_GROUP_WORKSPACE, DSH_DRAWER_GROUP_FLAT -> drawerViewGroupBy = id
+            DSH_DRAWER_ORDER_MANUAL, DSH_DRAWER_ORDER_UPDATED -> drawerViewOrderBy = id
+            else -> return
+        }
+        drawerViewOptionsVisible = false
+        persistDrawerViewOptions()
+        refreshVisibleSessions()
+        refreshWorkspaceGroups()
+    }
+
+    /** 长按会话行开始拖拽；groupKey 为空表示本地（非工作区分组）的扁平列表。 */
     fun beginSessionDrag(groupKey: String, sessionId: String, index: Int, pageY: Float) {
         dragOriginPageY = pageY
         drawerDrag = DshDrawerDrag(
@@ -3633,6 +3929,11 @@ internal class DshHomePage : BasePager() {
         }
     }
 
+    /** 拖拽被系统取消：丢弃本次排序，不提交。 */
+    fun cancelDrawerDrag() {
+        drawerDrag = DshDrawerDrag()
+    }
+
     private fun commitSessionOrder(groupKey: String, from: Int, to: Int) {
         if (groupKey.isEmpty()) {
             val ids = visibleSessions.map { it.id }
@@ -3640,6 +3941,7 @@ internal class DshHomePage : BasePager() {
             if (moved == ids) return
             sessionManualOrder = sessionManualOrder + ("" to moved)
             persistSessionManualOrder()
+            markDrawerOrderManual()
             refreshVisibleSessions()
             return
         }
@@ -3649,7 +3951,15 @@ internal class DshHomePage : BasePager() {
         if (moved == ids) return
         sessionManualOrder = sessionManualOrder + (groupKey to moved)
         persistSessionManualOrder()
+        markDrawerOrderManual()
         refreshWorkspaceGroups()
+    }
+
+    /** 手动拖拽后固定为「手动排序」，否则最近更新排序会立即覆盖用户编排。 */
+    private fun markDrawerOrderManual() {
+        if (drawerViewOrderBy == DSH_DRAWER_ORDER_MANUAL) return
+        drawerViewOrderBy = DSH_DRAWER_ORDER_MANUAL
+        persistDrawerViewOptions()
     }
 
     private fun commitWorkspaceOrder(from: Int, to: Int) {
@@ -3659,17 +3969,6 @@ internal class DshHomePage : BasePager() {
         workspaceManualOrder = moved
         persistWorkspaceManualOrder()
         refreshWorkspaceGroups()
-    }
-
-    /** 首次打开抽屉时按需拉取会话 createdAt（Host 插件 meta），失败不影响主列表。 */
-    private fun ensureSessionCreatedAt() {
-        if (sessionCreatedAt.isNotEmpty()) return
-        val remote = repository as? DshRemoteRepository ?: return
-        remote.loadSessionMeta({ meta ->
-            if (!pageAlive || repository !== remote) return@loadSessionMeta
-            sessionCreatedAt = meta.associate { it.sessionId to it.createdAt }
-            refreshWorkspaceGroups()
-        }, {})
     }
 
     private fun refreshPendingInteractions() {
@@ -3684,7 +3983,7 @@ internal class DshHomePage : BasePager() {
             questionDrafts.clear()
             return
         }
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val (approval, question) = repository.pendingInteractions(activeSessionId)
         val hadInteraction = pendingApproval != null || pendingQuestion != null
         pendingApproval = approval
@@ -3696,7 +3995,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun answerApproval(outcome: String) {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val approval = pendingApproval ?: return
         interactionBusy = true
         repository.respondApproval(
@@ -3705,11 +4004,11 @@ internal class DshHomePage : BasePager() {
             approvalId = approval.approvalId,
             outcome = outcome,
         ) { accepted, reason ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 interactionBusy = false
                 if (!accepted) {
                     connectionLabel = interactionFailureLabel(reason)
-                    return@setTimeout
+                    return@postToUi
                 }
                 refreshPendingInteractions()
             }
@@ -3764,18 +4063,18 @@ internal class DshHomePage : BasePager() {
             questionError = "这个问题已失效，请等 Agent 重新提问"
             return
         }
-        val repository = repository as? DshRemoteRepository
+        val repository = remoteRepo
         if (repository == null) {
             return
         }
         questionError = ""
         interactionBusy = true
         repository.respondQuestionCancel(question.rpcId, question.sessionId) { accepted, reason ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 interactionBusy = false
                 if (!accepted) {
                     questionError = interactionFailureLabel(reason)
-                    return@setTimeout
+                    return@postToUi
                 }
                 repository.clearPending(question.rpcId)
                 if (pendingQuestion?.rpcId == question.rpcId) {
@@ -3812,7 +4111,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun submitQuestion() {
-        val repository = repository as? DshRemoteRepository
+        val repository = remoteRepo
         if (repository == null) {
             return
         }
@@ -3848,11 +4147,11 @@ internal class DshHomePage : BasePager() {
             sessionId = question.sessionId,
             answer = answer,
         ) { accepted, reason ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 interactionBusy = false
                 if (!accepted) {
                     questionError = interactionFailureLabel(reason)
-                    return@setTimeout
+                    return@postToUi
                 }
                 repository.clearPending(question.rpcId)
                 if (pendingQuestion?.rpcId == question.rpcId) {
@@ -3870,14 +4169,6 @@ internal class DshHomePage : BasePager() {
         }
     }
 
-    private fun interactionFailureLabel(reason: String): String = when (reason) {
-        "not-pending" -> "这个问题已经失效，请等 Agent 重新提问"
-        "bad-response" -> "提交未被接受，请再选一次后重试"
-        "缺少请求编号" -> "这个问题已失效，请等 Agent 重新提问"
-        "连接尚未就绪" -> "连接尚未就绪，请稍后再试"
-        else -> reason.ifEmpty { "提交失败，请重试" }
-    }
-
     private fun editQueueItem(itemId: String) {
         val item = queueItems.firstOrNull { it.id == itemId } ?: return
         val text = item.text ?: return
@@ -3887,7 +4178,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun saveQueueItem(itemId: String) {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val text = queueEditingText.trim()
         if (queueActionBusy || itemId != queueEditingId || text.isEmpty()) return
         queueActionBusy = true
@@ -3899,7 +4190,7 @@ internal class DshHomePage : BasePager() {
                 put("content", JSONArray().apply { put(JSONObject().apply { put("type", "text"); put("text", text) }) })
             },
         ) { _, _ ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 queueActionBusy = false
                 cancelQueueItemEdit()
                 refreshQueueDock()
@@ -3921,7 +4212,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun updateQueueItem(itemId: String, action: JSONObject) {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         if (queueActionBusy) return
         queueActionBusy = true
         repository.updateQueue(
@@ -3929,7 +4220,7 @@ internal class DshHomePage : BasePager() {
             itemId = itemId,
             action = action,
         ) { _, _ ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 queueActionBusy = false
                 refreshQueueDock()
             }
@@ -3937,19 +4228,19 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun renameActiveSession() {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val current = sessions.firstOrNull { it.id == activeSessionId } ?: return
         val title = current.title.takeIf { it != "尚无标题" && it != "新会话" } ?: ""
         if (title.isBlank()) return
         repository.renameSession(activeSessionId, title) { _, _ ->
-            setTimeout(pagerId, 0) { loadRepository(preferredSessionId = activeSessionId) }
+            postToUi { loadRepository(preferredSessionId = activeSessionId) }
         }
     }
 
     private fun archiveActiveSession() {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         repository.archiveSession(activeSessionId) { _, _ ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 loadRepository(preferredSessionId = null)
                 refreshWorkspaceGroups()
             }
@@ -3968,7 +4259,7 @@ internal class DshHomePage : BasePager() {
         val now = currentTimeMillis()
         if (sessions[idx].updatedAt >= now) return
         sessions = sessions.map { if (it.id == sessionId) it.copy(updatedAt = now) else it }
-        (repository as? DshRemoteRepository)?.touchSessionActivity(sessionId, now)
+        (remoteRepo)?.touchSessionActivity(sessionId, now)
         reorderSessionsByUpdatedAt()
         refreshWorkspaceGroups()
         refreshVisibleSessions()
@@ -4041,6 +4332,7 @@ internal class DshHomePage : BasePager() {
 
     /** 打开统一日志页；logSessionId 仅作为可修改、可清除的初始会话筛选。 */
     private fun openLogPage(logSessionId: String) {
+        dismissKeyboard()
         if (pagerData.platform == "ohos") reportLastCrashIfAny()
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
             "dsh_log",
@@ -4084,7 +4376,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun jumpToSession(sessionId: String, isCurrent: () -> Boolean = { true }, onResult: (Boolean, String) -> Unit) {
-        val remote = repository as? DshRemoteRepository
+        val remote = remoteRepo
         if (sessionId.isBlank() || remote == null) { onResult(false, "当前未连接到 Host"); return }
         val expectedConnection = activeConnectionId
         remote.loadSessions({ available ->
@@ -4149,6 +4441,7 @@ internal class DshHomePage : BasePager() {
 
     fun openSessionRenameDialog() {
         val session = sessions.firstOrNull { it.id == sessionActionTargetId } ?: return
+        dismissKeyboard()
         sessionRenameDraft = session.title.takeIf { it != "尚无标题" && it != "新会话" } ?: ""
         sessionRenameError = ""
         sessionRenameVisible = true
@@ -4165,7 +4458,7 @@ internal class DshHomePage : BasePager() {
         if (sessionRenameBusy) return
         val targetId = sessionActionTargetId
         if (targetId.isEmpty()) return
-        val repository = repository as? DshRemoteRepository ?: run {
+        val repository = remoteRepo ?: run {
             sessionRenameError = "当前连接不支持重命名会话"
             return
         }
@@ -4179,8 +4472,8 @@ internal class DshHomePage : BasePager() {
         bridgeModule.closeKeyboard()
         val connection = activeConnectionId
         repository.renameSession(targetId, title) { _, error ->
-            setTimeout(pagerId, 0) {
-                if (!pageAlive || this.repository !== repository || activeConnectionId != connection) return@setTimeout
+            postToUi {
+                if (!pageAlive || this.repository !== repository || activeConnectionId != connection) return@postToUi
                 sessionRenameBusy = false
                 if (error != null) {
                     sessionRenameError = when (error.code) {
@@ -4188,7 +4481,7 @@ internal class DshHomePage : BasePager() {
                         "session-not-found" -> "会话不存在，可能已被删除，请刷新列表"
                         else -> error.message
                     }
-                    return@setTimeout
+                    return@postToUi
                 }
                 sessionRenameVisible = false
                 catalogRequestGeneration++
@@ -4235,7 +4528,7 @@ internal class DshHomePage : BasePager() {
 
     private fun refreshArchiveList() {
         if (!archiveListVisible || archiveOpeningId.isNotEmpty()) return
-        val remote = repository as? DshRemoteRepository
+        val remote = remoteRepo
         if (remote == null || !remote.isProductReady()) {
             archiveListLoading = false
             archiveListError = "未连接到 Host，请连接后刷新"
@@ -4282,7 +4575,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun rebuildArchiveGroups() {
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         val all = remote.archivedWorkspaceGroups()
         // 项目筛选是「按工作区/文件夹」入口：列出全部工作区，而不是仅有归档会话的工作区。
         archiveProjectOptions.diffUpdate(
@@ -4327,7 +4620,7 @@ internal class DshHomePage : BasePager() {
     /** 取消归档：走 host-plugin unarchive；成功后该会话回到主列表与工作区分组。 */
     fun unarchiveArchivedSession(sessionId: String) {
         if (archiveBusy) return
-        val remote = repository as? DshRemoteRepository ?: run {
+        val remote = remoteRepo ?: run {
             archiveListError = "未连接 Host"
             return
         }
@@ -4336,12 +4629,12 @@ internal class DshHomePage : BasePager() {
         archiveListError = ""
         archiveNotice = ""
         remote.unarchiveSession(sessionId) { _, error ->
-            setTimeout(pagerId, 0) {
-                if (!pageAlive || this.repository !== remote || activeConnectionId != connection) return@setTimeout
+            postToUi {
+                if (!pageAlive || this.repository !== remote || activeConnectionId != connection) return@postToUi
                 archiveBusy = false
                 if (error != null) {
                     archiveListError = "取消归档失败：${error.message}"
-                    return@setTimeout
+                    return@postToUi
                 }
                 archiveNotice = "已取消归档"
                 archivedSessions.diffUpdate(archivedSessions.filterNot { it.id == sessionId }) { old, new -> old == new }
@@ -4374,7 +4667,7 @@ internal class DshHomePage : BasePager() {
     fun confirmArchiveDelete() {
         val target = archiveConfirm ?: return
         if (archiveBusy) return
-        val remote = repository as? DshRemoteRepository ?: run { archiveListError = "未连接 Host"; return }
+        val remote = remoteRepo ?: run { archiveListError = "未连接 Host"; return }
         val ids = when (target.kind) {
             DshArchiveConfirmKind.SESSION -> listOf(target.id)
             DshArchiveConfirmKind.PROJECT -> remote.archivedWorkspaceGroups()
@@ -4426,7 +4719,7 @@ internal class DshHomePage : BasePager() {
         if (sessionArchiveBusy) return
         val targetId = sessionActionTargetId
         if (targetId.isEmpty()) return
-        val repository = repository as? DshRemoteRepository ?: run {
+        val repository = remoteRepo ?: run {
             sessionArchiveError = "当前连接不支持归档会话"
             return
         }
@@ -4434,17 +4727,17 @@ internal class DshHomePage : BasePager() {
         sessionArchiveError = ""
         val expectedConnection = activeConnectionId
         repository.archiveSession(targetId) { _, error ->
-            setTimeout(pagerId, 0) {
-                if (!pageAlive || this.repository !== repository || activeConnectionId != expectedConnection) return@setTimeout
+            postToUi {
+                if (!pageAlive || this.repository !== repository || activeConnectionId != expectedConnection) return@postToUi
                 sessionArchiveBusy = false
                 if (error != null) {
                     sessionArchiveError = error.message
-                    return@setTimeout
+                    return@postToUi
                 }
                 sessionArchiveVisible = false
                 refreshVisibleSessions()
                 refreshWorkspaceGroups()
-                val catalog = DshSessionCatalog(sessions.toList(), repository.store.archivedSessionIds, repository.store.workspaceBaseline)
+                val catalog = repository.sessionCatalog(sessions.toList())
                 val next = catalog.nextActive(activeSessionId.takeUnless { it == targetId })
                 if (next != null) {
                     selectMountedSession(next.id)
@@ -4465,7 +4758,7 @@ internal class DshHomePage : BasePager() {
         if (sessionDeleteBusy) return
         val targetId = sessionActionTargetId
         if (targetId.isEmpty()) return
-        val repository = repository as? DshRemoteRepository ?: run {
+        val repository = remoteRepo ?: run {
             sessionDeleteError = "当前连接不支持删除会话"
             return
         }
@@ -4473,17 +4766,17 @@ internal class DshHomePage : BasePager() {
         sessionDeleteError = ""
         val connection = activeConnectionId
         repository.callPlugin("delete", JSONObject().apply { put("sessionId", targetId) }) { _, error ->
-            setTimeout(pagerId, 0) {
-                if (!pageAlive || this.repository !== repository || activeConnectionId != connection) return@setTimeout
+            postToUi {
+                if (!pageAlive || this.repository !== repository || activeConnectionId != connection) return@postToUi
                 sessionDeleteBusy = false
                 if (error != null) {
                     sessionDeleteError = error.message
-                    return@setTimeout
+                    return@postToUi
                 }
                 sessionDeleteVisible = false
                 val remaining = sessions.toList().filterNot { it.id == targetId }
                 sessions = remaining
-                repository.store.sessions.remove(targetId)
+                repository.removeSession(targetId)
                 sessionMessageStates.remove(targetId)
                 sessionCacheStates.remove(targetId)
                 sessionMessageReady.remove(targetId)
@@ -4491,8 +4784,8 @@ internal class DshHomePage : BasePager() {
                 refreshVisibleSessions()
                 runCatching { localStore?.deleteSession(activeConnectionId, targetId) }
                 refreshWorkspaceGroups()
-                if (activeSessionId != targetId) return@setTimeout
-                val next = DshSessionCatalog(sessions, repository.store.archivedSessionIds, repository.store.workspaceBaseline).nextActive(null)
+                if (activeSessionId != targetId) return@postToUi
+                val next = repository.sessionCatalog(sessions).nextActive(null)
                 if (next == null) {
                     createSession()
                 } else {
@@ -4506,7 +4799,7 @@ internal class DshHomePage : BasePager() {
         closeMessageActions()
         dismissKeyboard()
         if (messageForkBusy) { bridgeModule.toast("正在创建分支，请稍候"); return }
-        val remote = repository as? DshRemoteRepository
+        val remote = remoteRepo
         if (remote == null || !remote.isProductReady()) { bridgeModule.toast("请先连接 Host 后再分叉"); return }
         // Footer/menu closures can hold a pre-settle row. Resolve the latest metadata by identity.
         val target = messages.firstOrNull { it.id == message.id } ?: run {
@@ -4521,8 +4814,8 @@ internal class DshHomePage : BasePager() {
         if (target.sourceSeq != null && !target.streaming) bridgeModule.toast("正在创建分支…")
         fun current() = pageAlive && messageForkVersion == version && repository === remote && activeConnectionId == connection
         remote.forkMessage(sourceSessionId, target) { childSessionId, error ->
-            setTimeout(pagerId, 0) {
-                if (!current()) return@setTimeout
+            postToUi {
+                if (!current()) return@postToUi
                 if (error != null || childSessionId == null) {
                     messageForkBusy = false
                     if (error?.code == "message-unsynced" && activeSessionId == sourceSessionId) {
@@ -4531,14 +4824,14 @@ internal class DshHomePage : BasePager() {
                     } else {
                         bridgeModule.toast("分叉失败：${error?.message ?: "Host 未返回新会话 ID"}")
                     }
-                    return@setTimeout
+                    return@postToUi
                 }
                 createdSessionId = childSessionId
                 if (activeSessionId != sourceSessionId) {
                     messageForkBusy = false
                     bridgeModule.toast("分支已创建，可从会话列表打开")
                     loadRepository(preferredSessionId = activeSessionId, restoreOnError = false)
-                    return@setTimeout
+                    return@postToUi
                 }
                 jumpToSession(childSessionId, isCurrent = { current() && activeSessionId == sourceSessionId }) { ok, detail ->
                     if (!current()) return@jumpToSession
@@ -4557,6 +4850,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun openPluginInventory() {
+        dismissKeyboard()
         settingsPageVisible = false
         pluginInventoryVisible = true
         pluginActiveTab = "config"
@@ -4604,7 +4898,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadPluginConfig() {
-        val remote = repository as? DshRemoteRepository ?: run {
+        val remote = remoteRepo ?: run {
             pluginConfigLoading = false; pluginConfigError = "请先连接 Host"; return
         }
         val connection = activeConnectionId
@@ -4671,7 +4965,7 @@ internal class DshHomePage : BasePager() {
     fun savePluginConfigCard(namespace: String) {
         val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return
         if (pluginConfigBusyNamespace.isNotEmpty()) return
-        val remote = repository as? DshRemoteRepository ?: run {
+        val remote = remoteRepo ?: run {
             pluginConfigCardError = pluginConfigCardError + (namespace to "请先连接 Host"); return
         }
         val ops = JSONArray()
@@ -4772,7 +5066,7 @@ internal class DshHomePage : BasePager() {
         val entry = pluginActionTarget ?: run {
             pluginActionError = "未选择插件"; return
         }
-        val remote = repository as? DshRemoteRepository ?: run {
+        val remote = remoteRepo ?: run {
             pluginActionError = "请先连接 Host"; return
         }
         if (pluginBusyId.isNotEmpty()) return
@@ -4823,7 +5117,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun refreshPluginInventory() {
-        val remote = repository as? DshRemoteRepository ?: run {
+        val remote = remoteRepo ?: run {
             pluginInventoryLoading = false; pluginInventoryError = "请先连接 Host"; return
         }
         val version = ++pluginRequestVersion
@@ -4924,39 +5218,33 @@ internal class DshHomePage : BasePager() {
     private fun exportSelectionSessionId(): String = exportSelectSessionId.ifEmpty { activeSessionId }
 
     private fun exportGroups(): List<DshShareGroup> =
-        dshShareGroups(sessionMessageState(exportSelectionSessionId()))
+        DshExportSelection.groups(sessionMessageState(exportSelectionSessionId()))
 
     /** 当前多选态下需要在消息列表打勾的消息 id（同组 Prompt 与回复同时勾选）。 */
     private fun exportSelectedMessageIds(): Set<String> =
-        exportGroups().filter { it.key in exportSelectedGroups }
-            .flatMap { it.selectableIds }.toSet()
+        DshExportSelection.selectedMessageIds(exportGroups(), exportSelectedGroups)
 
     private fun toggleExportMessage(messageId: String) {
-        if (!exportSelectMode || messageId.isBlank()) return
-        val group = dshShareGroupForMessage(sessionMessageState(exportSelectionSessionId()), messageId) ?: return
-        exportSelectedGroups = if (group.key in exportSelectedGroups) {
-            exportSelectedGroups - group.key
-        } else {
-            exportSelectedGroups + group.key
-        }
+        if (!exportSelectMode) return
+        val next = DshExportSelection.toggledGroupKey(
+            sessionMessageState(exportSelectionSessionId()),
+            exportSelectedGroups,
+            messageId,
+        ) ?: return
+        exportSelectedGroups = next
         if (exportSelectedGroups.isEmpty()) exportMoreShareVisible = false
     }
 
     private fun exportTotalCount(): Int = exportGroups().size
 
-    private fun exportSelectedCount(): Int {
-        // 只统计当前列表仍存在的选中组，避免流式/历史刷新后残留 key 造成计数不一致
-        val keys = exportGroups().map { it.key }.toSet()
-        return exportSelectedGroups.count { it in keys }
-    }
+    private fun exportSelectedCount(): Int =
+        DshExportSelection.selectedCount(exportGroups(), exportSelectedGroups)
 
-    private fun exportAllSelected(): Boolean {
-        val keys = exportGroups().map { it.key }
-        return keys.isNotEmpty() && keys.all { it in exportSelectedGroups }
-    }
+    private fun exportAllSelected(): Boolean =
+        DshExportSelection.allSelected(exportGroups(), exportSelectedGroups)
 
     private fun toggleExportSelectAll() {
-        exportSelectedGroups = if (exportAllSelected()) emptySet() else exportGroups().map { it.key }.toSet()
+        exportSelectedGroups = DshExportSelection.toggleAll(exportGroups(), exportSelectedGroups)
         if (exportSelectedGroups.isEmpty()) exportMoreShareVisible = false
     }
 
@@ -4984,14 +5272,8 @@ internal class DshHomePage : BasePager() {
      * 按界面顺序取出所选对话组的正文：用户 Prompt + 该轮最终助手回复。
      * 只导出正文内容，不含工具调用、思考过程与上下文注入。
      */
-    private fun exportSelectedMessages(sessionId: String): List<DshMessage> {
-        val messages = sessionMessageState(sessionId)
-        val selectedIds = dshShareGroups(messages)
-            .filter { it.key in exportSelectedGroups }
-            .flatMap { it.selectableIds }
-            .toSet()
-        return messages.filter { it.id in selectedIds && !it.hidden }
-    }
+    private fun exportSelectedMessages(sessionId: String): List<DshMessage> =
+        DshExportSelection.selectedMessages(sessionMessageState(sessionId), exportSelectedGroups)
 
     /** 校验多选态并返回 (sessionId, 标题, 有序消息)；无有效选择时提示并返回 null。 */
     private fun currentExportSelection(): Triple<String, String, List<DshMessage>>? {
@@ -5081,7 +5363,7 @@ internal class DshHomePage : BasePager() {
         readableExport = DshTextExportState(sessionId, connection, title, DshTextExportPhase.READING)
         closeSessionDrawer()
         readableExportDialogVisible = true
-        val remote = repository as? DshRemoteRepository
+        val remote = remoteRepo
         if (remote == null || !remote.isProductReady()) { failReadableExport("请先连接 Host 后重试"); return }
         fun current() = pageAlive && version == readableExportVersion && repository === remote && activeConnectionId == connection
         remote.loadCompleteHistory(sessionId, { events ->
@@ -5153,7 +5435,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun exportActiveSession() {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val url = repository.sessionExportUrl(activeSessionId)
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
             "link_view",
@@ -5168,9 +5450,10 @@ internal class DshHomePage : BasePager() {
     private fun openWorkspacePicker() {
         if (!isRemoteHost) return
         if (!isBlankSession()) {
-            bridgeModule.toast("会话已开始，工作区不可修改")
+            bridgeModule.toast("会话已开始，工作区目录不可修改")
             return
         }
+        dismissKeyboard()
         closeSessionDrawer()
         workspacePickerGeneration++
         workspacePickerVisible = true
@@ -5206,7 +5489,7 @@ internal class DshHomePage : BasePager() {
      * 复用该工作区下已有的空白会话；没有则 `session.create` 新建后再选中。
      */
     private fun switchWorkspaceTo(workspaceId: String) {
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         if (workspacePickerBusy) return
         if (!isBlankSession()) {
             bridgeModule.toast("会话已开始，工作区不可修改")
@@ -5264,6 +5547,7 @@ internal class DshHomePage : BasePager() {
 
     private fun openWorkspaceAddFolder() {
         if (!isRemoteHost) return
+        dismissKeyboard()
         workspacePickerScreen = DshWorkspacePickerScreen.ADD
         workspacePickerError = ""
         workspaceAddNewName = ""
@@ -5271,20 +5555,20 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun loadWorkspaceAddDirectory(path: String?) {
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         if (workspacePickerBusy) return
         val generation = ++workspacePickerGeneration
         workspaceAddBusy = true
         workspacePickerError = ""
         remote.listDirectory(path) { listing, error ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 if (!pageAlive || !workspacePickerVisible || workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
                     generation != workspacePickerGeneration || remote !== this@DshHomePage.repository
-                ) return@setTimeout
+                ) return@postToUi
                 workspaceAddBusy = false
                 if (error != null || listing == null) {
                     workspacePickerError = error?.message ?: "无法读取目录"
-                    return@setTimeout
+                    return@postToUi
                 }
                 workspaceAddPath = listing.path
                 workspaceAddHome = listing.home
@@ -5295,7 +5579,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun createWorkspaceAddDirectory() {
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         if (workspacePickerBusy || workspaceAddBusy) return
         val name = workspaceAddNewName.trim()
         if (workspaceAddPath.isEmpty() || name.isEmpty()) return
@@ -5303,14 +5587,14 @@ internal class DshHomePage : BasePager() {
         workspaceAddBusy = true
         workspacePickerError = ""
         remote.createDirectory(workspaceAddPath, name) { createdPath, error ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 if (!pageAlive || !workspacePickerVisible || workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
                     generation != workspacePickerGeneration || remote !== this@DshHomePage.repository
-                ) return@setTimeout
+                ) return@postToUi
                 workspaceAddBusy = false
                 if (error != null || createdPath == null) {
                     workspacePickerError = error?.message ?: "无法创建目录"
-                    return@setTimeout
+                    return@postToUi
                 }
                 workspaceAddNewName = ""
                 loadWorkspaceAddDirectory(createdPath)
@@ -5320,18 +5604,18 @@ internal class DshHomePage : BasePager() {
 
     /** 添加文件夹：注册 Host 目录为工作区，成功后直接切换过去并关闭弹窗。 */
     private fun adoptWorkspaceAddDirectory() {
-        val remote = repository as? DshRemoteRepository ?: return
+        val remote = remoteRepo ?: return
         val path = workspaceAddPath
         if (path.isEmpty() || workspacePickerBusy || workspaceAddBusy) return
         workspaceAddBusy = true
         workspacePickerError = ""
         remote.createWorkspace(path) { value, error ->
-            setTimeout(pagerId, 0) {
-                if (!pageAlive || !workspacePickerVisible || remote !== this@DshHomePage.repository) return@setTimeout
+            postToUi {
+                if (!pageAlive || !workspacePickerVisible || remote !== this@DshHomePage.repository) return@postToUi
                 if (error != null) {
                     workspaceAddBusy = false
                     workspacePickerError = error.message
-                    return@setTimeout
+                    return@postToUi
                 }
                 // 重新拉取 workspace.list 基线，确保新注册工作区已进入本地投影后再解析其 id。
                 remote.loadSessionCatalog({ catalog ->
@@ -5360,24 +5644,25 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun openWorkspaceRename(workspaceId: String, currentTitle: String) {
+        dismissKeyboard()
         workspaceRenameTargetId = workspaceId
         workspaceRenameDraft = currentTitle
         workspaceActionError = ""
     }
 
     private fun saveWorkspaceRename() {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val workspaceId = workspaceRenameTargetId
         val title = workspaceRenameDraft.trim()
         if (workspaceId.isEmpty() || title.isEmpty()) return
         workspaceActionBusy = true
         workspaceActionError = ""
         repository.renameWorkspace(workspaceId, title) { _, error ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 workspaceActionBusy = false
                 if (error != null) {
                     workspaceActionError = error.message
-                    return@setTimeout
+                    return@postToUi
                 }
                 workspaceRenameTargetId = ""
                 workspaceRenameDraft = ""
@@ -5392,17 +5677,17 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun confirmWorkspaceDelete() {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val workspaceId = workspaceDeleteTargetId
         if (workspaceId.isEmpty()) return
         workspaceActionBusy = true
         workspaceActionError = ""
         repository.deleteWorkspace(workspaceId) { _, error ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 workspaceActionBusy = false
                 if (error != null) {
                     workspaceActionError = error.message
-                    return@setTimeout
+                    return@postToUi
                 }
                 workspaceDeleteTargetId = ""
                 refreshWorkspaceGroups()
@@ -5411,7 +5696,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun moveWorkspace(workspaceId: String, delta: Int) {
-        val repository = repository as? DshRemoteRepository ?: return
+        val repository = remoteRepo ?: return
         val ordered = workspaceGroups.filter { it.workspaceId.isNotEmpty() }
         val index = ordered.indexOfFirst { it.workspaceId == workspaceId }
         if (index < 0) return
@@ -5425,11 +5710,11 @@ internal class DshHomePage : BasePager() {
         workspaceActionBusy = true
         workspaceActionError = ""
         repository.moveWorkspaceBefore(workspaceId, beforeWorkspaceId) { _, error ->
-            setTimeout(pagerId, 0) {
+            postToUi {
                 workspaceActionBusy = false
                 if (error != null) {
                     workspaceActionError = error.message
-                    return@setTimeout
+                    return@postToUi
                 }
                 refreshWorkspaceGroups()
             }
@@ -5469,7 +5754,7 @@ internal class DshHomePage : BasePager() {
         }
         localReadScope.launch {
             val apiKey = runCatching { store.loadApiKey() }.getOrDefault("")
-            setTimeout(pagerId, 0) {
+            postToUi {
                 pendingApiKey = apiKey
                 if (apiKey.isEmpty()) {
                     showCredentialSetupIfNeeded(apiKey)
@@ -5544,7 +5829,7 @@ internal class DshHomePage : BasePager() {
         pendingAttachmentReads.clear()
         loadMessagesFromDisk(id)
         fetchHostHistory(id)
-        setTimeout(pagerId, 0) {
+        postToUi {
             if (activeSessionId == id) loadModels(id)
         }
         draft = ""
@@ -5613,11 +5898,7 @@ internal class DshHomePage : BasePager() {
         refreshPendingInteractions()
     }
 
-    private fun reconnectLabel(): String = when (connectionMode) {
-        DshConnectionMode.SSH -> "远程连接重建中"
-        DshConnectionMode.RELAY -> "扫码连接重建中"
-        DshConnectionMode.LOCAL -> "本地 DSH 连接重建中"
-    }
+    private fun reconnectLabel(): String = dshReconnectLabel(connectionMode)
 
     private fun isTurnStatusActive(): Boolean =
         streaming || stopButtonVisible || sessionRunning
@@ -5655,11 +5936,7 @@ internal class DshHomePage : BasePager() {
         tick()
     }
 
-    private fun syncBusyLabel(): String = when (connectionMode) {
-        DshConnectionMode.SSH -> "远程 DSH 正在同步，暂不能发送"
-        DshConnectionMode.RELAY -> "扫码连接正在同步，暂不能发送"
-        DshConnectionMode.LOCAL -> "本地 DSH 正在同步，暂不能发送"
-    }
+    private fun syncBusyLabel(): String = dshSyncBusyLabel(connectionMode)
 
     private fun refreshMountedSessionRenderTrees() {
         conversationPanelIds.toList().forEach { refreshSessionRenderTree(it) }
@@ -5732,9 +6009,9 @@ internal class DshHomePage : BasePager() {
                 val loaded = runCatching { store.loadMessages(activeConnectionId, sessionId) }
                     .getOrDefault(emptyList())
                     .filterNot { it.isRuntimeContextSnapshot() }
-                setTimeout(pagerId, 0) {
+                postToUi {
                     pendingLocalMessageReads.remove(sessionId)
-                    val state = sessionMessageStates[sessionId] ?: return@setTimeout
+                    val state = sessionMessageStates[sessionId] ?: return@postToUi
                     sessionMessageReady.add(sessionId)
                     if (state.isEmpty() && loaded.isNotEmpty() &&
                         sessions.firstOrNull { it.id == sessionId }?.blank != true
@@ -5761,9 +6038,9 @@ internal class DshHomePage : BasePager() {
             val loaded = runCatching { localStore?.loadMessages(activeConnectionId, sessionId).orEmpty() }
                 .getOrDefault(emptyList())
                 .filterNot { it.isRuntimeContextSnapshot() }
-            setTimeout(pagerId, 0) {
+            postToUi {
                 pendingLocalMessageReads.remove(sessionId)
-                val state = sessionMessageStates[sessionId] ?: return@setTimeout
+                val state = sessionMessageStates[sessionId] ?: return@postToUi
                 sessionMessageReady.add(sessionId)
                 // A remote history response or a new local prompt wins over
                 // a disk snapshot that finishes later. The state is keyed by
@@ -5783,7 +6060,7 @@ internal class DshHomePage : BasePager() {
 
     private fun completePendingSessionSelection(sessionId: String) {
         if (!pendingSessionSelections.remove(sessionId)) return
-        setTimeout(pagerId, 0) {
+        postToUi {
             if (activeSessionId != sessionId) selectSession(sessionId)
         }
     }
@@ -5826,7 +6103,7 @@ internal class DshHomePage : BasePager() {
             // 渲染该列表期间新增 panel 会触发 Kuikly 对同一响应式列表的自注册，
             // 迭代中修改被绑定的 observers 集合导致 CME。此时元素通常已入列，
             // 下一消息幂等兜底收敛，避免拖垮整个页面。
-            setTimeout(pagerId, 0) {
+            postToUi {
                 runCatching {
                     if (!conversationPanelIds.contains(sessionId) &&
                         conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT
@@ -5839,11 +6116,13 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun sendDraft() {
+        if (sendInFlight) return
         dismissKeyboard()
         val prompt = draft.trim()
         val sendableImages = pendingImages.filter { it.state != DshImageDraftState.INVALID && it.dataBase64.isNotEmpty() }
-        if ((prompt.isEmpty() && sendableImages.isEmpty()) || streaming) return
-        val hostRepository = repository as? DshRemoteRepository
+        val sendableFiles = pendingFiles.filter { it.state != DshFileDraftState.FAILED && it.dataBase64.isNotEmpty() }
+        if ((prompt.isEmpty() && sendableImages.isEmpty() && sendableFiles.isEmpty()) || streaming) return
+        val hostRepository = remoteRepo
         if (hostRepository == null) {
             connectionLabel = "本地内核尚未连接"
             messages.add(DshMessage(
@@ -5877,10 +6156,37 @@ internal class DshHomePage : BasePager() {
             return
         }
         val sessionId = activeSessionId
+        // 旧 Host 无文件 content 类型：先把未落盘文件上传到会话工作目录，成功后再带上 handle 发送。
+        val filesNeedingUpload = sendableFiles.filter { it.handle.isEmpty() }
+        if (filesNeedingUpload.isNotEmpty()) {
+            if (sendInFlight) return
+            sendInFlight = true
+            uploadPendingFiles(sessionId, filesNeedingUpload) { ok ->
+                sendInFlight = false
+                if (!ok) return@uploadPendingFiles
+                // 用首次点击时的快照发送，避免读取被编辑后的草稿；文件带回上传后的 handle。
+                val uploaded = sendableFiles.map { file ->
+                    pendingFiles.firstOrNull { it.clientId == file.clientId } ?: file
+                }
+                submitDraft(sessionId, prompt, sendableImages, uploaded, hostRepository)
+            }
+            return
+        }
+        submitDraft(sessionId, prompt, sendableImages, sendableFiles, hostRepository)
+    }
+
+    private fun submitDraft(
+        sessionId: String,
+        prompt: String,
+        sendableImages: List<DshPendingImage>,
+        sendableFiles: List<DshPendingFile>,
+        hostRepository: DshRemoteRepository,
+    ) {
+        val wirePrompt = composePromptWithFiles(prompt, sendableFiles)
         val user = DshMessage(
             "user-${messages.size}",
             DshMessageRole.USER,
-            prompt,
+            wirePrompt,
         )
         val assistantId = "assistant-${messages.size}"
         val reasoningId = "$assistantId-reasoning"
@@ -5917,6 +6223,13 @@ internal class DshHomePage : BasePager() {
                 attachmentEpoch += 1
             }
         }
+        sendableFiles.forEach { file ->
+            val idx = pendingFiles.indexOfFirst { it.clientId == file.clientId }
+            if (idx >= 0) {
+                pendingFiles[idx] = file.copy(state = DshFileDraftState.UPLOADING)
+                attachmentEpoch += 1
+            }
+        }
         streaming = true
         stopButtonVisible = true
         connectionLabel = "正在生成"
@@ -5925,7 +6238,7 @@ internal class DshHomePage : BasePager() {
         streamHandle = hostRepository.streamReplyWithImages(
             pagerId = pagerId,
             sessionId = sessionId,
-            prompt = prompt,
+            prompt = wirePrompt,
             images = sendableImages,
             onDelta = { delta, isReasoning ->
                 if (isReasoning) queueReasoningDelta(reasoningId, delta)
@@ -5936,6 +6249,7 @@ internal class DshHomePage : BasePager() {
                 // Host 已接受该轮（含图片），输入区草稿收敛为空；图片由 Host timeline 以 attachmentId 呈现
                 val completedIds = sendableImages.map { it.clientId }.toSet()
                 pendingImages.removeAll { it.clientId in completedIds }
+                pendingFiles.removeAll { it.clientId in sendableFiles.map { f -> f.clientId }.toSet() }
                 attachmentEpoch += 1
                 // 发送中的图片此时才移入用户气泡；整轮发送期间输入区保留“发送中”状态
                 val previews = sendableImages.map { it.previewDataUrl }
@@ -5965,6 +6279,7 @@ internal class DshHomePage : BasePager() {
                     DshStreamLog.i("ui.prompt-interrupt session=$sessionId message='${DshStreamLog.preview(error)}'")
                     // 传输中断由重连接管，输入区不再挂“发送中”；图片由 Host timeline 以 attachmentId 回显
                     pendingImages.removeAll { it.clientId in sendableImages.map { it.clientId }.toSet() }
+                    pendingFiles.removeAll { it.clientId in sendableFiles.map { f -> f.clientId }.toSet() }
                     attachmentEpoch += 1
                     return@streamReplyWithImages
                 }
@@ -5980,6 +6295,12 @@ internal class DshHomePage : BasePager() {
                     } else {
                         pendingImages.add(failed)
                     }
+                }
+                // 文件已落盘：仅回到已就绪，重发时复用同一 handle，不重复上传。
+                sendableFiles.forEach { file ->
+                    val idx = pendingFiles.indexOfFirst { it.clientId == file.clientId }
+                    val reset = file.copy(state = DshFileDraftState.SELECTED)
+                    if (idx >= 0) pendingFiles[idx] = reset else pendingFiles.add(reset)
                 }
                 attachmentEpoch += 1
                 flushAssistantDelta()
@@ -5998,8 +6319,9 @@ internal class DshHomePage : BasePager() {
         dismissKeyboard()
         streamHandle?.cancel()
         streamHandle = null
-        // 主动停止时，已随 prompt 发出的图片不再留在输入区
+        // 主动停止时，已随 prompt 发出的图片/文件不再留在输入区
         pendingImages.removeAll { it.state == DshImageDraftState.UPLOADING }
+        pendingFiles.removeAll { it.state == DshFileDraftState.UPLOADING }
         attachmentEpoch += 1
         flushAssistantDelta()
         ensureStreamingAssistantSegment()
@@ -6151,6 +6473,9 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun updateKeyboard(params: KeyboardParams) {
+        // 仅当首页输入框自身聚焦时才让键盘顶起底页；重命名等弹窗里的输入框
+        // 也会唤起软键盘，其高度不应驱动会话区布局。高度归零始终允许（收起态）。
+        if (!inputFocused && params.height > 0f) return
         keyboardAnimation = Animation.easeInOut(ANIMATION_DURATION_S)
         keyboardHeight = effectiveKeyboardHeight(params.height)
         // Closing the keyboard after send must not undo the scroll to the
@@ -6254,26 +6579,301 @@ internal class DshHomePage : BasePager() {
         })
     }
 
-    private fun selectedReasoningEffortName(option: DshModelOption): String =
-        option.reasoningEfforts.firstOrNull { it.id == option.reasoningEffort }?.name
-            ?: option.reasoningEffort
-            ?: ""
-
+    /** 切换文字 / 语音输入模式（右下角语音↔键盘按钮）。 */
     private fun toggleVoice() {
         dismissKeyboard()
         commandSheetVisible = false
+        // 切换模式时若正在录音，先取消，避免遗留会话
+        if (voiceRecording) {
+            voiceCancelRequested = true
+            bridgeModule.cancelVoiceRecognition()
+            finishVoiceRecord(cancelled = true)
+        }
         voiceActive = !voiceActive
-        connectionLabel = if (voiceActive) "正在聆听" else "已连接"
+        if (!voiceActive) resetVoiceVisual()
     }
 
-    /** 附件方块点击：拍照/相册走平台取图，文件暂未开放 */
+    /** 按住说话：按下，开始语音识别并显示录音浮层。 */
+    private fun beginVoiceRecord(startPageY: Float) {
+        if (voiceRecording) return
+        voiceActive = true
+        dismissKeyboard()
+        voiceHoldStartY = startPageY
+        voiceStopping = false
+        voiceCancelRequested = false
+        voiceCancelArmed = false
+        voiceCommittedText = ""
+        voicePartialText = ""
+        voiceLastLevelAt = 0L
+        voiceStopFallbackScheduled = false
+        voiceWaveformModel.clear()
+        voiceWaveformRevision += 1
+        voiceRecording = true
+        bridgeModule.startVoiceRecognition { raw -> handleVoiceEvent(raw) }
+        voiceDecayGeneration += 1
+        scheduleVoiceDecay(voiceDecayGeneration)
+    }
+
+    /** 按住说话：移动，上滑超过阈值进入取消态。 */
+    private fun updateVoiceHold(currentPageY: Float) {
+        if (!voiceRecording) return
+        voiceCancelArmed = dshVoiceCancelArmed(voiceHoldStartY, currentPageY)
+    }
+
+    /** 按住说话：松手，取消或提交识别。 */
+    private fun endVoiceRecord() {
+        if (!voiceRecording || voiceStopping) return
+        voiceStopping = true
+        if (voiceCancelArmed) {
+            voiceCancelRequested = true
+            bridgeModule.cancelVoiceRecognition()
+            finishVoiceRecord(cancelled = true)
+            return
+        }
+        bridgeModule.stopVoiceRecognition()
+        // 若最终结果已提前到达（系统自动结束），可直接提交；否则等待 final/end 或兜底超时
+        if (voiceCommittedText.isNotEmpty()) {
+            finishVoiceRecord(cancelled = false)
+            return
+        }
+        if (!voiceStopFallbackScheduled) {
+            voiceStopFallbackScheduled = true
+            // 兜底定时器绑定本次录音代次：新一轮录音开始后旧定时器不再结束它。
+            val generation = voiceDecayGeneration
+            setTimeout(pagerId, DSH_VOICE_STOP_TIMEOUT_MS) {
+                if (generation != voiceDecayGeneration) return@setTimeout
+                voiceStopFallbackScheduled = false
+                if (voiceRecording) finishVoiceRecord(cancelled = voiceCancelRequested)
+            }
+        }
+    }
+
+    /** 处理原生语音识别事件（ready/level/partial/final/error/end）。 */
+    private fun handleVoiceEvent(raw: String) {
+        if (raw.isEmpty() || !pageAlive) return
+        val event = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        when (event.optString("event")) {
+            "ready" -> Unit
+            "level" -> appendVoiceLevel(event.optDouble("level").toFloat())
+            "partial" -> {
+                val text = event.optString("text")
+                if (text.isNotEmpty()) voicePartialText = text
+            }
+            "final" -> {
+                val text = event.optString("text")
+                if (text.isNotEmpty()) {
+                    voiceCommittedText = text
+                    voicePartialText = text
+                }
+            }
+            "error" -> {
+                val message = dshVoiceErrorMessage(
+                    code = event.optString("code"),
+                    locale = settingsSnapshot.localeValue,
+                    fallback = event.optString("message"),
+                )
+                val wasRecording = voiceRecording
+                finishVoiceRecord(cancelled = true)
+                if (wasRecording) bridgeModule.toast(message)
+            }
+            "end" -> {
+                // 仅当已松手/已取消时才结束；录音中系统自动结束则保留结果，待松手提交
+                if (voiceStopping || voiceCancelRequested) {
+                    finishVoiceRecord(cancelled = voiceCancelRequested)
+                }
+            }
+        }
+    }
+
+    /** 音量事件节流后写入滚动窗口，驱动浮层方块高度。 */
+    private fun appendVoiceLevel(level: Float) {
+        if (!voiceRecording) return
+        val now = DateTime.currentTimestamp()
+        if (now - voiceLastLevelAt < DSH_VOICE_LEVEL_INTERVAL_MS) return
+        voiceLastLevelAt = now
+        pushVoiceLevel(level)
+    }
+
+    /** 把新音量推入滚动窗口左移一格；每次自增 revision 触发波形重绘。 */
+    private fun pushVoiceLevel(level: Float) {
+        voiceWaveformModel.push(level)
+        voiceWaveformRevision += 1
+    }
+
+    /**
+     * 无新音量采样时让波形平滑衰减，避免原生 RMS 停止上报（静音/识别暂停）后
+     * 波形看起来「卡住不动」。
+     */
+    private fun scheduleVoiceDecay(generation: Int) {
+        if (!voiceRecording || generation != voiceDecayGeneration) return
+        val now = DateTime.currentTimestamp()
+        if (now - voiceLastLevelAt >= DSH_VOICE_DECAY_GAP_MS) {
+            if (voiceWaveformModel.decay()) voiceWaveformRevision += 1
+        }
+        setTimeout(pagerId, DSH_VOICE_DECAY_TICK_MS) { scheduleVoiceDecay(generation) }
+    }
+
+    /** 原生输入框挂载完成：记录实例；若有语音转文字待回填则写入。 */
+    private fun onInputViewCreated(view: TextAreaView?) {
+        if (view == null) return
+        inputView = view
+        pendingVoiceDraft?.let { text ->
+            pendingVoiceDraft = null
+            view.setText(text)
+        }
+    }
+
+    /** 结束录音：取消丢弃，或把最终文本写入输入框并切回文字模式。 */
+    private fun finishVoiceRecord(cancelled: Boolean) {
+        if (!voiceRecording) return
+        voiceRecording = false
+        // 递增代次，使仍在等待的旧兜底定时器/权限回调失效
+        voiceDecayGeneration += 1
+        // 会话结束，释放跨事件回调
+        bridgeModule.releaseVoiceRecognition()
+        val text = dshVoiceResolvedText(voiceCommittedText, voicePartialText)
+        val shouldCommit = dshVoiceShouldCommit(cancelled, text)
+        resetVoiceVisual()
+        if (shouldCommit) {
+            // 切回文字模式后 TextArea 会重新挂载，待其 ref 回调时回填原生文本
+            voiceActive = false
+            draft = text
+            pendingVoiceDraft = text
+        }
+    }
+
+    private fun resetVoiceVisual() {
+        voicePartialText = ""
+        voiceCommittedText = ""
+        voiceCancelArmed = false
+        voiceStopping = false
+        voiceCancelRequested = false
+        voiceWaveformModel.clear()
+        voiceWaveformRevision += 1
+    }
+
+    /** 附件方块点击：拍照/相册走平台取图，文件走系统文档选择器 + host-plugin 落盘。 */
     private fun onAttachmentTile(tile: DshCommandSheetTile) {
         commandSheetVisible = false
         when (tile) {
             DshCommandSheetTile.CAMERA -> pickImageFrom("camera")
             DshCommandSheetTile.GALLERY -> pickImageFrom("album")
-            DshCommandSheetTile.FILE -> bridgeModule.toast("文件上传暂未开放")
+            DshCommandSheetTile.FILE -> pickFileFrom()
         }
+    }
+
+    /** 平台选文件 → 解析 → 大小/数量预检 → 加入输入区草稿；取消静默，失败 toast。 */
+    private fun pickFileFrom() {
+        val expectedSession = activeSessionId
+        val expectedConnection = activeConnectionId
+        bridgeModule.pickFile { raw ->
+            if (!pageAlive || expectedSession != activeSessionId || expectedConnection != activeConnectionId) return@pickFile
+            val result = runCatching {
+                com.tencent.kuikly.core.nvi.serialization.json.JSONObject(raw)
+            }.getOrNull()
+            if (result == null || !result.optBoolean("ok")) {
+                if (result?.optBoolean("cancelled") == true) return@pickFile
+                val error = result?.optString("error").orEmpty().ifEmpty { "选择文件失败" }
+                bridgeModule.toast(error)
+                return@pickFile
+            }
+            val picked = try {
+                parsePickedFiles(result)
+            } catch (t: Throwable) {
+                emptyList()
+            }
+            if (picked.isEmpty()) {
+                bridgeModule.toast("文件解析失败")
+                return@pickFile
+            }
+            DshAttachmentIntake.planFiles(pendingFiles.toList(), picked).forEach { intake ->
+                when (intake) {
+                    is DshFileIntake.Accepted -> pendingFiles.add(intake.file)
+                    is DshFileIntake.Rejected -> bridgeModule.toast(intake.reason)
+                }
+            }
+            attachmentEpoch += 1
+        }
+    }
+
+    private fun removePendingFile(clientId: String) {
+        pendingFiles.removeAll { it.clientId == clientId }
+        attachmentEpoch += 1
+    }
+
+    private fun retryPendingFile(clientId: String) {
+        val index = pendingFiles.indexOfFirst { it.clientId == clientId }
+        if (index < 0) return
+        val file = pendingFiles[index]
+        if (file.state != DshFileDraftState.FAILED) return
+        pendingFiles[index] = file.copy(
+            state = DshFileDraftState.SELECTED,
+            error = "",
+            handle = "",
+            path = "",
+            sha256 = "",
+        )
+        attachmentEpoch += 1
+    }
+
+    /**
+     * 逐个上传文件草稿；全部成功回调 true，任一步失败保留 FAILED 状态并回调 false。
+     * 上传成功后回填 path/handle，供 prompt 组装。
+     */
+    private fun uploadPendingFiles(
+        sessionId: String,
+        files: List<DshPendingFile>,
+        onDone: (Boolean) -> Unit,
+    ) {
+        val hostRepository = remoteRepo
+        if (hostRepository == null) {
+            onDone(false)
+            return
+        }
+        files.forEach { file ->
+            val idx = pendingFiles.indexOfFirst { it.clientId == file.clientId }
+            if (idx >= 0) {
+                pendingFiles[idx] = pendingFiles[idx].copy(state = DshFileDraftState.UPLOADING, error = "")
+            }
+        }
+        attachmentEpoch += 1
+        var index = 0
+        fun uploadNext() {
+            if (index >= files.size) {
+                onDone(true)
+                return
+            }
+            val file = files[index]
+            hostRepository.uploadAttachment(sessionId, file.name, file.mediaType, file.dataBase64) { uploaded, error ->
+                if (!pageAlive || activeSessionId != sessionId) return@uploadAttachment
+                val idx = pendingFiles.indexOfFirst { it.clientId == file.clientId }
+                if (error != null || uploaded == null) {
+                    if (idx >= 0) {
+                        pendingFiles[idx] = pendingFiles[idx].copy(
+                            state = DshFileDraftState.FAILED,
+                            error = error?.message ?: "上传失败",
+                        )
+                    }
+                    attachmentEpoch += 1
+                    bridgeModule.toast(error?.message ?: "附件上传失败")
+                    onDone(false)
+                    return@uploadAttachment
+                }
+                if (idx >= 0) {
+                    pendingFiles[idx] = pendingFiles[idx].copy(
+                        state = DshFileDraftState.SELECTED,
+                        path = uploaded.path,
+                        sha256 = uploaded.sha256,
+                        handle = uploaded.handle,
+                        error = "",
+                    )
+                }
+                attachmentEpoch += 1
+                index += 1
+                uploadNext()
+            }
+        }
+        uploadNext()
     }
 
     /** 平台取图 → 解析 → imageLimits 预检 → 加入输入区草稿；取消静默，失败 toast。 */
@@ -6303,67 +6903,37 @@ internal class DshHomePage : BasePager() {
                 return@pickImage
             }
             val limits = imageLimits ?: DshImageLimits.DEFAULT
-            var accepted = pendingImages.toList()
-            picked.forEach { pending ->
-                val rejection = try {
-                    DshImageValidator.rejectBatch(accepted, listOf(pending), limits)
-                } catch (t: Throwable) {
-                    DshStreamLog.log(LogLevel.ERROR, "app.image.failed", "phase=validate error='${DshStreamLog.preview(t.message.orEmpty())}'", expectedSession)
-                    null
-                }
-                if (rejection != null) {
-                    val reason = DshImageValidator.rejectionText(rejection)
-                    pendingImages.add(pending.copy(state = DshImageDraftState.INVALID, error = reason))
-                    bridgeModule.toast(reason)
-                    DshStreamLog.log(
-                        LogLevel.WARN, "app.image.rejected",
-                        "source=$source mediaType=${pending.mediaType} width=${pending.width} height=${pending.height} bytes=${pending.bytes} reason=$reason",
-                        expectedSession,
-                    )
-                } else {
-                    pendingImages.add(pending)
-                    accepted = accepted + pending
-                    DshStreamLog.log(
-                        LogLevel.INFO, "app.image.selected",
-                        "source=$source mediaType=${pending.mediaType} width=${pending.width} height=${pending.height} bytes=${pending.bytes}",
-                        expectedSession,
-                    )
+            val intakes = try {
+                DshAttachmentIntake.planImages(pendingImages.toList(), picked, limits)
+            } catch (t: Throwable) {
+                DshStreamLog.log(LogLevel.ERROR, "app.image.failed", "phase=validate error='${DshStreamLog.preview(t.message.orEmpty())}'", expectedSession)
+                picked.map { DshImageIntake.Accepted(it) }
+            }
+            intakes.forEach { intake ->
+                when (intake) {
+                    is DshImageIntake.Accepted -> {
+                        val pending = intake.image
+                        pendingImages.add(pending)
+                        DshStreamLog.log(
+                            LogLevel.INFO, "app.image.selected",
+                            "source=$source mediaType=${pending.mediaType} width=${pending.width} height=${pending.height} bytes=${pending.bytes}",
+                            expectedSession,
+                        )
+                    }
+                    is DshImageIntake.Rejected -> {
+                        val pending = intake.image
+                        pendingImages.add(pending)
+                        bridgeModule.toast(intake.reason)
+                        DshStreamLog.log(
+                            LogLevel.WARN, "app.image.rejected",
+                            "source=$source mediaType=${pending.mediaType} width=${pending.width} height=${pending.height} bytes=${pending.bytes} reason=${intake.reason}",
+                            expectedSession,
+                        )
+                    }
                 }
             }
             attachmentEpoch += 1
         }
-    }
-
-    /** 兼容单张（旧字段）与多张（`images` 数组）两种原生返回。 */
-    private fun parsePickedImages(result: com.tencent.kuikly.core.nvi.serialization.json.JSONObject): List<DshPendingImage> {
-        val array = result.optJSONArray("images")
-        if (array != null) {
-            return buildList {
-                for (i in 0 until array.length()) {
-                    val item = array.optJSONObject(i) ?: continue
-                    parsePickedImage(item, i)?.let(::add)
-                }
-            }
-        }
-        return listOfNotNull(parsePickedImage(result, 0))
-    }
-
-    private fun parsePickedImage(
-        item: com.tencent.kuikly.core.nvi.serialization.json.JSONObject,
-        index: Int,
-    ): DshPendingImage? {
-        val dataUrl = item.optString("dataUrl")
-        if (dataUrl.isEmpty()) return null
-        return DshPendingImage(
-            clientId = "img-${currentTimeMillis()}-$index",
-            mediaType = item.optString("mediaType"),
-            name = item.optString("name").ifEmpty { "image" },
-            dataBase64 = dataUrl.substringAfter("base64,"),
-            previewDataUrl = dataUrl,
-            bytes = item.optString("bytes").toLongOrNull() ?: 0L,
-            width = item.optString("width").toIntOrNull() ?: 0,
-            height = item.optString("height").toIntOrNull() ?: 0,
-        )
     }
 
     /** 保存预览图片到系统相册，成功/失败 toast 反馈。 */
@@ -6646,8 +7216,6 @@ internal class DshHomePage : BasePager() {
             }
         }
     }
-
-    private fun messageRowKey(sessionId: String, messageId: String): String = "$sessionId:$messageId"
 
     private fun settleStreamingMessage(role: DshMessageRole, content: String) {
         val id = streamingAssistantId

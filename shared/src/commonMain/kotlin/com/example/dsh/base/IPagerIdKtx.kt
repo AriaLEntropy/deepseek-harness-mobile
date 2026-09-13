@@ -3,6 +3,7 @@ package com.example.dsh.base
 import com.tencent.kuikly.core.base.IPagerId
 import com.tencent.kuikly.core.base.pagerId
 import com.tencent.kuikly.core.manager.PagerManager
+import com.tencent.kuikly.core.timer.setTimeout
 
 /**
  * 老的方式:，需要显式传递 pagerId

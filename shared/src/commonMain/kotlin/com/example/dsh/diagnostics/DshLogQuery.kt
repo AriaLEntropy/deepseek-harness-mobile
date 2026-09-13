@@ -1,6 +1,20 @@
 package com.example.dsh.diagnostics
 
-import com.example.dsh.infrastructure.*
+import com.example.dsh.infrastructure.DshLogWriteBehind
+import com.example.dsh.infrastructure.LogEvent
+import com.example.dsh.infrastructure.LogExporter
+import com.example.dsh.infrastructure.LogFilter
+import com.example.dsh.infrastructure.LogLevel
+import com.example.dsh.infrastructure.LogSanitizer
+import com.example.dsh.infrastructure.LogSortOrder
+import com.example.dsh.infrastructure.appendExportFile
+import com.example.dsh.infrastructure.beginExport
+import com.example.dsh.infrastructure.deleteExportFile
+import com.example.dsh.infrastructure.endExport
+import com.example.dsh.infrastructure.exportPublishLock
+import com.example.dsh.infrastructure.pruneExportCache
+import com.example.dsh.infrastructure.renameExportFile
+import com.example.dsh.infrastructure.writeExportFile
 
 /** Immutable worker input. Keywords are literal; event types have their own filter. */
 internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search: String = "") {
@@ -23,14 +37,14 @@ internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search:
         isCancelled: () -> Boolean = { false },
     ): DshLogPageResult {
         // 级别计数取「级别过滤前」的口径（levels = null），total 由选中级别求和得出。
-        val stats = source.logStats(baseFilter(null), includeCatalog, isCancelled)
+        val snapshot = source.readPageSnapshot(baseFilter(filter.levels), limit, offset, includeCatalog, isCancelled)
+        val stats = snapshot.stats
         val selected = filter.levels
         val total = if (selected.isNullOrEmpty()) {
             stats.levels.values.sum()
         } else {
             stats.levels.entries.sumOf { if (it.key in selected) it.value else 0L }
         }
-        val rows = source.readSlice(baseFilter(filter.levels), limit, isCancelled, offset)
         val catalog = if (includeCatalog) {
             DshLogCatalog(
                 sessions = stats.sessions.map { it.ifEmpty { DshLogFilters.UNASSOCIATED } }.distinct().sorted(),
@@ -38,19 +52,30 @@ internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search:
                 retained = stats.retained.toInt(),
             )
         } else null
-        return DshLogPageResult(rows, total.toInt(), stats.levels.mapValues { it.value.toInt() }, catalog)
+        return DshLogPageResult(
+            rows = snapshot.rows,
+            total = total.toInt(),
+            levels = stats.levels.mapValues { it.value.toInt() },
+            maxSeq = snapshot.maxSeq,
+            retentionVersion = snapshot.retentionVersion,
+            catalog = catalog,
+        )
     }
 
     /**
      * 比 [afterSeq] 更新的记录（含关键词/会话/时间/类型条件，不含级别过滤），
-     * 只取前 [limit] 条，用于增量轮询新日志。
+     * 从旧到新读取紧邻游标的 [limit] 条，再倒序返回供列表头部插入。
+     * 不能直接取最新的一批，否则推进游标会跳过尚未读取的积压记录。
      */
     fun readNewer(
         source: DshLogWriteBehind,
         afterSeq: Long,
         limit: Int,
         isCancelled: () -> Boolean = { false },
-    ): List<LogEvent> = source.readSlice(baseFilter(null).copy(afterSeq = afterSeq), limit, isCancelled)
+    ): List<LogEvent> = source.readSlice(
+        baseFilter(null).copy(afterSeq = afterSeq), limit, isCancelled,
+        order = LogSortOrder.OLDEST_FIRST,
+    ).asReversed()
 
     /** 比 [beforeSeq] 更旧的下一页（含全部筛选条件），只取 [limit] 条，用于触底懒加载。 */
     fun readOlder(
@@ -99,5 +124,6 @@ internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search:
 
 internal data class DshLogCatalog(val sessions: List<String>, val types: List<String>, val retained: Int)
 internal data class DshLogPageResult(
-    val rows: List<LogEvent>, val total: Int, val levels: Map<LogLevel, Int>, val catalog: DshLogCatalog? = null,
+    val rows: List<LogEvent>, val total: Int, val levels: Map<LogLevel, Int>,
+    val maxSeq: Long, val retentionVersion: Long, val catalog: DshLogCatalog? = null,
 )

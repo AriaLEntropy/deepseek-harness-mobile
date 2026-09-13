@@ -67,7 +67,7 @@ private class RetryingDshLogStore(private val factory: () -> DshLogStore) : DshL
     private var value: DshLogStore? = null
     private fun store(): DshLogStore = value ?: factory().also { value = it }
     override fun appendBatch(events: List<LogEvent>) = store().appendBatch(events)
-    override fun query(filter: LogFilter, limit: Int, offset: Int) = store().query(filter, limit, offset)
+    override fun query(filter: LogFilter, limit: Int, offset: Int, order: LogSortOrder) = store().query(filter, limit, offset, order)
     override fun levelCounts(filter: LogFilter) = store().levelCounts(filter)
     override fun distinctSessions() = store().distinctSessions()
     override fun distinctTypes() = store().distinctTypes()

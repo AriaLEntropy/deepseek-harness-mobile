@@ -16,6 +16,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
+import com.example.dsh.protocol.DshEventStream
+import com.example.dsh.transport.dshWebSocketUrl
 
 internal actual fun createDshSseBackend(): DshSseBackend = DshSseKtorBackend()
 

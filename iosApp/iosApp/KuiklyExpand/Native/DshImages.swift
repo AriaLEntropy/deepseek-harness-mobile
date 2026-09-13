@@ -2,6 +2,7 @@ import UIKit
 import PhotosUI
 import Photos
 import AVFoundation
+import Speech
 import UniformTypeIdentifiers
 import ImageIO
 
@@ -217,3 +218,302 @@ private struct ImageFailure: LocalizedError {
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
 }
+
+/** 通用文件选择（文档选择器）：读原始字节并回传 Base64，Host 侧由 host-plugin 落盘。 */
+@objc(DshFiles)
+final class DshFiles: NSObject, UIDocumentPickerDelegate {
+    @objc static let shared = DshFiles()
+    private static let maxBytes = 50 * 1024 * 1024
+    private var callback: ((NSDictionary) -> Void)?
+    private var operation = UUID()
+
+    @objc(pick:)
+    func pick(_ completion: @escaping (NSDictionary) -> Void) {
+        DispatchQueue.main.async {
+            guard self.callback == nil else {
+                completion(["ok": false, "error": "正在处理另一个文件，请稍候"]); return
+            }
+            guard let presenter = DshNativeUi.topViewController() else {
+                completion(["ok": false, "error": "无法打开文件选择器"]); return
+            }
+            self.operation = UUID()
+            self.callback = completion
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item, .data], asCopy: true)
+            picker.delegate = self
+            picker.allowsMultipleSelection = true
+            picker.modalPresentationStyle = .fullScreen
+            presenter.present(picker, animated: true)
+        }
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        controller.dismiss(animated: true)
+        let id = operation
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var files: [NSDictionary] = []
+        var firstError: String?
+        for url in urls {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                defer { group.leave() }
+                do {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    // asCopy: true 已复制到临时目录，直接读取即可。
+                    let data = try Data(contentsOf: url)
+                    if data.isEmpty { throw FileFailure("文件内容为空") }
+                    if data.count > Self.maxBytes { throw FileFailure("文件超过 50MB 上限") }
+                    let name = url.lastPathComponent.isEmpty ? "attachment" : url.lastPathComponent
+                    let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
+                    let mime = contentType?.preferredMIMEType ?? "application/octet-stream"
+                    let entry: NSDictionary = [
+                        "ok": true,
+                        "name": name,
+                        "mediaType": mime,
+                        "bytes": String(data.count),
+                        "dataUrl": "data:\(mime);base64,\(data.base64EncodedString())"
+                    ]
+                    lock.lock(); files.append(entry); lock.unlock()
+                } catch {
+                    lock.lock(); if firstError == nil { firstError = error.localizedDescription }; lock.unlock()
+                }
+            }
+        }
+        group.notify(queue: .main) {
+            guard self.operation == id else { return }
+            if files.isEmpty {
+                self.finish(["ok": false, "error": firstError ?? "无法读取文件数据"], id: id)
+            } else {
+                self.finish(["ok": true, "files": files], id: id)
+            }
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        controller.dismiss(animated: true)
+        finish(["ok": false, "cancelled": true], id: operation)
+    }
+
+    private func finish(_ result: NSDictionary, id: UUID) {
+        guard operation == id else { return }
+        let completion = callback
+        callback = nil
+        completion?(result)
+    }
+}
+
+private struct FileFailure: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}
+
+/**
+ 语音识别（按住说话）：系统 Speech 框架做语音转文字，AVAudioEngine 采集并计算实时音量。
+ 通过 `start` 的回调持续回传事件字典：
+ ready / level / partial / final / end / error。
+ 要求：Info.plist 配置 NSSpeechRecognitionUsageDescription 与 NSMicrophoneUsageDescription。
+ */
+@objc(DshVoiceRecognizer)
+final class DshVoiceRecognizer: NSObject {
+    @objc static let shared = DshVoiceRecognizer()
+
+    private let audioEngine = AVAudioEngine()
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var task: SFSpeechRecognitionTask?
+    private var onEvent: ((NSDictionary) -> Void)?
+    private var tapInstalled = false
+    private var finished = false
+    private var lastLevelAt: TimeInterval = 0
+    private var finalText = ""
+    private var finalEmitted = false
+    /// 每次录音的代次；停止/取消会使其失效，迟到的权限回调据此丢弃过期启动。
+    private var generation = 0
+
+    @objc(start:)
+    func start(_ onEvent: @escaping (NSDictionary) -> Void) {
+        DispatchQueue.main.async {
+            self.generation += 1
+            self.onEvent = onEvent
+            self.finished = false
+            self.finalText = ""
+            self.finalEmitted = false
+            self.authorizeAndStart()
+        }
+    }
+
+    @objc(stop)
+    func stop() {
+        DispatchQueue.main.async {
+            guard !self.finished else { return }
+            self.generation += 1
+            // 停止采集并结束音频输入，等待识别任务回传最终结果
+            self.stopCaptureAndEndAudio()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.finished { self.finish() }
+            }
+        }
+    }
+
+    @objc(cancel)
+    func cancel() {
+        DispatchQueue.main.async {
+            guard !self.finished else { return }
+            self.generation += 1
+            self.finished = true
+            self.task?.cancel()
+            self.task = nil
+            self.request = nil
+            self.stopCaptureAndEndAudio()
+            self.onEvent = nil
+        }
+    }
+
+    private func authorizeAndStart() {
+        let gen = generation
+        SFSpeechRecognizer.requestAuthorization { status in
+            DispatchQueue.main.async {
+                // 等待授权期间录音已被停止/取消：丢弃这次迟到的授权，避免重新启动麦克风。
+                guard gen == self.generation else { return }
+                guard status == .authorized else {
+                    self.emitError("permission_denied", "未获得语音识别权限，请在系统设置中开启")
+                    return
+                }
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    DispatchQueue.main.async {
+                        guard gen == self.generation else { return }
+                        guard granted else {
+                            self.emitError("permission_denied", "需要麦克风权限才能使用语音输入")
+                            return
+                        }
+                        self.beginSession()
+                    }
+                }
+            }
+        }
+    }
+
+    private func beginSession() {
+        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")) ?? SFSpeechRecognizer(),
+              recognizer.isAvailable else {
+            emitError("unsupported", "当前设备暂不支持语音识别")
+            return
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            self.request = request
+
+            let input = audioEngine.inputNode
+            let format = input.outputFormat(forBus: 0)
+            if tapInstalled {
+                input.removeTap(onBus: 0)
+                tapInstalled = false
+            }
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                request.append(buffer)
+                guard let self = self else { return }
+                self.emitLevel(DshVoiceRecognizer.level(from: buffer))
+            }
+            tapInstalled = true
+
+            audioEngine.prepare()
+            try audioEngine.start()
+
+            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                DispatchQueue.main.async {
+                    guard let self = self, !self.finished else { return }
+                    if let result = result {
+                        let text = result.bestTranscription.formattedString
+                        if result.isFinal {
+                            self.finalText = text
+                            if !text.isEmpty {
+                                self.finalEmitted = true
+                                self.emit(["event": "final", "text": text])
+                            }
+                            self.finish()
+                        } else if !text.isEmpty {
+                            self.emit(["event": "partial", "text": text])
+                        }
+                    }
+                    if error != nil {
+                        self.finish()
+                    }
+                }
+            }
+            emit(["event": "ready"])
+        } catch {
+            emitError("start_failed", "语音识别启动失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func stopCaptureAndEndAudio() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        if tapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        request?.endAudio()
+    }
+
+    private func finish() {
+        guard !finished else { return }
+        finished = true
+        stopCaptureAndEndAudio()
+        task?.cancel()
+        task = nil
+        request = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if !finalText.isEmpty && !finalEmitted {
+            finalEmitted = true
+            emit(["event": "final", "text": finalText])
+        }
+        emit(["event": "end"])
+        onEvent = nil
+    }
+
+    private func emitError(_ code: String, _ message: String) {
+        guard !finished else { return }
+        finished = true
+        emit(["event": "error", "code": code, "message": message])
+        stopCaptureAndEndAudio()
+        task?.cancel()
+        task = nil
+        request = nil
+        onEvent = nil
+    }
+
+    private func emitLevel(_ level: Float) {
+        let now = Date().timeIntervalSince1970
+        if now - lastLevelAt < 0.08 { return }
+        lastLevelAt = now
+        emit(["event": "level", "level": level])
+    }
+
+    private func emit(_ event: [String: Any]) {
+        onEvent?(event as NSDictionary)
+    }
+
+    private static func level(from buffer: AVAudioPCMBuffer) -> Float {
+        guard let channel = buffer.floatChannelData?[0] else { return 0 }
+        let length = Int(buffer.frameLength)
+        guard length > 0 else { return 0 }
+        var sum: Float = 0
+        for index in 0..<length {
+            let sample = channel[index]
+            sum += sample * sample
+        }
+        let rms = sqrt(sum / Float(length))
+        // -60..0 dB 归一到 0..1
+        let db = 20 * log10(max(rms, 1e-6))
+        return min(1, max(0, (db + 60) / 60))
+    }
+}
+

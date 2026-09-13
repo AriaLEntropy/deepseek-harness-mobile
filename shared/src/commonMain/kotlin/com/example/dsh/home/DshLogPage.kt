@@ -1,6 +1,8 @@
 package com.example.dsh.home
 
-import com.example.dsh.base.*
+import com.example.dsh.base.BasePager
+import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.base.setTimeout
 import com.example.dsh.diagnostics.DshLogPageContract
 import com.example.dsh.diagnostics.DshLogQuery
 import com.example.dsh.diagnostics.DshLogFilters
@@ -8,7 +10,13 @@ import com.example.dsh.diagnostics.dshLogPickerEpoch
 import com.example.dsh.diagnostics.DshLogPageResult
 import com.example.dsh.diagnostics.DshLogWork
 import com.example.dsh.diagnostics.DshCrashMarker
-import com.example.dsh.infrastructure.*
+import com.example.dsh.infrastructure.DshStreamLog
+import com.example.dsh.infrastructure.LogEvent
+import com.example.dsh.infrastructure.LogExporter
+import com.example.dsh.infrastructure.LogLevel
+import com.example.dsh.infrastructure.LogSanitizer
+import com.example.dsh.infrastructure.currentTimeMillis
+import com.example.dsh.infrastructure.shareExportFile
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
@@ -34,6 +42,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import com.example.dsh.base.bridgeModule
+import com.example.dsh.base.setTimeout
+import com.tencent.kuikly.core.timer.setTimeout
 
 /**
  * 日志查看页（独立路由 Page，替代原先堆叠在主页上的全屏 Modal）。
@@ -139,10 +150,11 @@ internal class DshLogPage : BasePager() {
     private var followBottom by observable(true)
     private var newCount by observable(0)
     private var lastMaxSeq = 0L
+    private var retentionVersion = -1L
     private var polling = false
     private var pollGeneration = 0
-    // 单轮轮询内连续增量拉取的次数；超过后退回一次全量对账，避免持续高流量下无限追加。
-    private var newerDrainRounds = 0
+    // 追赶达到单轮预算后，下次轮询仍需继续，即使日志版本已不再变化。
+    private var newerPending = false
 
     private enum class SheetKind { NONE, TIME, LEVEL, SESSION, TYPE, EXPORT }
 
@@ -213,7 +225,7 @@ internal class DshLogPage : BasePager() {
     // ===== 数据：刷新与筛选 =====
 
     /**
-     * 全量刷新：遍历一次匹配集合重算 total / 级别计数 / 会话类型目录，并重建第一页。
+     * 全量刷新：在同一快照中聚合 total / 级别计数 / 会话类型目录，并读取第一页。
      * 只在打开、切换筛选、重新显示和低频对账时调用；懒加载与轮询走 [loadMore]/[refreshNewer]，
      * 不再为多看一页或看新日志而重复扫描整张表。
      */
@@ -242,6 +254,7 @@ internal class DshLogPage : BasePager() {
             loading = false
             if (generation != queryGeneration) { queryVersion = -1; refreshAll(); return }
             result.onSuccess { page ->
+                if (page.retentionVersion != source.retentionVersion()) { queryVersion = -1; refreshAll(); return }
                 logTotal = page.total
                 loadedCount = page.rows.size
                 levelCounts = page.levels
@@ -251,7 +264,9 @@ internal class DshLogPage : BasePager() {
                     retainedTotal = catalog.retained
                     mergeCatalog(catalog.sessions, catalog.types)
                 }
-                lastMaxSeq = page.rows.firstOrNull()?.seq ?: 0L
+                lastMaxSeq = page.maxSeq
+                retentionVersion = page.retentionVersion
+                newerPending = false
                 newCount = 0
                 statsReady = true
                 lastFullRefreshMs = currentTimeMillis()
@@ -261,11 +276,12 @@ internal class DshLogPage : BasePager() {
     }
 
     /** 轮询增量：只拉取比 [lastMaxSeq] 更新的记录并叠加到统计与列表，避免整表扫描。 */
-    private fun refreshNewer() {
+    private fun refreshNewer(drainRound: Int = 0) {
         if (!statsReady || loading || queryWork != null || sliceWork != null || clearing) return
         val source = DshStreamLog.writeBehind ?: return
+        if (source.retentionVersion() != retentionVersion) { queryVersion = -1; refreshAll(); return }
         val version = source.version()
-        if (version == queryVersion) return
+        if (!newerPending && version == queryVersion) return
         queryVersion = version
         val query = currentQuery()
         val after = lastMaxSeq
@@ -279,17 +295,12 @@ internal class DshLogPage : BasePager() {
             sliceWork = null
             if (generation != queryGeneration) { queryVersion = -1; refreshAll(); return }
             result.onSuccess { rows ->
-                if (rows.isEmpty()) { queryVersion = -1; refreshAll(); return }
-                applyNewer(rows)
-                if (rows.size < NEWER_LIMIT) { newerDrainRounds = 0; return }
-                // 新增积压超过一批：继续增量拉取（单批只是索引查询），避免整表重扫与列表重置。
-                if (newerDrainRounds++ < NEWER_DRAIN_MAX_ROUNDS) {
-                    queryVersion = -1
-                    refreshNewer()
-                } else {
-                    newerDrainRounds = 0
-                    queryVersion = -1
-                    refreshAll()
+                if (source.retentionVersion() != retentionVersion) { queryVersion = -1; refreshAll(); return }
+                if (rows.isNotEmpty()) applyNewer(rows)
+                newerPending = rows.size >= NEWER_LIMIT
+                // 空批次也表示正常追赶完成；清空/淘汰通过 retentionVersion 单独识别。
+                if (newerPending && drainRound + 1 < NEWER_DRAIN_MAX_ROUNDS) {
+                    refreshNewer(drainRound + 1)
                 }
             }.onFailure { queryVersion = -1 }
         }
@@ -329,6 +340,7 @@ internal class DshLogPage : BasePager() {
         queryWork?.cancel(); queryWork = null
         sliceWork?.cancel(); sliceWork = null
         statsReady = false
+        newerPending = false
         loadedCount = 0
         lastMaxSeq = 0
         newCount = 0
@@ -584,7 +596,6 @@ internal class DshLogPage : BasePager() {
         if (polling) return
         followBottom = true
         newCount = 0
-        lastMaxSeq = logView.maxOfOrNull { it.seq } ?: 0L
         polling = true
         val generation = ++pollGeneration
         setTimeout(POLL_INTERVAL_MS) { poll(generation) }
@@ -594,9 +605,8 @@ internal class DshLogPage : BasePager() {
         if (!polling || generation != pollGeneration) return
         // 常规轮询只增量拉新。仅在用户尚未向下翻页（列表仍是第一页）时，
         // 才允许低频全量对账，避免把已加载的多页数据重置回第一页。
-        newerDrainRounds = 0
         val canReconcile = logView.size <= PAGE_SIZE
-        if (canReconcile && currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS) {
+        if (!newerPending && canReconcile && currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS) {
             refreshAll()
         } else {
             refreshNewer()
@@ -1222,25 +1232,12 @@ internal class DshLogPage : BasePager() {
     /** 底部 Sheet 脚手架：遮罩点击关闭 + 圆角底栏容器。 */
     private fun sheetScaffold(container: ViewContainer<*, *>, kind: SheetKind, content: ViewContainer<*, *>.() -> Unit) = with(container) {
         vif({ this@DshLogPage.sheet == kind }) {
-            Modal(inWindow = true) {
-                attr {
-                    absolutePositionAllZero()
-                    flexDirectionColumn()
-                    justifyContentFlexEnd()
-                    backgroundColor(Color(0x66000000))
-                }
-                View {
-                    attr { absolutePositionAllZero() }
-                    event { click { this@DshLogPage.sheet = SheetKind.NONE } }
-                }
-                View {
-                    attr {
-                        borderRadius(BorderRectRadius(16f, 16f, 0f, 0f))
-                        backgroundColor(this@DshLogPage.themeColors.bgLayer1)
-                        paddingBottom(maxOf(20f, pagerData.safeAreaInsets.bottom))
-                    }
-                    content(this)
-                }
+            DshBottomSheet(
+                colors = { this@DshLogPage.themeColors },
+                onClose = { this@DshLogPage.sheet = SheetKind.NONE },
+                largeHeightRatio = 0.72f,
+            ) {
+                content()
             }
         }
     }
@@ -1621,7 +1618,7 @@ internal class DshLogPage : BasePager() {
         private const val LOAD_MORE_SLACK_PX = 300f
         // 单次增量轮询最多拉取的新日志数；超过则继续增量拉取（见 NEWER_DRAIN_MAX_ROUNDS）。
         private const val NEWER_LIMIT = 500
-        // 单轮轮询内允许连续增量拉取的最大批次数，超过后退回一次全量对账。
+        // 单轮轮询内允许连续增量拉取的最大批次数，超过后保留游标，下次轮询继续。
         private const val NEWER_DRAIN_MAX_ROUNDS = 4
         // 已加载列表的环形上限，避免长时间开启日志页时内存无界增长。
         private const val MAX_LOADED = 2000

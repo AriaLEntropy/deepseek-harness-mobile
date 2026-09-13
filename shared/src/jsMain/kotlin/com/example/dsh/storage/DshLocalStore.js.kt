@@ -1,14 +1,11 @@
 package com.example.dsh.storage
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
-import com.example.dsh.conversation.*
-import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
-import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
+import com.example.dsh.protocol.DshConnectionMode
+import com.example.dsh.session.DshLegacyRemoteProfile
+import com.example.dsh.message.DshMessage
+import com.example.dsh.session.DshRelayProfile
+import com.example.dsh.session.DshRemoteProfile
+import com.example.dsh.session.DshSession
 internal actual fun createDshLocalStore(path: String, legacyProfile: DshLegacyRemoteProfile?): DshLocalStore = EmptyDshLocalStore
 
 private object EmptyDshLocalStore : DshLocalStore {

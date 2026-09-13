@@ -1,13 +1,14 @@
 package com.example.dsh.theme
 
 import com.tencent.kuikly.core.base.Color
+import com.example.dsh.rendering.DshMarkdown
 
 /**
- * 主题模式：亮色 / 暗色 / 跟随系统
- * 对标 dsh 原版 THEME_PREFERENCES = ['light', 'dark', 'system']
+ * 主题模式：亮色 / 暗色 / 跟随系统 / 日出日落
+ * 对标 dsh 原版 THEME_PREFERENCES = ['light', 'dark', 'system']，移动端额外提供日出日落。
  */
 enum class DshThemeMode {
-    LIGHT, DARK, SYSTEM;
+    LIGHT, DARK, SYSTEM, SUNRISE_SUNSET;
 
     companion object {
         fun from(name: String): DshThemeMode = entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: SYSTEM
@@ -193,6 +194,10 @@ interface DshColorTokens {
     val bgModulePlatform: Color
     val bgOverlay: Color
     val bgSkeleton: Color
+    /** 设置等列表页的画布底色：浅/深色主题下均比卡片更深 */
+    val bgCanvas: Color
+    /** 卡片底色：浅/深色主题下均比画布更浅 */
+    val bgCard: Color
     // Border
     val borderL1: Color
     val borderL2: Color
@@ -259,6 +264,8 @@ interface DshColorTokens {
     // Specific components
     val specificBubble: Color
     val specificBubbleHighlight: Color
+    /** 用户气泡内文字色：与 AI 正文一致（DshMarkdown 正文色）。 */
+    val specificBubbleForeground: Color
     val specificInputMajor: Color
     val specificMenu: Color
     val specificSelector: Color
@@ -288,6 +295,8 @@ object DshDefaultLightTokens : DshColorTokens {
     override val bgModulePlatform = p.nb60
     override val bgOverlay = p.nb150
     override val bgSkeleton = Color(0x0A000000)
+    override val bgCanvas = p.nb75
+    override val bgCard = p.nb00
     override val borderL1 = Color(0x0A000000)
     override val borderL2 = Color(0x1A000000)
     override val borderL3 = Color(0x1F000000)
@@ -344,6 +353,7 @@ object DshDefaultLightTokens : DshColorTokens {
     override val tooltipBg = p.nb850
     override val specificBubble = p.deepseek50
     override val specificBubbleHighlight = p.deepseek200
+    override val specificBubbleForeground = Color(0xFF1F1F23)
     override val specificInputMajor = p.nb00
     override val specificMenu = p.nb00
     override val specificSelector = p.nb60
@@ -371,6 +381,8 @@ object DshDefaultDarkTokens : DshColorTokens {
     override val bgModulePlatform = p.nb800
     override val bgOverlay = p.nb700
     override val bgSkeleton = Color(0x14FFFFFF)
+    override val bgCanvas = p.nb950
+    override val bgCard = p.nb875
     override val borderL1 = Color(0x0FFFFFFF)
     override val borderL2 = Color(0x1FFFFFFF)
     override val borderL3 = Color(0x29FFFFFF)
@@ -427,6 +439,7 @@ object DshDefaultDarkTokens : DshColorTokens {
     override val tooltipBg = p.nb750
     override val specificBubble = p.nb850
     override val specificBubbleHighlight = p.nb750
+    override val specificBubbleForeground = Color(0xFFF5F6F7)
     override val specificInputMajor = p.nb850
     override val specificMenu = p.nb800
     override val specificSelector = p.nb800

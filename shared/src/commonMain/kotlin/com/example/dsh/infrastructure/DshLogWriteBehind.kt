@@ -24,6 +24,14 @@ internal data class DshLogStats(
     val retained: Long = 0L,
 )
 
+/** 同一存储快照的统计、明细及全库高水位；游标不受页面级别筛选影响。 */
+internal data class DshLogReadSnapshot(
+    val stats: DshLogStats,
+    val rows: List<LogEvent>,
+    val maxSeq: Long,
+    val retentionVersion: Long,
+)
+
 /**
  * 异步写后缓存：日志先进入内存队列，批量刷入 SQLite。
  *
@@ -66,6 +74,8 @@ internal class DshLogWriteBehind(
     private val storeLock = DshLock()
     private var revision = 0L
     private var clearEpoch = 0L
+    // 只有清空/淘汰才使已有统计失效；普通追加允许继续按游标读取。
+    private var retentionRevision = 0L
     private val pending = mutableListOf<LogEvent>()
 
     /** 唯一后台写入任务的唤醒信号；合并所有排队请求，任务数量与事件数无关。 */
@@ -212,6 +222,8 @@ internal class DshLogWriteBehind(
 
     fun version(): Long = lock.withLock { revision }
 
+    fun retentionVersion(): Long = lock.withLock { retentionRevision }
+
     /**
      * 有界分页读取。每页只在 [storeLock] 内查询，[consume] 在锁外执行，
      * 因此导出等回调的文件 IO 不会长时间占用写入锁；批次之间检查 [isCancelled]，
@@ -245,48 +257,64 @@ internal class DshLogWriteBehind(
     }
 
     /**
-     * 聚合统计：[filter] 匹配记录的级别直方图；[includeCatalog] 时附带全库会话/类型目录与保留总数。
-     * 只做少量 SQL 聚合，不物化明细行，因此可用于首屏统计与低频对账而不拖慢读取。
+     * 首屏快照：只刷盘一次，在同一 storeLock 内读取统计、明细和已落库最大 seq。
+     * 所有日志写入/清空/淘汰都经过该锁；期间新入队的日志留给下一次增量读取。
+     * 级别统计保留其他筛选条件，但不应用级别过滤。
      */
-    fun logStats(
+    fun readPageSnapshot(
         filter: LogFilter,
+        limit: Int,
+        offset: Int,
         includeCatalog: Boolean,
         isCancelled: () -> Boolean = { false },
-    ): DshLogStats {
-        if (isCancelled()) throw CancellationException("日志读取已取消")
-        check(storeLock.withLock { flushLocked(isCancelled) } || lock.withLock { seqInitialized && pending.isEmpty() }) { "日志写入失败，请重试" }
-        if (isCancelled()) throw CancellationException("日志读取已取消")
-        return storeLock.withLock {
-            runCatching {
-                val levels = logStore.levelCounts(filter)
-                if (includeCatalog) {
-                    DshLogStats(
-                        levels = levels,
-                        sessions = logStore.distinctSessions(),
-                        types = logStore.distinctTypes(),
-                        retained = logStore.count(),
-                    )
-                } else {
-                    DshLogStats(levels = levels)
-                }
-            }.onFailure { recordFailure("query", it) }.onSuccess { clearFailure("query") }.getOrThrow()
-        }
+    ): DshLogReadSnapshot = storeLock.withLock {
+        prepareReadLocked(isCancelled)
+        runCatching {
+            val levels = logStore.levelCounts(filter.copy(levels = null))
+            checkReadCancelled(isCancelled)
+            val stats = if (includeCatalog) {
+                val sessions = logStore.distinctSessions()
+                checkReadCancelled(isCancelled)
+                val types = logStore.distinctTypes()
+                checkReadCancelled(isCancelled)
+                DshLogStats(levels, sessions, types, logStore.count())
+            } else {
+                DshLogStats(levels)
+            }
+            checkReadCancelled(isCancelled)
+            val rows = logStore.query(filter, limit, offset)
+            checkReadCancelled(isCancelled)
+            DshLogReadSnapshot(stats, rows, logStore.maxSeq(), retentionVersion())
+        }.onFailure { if (it !is CancellationException) recordFailure("query", it) }
+            .onSuccess { clearFailure("query") }.getOrThrow()
     }
 
     /**
      * 单页游标读取：只取匹配 [filter] 的 [limit] 条，不做整表遍历。
      * 用于日志页懒加载/增量刷新，避免为了看一页而扫描全部保留记录。
      */
-    fun readSlice(filter: LogFilter, limit: Int, isCancelled: () -> Boolean = { false }, offset: Int = 0): List<LogEvent> {
+    fun readSlice(
+        filter: LogFilter,
+        limit: Int,
+        isCancelled: () -> Boolean = { false },
+        offset: Int = 0,
+        order: LogSortOrder = LogSortOrder.NEWEST_FIRST,
+    ): List<LogEvent> = storeLock.withLock {
+        prepareReadLocked(isCancelled)
+        runCatching { logStore.query(filter, limit, offset, order) }
+            .onFailure { if (it !is CancellationException) recordFailure("query", it) }
+            .onSuccess { clearFailure("query") }
+            .getOrThrow()
+    }
+
+    private fun prepareReadLocked(isCancelled: () -> Boolean) {
+        checkReadCancelled(isCancelled)
+        check(flushLocked(isCancelled) || lock.withLock { seqInitialized && pending.isEmpty() }) { "日志写入失败，请重试" }
+        checkReadCancelled(isCancelled)
+    }
+
+    private fun checkReadCancelled(isCancelled: () -> Boolean) {
         if (isCancelled()) throw CancellationException("日志读取已取消")
-        check(storeLock.withLock { flushLocked(isCancelled) } || lock.withLock { seqInitialized && pending.isEmpty() }) { "日志写入失败，请重试" }
-        if (isCancelled()) throw CancellationException("日志读取已取消")
-        return storeLock.withLock {
-            runCatching { logStore.query(filter, limit, offset) }
-                .onFailure { recordFailure("query", it) }
-                .onSuccess { clearFailure("query") }
-                .getOrThrow()
-        }
     }
 
     fun clear(crashId: String? = null) = storeLock.withLock {
@@ -294,6 +322,7 @@ internal class DshLogWriteBehind(
         runCatching { logStore.clearAndMarkCrash(crashId) }.onFailure { recordFailure("clear", it) }.getOrThrow()
         lock.withLock {
             clearEpoch++
+            retentionRevision++
             pending.clear()
             revision++
             totalBytes = 0
@@ -444,7 +473,11 @@ internal class DshLogWriteBehind(
                 else -> (total + 3) / 4
             }.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
             val deleted = logStore.deleteOldest(amount, lowLevelOnly = lowOnly)
-            if (deleted > 0) trimmed = true
+            if (deleted > 0) {
+                trimmed = true
+                // 即使后续压缩失败，删除已发生，页面也必须重新对账。
+                lock.withLock { retentionRevision++; revision++ }
+            }
             // Stop deleting if compaction fails; retry maintenance independently of new events.
             logStore.compact()
             val now = logStore.diskBytes()

@@ -1,6 +1,8 @@
 package com.example.dsh.base
 
-import com.example.dsh.connection.*
+import com.example.dsh.connection.DshEngineModule
+import com.example.dsh.connection.DshRelayModule
+import com.example.dsh.connection.DshSseModule
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshThemeManager
 import com.example.dsh.infrastructure.cachedLocalTimezoneOffsetMillis
@@ -10,6 +12,8 @@ import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.*
+import com.example.dsh.transport.DshWebSocketModule
+import com.tencent.kuikly.core.timer.setTimeout
 
 internal abstract class BasePager : Pager() {
     private var nightModel: Boolean? by observable(null)
@@ -18,6 +22,8 @@ internal abstract class BasePager : Pager() {
     protected var themeColors by observable<DshColorTokens>(DshThemeManager.currentColors)
     /** 页面级主题模式镜像：随全局广播同步，设置页外观行等文字可响应式显示 */
     protected var themeMode by observable<DshThemeMode>(DshThemeManager.mode)
+    /** 日出日落模式下下一次切换的定时器引用；非空表示已排程。 */
+    private var sunriseSunsetTimer: String? = null
 
     override fun createExternalModules(): Map<String, Module>? {
         val externalModules = hashMapOf<String, Module>()
@@ -58,6 +64,23 @@ internal abstract class BasePager : Pager() {
         val next = DshThemeManager.currentColors
         if (themeColors !== next) themeColors = next
         if (themeMode !== DshThemeManager.mode) themeMode = DshThemeManager.mode
+        ensureSunriseSunsetTimer()
+    }
+
+    /**
+     * 日出日落主题：在下一个切换时刻（06:00 / 18:00）重算主题并继续排程。
+     * 仅该模式生效；切换到其他模式后，已在途的定时器到点自行退出，不会触发重绘。
+     */
+    private fun ensureSunriseSunsetTimer() {
+        if (DshThemeManager.mode != DshThemeMode.SUNRISE_SUNSET) return
+        if (sunriseSunsetTimer != null) return
+        val delay = DshThemeManager.millisUntilNextSwitch()
+            .coerceIn(SUNRISE_SUNSET_MIN_DELAY_MS, SUNRISE_SUNSET_MAX_DELAY_MS)
+        sunriseSunsetTimer = setTimeout(pagerId, delay.toInt()) {
+            sunriseSunsetTimer = null
+            if (DshThemeManager.mode != DshThemeMode.SUNRISE_SUNSET) return@setTimeout
+            DshThemeManager.notifyChanged()
+        }
     }
 
     // 是否为夜间模式
@@ -80,6 +103,8 @@ internal abstract class BasePager : Pager() {
 
     companion object {
         const val IS_NIGHT_MODE_KEY = "isNightMode"
+        private const val SUNRISE_SUNSET_MIN_DELAY_MS = 1_000L
+        private const val SUNRISE_SUNSET_MAX_DELAY_MS = 12L * 60L * 60L * 1000L
     }
 
 }

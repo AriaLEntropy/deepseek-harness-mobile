@@ -1,5 +1,9 @@
 package com.example.dsh.theme
 
+import com.example.dsh.infrastructure.cachedLocalTimezoneOffsetMillis
+import com.example.dsh.infrastructure.currentTimeMillis
+import com.example.dsh.base.BasePager
+
 /**
  * 全局主题管理器（App 级）：所有页面共享同一份主题状态与语义色解析。
  *
@@ -7,12 +11,21 @@ package com.example.dsh.theme
  * - 页面 created 时通过 [addListener] 注册同步回调（把 currentColors 写入页面级 observable），
  *   系统外观变化（themeDidChanged）时通过 [notifyChanged] 广播，所有页面响应式重绘。
  * - 首次打开 App 默认浅色（LIGHT）；跟随系统为可选模式，由设置页切换并本地持久化。
+ * - 日出日落模式：06:00-18:00 使用浅色，其余时间使用深色；由 BasePager 在切换时刻定时重算。
  *
  * 对标 dsh 原版 body 的 data-ds-dark-theme 属性：mode 解析结果即当前生效主题包。
  */
 object DshThemeManager {
     /** 移动端本地持久化的外观偏好 key（SharedPreferences） */
     const val PREF_KEY_THEME_MODE = "theme_mode"
+
+    /** 日出日落模式下切换浅/深主题的本地时刻（24 小时制）。 */
+    const val SUNRISE_HOUR = 6
+    const val SUNSET_HOUR = 18
+
+    private const val MS_PER_HOUR = 3_600_000L
+    private const val MS_PER_DAY = 86_400_000L
+
     /** 当前主题包，可替换为社区主题实现 */
     var theme: DshTheme = DshDefaultTheme
 
@@ -22,12 +35,13 @@ object DshThemeManager {
     /** 系统是否处于暗色模式（由 BasePager.isNightMode() 注入，themeDidChanged 时更新） */
     var systemDark: Boolean = false
 
-    /** host 持久化偏好值（light / dark / system），与设置 UI 一致 */
+    /** host 持久化偏好值（light / dark / system / sunrise-sunset），与设置 UI 一致 */
     val preferenceValue: String
         get() = when (mode) {
             DshThemeMode.LIGHT -> "light"
             DshThemeMode.DARK -> "dark"
             DshThemeMode.SYSTEM -> "system"
+            DshThemeMode.SUNRISE_SUNSET -> "sunrise-sunset"
         }
 
     /** 当前解析出的语义化颜色集 */
@@ -36,11 +50,37 @@ object DshThemeManager {
             DshThemeMode.LIGHT -> theme.light
             DshThemeMode.DARK -> theme.dark
             DshThemeMode.SYSTEM -> if (systemDark) theme.dark else theme.light
+            DshThemeMode.SUNRISE_SUNSET -> if (isDaytime()) theme.light else theme.dark
         }
 
     /** 当前是否为暗色（用于需要特殊处理的组件，如 Markdown 代码高亮） */
     val isDark: Boolean
         get() = currentColors === theme.dark
+
+    /** 此刻（设备本地时间）是否处于日出到日落之间，即是否使用浅色。 */
+    fun isDaytime(nowMs: Long = currentTimeMillis()): Boolean {
+        val hour = localHourOfDay(nowMs)
+        return hour in SUNRISE_HOUR until SUNSET_HOUR
+    }
+
+    /** 距离下一次日出/日落切换时刻的毫秒数（用于定时自动切换）。 */
+    fun millisUntilNextSwitch(nowMs: Long = currentTimeMillis()): Long {
+        val msOfDay = localMillisOfDay(nowMs)
+        val sunriseMs = SUNRISE_HOUR * MS_PER_HOUR
+        val sunsetMs = SUNSET_HOUR * MS_PER_HOUR
+        return when {
+            msOfDay < sunriseMs -> sunriseMs - msOfDay
+            msOfDay < sunsetMs -> sunsetMs - msOfDay
+            else -> MS_PER_DAY - msOfDay + sunriseMs
+        }
+    }
+
+    private fun localMillisOfDay(nowMs: Long): Long {
+        val adjusted = nowMs + (cachedLocalTimezoneOffsetMillis ?: 0L)
+        return ((adjusted % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY
+    }
+
+    private fun localHourOfDay(nowMs: Long): Int = (localMillisOfDay(nowMs) / MS_PER_HOUR).toInt()
 
     private val listeners = mutableListOf<() -> Unit>()
 
@@ -59,11 +99,12 @@ object DshThemeManager {
         listeners.toList().forEach { it() }
     }
 
-    /** 按 host 持久化的外观偏好应用主题模式（light / dark / 其他→跟随系统），并广播 */
+    /** 按持久化的外观偏好应用主题模式（light / dark / system / sunrise-sunset），并广播 */
     fun applyPreference(themeValue: String) {
         mode = when (themeValue) {
             "light" -> DshThemeMode.LIGHT
             "dark" -> DshThemeMode.DARK
+            "sunrise-sunset" -> DshThemeMode.SUNRISE_SUNSET
             else -> DshThemeMode.SYSTEM
         }
         notifyChanged()

@@ -1,8 +1,9 @@
 package com.example.dsh.rendering
 
-import com.example.dsh.conversation.DshAskQuestionCard
-import com.example.dsh.conversation.DshSearchCard
-import com.example.dsh.conversation.DshWebCard
+import com.example.dsh.tool.DshAskQuestionCard
+import com.example.dsh.export.DshSearchCard
+import com.example.dsh.export.DshWebCard
+import com.example.dsh.chat.iconAsset
 
 /**
  * 移动端「对话过程展示」的两种互斥方式（App 级偏好，本地持久化）：
