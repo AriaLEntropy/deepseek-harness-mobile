@@ -59,6 +59,12 @@ internal class DshRemoteRepository(
     override fun updateSetting(ns: String, patch: JSONObject, expectedRevision: Int, onSuccess: () -> Unit, onError: (String) -> Unit) =
         delegate.updateSetting(ns, patch, expectedRevision, onSuccess, onError)
 
+    override fun loadPluginConfig(onSuccess: (DshPluginConfigState) -> Unit, onError: (String) -> Unit) =
+        delegate.loadPluginConfig(onSuccess, onError)
+
+    override fun savePluginConfig(save: DshPluginConfigSave, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.savePluginConfig(save, onSuccess, onError)
+
     fun isProductReady(): Boolean = delegate.isProductReady()
     fun loadPluginInventory(onSuccess: (List<DshPluginEntry>) -> Unit, onError: (String) -> Unit) =
         delegate.loadPluginInventory(onSuccess, onError)

@@ -60,7 +60,6 @@ internal fun ViewContainer<*, *>.DshArchivedSessions(
     onPickProject: (String) -> Unit,
     onPickSort: (DshArchiveSort) -> Unit,
     onClose: () -> Unit,
-    onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
     onUnarchive: (String) -> Unit,
     onRequestDelete: (String) -> Unit,
@@ -81,7 +80,6 @@ internal fun ViewContainer<*, *>.DshArchivedSessions(
         DshArchiveHeader(
             busy = busy,
             onClose = onClose,
-            onRefresh = onRefresh,
             onRequestDeleteAll = onRequestDeleteAll,
             colors = colors,
         )
@@ -126,14 +124,13 @@ internal fun ViewContainer<*, *>.DshArchivedSessions(
 internal fun ViewContainer<*, *>.DshArchiveHeader(
     busy: () -> Boolean,
     onClose: () -> Unit,
-    onRefresh: () -> Unit,
     onRequestDeleteAll: () -> Unit,
     colors: () -> DshColorTokens,
 ) {
     View {
         attr { height(52f); flexDirectionRow(); alignItemsCenter(); paddingLeft(8f); paddingRight(12f) }
         View {
-            attr { width(56f); height(44f); allCenter() }
+            attr { width(72f); height(44f); allCenter() }
             Text { attr { text("返回"); fontSize(14f); color(colors().labelPrimary) } }
             event { click { onClose() } }
         }
@@ -142,11 +139,6 @@ internal fun ViewContainer<*, *>.DshArchiveHeader(
                 text("已归档的聊天")
                 flex(1f); textAlignCenter(); fontSize(18f); fontWeightMedium(); color(colors().labelPrimary)
             }
-        }
-        View {
-            attr { height(32f); paddingLeft(8f); paddingRight(8f); allCenter(); opacity(if (busy()) 0.5f else 1f) }
-            Text { attr { text("刷新"); fontSize(13f); color(colors().stateBusinessPrimary) } }
-            event { click { if (!busy()) onRefresh() } }
         }
         View {
             attr {
@@ -215,9 +207,14 @@ internal fun ViewContainer<*, *>.DshArchiveFilters(
                 marginTop(6f); marginLeft(16f); marginRight(16f); borderRadius(10f)
                 backgroundColor(colors().bgLayer1); border(Border(1f, BorderStyle.SOLID, colors().borderL1))
             }
-            DshArchiveMenuItem("所有项目", selectedProject().isEmpty(), colors) { onPickProject("") }
-            projectOptions().forEach { option ->
-                DshArchiveMenuItem(option.title, selectedProject() == option.id, colors) { onPickProject(option.id) }
+            Scroller {
+                attr { maxHeight(300f) }
+                DshArchiveMenuItem("所有项目", selectedProject().isEmpty(), colors) { onPickProject("") }
+                projectOptions().forEach { option ->
+                    DshArchiveMenuItem(option.title, selectedProject() == option.id, colors, icon = "folder.svg") {
+                        onPickProject(option.id)
+                    }
+                }
             }
         }
     }
@@ -264,10 +261,15 @@ internal fun ViewContainer<*, *>.DshArchiveMenuItem(
     label: String,
     selected: Boolean,
     colors: () -> DshColorTokens,
+    icon: String? = null,
     onClick: () -> Unit,
 ) {
     View {
         attr { height(40f); flexDirectionRow(); alignItemsCenter(); paddingLeft(14f); paddingRight(14f) }
+        if (icon != null) {
+            Image { attr { src(ImageUri.commonAssets(icon)); size(15f, 15f); tintColor(colors().labelTertiary) } }
+            View { attr { width(8f) } }
+        }
         Text {
             attr {
                 text(label)

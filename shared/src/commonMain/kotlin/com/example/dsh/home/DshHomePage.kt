@@ -101,6 +101,17 @@ internal class DshHomePage : BasePager() {
     private var pluginBusyId by observable("")
     private var pluginActionError by observable("")
     private var pluginNotice by observable("")
+    private var pluginActiveTab by observable("config")
+    private var pluginConfigLoading by observable(false)
+    private var pluginConfigError by observable("")
+    private var pluginConfigWritable by observable(true)
+    private val pluginConfigCards by observableList<DshPluginConfigCard>()
+    private var pluginConfigDrafts by observable<Map<String, String>>(emptyMap())
+    private var pluginConfigSecretDrafts by observable<Map<String, String>>(emptyMap())
+    private var pluginConfigCollapsed by observable<Set<String>>(emptySet())
+    private var pluginConfigBusyNamespace by observable("")
+    private var pluginConfigCardError by observable<Map<String, String>>(emptyMap())
+    private var pluginConfigCardNotice by observable<Map<String, String>>(emptyMap())
     private var engineModule: DshEngineModule? = null
     private var engineReady = false
     private var relayEngineEndpoint = ""
@@ -221,6 +232,23 @@ internal class DshHomePage : BasePager() {
     private var modelsSaveError by observable("")
     private var modelsDeleteTarget by observable<DshProviderConfig?>(null)
     private var modelsDeleting by observable(false)
+    private var modelsProtocols by observable<List<String>>(emptyList())
+    private var modelsCustomRevision by observable(0)
+    private val modelsConfiguredProviders by observableList<DshProviderConfig>()
+    private val modelsAddableProviders by observableList<DshProviderConfig>()
+    private var modelsAdding by observable(false)
+    private var modelsPickerVisible by observable(false)
+    private var modelsCustomAdding by observable(false)
+    private var modelsEditorAdvanced by observable(false)
+    private var modelsSavedNotice by observable("")
+    private var modelsCustomRoute by observable("")
+    private var modelsCustomName by observable("")
+    private var modelsCustomBaseUrl by observable("")
+    private var modelsCustomProtocol by observable("")
+    private var modelsCustomApiKey by observable("")
+    private val modelsCustomModels by observableList<DshProviderModel>()
+    private var modelsCustomBusy by observable(false)
+    private var modelsCustomError by observable("")
     private var commandSheetVisible by observable(false)
     private var voiceActive by observable(false)
     private var inputView: TextAreaView? = null
@@ -950,7 +978,6 @@ internal class DshHomePage : BasePager() {
                         onPickProject = { ctx.onArchivePickProject(it) },
                         onPickSort = { ctx.onArchivePickSort(it) },
                         onClose = { ctx.closeArchiveList() },
-                        onRefresh = { ctx.refreshArchiveList() },
                         onOpen = { ctx.openArchivedSession(it) },
                         onUnarchive = { ctx.unarchiveArchivedSession(it) },
                         onRequestDelete = { ctx.requestArchiveDeleteSession(it) },
@@ -1164,19 +1191,33 @@ internal class DshHomePage : BasePager() {
                 }
 
                 vif({ ctx.pluginInventoryVisible }) {
-                    DshPluginInventoryView(
-                        rows = { ctx.pluginRows }, total = { ctx.pluginTotal }, loading = { ctx.pluginInventoryLoading },
-                        error = { ctx.pluginInventoryError }, keyword = { ctx.pluginKeyword },
-                        expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
-                        actionError = { ctx.pluginActionError }, actionNotice = { ctx.pluginNotice },
-                        confirmEntry = { ctx.pluginActionTarget }, confirmAction = { ctx.pluginConfirmAction },
-                        onKeyword = { ctx.pluginKeyword = it; ctx.applyPluginFilters() },
+                    DshPluginSettingsView(
+                        activeTab = { ctx.pluginActiveTab }, onSelectTab = { ctx.selectPluginTab(it) },
+                        loading = { ctx.pluginInventoryLoading }, error = { ctx.pluginInventoryError },
+                        keyword = { ctx.pluginKeyword }, onKeyword = { ctx.pluginKeyword = it; ctx.applyPluginFilters() },
                         onRefresh = { ctx.refreshPluginInventory() }, onClose = { ctx.closePluginInventory() },
+                        rows = { ctx.pluginRows }, total = { ctx.pluginTotal },
+                        expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
                         onToggleExpand = { ctx.togglePluginExpanded(it) },
+                        actionError = { ctx.pluginActionError }, actionNotice = { ctx.pluginNotice },
                         onToggleEnabled = { entry, enable -> ctx.requestPluginToggle(entry, enable) },
                         onReload = { ctx.requestPluginReload(it) },
-                        onConfirm = { ctx.confirmPluginAction() },
-                        onCancelConfirm = { ctx.cancelPluginAction() },
+                        confirmEntry = { ctx.pluginActionTarget }, confirmAction = { ctx.pluginConfirmAction },
+                        onConfirm = { ctx.confirmPluginAction() }, onCancelConfirm = { ctx.cancelPluginAction() },
+                        configCards = { ctx.pluginConfigCards }, configLoading = { ctx.pluginConfigLoading },
+                        configError = { ctx.pluginConfigError }, configWritable = { ctx.pluginConfigWritable },
+                        configDraft = { ns, key -> ctx.pluginConfigDraft(ns, key) },
+                        configSecretDraft = { ns -> ctx.pluginConfigSecretDraft(ns) },
+                        configCollapsed = { ns -> ctx.isPluginConfigCollapsed(ns) },
+                        configBusyNamespace = { ctx.pluginConfigBusyNamespace },
+                        configCardError = { ns -> ctx.pluginConfigCardError[ns] ?: "" },
+                        configCardNotice = { ns -> ctx.pluginConfigCardNotice[ns] ?: "" },
+                        configHasChanges = { ns -> ctx.hasPluginConfigChanges(ns) },
+                        onConfigDraft = { ns, key, value -> ctx.onPluginConfigDraft(ns, key, value) },
+                        onConfigSecretDraft = { ns, value -> ctx.onPluginConfigSecretDraft(ns, value) },
+                        onConfigToggleCollapse = { ctx.togglePluginConfigCollapsed(it) },
+                        onConfigSave = { ctx.savePluginConfigCard(it) },
+                        onConfigDiscard = { ctx.discardPluginConfigCard(it) },
                         colors = { ctx.themeColors },
                     )
                 }
@@ -1187,18 +1228,39 @@ internal class DshHomePage : BasePager() {
                         loading = { ctx.modelsLoading },
                         error = { ctx.modelsError },
                         writable = { ctx.modelsWritable },
-                        providers = { ctx.modelsProviders },
+                        configuredProviders = { ctx.modelsConfiguredProviders },
+                        addableProviders = { ctx.modelsAddableProviders },
                         editingProvider = { ctx.modelsEditingProvider },
+                        pickerVisible = { ctx.modelsPickerVisible },
+                        customAdding = { ctx.modelsCustomAdding },
+                        savedNotice = { ctx.modelsSavedNotice },
+                        editorAdvanced = { ctx.modelsEditorAdvanced },
+                        onToggleEditorAdvanced = { ctx.modelsEditorAdvanced = !ctx.modelsEditorAdvanced },
                         draftBaseUrl = { ctx.modelsDraftBaseUrl },
                         draftApiKey = { ctx.modelsDraftApiKey },
                         draftModels = { ctx.modelsDraftModels },
                         saving = { ctx.modelsSaving },
                         saveError = { ctx.modelsSaveError },
+                        customProtocols = { ctx.modelsProtocols },
+                        customRoute = { ctx.modelsCustomRoute },
+                        customName = { ctx.modelsCustomName },
+                        customBaseUrl = { ctx.modelsCustomBaseUrl },
+                        customProtocol = { ctx.modelsCustomProtocol },
+                        customApiKey = { ctx.modelsCustomApiKey },
+                        customModels = { ctx.modelsCustomModels },
+                        customBusy = { ctx.modelsCustomBusy },
+                        customError = { ctx.modelsCustomError },
                         deleteTarget = { ctx.modelsDeleteTarget },
                         deleting = { ctx.modelsDeleting },
                         onClose = { ctx.closeModelsPage() },
                         onRetry = { ctx.reloadModelsSettings() },
                         onEdit = { ctx.openProviderEditor(it) },
+                        onCancelAdd = { ctx.cancelAddProvider() },
+                        onOpenPicker = { ctx.modelsPickerVisible = true },
+                        onClosePicker = { ctx.modelsPickerVisible = false },
+                        onSelectAddable = { ctx.selectAddableProvider(it) },
+                        onOpenCustom = { ctx.openCustomProvider() },
+                        onCancelCustom = { ctx.cancelCustomProvider() },
                         onBaseUrlChange = { ctx.modelsDraftBaseUrl = it; ctx.modelsSaveError = "" },
                         onApiKeyChange = { ctx.modelsDraftApiKey = it; ctx.modelsSaveError = "" },
                         onModelChange = { index, field, value ->
@@ -1208,6 +1270,15 @@ internal class DshHomePage : BasePager() {
                         onAddModel = { ctx.addDraftModel() },
                         onRemoveModel = { ctx.removeDraftModel(it) },
                         onApply = { ctx.applyProviderEditor(it) },
+                        onCustomRoute = { ctx.modelsCustomRoute = it; ctx.modelsCustomError = "" },
+                        onCustomName = { ctx.modelsCustomName = it },
+                        onCustomBaseUrl = { ctx.modelsCustomBaseUrl = it; ctx.modelsCustomError = "" },
+                        onCustomProtocol = { ctx.modelsCustomProtocol = it },
+                        onCustomApiKey = { ctx.modelsCustomApiKey = it },
+                        onCustomModelChange = { index, field, value -> ctx.updateCustomModel(index, field, value) },
+                        onCustomAddModel = { ctx.modelsCustomModels.add(DshProviderModel()) },
+                        onCustomRemoveModel = { ctx.removeCustomModel(it) },
+                        onApplyCustom = { ctx.applyCustomProvider() },
                         onRequestDelete = { ctx.requestRemoveProvider(it) },
                         onConfirmDelete = { ctx.confirmRemoveProvider() },
                         onCancelDelete = { ctx.modelsDeleteTarget = null },
@@ -2042,6 +2113,7 @@ internal class DshHomePage : BasePager() {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .setString(DSH_PREF_PROCESS_DISPLAY, dshProcessDisplayValue(mode))
         }
+        remountConversationList(activeSessionId)
     }
 
     private fun applyChatExpandInModal(enabled: Boolean) {
@@ -2050,6 +2122,7 @@ internal class DshHomePage : BasePager() {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .setString(DSH_PREF_EXPAND_MODAL, if (enabled) "1" else "0")
         }
+        remountConversationList(activeSessionId)
     }
 
     private fun applyChatShowConnectors(enabled: Boolean) {
@@ -2058,6 +2131,7 @@ internal class DshHomePage : BasePager() {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .setString(DSH_PREF_SHOW_CONNECTORS, if (enabled) "1" else "0")
         }
+        remountConversationList(activeSessionId)
     }
 
     private fun applyChatShowResultCards(enabled: Boolean) {
@@ -2066,6 +2140,7 @@ internal class DshHomePage : BasePager() {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .setString(DSH_PREF_SHOW_RESULT_CARDS, if (enabled) "1" else "0")
         }
+        remountConversationList(activeSessionId)
     }
 
     private fun openExpandedModal(payload: DshExpandedPayload) {
@@ -2087,6 +2162,11 @@ internal class DshHomePage : BasePager() {
         modelsEditingProvider = ""
         modelsSaveError = ""
         modelsDeleteTarget = null
+        modelsAdding = false
+        modelsPickerVisible = false
+        modelsCustomAdding = false
+        modelsEditorAdvanced = false
+        modelsSavedNotice = ""
         modelsPageVisible = true
         reloadModelsSettings()
     }
@@ -2097,6 +2177,11 @@ internal class DshHomePage : BasePager() {
         modelsDraftApiKey = ""
         modelsSaveError = ""
         modelsDeleteTarget = null
+        modelsAdding = false
+        modelsPickerVisible = false
+        modelsCustomAdding = false
+        modelsEditorAdvanced = false
+        modelsSavedNotice = ""
     }
 
     private fun reloadModelsSettings(showLoading: Boolean = true) {
@@ -2114,6 +2199,13 @@ internal class DshHomePage : BasePager() {
             modelsWritable = it.writable
             modelsProviders.clear()
             modelsProviders.addAll(it.providers)
+            modelsConfiguredProviders.clear()
+            modelsConfiguredProviders.addAll(it.providers.filter { p -> p.configured })
+            modelsAddableProviders.clear()
+            modelsAddableProviders.addAll(it.providers.filter { p -> !p.configured && p.settingsNs.isNotEmpty() })
+            modelsProtocols = it.protocols
+            modelsCustomRevision = it.customRevision
+            if (modelsCustomProtocol.isEmpty()) modelsCustomProtocol = it.protocols.firstOrNull() ?: ""
             modelsError = ""
             modelsLoading = false
         }, {
@@ -2123,17 +2215,128 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun openProviderEditor(provider: DshProviderConfig) {
-        if (modelsEditingProvider == provider.provider) {
+        if (modelsEditingProvider == provider.provider && !modelsAdding) {
             modelsEditingProvider = ""
             return
         }
+        modelsAdding = false
+        modelsCustomAdding = false
         modelsEditingProvider = provider.provider
+        modelsEditorAdvanced = false
         modelsDraftBaseUrl = provider.baseUrl
         modelsDraftApiKey = ""
         modelsSaveError = ""
         modelsDraftModels.clear()
         // 保留 raw，保存时才能带出未在编辑器展示的字段（如容量）。
         modelsDraftModels.addAll(provider.models.map { it.copy() })
+    }
+
+    private fun cancelAddProvider() {
+        modelsAdding = false
+        modelsEditingProvider = ""
+        modelsSaveError = ""
+    }
+
+    /** 选择要添加的已有提供方：以空草稿打开其编辑器。 */
+    private fun selectAddableProvider(provider: DshProviderConfig) {
+        modelsPickerVisible = false
+        modelsCustomAdding = false
+        modelsAdding = true
+        modelsEditingProvider = provider.provider
+        modelsEditorAdvanced = false
+        modelsDraftBaseUrl = provider.baseUrl
+        modelsDraftApiKey = ""
+        modelsSaveError = ""
+        modelsSavedNotice = ""
+        modelsDraftModels.clear()
+        modelsDraftModels.addAll(provider.models.map { it.copy() })
+    }
+
+    private fun openCustomProvider() {
+        modelsAdding = false
+        modelsEditingProvider = ""
+        modelsCustomAdding = true
+        modelsSavedNotice = ""
+        modelsCustomError = ""
+        modelsCustomRoute = ""
+        modelsCustomName = ""
+        modelsCustomBaseUrl = ""
+        modelsCustomApiKey = ""
+        modelsCustomProtocol = modelsProtocols.firstOrNull() ?: ""
+        modelsCustomModels.clear()
+        modelsCustomModels.add(DshProviderModel())
+    }
+
+    private fun cancelCustomProvider() {
+        modelsCustomAdding = false
+        modelsCustomError = ""
+    }
+
+    private fun updateCustomModel(index: Int, field: String, value: String) {
+        if (index !in 0 until modelsCustomModels.size) return
+        val current = modelsCustomModels[index]
+        modelsCustomModels[index] = when (field) {
+            "id" -> current.copy(id = value)
+            "name" -> current.copy(name = value)
+            else -> current
+        }
+    }
+
+    private fun removeCustomModel(index: Int) {
+        if (index in 0 until modelsCustomModels.size) modelsCustomModels.removeAt(index)
+    }
+
+    private fun applyCustomProvider() {
+        if (modelsCustomBusy) return
+        val route = modelsCustomRoute.trim()
+        val taken = modelsConfiguredProviders.map { it.provider } + modelsAddableProviders.map { it.provider }
+        val routeError = dshCustomRouteError(route, taken)
+        if (route.isEmpty() || routeError.isNotEmpty()) {
+            modelsCustomError = routeError.ifEmpty { "请填写 Provider ID。" }
+            return
+        }
+        val baseUrl = modelsCustomBaseUrl.trim()
+        if (baseUrl.isEmpty()) {
+            modelsCustomError = "自定义提供方需要填写 API 地址。"
+            return
+        }
+        if (modelsCustomProtocol.isEmpty()) {
+            modelsCustomError = "请选择 API 协议。"
+            return
+        }
+        if (modelsCustomModels.isEmpty() || modelsCustomModels.any { it.id.trim().isEmpty() }) {
+            modelsCustomError = "自定义提供方至少需要一个模型，且模型 ID 不能为空。"
+            return
+        }
+        val ids = modelsCustomModels.map { it.id.trim() }
+        if (ids.size != ids.toSet().size) {
+            modelsCustomError = "模型 ID 不能重复。"
+            return
+        }
+        val repo = repository ?: run { modelsCustomError = "未连接电脑端"; return }
+        modelsCustomBusy = true
+        modelsCustomError = ""
+        dshCreateCustomProvider(
+            repo = repo,
+            route = route,
+            displayName = modelsCustomName,
+            baseUrl = baseUrl,
+            protocol = modelsCustomProtocol,
+            apiKey = modelsCustomApiKey.trim(),
+            models = modelsCustomModels.toList(),
+            revision = modelsCustomRevision,
+            onSuccess = {
+                modelsCustomBusy = false
+                modelsCustomAdding = false
+                modelsSavedNotice = "已保存 ${modelsCustomName.trim().ifEmpty { route }}。"
+                reloadModelsSettings(showLoading = false)
+                reloadSettings(showLoading = false)
+            },
+            onError = {
+                modelsCustomBusy = false
+                modelsCustomError = it
+            },
+        )
     }
 
     private fun updateDraftModel(index: Int, field: String, value: String) {
@@ -2181,7 +2384,9 @@ internal class DshHomePage : BasePager() {
             onSuccess = {
                 modelsSaving = false
                 modelsEditingProvider = ""
+                modelsAdding = false
                 modelsDraftApiKey = ""
+                modelsSavedNotice = "已保存 ${provider.displayName}。"
                 reloadModelsSettings(showLoading = false)
                 reloadSettings(showLoading = false)
             },
@@ -2209,7 +2414,10 @@ internal class DshHomePage : BasePager() {
         dshRemoveProviderProfile(repo, provider, {
             modelsDeleting = false
             modelsDeleteTarget = null
-            if (modelsEditingProvider == provider.provider) modelsEditingProvider = ""
+            if (modelsEditingProvider == provider.provider) {
+                modelsEditingProvider = ""
+                modelsAdding = false
+            }
             reloadModelsSettings(showLoading = false)
         }, {
             modelsDeleting = false
@@ -2531,6 +2739,9 @@ internal class DshHomePage : BasePager() {
         pluginInventory = emptyList(); pluginRows.clear(); pluginTotal = 0
         pluginExpandedId = ""; pluginActionTarget = null; pluginConfirmAction = ""; pluginBusyId = ""
         pluginActionError = ""; pluginNotice = ""
+        pluginConfigLoading = false; pluginConfigCards.clear(); pluginConfigDrafts = emptyMap()
+        pluginConfigSecretDrafts = emptyMap(); pluginConfigCollapsed = emptySet()
+        pluginConfigBusyNamespace = ""; pluginConfigCardError = emptyMap(); pluginConfigCardNotice = emptyMap()
         if (pluginInventoryVisible) pluginInventoryError = "连接已断开，请连接 Host 后刷新"
         timelineReadVersion++
         val mode = connectionCoordinator.activeModeOr(connectionMode)
@@ -3880,8 +4091,11 @@ internal class DshHomePage : BasePager() {
     private fun rebuildArchiveGroups() {
         val remote = repository as? DshRemoteRepository ?: return
         val all = remote.archivedWorkspaceGroups()
+        // 项目筛选是「按工作区/文件夹」入口：列出全部工作区，而不是仅有归档会话的工作区。
         archiveProjectOptions.diffUpdate(
-            all.filter { it.workspaceId.isNotEmpty() }.map { DshArchiveProjectOption(it.workspaceId, it.title) },
+            remote.workspaceGroups()
+                .filter { it.workspaceId.isNotEmpty() }
+                .map { DshArchiveProjectOption(it.workspaceId, it.title) },
         ) { old, new -> old == new }
         var groups = all
         if (archiveProjectFilter.isNotEmpty()) groups = groups.filter { it.workspaceId == archiveProjectFilter }
@@ -4152,7 +4366,9 @@ internal class DshHomePage : BasePager() {
     private fun openPluginInventory() {
         settingsPageVisible = false
         pluginInventoryVisible = true
+        pluginActiveTab = "config"
         refreshPluginInventory()
+        loadPluginConfig()
     }
 
     /** 返回键：先关确认弹窗，再收起展开卡片，最后退出插件页。 */
@@ -4174,7 +4390,153 @@ internal class DshHomePage : BasePager() {
         pluginBusyId = ""
         pluginActionError = ""
         pluginNotice = ""
+        pluginConfigLoading = false
+        pluginConfigError = ""
+        pluginConfigCards.clear()
+        pluginConfigDrafts = emptyMap()
+        pluginConfigSecretDrafts = emptyMap()
+        pluginConfigCollapsed = emptySet()
+        pluginConfigBusyNamespace = ""
+        pluginConfigCardError = emptyMap()
+        pluginConfigCardNotice = emptyMap()
         settingsPageVisible = true
+    }
+
+    fun selectPluginTab(tab: String) {
+        pluginActiveTab = tab
+        if (tab == "config" && pluginConfigCards.isEmpty() && !pluginConfigLoading) loadPluginConfig()
+    }
+
+    private fun loadPluginConfig() {
+        val remote = repository as? DshRemoteRepository ?: run {
+            pluginConfigLoading = false; pluginConfigError = "请先连接 Host"; return
+        }
+        val connection = activeConnectionId
+        pluginConfigLoading = true
+        pluginConfigError = ""
+        remote.loadPluginConfig({ state ->
+            if (pageAlive && pluginInventoryVisible && connection == activeConnectionId && remote === repository) {
+                pluginConfigLoading = false
+                pluginConfigWritable = state.writable
+                // 首次进入时配置卡默认收起（对齐原版）；后续刷新保留用户展开状态。
+                val firstLoad = pluginConfigCards.isEmpty()
+                pluginConfigCards.clear()
+                pluginConfigCards.addAll(state.cards)
+                if (firstLoad) pluginConfigCollapsed = state.cards.map { it.namespace }.toSet()
+                pluginConfigDrafts = emptyMap()
+                pluginConfigSecretDrafts = emptyMap()
+                pluginConfigCardError = emptyMap()
+            }
+        }, { error ->
+            if (pageAlive && pluginInventoryVisible && connection == activeConnectionId && remote === repository) {
+                pluginConfigLoading = false
+                pluginConfigError = error
+            }
+        })
+    }
+
+    fun pluginConfigDraft(namespace: String, key: String): String {
+        val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return ""
+        val fallback = card.fields.firstOrNull { it.key == key }?.value ?: ""
+        return pluginConfigDrafts["$namespace::$key"] ?: fallback
+    }
+
+    fun pluginConfigSecretDraft(namespace: String): String = pluginConfigSecretDrafts[namespace] ?: ""
+
+    fun isPluginConfigCollapsed(namespace: String): Boolean = namespace in pluginConfigCollapsed
+
+    fun hasPluginConfigChanges(namespace: String): Boolean {
+        val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return false
+        if ((pluginConfigSecretDrafts[namespace] ?: "").isNotEmpty()) return true
+        return card.fields.any { it.kind != DshPluginFieldKind.SECRET && pluginConfigDraft(namespace, it.key) != it.value }
+    }
+
+    fun onPluginConfigDraft(namespace: String, key: String, value: String) {
+        pluginConfigDrafts = pluginConfigDrafts + ("$namespace::$key" to value)
+    }
+
+    fun onPluginConfigSecretDraft(namespace: String, value: String) {
+        pluginConfigSecretDrafts = pluginConfigSecretDrafts + (namespace to value)
+    }
+
+    fun togglePluginConfigCollapsed(namespace: String) {
+        pluginConfigCollapsed = if (namespace in pluginConfigCollapsed) {
+            pluginConfigCollapsed - namespace
+        } else {
+            pluginConfigCollapsed + namespace
+        }
+    }
+
+    fun discardPluginConfigCard(namespace: String) {
+        clearPluginConfigDrafts(namespace)
+        pluginConfigCardNotice = pluginConfigCardNotice - namespace
+    }
+
+    fun savePluginConfigCard(namespace: String) {
+        val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return
+        if (pluginConfigBusyNamespace.isNotEmpty()) return
+        val remote = repository as? DshRemoteRepository ?: run {
+            pluginConfigCardError = pluginConfigCardError + (namespace to "请先连接 Host"); return
+        }
+        val ops = JSONArray()
+        var invalid = ""
+        for (field in card.fields) {
+            if (field.kind == DshPluginFieldKind.SECRET) continue
+            val draft = pluginConfigDraft(namespace, field.key)
+            if (draft == field.value) continue
+            val path = JSONArray().apply { put(field.key) }
+            if (field.kind == DshPluginFieldKind.NUMBER) {
+                val text = draft.trim()
+                if (text.isEmpty()) {
+                    ops.put(JSONObject().apply { put("op", "unset"); put("path", path) })
+                } else {
+                    val parsed = text.toIntOrNull()
+                    if (parsed == null) {
+                        invalid = "「${field.label}」请填数字，或留空使用默认值"
+                        break
+                    }
+                    ops.put(JSONObject().apply { put("op", "set"); put("path", path); put("value", parsed) })
+                }
+            } else {
+                ops.put(JSONObject().apply { put("op", "set"); put("path", path); put("value", draft) })
+            }
+        }
+        if (invalid.isNotEmpty()) {
+            pluginConfigCardError = pluginConfigCardError + (namespace to invalid)
+            return
+        }
+        val secret = pluginConfigSecretDraft(namespace).trim()
+        if (ops.length() == 0 && secret.isEmpty()) return
+        val save = DshPluginConfigSave(
+            namespace = namespace,
+            ops = ops,
+            expectedRevision = card.revision,
+            credentialRef = if (secret.isNotEmpty()) card.secretRef else "",
+            credentialValue = secret,
+        )
+        pluginConfigBusyNamespace = namespace
+        pluginConfigCardError = pluginConfigCardError - namespace
+        pluginConfigCardNotice = pluginConfigCardNotice - namespace
+        remote.savePluginConfig(save, {
+            if (pageAlive && pluginInventoryVisible) {
+                pluginConfigBusyNamespace = ""
+                clearPluginConfigDrafts(namespace)
+                pluginConfigCardNotice = pluginConfigCardNotice + (namespace to "已保存")
+                loadPluginConfig()
+            }
+        }, { error ->
+            if (pageAlive && pluginInventoryVisible) {
+                pluginConfigBusyNamespace = ""
+                pluginConfigCardError = pluginConfigCardError + (namespace to error)
+            }
+        })
+    }
+
+    private fun clearPluginConfigDrafts(namespace: String) {
+        val prefix = "$namespace::"
+        pluginConfigDrafts = pluginConfigDrafts.filterKeys { !it.startsWith(prefix) }
+        pluginConfigSecretDrafts = pluginConfigSecretDrafts - namespace
+        pluginConfigCardError = pluginConfigCardError - namespace
     }
 
     private fun togglePluginExpanded(entry: DshPluginEntry) {

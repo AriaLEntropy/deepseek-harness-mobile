@@ -68,18 +68,10 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                         )
                         border(Border(1f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
                     }
-                }
-                // 左侧竖向装饰线：把连续的工具/思考过程行视觉连接起来。
-                vif({ ctx.attr.connector }) {
-                    View {
-                        attr {
-                            positionAbsolute()
-                            left(0f)
-                            top(0f)
-                            bottom(0f)
-                            width(2f)
-                            backgroundColor(ctx.attr.colors.borderL2)
-                        }
+                    // 左侧竖向装饰线：把连续的工具/思考过程行视觉连接起来。
+                    if (ctx.attr.connector) {
+                        borderLeft(Border(2f, BorderStyle.SOLID, ctx.attr.colors.borderL2))
+                        paddingLeft(10f)
                     }
                 }
                 View {
@@ -193,8 +185,9 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 backgroundColor(ctx.attr.colors.bgModulePlatform)
                             }
                         }
-                        // 收起态限高并可内部滚动；展开态直接铺开全文。
-                        vif({ ctx.bodyExpanded }) {
+                        // 收起态只做行数截断（不可内部滚动），点底部箭头展开全文。
+                        // vbind 让 bodyExpanded 变化时重建明细，省略号才会随展开消失。
+                        vbind({ ctx.bodyExpanded }) {
                             DshDisclosureBodyContent(
                                 askCard = { ctx.attr.askCard },
                                 jsonContent = { ctx.attr.jsonContent },
@@ -210,52 +203,29 @@ internal class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeE
                                 webCard = { ctx.attr.webCard },
                                 searchCard = { ctx.attr.searchCard },
                                 onCopy = ctx.attr.onCopyToolCommand,
+                                bodyExpanded = ctx.bodyExpanded,
                             )
                         }
-                        vif({ !ctx.bodyExpanded }) {
-                            Scroller {
+                        // 底部展开/收起装饰：仅纯文本长内容需要（收起时按行截断）。
+                        vif({ ctx.attr.plainBody }) {
+                            View {
                                 attr {
-                                    height(if (ctx.attr.bodyContentHeight > 0f) minOf(ctx.attr.bodyContentHeight, ctx.attr.bodyMaxHeight) else ctx.attr.bodyMaxHeight)
+                                    height(30f)
+                                    allCenter()
                                 }
-                                View {
-                                    attr { flexDirectionColumn() }
-                                    DshDisclosureBodyContent(
-                                        askCard = { ctx.attr.askCard },
-                                        jsonContent = { ctx.attr.jsonContent },
-                                        contextDetail = { ctx.attr.contextDetail },
-                                        body = { ctx.attr.body },
-                                        plainBody = { ctx.attr.plainBody },
-                                        error = { ctx.attr.errorSummary },
-                                        toolDetail = { ctx.attr.toolDetail },
-                                        compact = { ctx.attr.compact },
-                                        isJsonNodeExpanded = ctx.attr.isJsonNodeExpanded,
-                                        onToggleJsonNode = ctx.attr.onToggleJsonNode,
-                                        colors = { ctx.attr.colors },
-                                        webCard = { ctx.attr.webCard },
-                                        searchCard = { ctx.attr.searchCard },
-                                        onCopy = ctx.attr.onCopyToolCommand,
-                                    )
-                                }
-                            }
-                        }
-                        // 底部展开/收起装饰：长内容可点开看全文。
-                        View {
-                            attr {
-                                height(30f)
-                                allCenter()
-                            }
-                            vbind({ ctx.bodyExpanded }) {
-                                Image {
-                                    attr {
-                                        src(ImageUri.commonAssets("chevron-down.svg"))
-                                        size(16f, 16f)
-                                        tintColor(ctx.attr.colors.labelTertiary)
-                                        transform(Rotate(if (ctx.bodyExpanded) 180f else 0f))
+                                vbind({ ctx.bodyExpanded }) {
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("chevron-down.svg"))
+                                            size(16f, 16f)
+                                            tintColor(ctx.attr.colors.labelTertiary)
+                                            transform(Rotate(if (ctx.bodyExpanded) 180f else 0f))
+                                        }
                                     }
                                 }
-                            }
-                            DshTapTarget {
-                                ctx.bodyExpanded = !ctx.bodyExpanded
+                                DshTapTarget {
+                                    ctx.bodyExpanded = !ctx.bodyExpanded
+                                }
                             }
                         }
                     }
@@ -368,6 +338,8 @@ internal fun ViewContainer<*, *>.DshDisclosureBodyContent(
     webCard: () -> com.example.dsh.conversation.DshWebCard? = { null },
     searchCard: () -> com.example.dsh.conversation.DshSearchCard? = { null },
     onCopy: (String) -> Unit = {},
+    /** 收起态只展示前几行，展开态显示全文（仅纯文本 body 生效）。 */
+    bodyExpanded: Boolean = true,
 ) {
     val hasStructured = { askCard() != null || webCard() != null || searchCard() != null }
     vif({ askCard() != null }) {
@@ -417,7 +389,7 @@ internal fun ViewContainer<*, *>.DshDisclosureBodyContent(
         if (plainBody()) {
             DshLinkText {
                 attr {
-                    content = body()
+                    content = if (bodyExpanded) body() else dshPreviewText(body())
                     fontSize = if (compact()) 13f else 14f
                     lineHeight = 24f
                     textColor = colors().labelSecondary
@@ -518,6 +490,15 @@ internal fun ViewContainer<*, *>.DshLinkText(init: DshLinkTextView.() -> Unit) {
 private val dshUrlRegex = Regex("https?://[^\\s)\\]}>\"']+")
 
 internal fun dshFirstUrl(text: String): String? = dshUrlRegex.find(text)?.value
+
+/** 收起态的纯文本预览：保留前几行并加省略号，避免内部滚动。 */
+internal fun dshPreviewText(text: String): String {
+    val lines = text.split("\n")
+    if (lines.size <= DSH_BODY_PREVIEW_LINES) return text
+    return lines.take(DSH_BODY_PREVIEW_LINES).joinToString("\n") + "\n…"
+}
+
+private const val DSH_BODY_PREVIEW_LINES = 4
 
 /** 在内置 WebView 页打开链接（与 Markdown 链接、导出等共用 link_view 页面）。 */
 internal fun ComposeView<*, *>.dshOpenLink(url: String) {
@@ -737,7 +718,7 @@ internal class DshSearchResultCardView : ComposeView<DshSearchResultCardAttr, Co
             else "$shown 处匹配 · ${card.files.size} 个文件"
         }
         val lineHeight = 22f
-        val bodyHeight = (card.rowCount * 22f).coerceIn(22f, 300f)
+        val bodyHeight = (card.rowCount * 22f).coerceIn(22f, 200f)
         return {
             View {
                 attr {
@@ -899,7 +880,6 @@ internal fun ViewContainer<*, *>.DshExpandedContentModal(
             val p = payload()!!
             View {
                 attr {
-                    maxHeight(pagerData.pageViewHeight * 0.82f)
                     flexDirectionColumn()
                     backgroundColor(colors().bgLayer1)
                     borderRadius(BorderRectRadius(18f, 18f, 0f, 0f))
@@ -950,27 +930,37 @@ internal fun ViewContainer<*, *>.DshExpandedContentModal(
                     }
                 }
                 Scroller {
-                    attr { flex(1f) }
+                    attr { height(pagerData.pageViewHeight * 0.6f) }
                     View {
                         attr {
                             flexDirectionColumn()
+                            paddingLeft(16f)
+                            paddingRight(16f)
                             paddingBottom(20f)
                         }
-                        DshDisclosureBodyContent(
-                            askCard = { p.askCard },
-                            jsonContent = { p.jsonContent },
-                            contextDetail = { p.contextDetail },
-                            body = { p.body },
-                            plainBody = { p.plainBody },
-                            error = { p.error },
-                            toolDetail = { p.toolDetail },
-                            compact = { false },
-                            isJsonNodeExpanded = isJsonNodeExpanded,
-                            onToggleJsonNode = onToggleJsonNode,
-                            colors = colors,
-                            webCard = { p.webCard },
-                            searchCard = { p.searchCard },
-                        )
+                        // 弹层内同样保留左侧装饰线，且左右留白，避免输入/输出卡片贴屏幕边缘。
+                        View {
+                            attr {
+                                flexDirectionColumn()
+                                borderLeft(Border(2f, BorderStyle.SOLID, colors().borderL2))
+                                paddingLeft(12f)
+                            }
+                            DshDisclosureBodyContent(
+                                askCard = { p.askCard },
+                                jsonContent = { p.jsonContent },
+                                contextDetail = { p.contextDetail },
+                                body = { p.body },
+                                plainBody = { p.plainBody },
+                                error = { p.error },
+                                toolDetail = { p.toolDetail },
+                                compact = { false },
+                                isJsonNodeExpanded = isJsonNodeExpanded,
+                                onToggleJsonNode = onToggleJsonNode,
+                                colors = colors,
+                                webCard = { p.webCard },
+                                searchCard = { p.searchCard },
+                            )
+                        }
                     }
                 }
             }
@@ -1293,7 +1283,7 @@ internal class DshToolDetailSectionView : ComposeView<DshToolDetailSectionAttr, 
                     }
                 }
                 Scroller {
-                    attr { height(180f) }
+                    attr { height(120f) }
                     if (ctx.attr.code) {
                         Text {
                             attr {
@@ -1452,7 +1442,7 @@ internal class DshTerminalCardView : ComposeView<DshTerminalCardAttr, ComposeEve
                         }
                         Scroller {
                             attr {
-                                height(220f)
+                                height(150f)
                             }
                             Text {
                                 attr {
@@ -1563,7 +1553,7 @@ internal class DshReadCardView : ComposeView<DshReadCardAttr, ComposeEvent>() {
                     }
                     Scroller {
                         attr {
-                            height((lineCount * 22f).coerceAtMost(220f))
+                            height((lineCount * 22f).coerceAtMost(150f))
                             flex(1f)
                         }
                         Text {
@@ -1604,7 +1594,7 @@ internal class DshLongTextView : ComposeView<DshLongTextAttr, ComposeEvent>() {
                 }
                 Scroller {
                     attr {
-                        height(if (ctx.attr.maxHeight > 0f) ctx.attr.maxHeight.coerceAtMost(240f) else 240f)
+                        height(if (ctx.attr.maxHeight > 0f) ctx.attr.maxHeight.coerceAtMost(180f) else 180f)
                     }
                     Text {
                         attr {

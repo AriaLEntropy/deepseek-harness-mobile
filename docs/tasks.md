@@ -33,9 +33,18 @@
 | --- | --- | --- |
 | Host 桥接 | `host-plugin/index.mjs` 的 `/list`、`/action`（enable/disable/reload）继续作为唯一写入口，基于公共 `Entry.update()`；拒绝桥接自身、条件表达式与上级分组禁用 | `node --check` 通过；端到端需安装后按 README 联调 |
 | 电脑端（非侵入） | `host-plugin` 增加 `dsh.client` 与手写惰性 CJS 产物 `client.js`，注册 `settings.plugins.tab` 新标签页「插件启停」（可搜索、状态点、每行开关、展开详情）；**不改**官方 `ui-settings-plugin-inventory` | 隔离校验脚本核对包解析、`./client` 导出、工厂 id、槽注册选项全部通过；真实 `dsh web` 需重启后目视 |
-| 移动端 | `DshPluginInventoryView.kt` 重写为对齐官方「插件列表」的紧凑折叠卡片：搜索、状态点/启停标签、每行开关（停用/重载二次确认）、展开详情 | `:shared:compileDebugKotlinAndroid` 通过；真机交互待验收 |
+| 移动端 | 插件页重构为对齐官方右侧主界面：头部「插件」+说明 + 标签 `插件配置 / 插件列表 / 插件启停`；插件列表为官方只读镜像，插件启停提供每行开关（停用/重载二次确认）与展开详情 | `:shared:compileDebugKotlinAndroid` 与 `:shared:compileKotlinJs` 通过；真机交互待验收 |
+| 移动端插件配置 | 完整复刻三个配置卡：终端（`shell`）、Agent 循环（`agent-loop`）、网页搜索（`web-search-deepseek`）；字段经 `settings.mutate` 的 set/unset 写回，密钥经 `credentials.set`，只读时禁用保存 | 新增 `DshPluginConfig.kt`（解析）与 `DshPluginConfigView.kt`（表单）；`settings.mutate` 已对真实 Host 冒烟（no-op unset 返回 ok） |
 
-设计约束：两端共用同一 Host 端点与 `canToggle` 语义；电脑端通过独立的浏览器半边标签页实现，避免 patch 官方只读页面。`Entry.update()` 的「重载」仍是停用→启用组合，非独立 restart。
+设计约束：两端共用同一 Host 端点与 `canToggle` 语义；电脑端通过独立的浏览器半边标签页实现，避免 patch 官方只读页面（官方库存卡无注入点，纯插件无法把开关嵌入官方列表，这是有意的取舍）。`Entry.update()` 的「重载」仍是停用→启用组合，非独立 restart。移动端 `插件配置` 的密钥写入复用既有 `credentials.*` RPC，不新增桥接端点。
+
+### 2026-09-13：模型页对齐电脑端 settings.models
+
+- 编辑区改为「API 密钥」主字段 + 可折叠「自定义设置」（API 地址 / 模型目录），与 web `ui-settings-models` 一致。
+- 新增底部「添加提供方」（从 `llm.providers` 的可配置目录选择）与「添加自定义提供方」（向 `llm-pi-ai` 写入 `providers.<route>` 整个 profile；协议从该 namespace 的 schema 解析）。
+- 行内增加「自定义」标签；保存后显示「已保存 X。」；删除确认按是否含存储密钥区分文案；提供方选择为独立弹层。
+- 数据层：`DshModelsSettings` 增加 `protocols`/`customRevision`，`DshProviderConfig` 增加 `declared`；新增 `dshCreateCustomProvider`、`dshCustomRouteError`；控制器新增添加/自定义草稿状态。
+- 验证：`:shared:compileDebugKotlinAndroid` 与 `:shared:compileKotlinJs` 通过；`settings.mutate` 自定义提供方写入/清理对真实 Host 冒烟通过（`set providers.zzz-probe` → `unset` 均 ok）。真机交互待验收。
 
 ## 2026-09-12：原始任务集对照（基础项 / 加分项）
 

@@ -1,14 +1,8 @@
 package com.example.dsh.chat
 
-import com.example.dsh.base.*
-import com.example.dsh.chat.*
-import com.example.dsh.connection.*
 import com.example.dsh.conversation.*
 import com.example.dsh.home.*
-import com.example.dsh.infrastructure.*
 import com.example.dsh.rendering.*
-import com.example.dsh.storage.*
-import com.example.dsh.web.*
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vbind
@@ -74,7 +68,6 @@ internal fun ViewContainer<*, *>.DshTurnStatus(
     }
 }
 
-internal const val TURN_STATUS_BLUE = 0xFF4D6BFE
 internal const val TURN_STATUS_CLOCK_AFTER_MS = 15_000L
 
 // 空白会话首页：无消息时的占位引导（logo + 标语 + 预览版徽标）
@@ -425,17 +418,23 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         attr {
                                             width((availableWidth - 36f).coerceAtLeast(0f))
                                             // 用三元而非 if：Kuikly attr 在条件为 false 时不会清除
-                                            // 之前设置过的属性，退出多选态必须显式复位背景与内边距。
+                                            // 之前设置过的属性，退出多选态必须显式复位内边距。
                                             // 仅可分享项（用户发言 / 每轮最终回复）才留出勾选框位置。
+                                            // 选中态只用左侧勾选框表示，不再给整条消息铺底色。
                                             paddingLeft(if (exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId))) 30f else 0f)
                                             borderRadius(if (exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId))) 10f else 0f)
-                                            backgroundColor(
-                                                if (exportSelectMode() && message.id in exportSelectedIds()) {
-                                                    colors().stateBusinessTertiary
-                                                } else {
-                                                    Color(0x00FFFFFF)
-                                                },
-                                            )
+                                            // 经典模式：工具/思考/上下文行在消息单元左侧画装饰线，
+                                            // 单元高度即整行高度，线能贯穿卡片且不受固定宽度影响。
+                                            if (
+                                                isWebTimeline() &&
+                                                processDisplayMode() == DshProcessDisplayMode.CLASSIC &&
+                                                showConnectors() &&
+                                                (message.isReasoning ||
+                                                    message.role == DshMessageRole.TOOL ||
+                                                    message.isContextInjection)
+                                            ) {
+                                                borderLeft(Border(2f, BorderStyle.SOLID, colors().borderL2))
+                                            }
                                         }
                                         when {
                                             // 普通消息：直接渲染。
@@ -446,6 +445,10 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                 attr {
                                                     width((availableWidth - 36f).coerceAtLeast(0f))
                                                     marginBottom(6f)
+                                                    // 统一折叠：整条过程单元（摘要 + 展开明细）左侧画连续装饰线。
+                                                    if (showConnectors()) {
+                                                        borderLeft(Border(2f, BorderStyle.SOLID, colors().borderL2))
+                                                    }
                                                 }
                                                 DshDisclosureRow {
                                                     attr {
@@ -465,33 +468,17 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                 vif({ isDisclosureExpanded(processGroup.key) }) {
                                                     Scroller {
                                                         attr {
-                                                            height(360f)
+                                                            height(260f)
                                                             marginTop(6f)
                                                         }
-                                                        // 过程明细：左侧竖向装饰线把所有工具/思考连接起来，
-                                                        // 展开内容各自被卡片容器包裹（对齐原版过程树）。
+                                                        // 过程明细：成员各自折叠，装饰线由外层过程单元贯穿。
                                                         View {
                                                             attr {
-                                                                flexDirectionRow()
+                                                                flexDirectionColumn()
                                                                 marginBottom(8f)
                                                             }
-                                                            vif({ showConnectors() }) {
-                                                                View {
-                                                                    attr {
-                                                                        width(1f)
-                                                                        backgroundColor(colors().borderL2)
-                                                                        marginRight(10f)
-                                                                    }
-                                                                }
-                                                            }
-                                                            View {
-                                                                attr {
-                                                                    flex(1f)
-                                                                    flexDirectionColumn()
-                                                                }
-                                                                processGroup.members.forEach { member ->
-                                                                    this.renderMessage(member, !expandInModal())
-                                                                }
+                                                            processGroup.members.forEach { member ->
+                                                                this.renderMessage(member, false)
                                                             }
                                                         }
                                                     }
@@ -1342,7 +1329,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggle = onToggle
                     this.expandInModal = expandInModal()
                     this.onRequestModal = onRequestModal
-                    this.connector = showConnectors() && isWebTimeline
                     compact = true
                     bodyChrome = true
                     bodyMaxHeight = 300f
@@ -1414,7 +1400,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggle = onToggle
                     this.expandInModal = expandInModal()
                     this.onRequestModal = onRequestModal
-                    this.connector = showConnectors() && isWebTimeline
                     plainBody = true
                     compact = true
                     bodyChrome = true
@@ -1448,7 +1433,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggle = onToggle
                     this.expandInModal = expandInModal()
                     this.onRequestModal = onRequestModal
-                    this.connector = showConnectors() && isWebTimeline
                     running = message.toolRunning
                     compact = true
                 }
@@ -1516,7 +1500,6 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     this.onToggle = onToggle
                     this.expandInModal = expandInModal()
                     this.onRequestModal = onRequestModal
-                    this.connector = showConnectors() && isWebTimeline
                     this.isJsonNodeExpanded = isJsonNodeExpanded
                     this.onToggleJsonNode = onToggleJsonNode
                     running = message.toolRunning

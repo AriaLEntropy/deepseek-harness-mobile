@@ -1742,7 +1742,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             DshSettingsRow("icon-agentpreset16.svg", "默认模型", { dshSettingsDefaultModelLabel(snapshot()) }, onPickDefaultModel, colors = colors)
             DshSettingsRow("icon-agentpreset16.svg", "Agent 预设", agentPresetLabel, onOpenAgentPresets, colors = colors)
             DshSettingsRow("log.svg", "日志", { "" }, onOpenDiagnosticLogs, colors = colors)
-            DshSettingsRow("icon-agentpreset16.svg", "Host 插件", { "启停" }, onOpenPlugins, colors = colors)
+            DshSettingsRow("icon-agentpreset16.svg", "Host 插件", { "配置 / 启停" }, onOpenPlugins, colors = colors)
 
             // 关于
             DshSettingsGroupTitle("关于", colors = colors)
@@ -2016,14 +2016,14 @@ internal fun ViewContainer<*, *>.DshPersonalizationPage(
             DshPersonalizationChoiceRow(
                 title = "统一折叠",
                 subtitle = "把一轮里的思考、工具调用与过程消息折叠成一条摘要（对齐最新 dsh）",
-                selected = mode() == com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED,
+                selected = { mode() == com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED },
                 onClick = { onPickMode(com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED) },
                 colors = colors,
             )
             DshPersonalizationChoiceRow(
                 title = "经典",
                 subtitle = "思考与工具调用逐条展开，不做外层统一折叠（对齐电脑端 rc）",
-                selected = mode() == com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC,
+                selected = { mode() == com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC },
                 onClick = { onPickMode(com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC) },
                 colors = colors,
             )
@@ -2031,7 +2031,7 @@ internal fun ViewContainer<*, *>.DshPersonalizationPage(
             DshPersonalizationSwitchRow(
                 title = "弹窗查看",
                 subtitle = "点击展开时从底部弹出，内容平铺滚动，不显示灰色容器",
-                checked = expandInModal(),
+                checked = { expandInModal() },
                 onToggle = onToggleExpandInModal,
                 colors = colors,
             )
@@ -2039,14 +2039,14 @@ internal fun ViewContainer<*, *>.DshPersonalizationPage(
             DshPersonalizationSwitchRow(
                 title = "装饰连接线",
                 subtitle = "在连续的工具 / 思考行左侧绘制竖向连接线",
-                checked = showConnectors(),
+                checked = { showConnectors() },
                 onToggle = onToggleConnectors,
                 colors = colors,
             )
             DshPersonalizationSwitchRow(
                 title = "结果卡片",
                 subtitle = "网页检索 / 抓取与 grep / glob 用结构化卡片展示，链接可点击",
-                checked = showResultCards(),
+                checked = { showResultCards() },
                 onToggle = onToggleResultCards,
                 colors = colors,
             )
@@ -2059,7 +2059,7 @@ internal fun ViewContainer<*, *>.DshPersonalizationPage(
 internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
     title: String,
     subtitle: String,
-    selected: Boolean,
+    selected: () -> Boolean,
     onClick: () -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
@@ -2068,7 +2068,7 @@ internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
             flexDirectionRow()
             alignItemsCenter()
             padding(14f, 16f, 14f, 16f)
-            backgroundColor(if (selected) colors().stateBusinessTertiary else Color(0x00000000))
+            backgroundColor(if (selected()) colors().stateBusinessTertiary else Color(0x00000000))
         }
         View {
             attr { flex(1f); flexDirectionColumn() }
@@ -2077,7 +2077,7 @@ internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
                     text(title)
                     fontSize(15f)
                     fontWeightMedium()
-                    color(if (selected) colors().stateBusinessPrimary else colors().labelPrimary)
+                    color(if (selected()) colors().stateBusinessPrimary else colors().labelPrimary)
                 }
             }
             Text {
@@ -2096,10 +2096,10 @@ internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
                 marginLeft(12f)
                 borderRadius(10f)
                 allCenter()
-                border(Border(1.5f, BorderStyle.SOLID, if (selected) colors().stateBusinessPrimary else colors().borderL2))
-                backgroundColor(if (selected) colors().stateBusinessPrimary else Color(0x00FFFFFF))
+                border(Border(1.5f, BorderStyle.SOLID, if (selected()) colors().stateBusinessPrimary else colors().borderL2))
+                backgroundColor(if (selected()) colors().stateBusinessPrimary else Color(0x00FFFFFF))
             }
-            vif({ selected }) {
+            vif({ selected() }) {
                 Image {
                     attr {
                         src(ImageUri.commonAssets("check.svg"))
@@ -2109,7 +2109,15 @@ internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
                 }
             }
         }
-        event { click { onClick() } }
+        // 全行点击热区置于最上层：避免子 View（圆勾等）截获触摸导致点不动。
+        View {
+            attr {
+                absolutePositionAllZero()
+                zIndex(2)
+                backgroundColor(Color(0x00000000))
+            }
+            event { click { onClick() } }
+        }
     }
     View {
         attr { height(1f); marginLeft(16f); backgroundColor(colors().borderL2) }
@@ -2120,7 +2128,7 @@ internal fun ViewContainer<*, *>.DshPersonalizationChoiceRow(
 internal fun ViewContainer<*, *>.DshPersonalizationSwitchRow(
     title: String,
     subtitle: String,
-    checked: Boolean,
+    checked: () -> Boolean,
     onToggle: (Boolean) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
@@ -2152,19 +2160,27 @@ internal fun ViewContainer<*, *>.DshPersonalizationSwitchRow(
                 height(28f)
                 marginLeft(12f)
                 borderRadius(14f)
-                backgroundColor(if (checked) colors().stateBusinessPrimary else colors().borderL2)
+                backgroundColor(if (checked()) colors().stateBusinessPrimary else colors().borderL2)
             }
             View {
                 attr {
                     positionAbsolute()
                     top(3f)
-                    left(if (checked) 21f else 3f)
+                    left(if (checked()) 21f else 3f)
                     size(22f, 22f)
                     borderRadius(11f)
                     backgroundColor(Color.WHITE)
                 }
             }
-            event { click { onToggle(!checked) } }
+        }
+        // 全行点击热区置于最上层：整行（含标题）都能切换，且不被开关滑块截获。
+        View {
+            attr {
+                absolutePositionAllZero()
+                zIndex(2)
+                backgroundColor(Color(0x00000000))
+            }
+            event { click { onToggle(!checked()) } }
         }
     }
     View {

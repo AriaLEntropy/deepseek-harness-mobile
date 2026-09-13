@@ -952,6 +952,7 @@ internal class DshHostConnectionRuntime(
         if (stopped) { callback(null, DshRpcError("connection-expired", "请先连接 Host")); return }
         val expected = generation
         val headers = JSONObject().apply {
+            put("Content-Type", "application/json")
             if (connection.token.isNotEmpty()) put("Authorization", "Bearer ${connection.token}")
         }
         val body = JSONObject().apply {
@@ -1316,6 +1317,33 @@ internal class DshRemoteHostRepository(
             put("patch", patch)
             if (expectedRevision > 0) put("expectedRevision", expectedRevision)
         }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+    }
+
+    override fun loadPluginConfig(onSuccess: (DshPluginConfigState) -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.SETTINGS_DESCRIBE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error?.message ?: "settings.describe 返回为空")
+                return@call
+            }
+            runCatching { parseDshPluginConfig(value) }
+                .onSuccess(onSuccess)
+                .onFailure { onError(it.message ?: "插件配置解析失败") }
+        }
+    }
+
+    override fun savePluginConfig(save: DshPluginConfigSave, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        fun writeSettings() {
+            if (save.ops.length() == 0) {
+                onSuccess()
+                return
+            }
+            mutateSetting(save.namespace, save.ops, save.expectedRevision, onSuccess, onError)
+        }
+        if (save.credentialRef.isNotEmpty() && save.credentialValue.isNotEmpty()) {
+            setCredential(save.credentialRef, save.credentialValue, { writeSettings() }, onError)
+        } else {
+            writeSettings()
+        }
     }
 
     override fun loadModels(sessionId: String, onSuccess: (DshSessionModels) -> Unit, onError: (String) -> Unit) {

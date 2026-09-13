@@ -34,12 +34,18 @@ internal data class DshProviderConfig(
     val baseUrl: String,
     val models: List<DshProviderModel>,
     val modelsOverridden: Boolean,
+    /** 适配器未内置、由用户手动声明的路由（用于「自定义」标签）。 */
+    val declared: Boolean = false,
     val revision: Int,
 )
 
 internal data class DshModelsSettings(
     val writable: Boolean = false,
     val providers: List<DshProviderConfig> = emptyList(),
+    /** llm-pi-ai 允许的 wire 协议，供自定义提供方选择。 */
+    val protocols: List<String> = emptyList(),
+    /** 自定义提供方写入的 namespace 当前 revision。 */
+    val customRevision: Int = 0,
 )
 
 /** 移动端按 <ROUTE>_API_KEY 派生凭据名，与电脑端 deriveKeyRef 一致。 */
@@ -147,13 +153,49 @@ internal fun dshParseModelsSettings(
             baseUrl = profile?.optString("baseURL").orEmpty(),
             models = dshParseProviderModels(profile?.optJSONArray("models")),
             modelsOverridden = dshJsonAtPath(namespace?.opt("user"), path + "models") != null,
+            declared = provider.optBoolean("declared"),
             revision = namespace?.optInt("revision") ?: 0,
         )
     }
+    val piAi = namespaces["llm-pi-ai"]
     return DshModelsSettings(
         writable = settingsValue.optBoolean("writable"),
         providers = rows,
+        protocols = dshParseProtocolChoices(piAi),
+        customRevision = piAi?.optInt("revision") ?: 0,
     )
+}
+
+/** 按 schema 的 uid/ref 解析一个节点；ref 可能是数字或字符串。 */
+private fun dshSchemaRef(refs: JSONObject, ref: Any?): JSONObject? {
+    val key = when (ref) {
+        is Number -> ref.toLong().toString()
+        is String -> ref
+        else -> return null
+    }
+    if (key.isEmpty()) return null
+    return refs.optJSONObject(key)
+}
+
+/**
+ * 从 llm-pi-ai 的 schema 读取自定义路由可选的 wire 协议：
+ * root.dict.providers -> inner -> dict.api -> union 的 const 值。
+ */
+private fun dshParseProtocolChoices(namespace: JSONObject?): List<String> {
+    val schema = namespace?.optJSONObject("schema") ?: return emptyList()
+    val refs = schema.optJSONObject("refs") ?: return emptyList()
+    val root = dshSchemaRef(refs, schema.opt("uid")) ?: return emptyList()
+    val providers = dshSchemaRef(refs, root.optJSONObject("dict")?.opt("providers")) ?: return emptyList()
+    val profile = dshSchemaRef(refs, providers.opt("inner")) ?: return emptyList()
+    val api = dshSchemaRef(refs, profile.optJSONObject("dict")?.opt("api")) ?: return emptyList()
+    if (api.optString("type") != "union") return emptyList()
+    val list = api.optJSONArray("list") ?: return emptyList()
+    return buildList {
+        for (index in 0 until list.length()) {
+            dshSchemaRef(refs, list.opt(index))?.optString("value")
+                ?.takeIf { it.isNotEmpty() }?.let { add(it) }
+        }
+    }
 }
 
 private fun dshCollectCredentialRefs(providersValue: JSONObject, settingsValue: JSONObject): JSONArray {
@@ -300,4 +342,50 @@ internal fun dshRemoveProviderProfile(
     } else {
         removeProfile()
     }
+}
+
+/** 自定义路由 id 规则：以小写字母开头，之后小写字母/数字/短横线。 */
+private val DSH_CUSTOM_ROUTE = Regex("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+
+/** 自定义路由的本地校验文案；空串表示通过。 */
+internal fun dshCustomRouteError(route: String, taken: List<String>): String = when {
+    route.isEmpty() -> ""
+    !DSH_CUSTOM_ROUTE.matches(route) -> "需以小写字母开头，之后可用小写字母、数字和短横线。"
+    route in taken -> "已有提供方使用了这个 ID。"
+    else -> ""
+}
+
+/**
+ * 创建自定义提供方：向 llm-pi-ai 写入 providers.<route> 整个 profile，再按需写入凭据。
+ * 只有输入密钥时才记录 apiKeyEnv（与电脑端一致，留空走提供方原生鉴权）。
+ */
+internal fun dshCreateCustomProvider(
+    repo: DshRepository,
+    route: String,
+    displayName: String,
+    baseUrl: String,
+    protocol: String,
+    apiKey: String,
+    models: List<DshProviderModel>,
+    revision: Int,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit,
+) {
+    val ref = dshDeriveKeyRef(route)
+    val profile = JSONObject().apply {
+        displayName.trim().takeIf { it.isNotEmpty() }?.let { put("displayName", it) }
+        if (apiKey.isNotEmpty()) put("apiKeyEnv", ref)
+        put("api", protocol)
+        put("baseURL", baseUrl.trim())
+        put("models", dshModelsToJson(models))
+    }
+    val op = JSONObject().apply {
+        put("op", "set")
+        put("path", JSONArray().apply { put("providers"); put(route) })
+        put("value", profile)
+    }
+    fun writeCredential() {
+        if (apiKey.isEmpty()) onSuccess() else repo.setCredential(ref, apiKey, onSuccess, onError)
+    }
+    repo.mutateSetting("llm-pi-ai", JSONArray().apply { put(op) }, revision, { writeCredential() }, onError)
 }

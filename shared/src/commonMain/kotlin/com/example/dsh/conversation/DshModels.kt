@@ -960,6 +960,23 @@ internal interface DshRepository {
         onError: (String) -> Unit,
     )
 
+    /** 插件配置：settings.describe 中 shell / agent-loop / web-search-deepseek 三个 namespace。 */
+    fun loadPluginConfig(
+        onSuccess: (DshPluginConfigState) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        onError("当前连接不支持插件配置")
+    }
+
+    /** 保存一个插件配置卡：字段走 settings.mutate，密钥走 credentials.set。 */
+    fun savePluginConfig(
+        save: DshPluginConfigSave,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        onError("当前连接不支持插件配置")
+    }
+
     fun loadModels(
         sessionId: String,
         onSuccess: (DshSessionModels) -> Unit,
