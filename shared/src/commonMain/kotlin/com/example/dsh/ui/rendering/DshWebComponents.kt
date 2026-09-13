@@ -1,6 +1,6 @@
 package com.example.dsh.ui.rendering
 
-import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.ui.rendering.DshBottomSheet
 import com.example.dsh.message.iconAsset
 import com.example.dsh.export.DshSearchCard
 import com.example.dsh.export.DshWebCard

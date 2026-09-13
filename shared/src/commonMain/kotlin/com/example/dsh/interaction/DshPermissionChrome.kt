@@ -1,7 +1,7 @@
 package com.example.dsh.interaction
 
 
-import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.ui.rendering.DshBottomSheet
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif

@@ -2,7 +2,7 @@ package com.example.dsh.settings
 
 import com.example.dsh.theme.DshThemeMode
 
-import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.ui.rendering.DshBottomSheet
 import com.example.dsh.models.DshSettingsChoice
 import com.example.dsh.models.DshSettingsSnapshot
 import com.example.dsh.ui.rendering.DshProcessDisplayMode

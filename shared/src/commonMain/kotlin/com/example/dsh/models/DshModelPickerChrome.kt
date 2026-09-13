@@ -1,7 +1,7 @@
 package com.example.dsh.models
 
 
-import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.ui.rendering.DshBottomSheet
 import com.example.dsh.models.DshModelOption
 import com.example.dsh.models.DshReasoningEffort
 import com.tencent.kuikly.core.base.*

@@ -1,7 +1,7 @@
 package com.example.dsh.log
 
 import com.example.dsh.base.BasePager
-import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.ui.rendering.DshBottomSheet
 import com.example.dsh.base.setTimeout
 import com.example.dsh.diagnostics.DshLogPageContract
 import com.example.dsh.diagnostics.DshLogQuery

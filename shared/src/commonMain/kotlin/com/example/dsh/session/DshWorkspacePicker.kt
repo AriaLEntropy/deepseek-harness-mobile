@@ -1,6 +1,6 @@
 package com.example.dsh.session
 
-import com.example.dsh.base.DshBottomSheet
+import com.example.dsh.ui.rendering.DshBottomSheet
 import com.example.dsh.session.DshDirectoryEntry
 import com.example.dsh.session.DshWorkspaceGroup
 import com.tencent.kuikly.core.base.*
