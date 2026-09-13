@@ -293,18 +293,11 @@ internal class DshHomePage : BasePager() {
     internal var modelsCustomBusy by observable(false)
     internal var modelsCustomError by observable("")
     internal var commandSheetVisible by observable(false)
-    internal var voiceActive by observable(false)
     // ===== 语音输入（按住说话 → 原生语音识别 → 转文字填入输入框）=====
-    /** 录音浮层是否可见（按下「按住说话」到松手/取消之间为真）。 */
-    internal var voiceRecording by observable(false)
-    /** 手指上滑是否已进入取消区间（跟随移动实时更新）。 */
-    internal var voiceCancelArmed by observable(false)
-    /** 录音过程中的中间识别文本。 */
-    internal var voicePartialText by observable("")
+    /** 语音输入 UI 状态；聚合原 voiceActive/Recording/CancelArmed/PartialText/WaveformRevision。 */
+    internal var voiceUi by observable(DshVoiceUiState())
     /** 滚动音量窗口（0..1），驱动浮层蓝色方块高度。 */
     internal val voiceWaveformModel = DshVoiceWaveform()
-    /** 每次音量采样 +1，驱动波形整体重绘。 */
-    internal var voiceWaveformRevision by observable(0)
     /** 录音会话代次，防止衰减定时器跨会话重复运行。 */
     internal var voiceDecayGeneration = 0
     /** 按下点 pageY，用于计算上滑取消。 */
@@ -582,9 +575,9 @@ internal class DshHomePage : BasePager() {
 
     override fun pageWillDestroy() {
         pageAlive = false
-        if (voiceRecording) {
+        if (voiceUi.recording) {
             bridgeModule.cancelVoiceRecognition()
-            voiceRecording = false
+            voiceUi = voiceUi.copy(recording = false)
         } else {
             bridgeModule.releaseVoiceRecognition()
         }
