@@ -34,6 +34,25 @@ import com.tencent.kuiklybase.config.TextStyleConfig
 import com.tencent.kuiklybase.streaming.MarkdownBlock
 import com.tencent.kuiklybase.streaming.MarkdownStreamingState
 
+/**
+ * 对话正文（问答）基准字号（pt）。
+ * 行高、段间距、列表项间距等排版值全部按此字号的百分比推导，
+ * 调整字号时整体节奏自动同步（对齐 Apple HIG Body 的阅读尺度）。
+ */
+internal const val DSH_CHAT_BODY_FONT = 17f
+
+/** 行高相对字号的倍数（≈1.5 倍行距）。 */
+private const val DSH_CHAT_LINE_RATIO = 1.5f
+
+/** 对话正文行高（pt），供问答两侧纯文本复用，保持与 Markdown 正文一致。 */
+internal const val DSH_CHAT_BODY_LINE = DSH_CHAT_BODY_FONT * DSH_CHAT_LINE_RATIO
+
+/** 段间距相对字号的倍数。 */
+private const val DSH_CHAT_BLOCK_RATIO = 0.75f
+
+/** 列表项间距相对字号的倍数（上下各取一半）。 */
+private const val DSH_CHAT_LIST_ITEM_RATIO = 0.3f
+
 /** DSH theme wrapper around KuiklyMarkdown's streaming renderer. */
 internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
     private val streamingState = MarkdownStreamingState()
@@ -106,7 +125,7 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                                                     attr {
                                                         content = text
                                                         dark = ctx.attr.darkMode
-                                                        fontSize = 15f
+                                                        fontSize = DSH_CHAT_BODY_FONT
                                                         contentWidth = ctx.attr.contentWidth
                                                     }
                                                 }
@@ -204,6 +223,18 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
     private fun markdownConfig(): MarkdownConfig {
         val dark = attr.darkMode
         val text = if (dark) 0xFFF5F6F7 else 0xFF1F1F23
+        // 所有排版值均由正文基准字号按百分比推导，字号与行高/段间距同步缩放。
+        val body = DSH_CHAT_BODY_FONT
+        val line = body * DSH_CHAT_LINE_RATIO
+        val small = body - 2f
+        val smallLine = small * DSH_CHAT_LINE_RATIO
+        val headingLine = 1.3f
+        val h1 = body * 1.6f
+        val h2 = body * 1.35f
+        val h3 = body * 1.2f
+        val h4 = body * 1.06f
+        val block = body * DSH_CHAT_BLOCK_RATIO
+        val listItemGap = body * DSH_CHAT_LIST_ITEM_RATIO
         return MarkdownConfig(
             colors = MarkdownColors(
                 text = text,
@@ -217,22 +248,22 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                 codeText = text,
             ),
             typography = MarkdownTypography(
-                text = TextStyleConfig(fontSize = 15f, color = text, lineHeight = 23f),
-                paragraph = TextStyleConfig(fontSize = 15f, color = text, lineHeight = 23f),
-                code = TextStyleConfig(fontSize = 13f, fontFamily = "monospace", lineHeight = 19f),
-                inlineCode = TextStyleConfig(fontSize = 13f, fontFamily = "monospace"),
-                h1 = TextStyleConfig(fontSize = 24f, fontWeight = FontWeight.Bold, color = text, lineHeight = 30f),
-                h2 = TextStyleConfig(fontSize = 20f, fontWeight = FontWeight.Bold, color = text, lineHeight = 26f),
-                h3 = TextStyleConfig(fontSize = 18f, fontWeight = FontWeight.SemiBold, color = text, lineHeight = 24f),
-                h4 = TextStyleConfig(fontSize = 16f, fontWeight = FontWeight.SemiBold, color = text, lineHeight = 22f),
-                h5 = TextStyleConfig(fontSize = 15f, fontWeight = FontWeight.SemiBold, color = text, lineHeight = 21f),
-                h6 = TextStyleConfig(fontSize = 15f, fontWeight = FontWeight.SemiBold, color = text, lineHeight = 21f),
-                quote = TextStyleConfig(fontSize = 15f, color = if (dark) 0xFFB7BBC2 else 0xFF61666D, lineHeight = 22f),
-                ordered = TextStyleConfig(fontSize = 15f, color = text, lineHeight = 23f),
-                bullet = TextStyleConfig(fontSize = 15f, color = text, lineHeight = 23f),
-                list = TextStyleConfig(fontSize = 15f, color = text, lineHeight = 23f),
-                table = TextStyleConfig(fontSize = 13f, color = text, lineHeight = 19f),
-                textLink = TextStyleConfig(fontSize = 15f, color = if (dark) 0xFF78A4F8 else 0xFF4176E6, lineHeight = 23f),
+                text = TextStyleConfig(fontSize = body, color = text, lineHeight = line),
+                paragraph = TextStyleConfig(fontSize = body, color = text, lineHeight = line),
+                code = TextStyleConfig(fontSize = small, fontFamily = "monospace", lineHeight = smallLine),
+                inlineCode = TextStyleConfig(fontSize = small, fontFamily = "monospace"),
+                h1 = TextStyleConfig(fontSize = h1, fontWeight = FontWeight.Bold, color = text, lineHeight = h1 * headingLine),
+                h2 = TextStyleConfig(fontSize = h2, fontWeight = FontWeight.Bold, color = text, lineHeight = h2 * headingLine),
+                h3 = TextStyleConfig(fontSize = h3, fontWeight = FontWeight.SemiBold, color = text, lineHeight = h3 * headingLine),
+                h4 = TextStyleConfig(fontSize = h4, fontWeight = FontWeight.SemiBold, color = text, lineHeight = h4 * headingLine),
+                h5 = TextStyleConfig(fontSize = body, fontWeight = FontWeight.SemiBold, color = text, lineHeight = body * headingLine),
+                h6 = TextStyleConfig(fontSize = body, fontWeight = FontWeight.SemiBold, color = text, lineHeight = body * headingLine),
+                quote = TextStyleConfig(fontSize = body, color = if (dark) 0xFFB7BBC2 else 0xFF61666D, lineHeight = line * 0.95f),
+                ordered = TextStyleConfig(fontSize = body, color = text, lineHeight = line),
+                bullet = TextStyleConfig(fontSize = body, color = text, lineHeight = line),
+                list = TextStyleConfig(fontSize = body, color = text, lineHeight = line),
+                table = TextStyleConfig(fontSize = body - 4f, color = text, lineHeight = (body - 4f) * DSH_CHAT_LINE_RATIO),
+                textLink = TextStyleConfig(fontSize = body, color = if (dark) 0xFF78A4F8 else 0xFF4176E6, lineHeight = line),
             ),
             dimens = MarkdownDimens(
                 dividerThickness = 1f,
@@ -246,15 +277,16 @@ internal class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
             codeHighlightDarkTheme = dark,
             codeHighlightEnabled = true,
             padding = com.tencent.kuiklybase.config.MarkdownPadding(
-                block = 6f,
-                list = 6f,
-                listItemTop = 2f,
-                listItemBottom = 2f,
-                listIndent = 18f,
-                codeBlock = 12f,
-                blockQuotePaddingLeft = 12f,
-                blockQuoteBarPaddingLeft = 4f,
-                blockQuoteTextVertical = 8f,
+                // 段间距、列表间距等均按正文基准字号的百分比推导
+                block = block,
+                list = body * 0.5f,
+                listItemTop = listItemGap,
+                listItemBottom = listItemGap,
+                listIndent = body * 1.2f,
+                codeBlock = block,
+                blockQuotePaddingLeft = block,
+                blockQuoteBarPaddingLeft = body * 0.25f,
+                blockQuoteTextVertical = body * 0.5f,
             ),
         )
     }

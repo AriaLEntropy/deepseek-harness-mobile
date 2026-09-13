@@ -51,13 +51,34 @@ internal fun ViewContainer<*, *>.DshOverflowMenu(
     onDismiss: () -> Unit,
     statusBarHeight: Float,
     pageViewWidth: Float,
+    pageViewHeight: Float = 0f,
+    // 点击会话行 ⋯ 时的屏幕坐标；-1 表示无锚点，回退到顶栏下方右侧定位。
+    anchorX: Float = -1f,
+    anchorY: Float = -1f,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         val menuWidth = 220f
-        // 挂在 topbar（58dp）下方 6dp，右缘与 topbar padding 对齐
-        val menuLeft = pageViewWidth - menuWidth - 12f
-        val menuTop = statusBarHeight + 58f + 6f
+        val menuHeight = 12f + actions().size * 44f
+        val hasAnchor = anchorX >= 0f && anchorY >= 0f
+        // 有锚点时贴着点击会话行的 ⋯ 按钮展开（在其左下方），否则回退顶栏下方右侧。
+        val maxLeft = (pageViewWidth - menuWidth - 8f).coerceAtLeast(8f)
+        val menuLeft = if (hasAnchor) {
+            (anchorX - menuWidth - 8f).coerceIn(8f, maxLeft)
+        } else {
+            pageViewWidth - menuWidth - 12f
+        }
+        val minTop = statusBarHeight + 8f
+        val maxTop = if (pageViewHeight > 0f) {
+            (pageViewHeight - menuHeight - 8f).coerceAtLeast(minTop)
+        } else {
+            minTop
+        }
+        val menuTop = if (hasAnchor) {
+            (anchorY - 12f).coerceIn(minTop, maxTop)
+        } else {
+            statusBarHeight + 58f + 6f
+        }
         // 透明点击捕获层：点击空白处关闭菜单
         View {
             attr { absolutePositionAllZero() }

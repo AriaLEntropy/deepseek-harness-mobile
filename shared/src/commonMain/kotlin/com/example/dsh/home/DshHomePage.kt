@@ -337,8 +337,11 @@ internal class DshHomePage : BasePager() {
     private var workspaceDeleteTargetId by observable("")
     private var workspaceActionBusy by observable(false)
     private var workspaceActionError by observable("")
-    // ===== 会话 topbar overflow menu 与会话管理动作 =====
+    // ===== 会话 overflow menu 与会话管理动作 =====
     private var overflowMenuVisible by observable(false)
+    // overflow menu 的锚点（点击会话行 ⋯ 的屏幕坐标）；-1 表示无锚点，回退到默认位置。
+    private var overflowAnchorX by observable(-1f)
+    private var overflowAnchorY by observable(-1f)
 
     private val overlayBackCallback = object : BackPressCallback() {
         override fun handleOnBackPressed() {
@@ -400,6 +403,14 @@ internal class DshHomePage : BasePager() {
     private var sessionCreatedAt by observable<Map<String, Long>>(emptyMap())
     private var sessionSort by observable(DshSessionSort.UPDATED)
     private var sessionSortMenuOpen by observable(false)
+    // ===== 会话抽屉拖拽排序 =====
+    private var sessionReorderMode by observable(false)
+    private var drawerDrag by observable(DshDrawerDrag())
+    private var sessionManualOrder by observable<Map<String, List<String>>>(emptyMap())
+    private var workspaceManualOrder by observable<List<String>>(emptyList())
+    private var drawerOrderScope = ""
+    private var dragOriginPageY = 0f
+    private var prefsModule: SharedPreferencesModule? = null
     private var catalogRequestGeneration = 0L
     private var sessionDeleteVisible by observable(false)
     private var sessionDeleteBusy by observable(false)
@@ -468,6 +479,7 @@ internal class DshHomePage : BasePager() {
         // 恢复本地「对话展示」偏好（个性化子页面）。
         runCatching {
             val prefs = acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
+            prefsModule = prefs
             chatProcessMode = dshProcessDisplayFromValue(prefs.getItem(DSH_PREF_PROCESS_DISPLAY).orEmpty())
             chatExpandInModal = prefs.getItem(DSH_PREF_EXPAND_MODAL) == "1"
             chatShowConnectors = prefs.getItem(DSH_PREF_SHOW_CONNECTORS) != "0"
@@ -562,7 +574,7 @@ internal class DshHomePage : BasePager() {
                                 ctx.dismissKeyboard()
                                 ctx.openSessionDrawer()
                             },
-                            onOpenOverflow = { ctx.openOverflowMenu() },
+                            onNewSession = { ctx.createSession() },
                             colors = { this@DshHomePage.themeColors },
                         )
                     }
@@ -943,13 +955,27 @@ internal class DshHomePage : BasePager() {
                         overflowActions = { ctx.overflowActions() },
                         onOverflowSelect = { ctx.onOverflowAction(it) },
                         onDismissOverflow = { ctx.closeOverflowMenu() },
-                        onOpenOverflowFor = { ctx.openOverflowMenuFor(it) },
+                        onOpenOverflowFor = { id, x, y -> ctx.openOverflowMenuFor(id, x, y) },
+                        overflowAnchorX = ctx.overflowAnchorX,
+                        overflowAnchorY = ctx.overflowAnchorY,
                         sessionSort = { ctx.sessionSort },
                         sortMenuOpen = { ctx.sessionSortMenuOpen },
                         onToggleSortMenu = { ctx.toggleSessionSortMenu() },
                         onPickSessionSort = { ctx.pickSessionSort(it) },
+                        reorderMode = { ctx.sessionReorderMode },
+                        dragState = { ctx.drawerDrag },
+                        onToggleReorderMode = { ctx.toggleSessionReorderMode() },
+                        onSessionDragStart = { groupKey, sessionId, index, pageY ->
+                            ctx.beginSessionDrag(groupKey, sessionId, index, pageY)
+                        },
+                        onWorkspaceDragStart = { workspaceId, index, itemHeight, pageY ->
+                            ctx.beginWorkspaceDrag(workspaceId, index, itemHeight, pageY)
+                        },
+                        onDragMove = { pageY, heights -> ctx.updateDrawerDrag(pageY, heights) },
+                        onDragEnd = { ctx.endDrawerDrag() },
                         statusBarHeight = ctx.pagerData.statusBarHeight,
                         pageViewWidth = ctx.pagerData.pageViewWidth,
+                        pageViewHeight = ctx.pagerData.pageViewHeight,
                         onClose = { ctx.closeSessionDrawer() },
                         onOpenSettings = { ctx.openSettingsPage() },
                         onOpenArchive = { ctx.openArchiveList() },
@@ -1500,7 +1526,7 @@ internal class DshHomePage : BasePager() {
                     onClose = { ctx.closeSelectTextModal() },
                     colors = { this@DshHomePage.themeColors },
                 )
-                // ===== 会话 topbar overflow menu 与会话管理动作 =====
+                // ===== 会话 overflow menu 与会话管理动作 =====
                 DshOverflowMenu(
                     visible = { ctx.overflowMenuVisible },
                     actions = { ctx.overflowActions() },
@@ -1508,6 +1534,9 @@ internal class DshHomePage : BasePager() {
                     onDismiss = { ctx.closeOverflowMenu() },
                     statusBarHeight = ctx.pagerData.statusBarHeight,
                     pageViewWidth = ctx.pagerData.pageViewWidth,
+                    pageViewHeight = ctx.pagerData.pageViewHeight,
+                    anchorX = ctx.overflowAnchorX,
+                    anchorY = ctx.overflowAnchorY,
                     colors = { this@DshHomePage.themeColors },
                 )
                 DshSessionRenameDialog(
@@ -1570,6 +1599,9 @@ internal class DshHomePage : BasePager() {
         closeMessageActions()
         closeSelectTextModal()
         ensureSessionCreatedAt()
+        // 每次打开抽屉回到普通浏览态，避免上次的拖拽排序模式残留。
+        sessionReorderMode = false
+        drawerDrag = DshDrawerDrag()
         // Mount transparent first, then start drawer and mask on the same frame.
         sessionDrawerMaskAnimation = Animation.easeInOut(0.24f)
         sessionDrawerMaskAnimated = false
@@ -1633,7 +1665,17 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun refreshVisibleSessions() {
-        syncVisibleSessions(sessions, visibleSessions, (repository as? DshRemoteRepository)?.store?.archivedSessionIds.orEmpty())
+        ensureDrawerOrdersLoaded()
+        val archived = (repository as? DshRemoteRepository)?.store?.archivedSessionIds.orEmpty()
+        val visible = sessions.filterNot { it.blank || it.id in archived }
+        val ordered = if (sessionSort == DshSessionSort.MANUAL) {
+            val order = sessionManualOrder[""].orEmpty()
+            if (order.isEmpty()) visible.sortedByDescending { it.updatedAt }
+            else dshApplyOrder(visible, order) { it.id }
+        } else {
+            visible
+        }
+        syncVisibleSessions(ordered, visibleSessions, archived)
         refreshPendingSessionIds()
     }
 
@@ -2854,8 +2896,15 @@ internal class DshHomePage : BasePager() {
         dismissKeyboard()
         closeSessionDrawer()
         val remoteRepository = hostRepository as? DshRemoteRepository
+        // 当前工作区：优先当前会话所在的工作区分组，其次用会话 cwd 反查工作区路径，
+        // 最后回退 Host 工作区基线。保证「新会话」留在当前工作区；
+        // 只有工作区选择器里的「添加文件夹」才会创建新工作区。
+        val activeSession = sessions.firstOrNull { it.id == activeSessionId }
         val currentWorkspaceId = if (isRemoteHost) {
-            remoteRepository?.workspaceIdForSession(activeSessionId)
+            activeWorkspaceId().takeIf { it.isNotEmpty() }
+                ?: activeSession?.cwd?.takeIf { it.isNotEmpty() }
+                    ?.let { cwd -> workspaceGroups.firstOrNull { it.path == cwd }?.workspaceId }
+                ?: remoteRepository?.workspaceIdForSession(activeSessionId)
         } else {
             null
         }
@@ -2900,6 +2949,17 @@ internal class DshHomePage : BasePager() {
             draft = ""
             inputView?.setText("")
             applyActiveSessionChrome()
+            // 远程模式：同步 Host 会话目录，让新会话归入当前工作区分组并带上 cwd，
+            // 避免新会话落入「未分组」导致工作区看似被清除。
+            if (isRemoteHost) {
+                remoteRepository?.loadSessionCatalog({ catalog ->
+                    sessions = catalog.sessions
+                    reorderSessionsByUpdatedAt()
+                    refreshVisibleSessions()
+                    refreshWorkspaceGroups()
+                    applyActiveSessionChrome()
+                }, { /* 忽略：会话已创建，本地已保留 */ })
+            }
             setTimeout(pagerId, 0) {
                 if (activeSessionId == sessionId) {
                     loadSkills(sessionId)
@@ -3439,6 +3499,7 @@ internal class DshHomePage : BasePager() {
     }
 
     private fun refreshWorkspaceGroups() {
+        ensureDrawerOrdersLoaded()
         if (!isRemoteHost) {
             workspaceGroups = ObservableList()
             workspacePickerFolders.clear()
@@ -3446,12 +3507,24 @@ internal class DshHomePage : BasePager() {
         }
         val repository = repository as? DshRemoteRepository ?: return
         val byId = sessions.associateBy { it.id }
-        val comparator = sessionSortComparator()
         val groups = repository.workspaceGroups().map { group ->
-            group.copy(sessions = group.sessions.map { byId[it.id] ?: it }.sortedWith(comparator))
+            val resolved = group.sessions.map { byId[it.id] ?: it }
+            val orderedSessions = if (sessionSort == DshSessionSort.MANUAL) {
+                val order = sessionManualOrder[group.workspaceId].orEmpty()
+                if (order.isEmpty()) resolved.sortedByDescending { it.updatedAt }
+                else dshApplyOrder(resolved, order) { it.id }
+            } else {
+                resolved.sortedWith(sessionSortComparator())
+            }
+            group.copy(sessions = orderedSessions)
         }
-        if (groups != workspaceGroups.toList()) workspaceGroups = ObservableList(groups.toMutableList())
-        val folders = groups.filter { it.workspaceId.isNotEmpty() }
+        val orderedGroups = if (workspaceManualOrder.isEmpty()) {
+            groups
+        } else {
+            dshApplyOrder(groups, workspaceManualOrder) { it.workspaceId }
+        }
+        if (orderedGroups != workspaceGroups.toList()) workspaceGroups = ObservableList(orderedGroups.toMutableList())
+        val folders = orderedGroups.filter { it.workspaceId.isNotEmpty() }
         workspacePickerFolders.clear()
         workspacePickerFolders.addAll(folders)
     }
@@ -3460,6 +3533,7 @@ internal class DshHomePage : BasePager() {
         DshSessionSort.UPDATED -> compareByDescending { it.updatedAt }
         DshSessionSort.CREATED -> compareByDescending { sessionCreatedAt[it.id] ?: it.createdAt }
         DshSessionSort.NAME -> compareBy { it.title.lowercase() }
+        DshSessionSort.MANUAL -> compareBy { 0 }
     }
 
     fun toggleSessionSortMenu() { sessionSortMenuOpen = !sessionSortMenuOpen }
@@ -3467,6 +3541,123 @@ internal class DshHomePage : BasePager() {
     fun pickSessionSort(value: DshSessionSort) {
         sessionSort = value
         sessionSortMenuOpen = false
+        refreshWorkspaceGroups()
+        refreshVisibleSessions()
+    }
+
+    // ===== 会话抽屉拖拽排序 =====
+
+    /** 首次使用时按连接范围加载本地保存的自定义顺序。 */
+    private fun ensureDrawerOrdersLoaded() {
+        val prefs = prefsModule ?: return
+        val scope = activeConnectionId
+        if (scope == drawerOrderScope) return
+        drawerOrderScope = scope
+        sessionManualOrder = dshDecodeSessionOrder(runCatching { prefs.getItem(dshSessionOrderKey(scope)) }.getOrNull())
+        workspaceManualOrder = dshDecodeOrder(runCatching { prefs.getItem(dshWorkspaceOrderKey(scope)) }.getOrNull())
+    }
+
+    private fun persistSessionManualOrder() {
+        val prefs = prefsModule ?: return
+        runCatching { prefs.setItem(dshSessionOrderKey(activeConnectionId), dshEncodeSessionOrder(sessionManualOrder)) }
+    }
+
+    private fun persistWorkspaceManualOrder() {
+        val prefs = prefsModule ?: return
+        runCatching { prefs.setItem(dshWorkspaceOrderKey(activeConnectionId), dshEncodeOrder(workspaceManualOrder)) }
+    }
+
+    /** 进入/退出拖拽排序模式；进入时切换到「自定义排序」，退出时保留顺序。 */
+    fun toggleSessionReorderMode() {
+        val entering = !sessionReorderMode
+        sessionReorderMode = entering
+        sessionSortMenuOpen = false
+        if (!entering) {
+            drawerDrag = DshDrawerDrag()
+            return
+        }
+        if (sessionSort != DshSessionSort.MANUAL) {
+            sessionSort = DshSessionSort.MANUAL
+            refreshWorkspaceGroups()
+            refreshVisibleSessions()
+        }
+    }
+
+    /** 会话行拖拽开始；groupKey 为空表示本地（非工作区分组）的扁平列表。 */
+    fun beginSessionDrag(groupKey: String, sessionId: String, index: Int, pageY: Float) {
+        dragOriginPageY = pageY
+        drawerDrag = DshDrawerDrag(
+            kind = DshDrawerDragKind.SESSION,
+            key = sessionId,
+            groupKey = groupKey,
+            startIndex = index,
+            targetIndex = index,
+            offsetY = 0f,
+            itemHeight = DSH_DRAWER_ROW_HEIGHT,
+        )
+    }
+
+    /** 工作区文件夹行拖拽开始。 */
+    fun beginWorkspaceDrag(workspaceId: String, index: Int, itemHeight: Float, pageY: Float) {
+        dragOriginPageY = pageY
+        drawerDrag = DshDrawerDrag(
+            kind = DshDrawerDragKind.WORKSPACE,
+            key = workspaceId,
+            groupKey = DSH_WORKSPACE_DRAG_SCOPE,
+            startIndex = index,
+            targetIndex = index,
+            offsetY = 0f,
+            itemHeight = itemHeight,
+        )
+    }
+
+    /** 拖拽过程中更新位移与落点；heights 为当前列表各项高度。 */
+    fun updateDrawerDrag(pageY: Float, heights: List<Float>) {
+        val state = drawerDrag
+        if (state.kind == DshDrawerDragKind.NONE) return
+        val offset = pageY - dragOriginPageY
+        val target = if (heights.isEmpty()) state.startIndex else dshDropIndex(offset, state.startIndex, heights)
+        drawerDrag = state.copy(offsetY = offset, targetIndex = target)
+    }
+
+    /** 拖拽结束：按落点提交顺序并持久化。 */
+    fun endDrawerDrag() {
+        val state = drawerDrag
+        drawerDrag = DshDrawerDrag()
+        if (state.kind == DshDrawerDragKind.NONE) return
+        if (state.startIndex < 0 || state.targetIndex < 0 || state.startIndex == state.targetIndex) return
+        when (state.kind) {
+            DshDrawerDragKind.SESSION -> commitSessionOrder(state.groupKey, state.startIndex, state.targetIndex)
+            DshDrawerDragKind.WORKSPACE -> commitWorkspaceOrder(state.startIndex, state.targetIndex)
+            DshDrawerDragKind.NONE -> Unit
+        }
+    }
+
+    private fun commitSessionOrder(groupKey: String, from: Int, to: Int) {
+        if (groupKey.isEmpty()) {
+            val ids = visibleSessions.map { it.id }
+            val moved = dshMoveItem(ids, from, to)
+            if (moved == ids) return
+            sessionManualOrder = sessionManualOrder + ("" to moved)
+            persistSessionManualOrder()
+            refreshVisibleSessions()
+            return
+        }
+        val group = workspaceGroups.firstOrNull { it.workspaceId == groupKey } ?: return
+        val ids = group.sessions.map { it.id }
+        val moved = dshMoveItem(ids, from, to)
+        if (moved == ids) return
+        sessionManualOrder = sessionManualOrder + (groupKey to moved)
+        persistSessionManualOrder()
+        refreshWorkspaceGroups()
+    }
+
+    private fun commitWorkspaceOrder(from: Int, to: Int) {
+        val ids = workspaceGroups.filter { it.workspaceId.isNotEmpty() }.map { it.workspaceId }
+        val moved = dshMoveItem(ids, from, to)
+        if (moved == ids) return
+        workspaceManualOrder = moved
+        persistWorkspaceManualOrder()
         refreshWorkspaceGroups()
     }
 
@@ -3784,22 +3975,16 @@ internal class DshHomePage : BasePager() {
         runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
     }
 
-    // ===== 会话 topbar overflow menu：日志 / 重命名 / 归档 / 删除 =====
+    // ===== 会话 overflow menu：日志 / 重命名 / 归档 / 删除 =====
 
-    fun openOverflowMenu() {
-        if (overflowMenuVisible) return
-        closeMessageActions()
-        closeSelectTextModal()
-        overflowTargetSessionId = activeSessionId
-        overflowMenuVisible = true
-    }
-
-    /** 从会话抽屉某行的 ⋯ 打开 overflow menu：锁定目标会话，抽屉保持开启。 */
-    fun openOverflowMenuFor(sessionId: String) {
+    /** 从会话抽屉某行的 ⋯ 打开 overflow menu：锁定目标会话并锚定到点击位置，抽屉保持开启。 */
+    fun openOverflowMenuFor(sessionId: String, anchorX: Float = -1f, anchorY: Float = -1f) {
         if (overflowMenuVisible) return
         closeMessageActions()
         closeSelectTextModal()
         overflowTargetSessionId = sessionId
+        overflowAnchorX = anchorX
+        overflowAnchorY = anchorY
         overflowMenuVisible = true
     }
 

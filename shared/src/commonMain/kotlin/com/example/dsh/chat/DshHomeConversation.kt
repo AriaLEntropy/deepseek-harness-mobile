@@ -1571,7 +1571,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     attr {
                         text(message.content)
                         lines(Int.MAX_VALUE)
-                        fontSize(15f)
+                        fontSize(DSH_CHAT_BODY_FONT)
+                        lineHeight(DSH_CHAT_BODY_LINE)
                         color(if (isUser) colors().labelPrimaryBluish else colors().stateErrorPrimary)
                     }
                 }

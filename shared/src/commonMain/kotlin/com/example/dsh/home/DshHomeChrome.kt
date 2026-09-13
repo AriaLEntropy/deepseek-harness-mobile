@@ -13,6 +13,8 @@ import com.example.dsh.storage.*
 import com.example.dsh.web.*
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
+import com.tencent.kuikly.core.base.event.EventName
+import com.tencent.kuikly.core.base.event.PanGestureParams
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
@@ -307,6 +309,7 @@ internal enum class DshSessionSort(val label: String) {
     UPDATED("更新时间"),
     CREATED("创建时间"),
     NAME("按字母顺序"),
+    MANUAL("自定义排序"),
 }
 
 internal fun ViewContainer<*, *>.DshSessionDrawer(
@@ -323,13 +326,23 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
     overflowActions: () -> ObservableList<DshOverflowAction>,
     onOverflowSelect: (String) -> Unit,
     onDismissOverflow: () -> Unit,
-    onOpenOverflowFor: (String) -> Unit,
+    onOpenOverflowFor: (String, Float, Float) -> Unit,
+    overflowAnchorX: Float = -1f,
+    overflowAnchorY: Float = -1f,
     sessionSort: () -> DshSessionSort = { DshSessionSort.UPDATED },
     sortMenuOpen: () -> Boolean = { false },
     onToggleSortMenu: () -> Unit = {},
     onPickSessionSort: (DshSessionSort) -> Unit = {},
+    reorderMode: () -> Boolean = { false },
+    dragState: () -> DshDrawerDrag = { DshDrawerDrag() },
+    onToggleReorderMode: () -> Unit = {},
+    onSessionDragStart: (String, String, Int, Float) -> Unit = { _, _, _, _ -> },
+    onWorkspaceDragStart: (String, Int, Float, Float) -> Unit = { _, _, _, _ -> },
+    onDragMove: (Float, List<Float>) -> Unit = { _, _ -> },
+    onDragEnd: () -> Unit = {},
     statusBarHeight: Float,
     pageViewWidth: Float,
+    pageViewHeight: Float = 0f,
     onClose: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenArchive: () -> Unit,
@@ -337,6 +350,20 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
     onSelect: (String) -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
+    // 工作区拖拽按分组实际高度估算落点；展开状态变化时在拖拽回调内实时计算。
+    val dshWorkspaceHeights: () -> List<Float> = {
+        workspaceGroups().filter { it.workspaceId.isNotEmpty() }.map { group ->
+            DSH_DRAWER_WORKSPACE_HEADER_HEIGHT +
+                if (expandedGroupIds().contains(group.workspaceId)) {
+                    group.sessions.size * DSH_DRAWER_ROW_HEIGHT
+                } else {
+                    0f
+                }
+        }
+    }
+    val dshWorkspaceIndexOf: (String) -> Int = { id ->
+        workspaceGroups().filter { it.workspaceId.isNotEmpty() }.indexOfFirst { it.workspaceId == id }
+    }
     Modal(inWindow = true) {
         attr {
             absolutePositionAllZero()
@@ -403,22 +430,39 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                         color(colors().labelTertiary)
                     }
                 }
+                vif({ !reorderMode() }) {
+                    View {
+                        attr {
+                            height(24f); paddingLeft(8f); paddingRight(8f)
+                            flexDirectionRow(); alignItemsCenter(); borderRadius(6f)
+                        }
+                        Text { attr { text(sessionSort().label); fontSize(12f); color(colors().labelSecondary) } }
+                        Image {
+                            attr {
+                                src(ImageUri.commonAssets("chevron-down.svg"))
+                                size(11f, 11f); marginLeft(2f); tintColor(colors().labelTertiary)
+                            }
+                        }
+                        event { click { onToggleSortMenu() } }
+                    }
+                }
                 View {
                     attr {
-                        height(24f); paddingLeft(8f); paddingRight(8f)
+                        height(24f); marginLeft(6f); paddingLeft(8f); paddingRight(8f)
                         flexDirectionRow(); alignItemsCenter(); borderRadius(6f)
+                        backgroundColor(if (reorderMode()) colors().stateBusinessTertiary else Color(0x00FFFFFF))
                     }
-                    Text { attr { text(sessionSort().label); fontSize(12f); color(colors().labelSecondary) } }
-                    Image {
+                    Text {
                         attr {
-                            src(ImageUri.commonAssets("chevron-down.svg"))
-                            size(11f, 11f); marginLeft(2f); tintColor(colors().labelTertiary)
+                            text(if (reorderMode()) "完成" else "排序")
+                            fontSize(12f)
+                            color(if (reorderMode()) colors().stateBusinessPrimary else colors().labelSecondary)
                         }
                     }
-                    event { click { onToggleSortMenu() } }
+                    event { click { onToggleReorderMode() } }
                 }
             }
-            vif({ sortMenuOpen() }) {
+            vif({ sortMenuOpen() && !reorderMode() }) {
                 View {
                     attr {
                         marginBottom(6f); borderRadius(9f)
@@ -448,9 +492,9 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 }
             }
             Scroller {
-                attr { flex(1f) }
+                attr { flex(1f); scrollEnable(!reorderMode()) }
                 vif({ !isWebTimeline() }) {
-                    vfor({ sessions() }) { session ->
+                    vforIndex({ sessions() }) { session, index, count ->
                         DshSessionDrawerRow(
                             title = session.title,
                             subtitle = session.workspace,
@@ -461,7 +505,16 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                             indented = false,
                             pending = { sessionPending(session.id) },
                             onSelect = { onSelect(session.id) },
-                            onOpenOverflow = { onOpenOverflowFor(session.id) },
+                            onOpenOverflow = { x, y -> onOpenOverflowFor(session.id, x, y) },
+                            reorderMode = reorderMode,
+                            dragState = dragState,
+                            dragScope = "",
+                            dragId = session.id,
+                            dragIndex = index,
+                            dragItemCount = count,
+                            onDragStart = { pageY -> onSessionDragStart("", session.id, index, pageY) },
+                            onDragMove = onDragMove,
+                            onDragEnd = onDragEnd,
                             colors = colors,
                         )
                     }
@@ -469,11 +522,21 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 vif({ isWebTimeline() }) {
                     vfor({ workspaceGroups() }) { group ->
                         val groupKey = group.workspaceId
+                        val workspaceIndex = dshWorkspaceIndexOf(groupKey)
                         View {
                             attr {
                                 marginTop(4f)
                                 marginBottom(2f)
                                 flexDirectionColumn()
+                                if (groupKey.isNotEmpty()) {
+                                    val state = dragState()
+                                    val offset = dshRowDragOffset(state, DSH_WORKSPACE_DRAG_SCOPE, groupKey, workspaceIndex)
+                                    if (offset != 0f) {
+                                        transform(Translate(0f, 0f, 0f, offset))
+                                        zIndex(1)
+                                        opacity(0.9f)
+                                    }
+                                }
                             }
                             // 文件夹行：内嵌菜单头（文件夹图标 + 标题 + 旋转箭头）
                             View {
@@ -516,11 +579,41 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                                         tintColor(colors().labelTertiary)
                                     }
                                 }
+                                vif({ reorderMode() && groupKey.isNotEmpty() }) {
+                                    View {
+                                        attr { size(34f, 40f); marginLeft(4f); allCenter() }
+                                        Image {
+                                            attr {
+                                                src(ImageUri.commonAssets("menu.svg"))
+                                                size(18f, 18f)
+                                                tintColor(colors().labelTertiary)
+                                            }
+                                        }
+                                        event {
+                                            register(EventName.PAN.value, { raw ->
+                                                val pan = PanGestureParams.decode(raw)
+                                                val heights = dshWorkspaceHeights()
+                                                when {
+                                                    pan.isStart -> onWorkspaceDragStart(
+                                                        groupKey,
+                                                        dshWorkspaceIndexOf(groupKey),
+                                                        heights.getOrElse(dshWorkspaceIndexOf(groupKey)) {
+                                                            DSH_DRAWER_WORKSPACE_HEADER_HEIGHT
+                                                        },
+                                                        pan.pageY,
+                                                    )
+                                                    pan.isEnd -> onDragEnd()
+                                                    else -> onDragMove(pan.pageY, heights)
+                                                }
+                                            }, isSync = true)
+                                        }
+                                    }
+                                }
                                 event { click { onToggleGroup(groupKey) } }
                             }
                             vif({ expandedGroupIds().contains(groupKey) }) {
                                 // 展开即显示全部会话（与原版一致）；vif 条件翻转时重建列表。
-                                group.sessions.forEach { session ->
+                                group.sessions.forEachIndexed { index, session ->
                                     DshSessionDrawerRow(
                                         title = session.title,
                                         subtitle = "",
@@ -531,7 +624,16 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                                         indented = true,
                                         pending = { sessionPending(session.id) },
                                         onSelect = { onSelect(session.id) },
-                                        onOpenOverflow = { onOpenOverflowFor(session.id) },
+                                        onOpenOverflow = { x, y -> onOpenOverflowFor(session.id, x, y) },
+                                        reorderMode = reorderMode,
+                                        dragState = dragState,
+                                        dragScope = groupKey,
+                                        dragId = session.id,
+                                        dragIndex = index,
+                                        dragItemCount = group.sessions.size,
+                                        onDragStart = { pageY -> onSessionDragStart(groupKey, session.id, index, pageY) },
+                                        onDragMove = onDragMove,
+                                        onDragEnd = onDragEnd,
                                         colors = colors,
                                     )
                                 }
@@ -592,8 +694,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
             }
             event { click { onClose() } }
         }
-        // 复用主页面的 overflow menu：挂在抽屉 Modal 最上层，位置沿用主页
-        // topbar 下方的定位，仅当从抽屉会话行 ⋯ 打开时可见。
+        // 复用主页面的 overflow menu：挂在抽屉 Modal 最上层，锚定到点击的会话行 ⋯。
         DshOverflowMenu(
             visible = overflowVisible,
             actions = overflowActions,
@@ -601,6 +702,9 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
             onDismiss = onDismissOverflow,
             statusBarHeight = statusBarHeight,
             pageViewWidth = pageViewWidth,
+            pageViewHeight = pageViewHeight,
+            anchorX = overflowAnchorX,
+            anchorY = overflowAnchorY,
             colors = colors,
         )
     }
@@ -633,7 +737,16 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
     now: Long,
     indented: Boolean,
     onSelect: () -> Unit,
-    onOpenOverflow: () -> Unit,
+    onOpenOverflow: (Float, Float) -> Unit,
+    reorderMode: () -> Boolean = { false },
+    dragState: () -> DshDrawerDrag = { DshDrawerDrag() },
+    dragScope: String = "",
+    dragId: String = "",
+    dragIndex: Int = -1,
+    dragItemCount: Int = 0,
+    onDragStart: ((Float) -> Unit)? = null,
+    onDragMove: ((Float, List<Float>) -> Unit)? = null,
+    onDragEnd: (() -> Unit)? = null,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     View {
@@ -645,7 +758,21 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
             paddingLeft(if (indented) 32f else 12f)
             paddingRight(4f)
             borderRadius(9f)
-            backgroundColor(if (active()) colors().specificSidebarNavItemActive else Color(0x00FFFFFF))
+            val state = dragState()
+            val dragging = state.kind != DshDrawerDragKind.NONE && state.key == dragId && state.groupKey == dragScope
+            val offset = dshRowDragOffset(state, dragScope, dragId, dragIndex)
+            if (offset != 0f) {
+                transform(Translate(0f, 0f, 0f, offset))
+                zIndex(1)
+                opacity(0.9f)
+            }
+            backgroundColor(
+                when {
+                    dragging -> colors().specificSelector
+                    active() -> colors().specificSidebarNavItemActive
+                    else -> Color(0x00FFFFFF)
+                },
+            )
         }
         // 状态点不常驻：待用户决策（琥珀）或进行中/有新消息（蓝）才显示；
         // 无状态时不留占位，文字靠左（与 ds 移动端一致）。
@@ -703,8 +830,8 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                 }
             }
         }
-        // 溢出按钮仅在选中行显示（ds 移动端交互：正常状态不露 ⋯）。
-        vif({ active() }) {
+        // 溢出按钮：每个会话行右侧都显示（排序模式下隐藏），点击弹出会话管理选项。
+        vif({ !reorderMode() }) {
             View {
                 attr { size(34f, 34f); marginLeft(2f); allCenter() }
                 Image {
@@ -714,10 +841,36 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                         tintColor(colors().labelTertiary)
                     }
                 }
-                DshHitButton { onOpenOverflow() }
+                View {
+                    attr { absolutePositionAllZero(); backgroundColor(Color(0x00000000)) }
+                    event { click { params -> onOpenOverflow(params.pageX, params.pageY) } }
+                }
             }
         }
-        event { click { onSelect() } }
+        // 拖拽手柄：仅排序模式显示，按住手柄上下拖动调整顺序。
+        vif({ reorderMode() }) {
+            View {
+                attr { size(36f, 44f); marginLeft(2f); allCenter() }
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets("menu.svg"))
+                        size(18f, 18f)
+                        tintColor(colors().labelTertiary)
+                    }
+                }
+                event {
+                    register(EventName.PAN.value, { raw ->
+                        val pan = PanGestureParams.decode(raw)
+                        when {
+                            pan.isStart -> onDragStart?.invoke(pan.pageY)
+                            pan.isEnd -> onDragEnd?.invoke()
+                            else -> onDragMove?.invoke(pan.pageY, List(dragItemCount) { DSH_DRAWER_ROW_HEIGHT })
+                        }
+                    }, isSync = true)
+                }
+            }
+        }
+        event { click { if (!reorderMode()) onSelect() } }
     }
 }
 
@@ -1382,7 +1535,7 @@ internal fun ViewContainer<*, *>.DshAgentModePicker(
 internal fun ViewContainer<*, *>.DshTopBar(
     title: () -> String,
     onOpenDrawer: () -> Unit,
-    onOpenOverflow: () -> Unit,
+    onNewSession: () -> Unit,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
     View {
@@ -1392,17 +1545,23 @@ internal fun ViewContainer<*, *>.DshTopBar(
             alignItemsCenter()
             paddingLeft(12f)
             paddingRight(14f)
-            backgroundColor(colors().bgBase)
+            backgroundColor(colors().topBarFill)
             borderBottom(Border(1f, BorderStyle.SOLID, colors().borderL1))
         }
-//        左侧菜单图标：点击打开会话抽屉
+//        左侧菜单图标：点击打开会话抽屉（实色圆形底圈 + 柔和外阴影）
         View {
-            attr { size(38f, 38f); allCenter() }
+            attr {
+                size(38f, 38f)
+                borderRadius(19f)
+                allCenter()
+                backgroundColor(colors().floatingButtonFill)
+                boxShadow(BoxShadow(0f, 3f, 10f, colors().floatingButtonShadow))
+            }
             Image {
                 attr {
                     src(ImageUri.commonAssets("menu.svg"))
                     size(26f, 26f)
-                    tintColor(colors().labelPrimary)
+                    tintColor(colors().floatingButtonIcon)
                 }
             }
             DshHitButton(onOpenDrawer)
@@ -1420,17 +1579,23 @@ internal fun ViewContainer<*, *>.DshTopBar(
             }
             event { click { onOpenDrawer() } }
         }
-//        右上角 overflow menu：日志/重命名/归档/删除
+//        右上角新建会话：点击创建一个新的空白会话（实色圆形底圈 + 柔和外阴影）
         View {
-            attr { size(38f, 38f); allCenter() }
+            attr {
+                size(38f, 38f)
+                borderRadius(19f)
+                allCenter()
+                backgroundColor(colors().floatingButtonFill)
+                boxShadow(BoxShadow(0f, 3f, 10f, colors().floatingButtonShadow))
+            }
             Image {
                 attr {
-                    src(ImageUri.commonAssets("more.svg"))
-                    size(22f, 22f)
-                    tintColor(colors().labelPrimary)
+                    src(ImageUri.commonAssets("new-session.svg"))
+                    size(20f, 20f)
+                    tintColor(colors().floatingButtonIcon)
                 }
             }
-            DshHitButton(onOpenOverflow)
+            DshHitButton(onNewSession)
         }
     }
 }

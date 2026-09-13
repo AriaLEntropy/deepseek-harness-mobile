@@ -267,6 +267,12 @@ interface DshColorTokens {
     val specificSidebarNavItemActiveAccent: Color
     val specificSidebarNavItemHover: Color
     val specificTip: Color
+    // 顶部圆形按钮：实色底圈 + 图标 + 柔和外阴影（随浅/深色切换）
+    val floatingButtonFill: Color
+    val floatingButtonIcon: Color
+    val floatingButtonShadow: Color
+    // 顶部标题栏底色（浅色 96% 白）
+    val topBarFill: Color
 }
 
 /**
@@ -346,6 +352,10 @@ object DshDefaultLightTokens : DshColorTokens {
     override val specificSidebarNavItemActiveAccent = p.deepseek100
     override val specificSidebarNavItemHover = p.nb75
     override val specificTip = p.nb60
+    override val floatingButtonFill = p.nb00
+    override val floatingButtonIcon = p.nb1000
+    override val floatingButtonShadow = Color(0x29000000)
+    override val topBarFill = Color(0xF5FFFFFF)
 }
 
 /**
@@ -425,6 +435,10 @@ object DshDefaultDarkTokens : DshColorTokens {
     override val specificSidebarNavItemActiveAccent = p.nb800
     override val specificSidebarNavItemHover = p.nb850
     override val specificTip = p.nb800
+    override val floatingButtonFill = p.nb800
+    override val floatingButtonIcon = p.nb50
+    override val floatingButtonShadow = Color(0x14000000)
+    override val topBarFill = Color(0xF5151517)
 }
 
 /**
