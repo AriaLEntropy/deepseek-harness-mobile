@@ -19,9 +19,9 @@ internal abstract class BasePager : Pager() {
     private var nightModel: Boolean? by observable(null)
 
     /** 页面级主题色镜像：DshThemeManager.currentColors 的响应式副本，attr 内读取可注册依赖 */
-    protected var themeColors by observable<DshColorTokens>(DshThemeManager.currentColors)
+    internal var themeColors by observable<DshColorTokens>(DshThemeManager.currentColors)
     /** 页面级主题模式镜像：随全局广播同步，设置页外观行等文字可响应式显示 */
-    protected var themeMode by observable<DshThemeMode>(DshThemeManager.mode)
+    internal var themeMode by observable<DshThemeMode>(DshThemeManager.mode)
     /** 日出日落模式下下一次切换的定时器引用；非空表示已排程。 */
     private var sunriseSunsetTimer: String? = null
 
