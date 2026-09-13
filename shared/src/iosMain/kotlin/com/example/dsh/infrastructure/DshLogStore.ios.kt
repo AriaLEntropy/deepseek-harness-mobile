@@ -48,6 +48,29 @@ private class DshIosLogStore(private val path: String) : DshLogStore {
         }
     }
 
+    override fun levelCounts(filter: LogFilter): Map<LogLevel, Long> {
+        val select = buildLogLevelCountSql(filter)
+        val s = driver.prepare(DshLogSql.checkedPairs(select.sql))
+        try {
+            select.args.forEachIndexed { i, v -> s.bindString(i + 1, v) }
+            val counts = mutableMapOf<LogLevel, Long>()
+            var complete = false
+            while (s.step()) {
+                if (s.getColumnType(0) == ColumnType.NULL) { complete = true; break }
+                val level = LogLevel.entries.firstOrNull { it.value == s.getColumnLong(0).toInt() } ?: LogLevel.INFO
+                counts[level] = (counts[level] ?: 0L) + s.getColumnLong(1)
+            }
+            check(complete) { "日志级别统计未完成" }
+            return counts
+        } finally {
+            s.close()
+        }
+    }
+
+    override fun distinctSessions(): List<String> = queryStrings(DshLogSql.DISTINCT_SESSIONS)
+
+    override fun distinctTypes(): List<String> = queryStrings(DshLogSql.DISTINCT_TYPES)
+
     override fun clear() = clearAndMarkCrash(null)
     override fun clearAndMarkCrash(id: String?) {
         driver.transaction {
@@ -102,6 +125,22 @@ private class DshIosLogStore(private val path: String) : DshLogStore {
             message = s.getColumnString(6),
             size = s.getColumnLong(7).toInt(),
         )
+    }
+
+    private fun queryStrings(sql: String): List<String> {
+        val s = driver.prepare(DshLogSql.checkedScalar(sql))
+        return try {
+            buildList {
+                var complete = false
+                while (s.step()) {
+                    if (s.getColumnType(0) == ColumnType.NULL) { complete = true; break }
+                    add(s.getColumnString(0))
+                }
+                check(complete) { "日志目录查询未完成" }
+            }
+        } finally {
+            s.close()
+        }
     }
 
     private fun <T> queryOne(sql: String, args: List<String?>, mapper: (SqlStatement) -> T): T? {

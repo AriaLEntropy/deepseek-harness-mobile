@@ -24,6 +24,16 @@ internal data class LogFilter(
 internal interface DshLogStore {
     fun appendBatch(events: List<LogEvent>)
     fun query(filter: LogFilter, limit: Int, offset: Int): List<LogEvent>
+
+    /** 匹配 [filter] 的记录按级别分组计数；缺省级别表示 0 条。 */
+    fun levelCounts(filter: LogFilter): Map<LogLevel, Long>
+
+    /** 全库出现过的会话 ID；NULL / 空串统一返回空串，由上层映射为“未关联会话”。 */
+    fun distinctSessions(): List<String>
+
+    /** 全库出现过的事件类型。 */
+    fun distinctTypes(): List<String>
+
     fun clear()
     /** Both operations commit their crash marker in the same transaction as the log mutation. */
     fun appendCrashOnce(id: String, event: LogEvent): Boolean = error("崩溃幂等存储不可用")
@@ -60,7 +70,11 @@ internal data class LogSelect(
     val args: List<String?>,
 )
 
-internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int): LogSelect {
+/**
+ * Shared WHERE-clause builder. Aggregates (count / level histogram) reuse the exact same
+ * predicates as row selects so filter semantics never drift between stats and pages.
+ */
+private fun buildLogWhere(filter: LogFilter): Pair<String, List<String?>> {
     val whereClauses = mutableListOf<String>()
     val args = mutableListOf<String?>()
 
@@ -120,8 +134,18 @@ internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int): LogSele
     }
 
     val where = if (whereClauses.isEmpty()) "" else "WHERE ${whereClauses.joinToString(" AND ")}"
-    args.add(limit.toString())
-    args.add(offset.toString())
+    return where to args
+}
+
+internal fun buildLogSelect(filter: LogFilter, limit: Int, offset: Int): LogSelect {
+    val (where, whereArgs) = buildLogWhere(filter)
+    val args = whereArgs + limit.toString() + offset.toString()
     val sql = "SELECT seq, time, level, type, session_id, rpc_id, message, size FROM dsh_log_events $where ORDER BY seq DESC LIMIT ? OFFSET ?"
     return LogSelect(sql, args)
+}
+
+/** 按级别分组计数，最多返回 4 行；用于级别筛选面板的计数口径。 */
+internal fun buildLogLevelCountSql(filter: LogFilter): LogSelect {
+    val (where, args) = buildLogWhere(filter)
+    return LogSelect("SELECT level, COUNT(*) FROM dsh_log_events $where GROUP BY level", args)
 }

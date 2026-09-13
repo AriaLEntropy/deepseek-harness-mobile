@@ -12,6 +12,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 
 /**
+ * 一次读取的聚合统计。
+ *
+ * [levels] 为级别直方图（不含级别过滤的口径），[sessions]/[types]/[retained] 仅在
+ * 需要重建目录时填充。全部由 SQLite 聚合得出，避免为计数而把整表逐行反序列化。
+ */
+internal data class DshLogStats(
+    val levels: Map<LogLevel, Long>,
+    val sessions: List<String> = emptyList(),
+    val types: List<String> = emptyList(),
+    val retained: Long = 0L,
+)
+
+/**
  * 异步写后缓存：日志先进入内存队列，批量刷入 SQLite。
  *
  * 生命周期状态机：
@@ -232,15 +245,44 @@ internal class DshLogWriteBehind(
     }
 
     /**
-     * 单页游标读取：只取匹配 [filter] 的前 [limit] 条，不做整表遍历。
-     * 用于日志页懒加载/增量刷新，避免为了看一页而扫描全部保留记录。
+     * 聚合统计：[filter] 匹配记录的级别直方图；[includeCatalog] 时附带全库会话/类型目录与保留总数。
+     * 只做少量 SQL 聚合，不物化明细行，因此可用于首屏统计与低频对账而不拖慢读取。
      */
-    fun readSlice(filter: LogFilter, limit: Int, isCancelled: () -> Boolean = { false }): List<LogEvent> {
+    fun logStats(
+        filter: LogFilter,
+        includeCatalog: Boolean,
+        isCancelled: () -> Boolean = { false },
+    ): DshLogStats {
         if (isCancelled()) throw CancellationException("日志读取已取消")
         check(storeLock.withLock { flushLocked(isCancelled) } || lock.withLock { seqInitialized && pending.isEmpty() }) { "日志写入失败，请重试" }
         if (isCancelled()) throw CancellationException("日志读取已取消")
         return storeLock.withLock {
-            runCatching { logStore.query(filter, limit, 0) }
+            runCatching {
+                val levels = logStore.levelCounts(filter)
+                if (includeCatalog) {
+                    DshLogStats(
+                        levels = levels,
+                        sessions = logStore.distinctSessions(),
+                        types = logStore.distinctTypes(),
+                        retained = logStore.count(),
+                    )
+                } else {
+                    DshLogStats(levels = levels)
+                }
+            }.onFailure { recordFailure("query", it) }.onSuccess { clearFailure("query") }.getOrThrow()
+        }
+    }
+
+    /**
+     * 单页游标读取：只取匹配 [filter] 的 [limit] 条，不做整表遍历。
+     * 用于日志页懒加载/增量刷新，避免为了看一页而扫描全部保留记录。
+     */
+    fun readSlice(filter: LogFilter, limit: Int, isCancelled: () -> Boolean = { false }, offset: Int = 0): List<LogEvent> {
+        if (isCancelled()) throw CancellationException("日志读取已取消")
+        check(storeLock.withLock { flushLocked(isCancelled) } || lock.withLock { seqInitialized && pending.isEmpty() }) { "日志写入失败，请重试" }
+        if (isCancelled()) throw CancellationException("日志读取已取消")
+        return storeLock.withLock {
+            runCatching { logStore.query(filter, limit, offset) }
                 .onFailure { recordFailure("query", it) }
                 .onSuccess { clearFailure("query") }
                 .getOrThrow()

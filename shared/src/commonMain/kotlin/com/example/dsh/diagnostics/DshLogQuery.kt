@@ -12,8 +12,8 @@ internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search:
 
     /**
      * 首屏/全量刷新：统计 total、级别计数，可选地重建会话/类型目录，并取第一页。
-     * 统计口径需要遍历一次匹配集合，因此只应在打开、切筛选或低频对账时调用；
-     * 懒加载与轮询走 [readOlder]/[readNewer]，不重复全表扫描。
+     * 统计全部下沉到 SQLite 聚合（COUNT / GROUP BY / DISTINCT），不再为计数整表逐行读取，
+     * 因此打开、切筛选与低频对账都只付出少量聚合查询 + 一页明细的成本。
      */
     fun readPage(
         source: DshLogWriteBehind,
@@ -22,33 +22,23 @@ internal data class DshLogQuery(val filter: LogFilter = LogFilter(), val search:
         includeCatalog: Boolean = false,
         isCancelled: () -> Boolean = { false },
     ): DshLogPageResult {
-        // Read the complete retained catalog, independent of filters and the visible page.
-        val catalog = if (includeCatalog) {
-            val sessions = mutableSetOf<String>()
-            val types = mutableSetOf<String>()
-            var retained = 0
-            source.forEachPage(LogFilter(), isCancelled) { page ->
-                retained += page.size
-                page.forEach {
-                    sessions.add(it.sessionId?.takeIf(String::isNotEmpty) ?: DshLogFilters.UNASSOCIATED)
-                    types.add(it.type)
-                }
-            }
-            DshLogCatalog(sessions.sorted(), types.sorted(), retained)
-        } else null
-        val rows = mutableListOf<LogEvent>()
-        val counts = mutableMapOf<LogLevel, Int>()
-        var total = 0
-        source.forEachPage(baseFilter(null), isCancelled) { page ->
-            page.forEach { event ->
-                counts[event.level] = (counts[event.level] ?: 0) + 1
-                if (filter.levels.isNullOrEmpty() || event.level in filter.levels) {
-                    if (total >= offset && rows.size < limit) rows.add(event)
-                    total++
-                }
-            }
+        // 级别计数取「级别过滤前」的口径（levels = null），total 由选中级别求和得出。
+        val stats = source.logStats(baseFilter(null), includeCatalog, isCancelled)
+        val selected = filter.levels
+        val total = if (selected.isNullOrEmpty()) {
+            stats.levels.values.sum()
+        } else {
+            stats.levels.entries.sumOf { if (it.key in selected) it.value else 0L }
         }
-        return DshLogPageResult(rows, total, counts, catalog)
+        val rows = source.readSlice(baseFilter(filter.levels), limit, isCancelled, offset)
+        val catalog = if (includeCatalog) {
+            DshLogCatalog(
+                sessions = stats.sessions.map { it.ifEmpty { DshLogFilters.UNASSOCIATED } }.distinct().sorted(),
+                types = stats.types.sorted(),
+                retained = stats.retained.toInt(),
+            )
+        } else null
+        return DshLogPageResult(rows, total.toInt(), stats.levels.mapValues { it.value.toInt() }, catalog)
     }
 
     /**

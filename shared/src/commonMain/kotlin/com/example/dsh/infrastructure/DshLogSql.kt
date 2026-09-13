@@ -38,6 +38,16 @@ internal object DshLogSql {
     fun checkedSelect(sql: String): String =
         "SELECT * FROM ($sql) UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL"
 
+    // Same completion sentinel for scalar / two-column aggregate queries.
+    fun checkedScalar(sql: String): String =
+        "SELECT * FROM ($sql) UNION ALL SELECT NULL"
+
+    fun checkedPairs(sql: String): String =
+        "SELECT * FROM ($sql) UNION ALL SELECT NULL,NULL"
+
+    const val DISTINCT_SESSIONS = "SELECT DISTINCT COALESCE(session_id, '') FROM dsh_log_events"
+    const val DISTINCT_TYPES = "SELECT DISTINCT type FROM dsh_log_events"
+
     const val CLEAR = "DELETE FROM dsh_log_events"
 
     const val MAX_SEQ = "SELECT COALESCE(MAX(seq), 0) FROM dsh_log_events"

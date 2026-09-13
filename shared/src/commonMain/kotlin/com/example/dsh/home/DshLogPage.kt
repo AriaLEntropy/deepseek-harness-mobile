@@ -141,6 +141,8 @@ internal class DshLogPage : BasePager() {
     private var lastMaxSeq = 0L
     private var polling = false
     private var pollGeneration = 0
+    // 单轮轮询内连续增量拉取的次数；超过后退回一次全量对账，避免持续高流量下无限追加。
+    private var newerDrainRounds = 0
 
     private enum class SheetKind { NONE, TIME, LEVEL, SESSION, TYPE, EXPORT }
 
@@ -277,9 +279,18 @@ internal class DshLogPage : BasePager() {
             sliceWork = null
             if (generation != queryGeneration) { queryVersion = -1; refreshAll(); return }
             result.onSuccess { rows ->
-                // 空结果（清空/淘汰）或新日志过多时，退回全量对账，避免增量口径偏差。
-                if (rows.isEmpty() || rows.size >= NEWER_LIMIT) { queryVersion = -1; refreshAll(); return }
+                if (rows.isEmpty()) { queryVersion = -1; refreshAll(); return }
                 applyNewer(rows)
+                if (rows.size < NEWER_LIMIT) { newerDrainRounds = 0; return }
+                // 新增积压超过一批：继续增量拉取（单批只是索引查询），避免整表重扫与列表重置。
+                if (newerDrainRounds++ < NEWER_DRAIN_MAX_ROUNDS) {
+                    queryVersion = -1
+                    refreshNewer()
+                } else {
+                    newerDrainRounds = 0
+                    queryVersion = -1
+                    refreshAll()
+                }
             }.onFailure { queryVersion = -1 }
         }
         setTimeout(50) { receive() }
@@ -583,6 +594,7 @@ internal class DshLogPage : BasePager() {
         if (!polling || generation != pollGeneration) return
         // 常规轮询只增量拉新。仅在用户尚未向下翻页（列表仍是第一页）时，
         // 才允许低频全量对账，避免把已加载的多页数据重置回第一页。
+        newerDrainRounds = 0
         val canReconcile = logView.size <= PAGE_SIZE
         if (canReconcile && currentTimeMillis() - lastFullRefreshMs >= FULL_REFRESH_INTERVAL_MS) {
             refreshAll()
@@ -1607,8 +1619,10 @@ internal class DshLogPage : BasePager() {
         private const val PAGE_SIZE = 100
         // 距列表底部该像素内即视为触底，提前触发下一页加载。
         private const val LOAD_MORE_SLACK_PX = 300f
-        // 单次增量轮询最多拉取的新日志数；超过则退回全量刷新。
+        // 单次增量轮询最多拉取的新日志数；超过则继续增量拉取（见 NEWER_DRAIN_MAX_ROUNDS）。
         private const val NEWER_LIMIT = 500
+        // 单轮轮询内允许连续增量拉取的最大批次数，超过后退回一次全量对账。
+        private const val NEWER_DRAIN_MAX_ROUNDS = 4
         // 已加载列表的环形上限，避免长时间开启日志页时内存无界增长。
         private const val MAX_LOADED = 2000
         // 增量轮询下定期做一次全量对账的间隔。
