@@ -1,5 +1,4 @@
 package com.example.dsh.platform
-import com.example.dsh.log.DshLogWriteBehind
 
 /**
  * 轻量互斥锁：保护 [DshLogWriteBehind] 内存队列的跨线程访问。

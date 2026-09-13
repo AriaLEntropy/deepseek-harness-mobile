@@ -5,7 +5,6 @@ import com.example.dsh.message.contextInstructions
 import com.example.dsh.message.contextRecalls
 import com.example.dsh.message.contextRelaySender
 import com.example.dsh.message.contextSections
-import com.example.dsh.attachment.DshImageAttachmentRef
 import com.example.dsh.tool.DshRemoteToolCallModel
 import com.example.dsh.models.DshToolCardType
 import com.example.dsh.host.toolCardType

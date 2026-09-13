@@ -1,7 +1,6 @@
 package com.example.dsh.theme
 
 import com.tencent.kuikly.core.base.Color
-import com.example.dsh.ui.rendering.DshMarkdown
 
 /**
  * 主题模式：亮色 / 暗色 / 跟随系统 / 日出日落

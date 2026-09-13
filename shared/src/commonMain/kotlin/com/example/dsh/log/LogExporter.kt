@@ -1,5 +1,4 @@
 package com.example.dsh.log
-import com.example.dsh.base.BasePager
 import com.example.dsh.platform.DshLock
 
 internal expect fun localTimezoneOffsetMillis(): Long

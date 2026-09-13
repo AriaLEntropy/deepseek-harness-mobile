@@ -20,7 +20,6 @@ import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.View
 import kotlin.math.abs
 import com.tencent.kuikly.core.timer.setTimeout
-import com.example.dsh.base.BridgeModule
 import com.example.dsh.base.Utils
 
 /** 面板吸附档位：medium 半屏 / large 全屏。 */

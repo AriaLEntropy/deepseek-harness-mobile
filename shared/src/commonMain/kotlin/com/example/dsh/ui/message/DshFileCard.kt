@@ -11,7 +11,6 @@ import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens

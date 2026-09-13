@@ -48,10 +48,8 @@ import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
-import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.reactive.collection.ObservableList
-import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.TextAreaView

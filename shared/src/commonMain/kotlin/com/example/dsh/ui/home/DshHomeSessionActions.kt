@@ -12,8 +12,6 @@ import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.reactive.handler.*
 import com.tencent.kuikly.core.reactive.collection.ObservableList
-import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.Modal
 import com.example.dsh.base.setTimeout
 import com.example.dsh.search.DshSessionSearch
 import com.example.dsh.base.setTimeout
@@ -34,7 +32,6 @@ import com.example.dsh.session.dshDrawerOrderByKey
 import com.example.dsh.session.dshDropIndex
 import com.example.dsh.session.dshEncodeOrder
 import com.example.dsh.session.dshEncodeSessionOrder
-import com.example.dsh.ui.log.DshLogPage
 import com.example.dsh.session.dshMoveItem
 import com.example.dsh.session.dshSessionOrderKey
 import com.example.dsh.session.dshWorkspaceOrderKey

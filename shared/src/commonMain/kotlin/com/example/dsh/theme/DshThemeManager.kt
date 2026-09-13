@@ -2,7 +2,6 @@ package com.example.dsh.theme
 
 import com.example.dsh.log.cachedLocalTimezoneOffsetMillis
 import com.example.dsh.platform.currentTimeMillis
-import com.example.dsh.base.BasePager
 
 /**
  * 全局主题管理器（App 级）：所有页面共享同一份主题状态与语义色解析。

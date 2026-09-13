@@ -20,7 +20,6 @@ import com.example.dsh.ui.interaction.DshPermissionPicker
 import com.example.dsh.ui.interaction.DshRiskConfirmationModal
 import com.example.dsh.ui.session.DshSessionArchiveDialog
 import com.example.dsh.ui.session.DshSessionDeleteDialog
-import com.example.dsh.ui.search.DshSessionDrawer
 import com.example.dsh.ui.session.DshSessionRenameDialog
 import com.example.dsh.ui.search.DshSessionSearchOverlay
 

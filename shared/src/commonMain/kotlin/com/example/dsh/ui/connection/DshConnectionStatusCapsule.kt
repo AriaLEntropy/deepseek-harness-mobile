@@ -9,7 +9,6 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.ui.message.DshMessageActionsMenu
 
 /**
  * 连接状态胶囊（Overlay）

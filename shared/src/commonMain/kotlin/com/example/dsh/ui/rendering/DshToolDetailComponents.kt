@@ -22,7 +22,6 @@ import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.Scroller
-import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 /** The durable context fields retain their producer-specific presentation after expansion. */

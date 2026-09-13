@@ -14,8 +14,6 @@ import com.tencent.kuikly.core.views.compose.Button
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.ui.home.DshHitButton
-import com.example.dsh.ui.session.DshOverflowMenu
-import com.example.dsh.ui.search.DshSessionSearchOverlay
 
 internal fun ViewContainer<*, *>.DshConnectionSettingsModal(
     sshMode: () -> Boolean,

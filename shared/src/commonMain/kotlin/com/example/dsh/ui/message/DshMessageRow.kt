@@ -7,7 +7,6 @@ import com.example.dsh.message.DshMessageRole
 import com.example.dsh.tool.DshRemoteToolKind
 import com.example.dsh.models.DshToolCardType
 import com.example.dsh.tool.dshAskQuestionCard
-import com.example.dsh.tool.dshAskReadableBody
 import com.example.dsh.ui.rendering.DSH_CHAT_BODY_FONT
 import com.example.dsh.ui.rendering.DSH_CHAT_BODY_LINE
 import com.example.dsh.ui.rendering.DshContextDetail

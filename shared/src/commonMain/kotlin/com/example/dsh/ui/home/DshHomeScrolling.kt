@@ -6,7 +6,6 @@ import com.tencent.kuikly.core.reactive.handler.*
 import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.views.ScrollParams
-import kotlinx.coroutines.launch
 import com.example.dsh.message.messageRowKey
 import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.timer.setTimeout
