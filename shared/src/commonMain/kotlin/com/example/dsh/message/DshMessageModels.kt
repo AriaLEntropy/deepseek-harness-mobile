@@ -32,7 +32,6 @@ internal enum class DshMessageRole {
     ERROR,
 }
 
-
 internal data class DshMessage(
     val id: String,
     val role: DshMessageRole,
@@ -70,7 +69,6 @@ internal data class DshMessage(
     /** Host event anchor, independent of the UI row id (live ids use local counters). */
     val sourceSeq: Int? = null,
 )
-
 
 internal fun dshIsLiveAssistantText(message: DshMessage): Boolean =
     message.role == DshMessageRole.ASSISTANT &&
@@ -417,24 +415,20 @@ internal fun DshMessage.visuallyEquals(other: DshMessage): Boolean =
         toolCallId == other.toolCallId &&
         remoteTool == other.remoteTool
 
-
 internal fun dshMessagesVisuallyEqual(left: List<DshMessage>, right: List<DshMessage>): Boolean {
     if (left.size != right.size) return false
     return left.indices.all { left[it].visuallyEquals(right[it]) }
 }
-
 
 internal data class DshContextCatalogEntry(
     val name: String,
     val description: String,
 )
 
-
 internal data class DshContextSection(
     val title: String,
     val body: String,
 )
-
 
 internal data class DshContextRecall(
     val label: String,
@@ -443,12 +437,10 @@ internal data class DshContextRecall(
     val truncated: Boolean,
 )
 
-
 internal data class DshContextInstruction(
     val path: String,
     val action: String,
 )
-
 
 internal data class DshWebTimelineItem(
     val key: String,
@@ -486,9 +478,7 @@ internal data class DshWebTimelineItem(
     }
 }
 
-
 internal fun DshMessage.isRuntimeContextSnapshot(): Boolean {
     return role == DshMessageRole.USER &&
         content.startsWith("Current runtime context. This snapshot supersedes earlier runtime-context snapshots.")
 }
-

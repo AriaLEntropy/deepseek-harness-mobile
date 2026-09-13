@@ -1,6 +1,5 @@
 package com.example.dsh.models
 
-
 internal enum class DshToolCardType {
     GENERIC,
     TERMINAL,
@@ -11,7 +10,6 @@ internal enum class DshToolCardType {
     JSON,
 }
 
-
 internal data class DshJsonNode(
     val key: String,
     val label: String,
@@ -20,14 +18,12 @@ internal data class DshJsonNode(
     val depth: Int = 0,
 )
 
-
 internal data class DshCredentialSetup(
     val providerAvailable: Boolean,
     val configured: Boolean,
     val writable: Boolean,
     val credentialRef: String = "DEEPSEEK_API_KEY",
 )
-
 
 internal data class DshModelOption(
     val provider: String,
@@ -49,7 +45,6 @@ internal data class DshReasoningEffort(
     val description: String = "",
 )
 
-
 internal data class DshAgentPresetOption(
     val id: String,
     val name: String,
@@ -57,13 +52,11 @@ internal data class DshAgentPresetOption(
     val isDefault: Boolean = false,
 )
 
-
 internal data class DshSettingsChoice(
     val value: String,
     val label: String = "",
     val description: String = "",
 )
-
 
 internal data class DshSettingsSnapshot(
     val writable: Boolean = false,
@@ -78,4 +71,3 @@ internal data class DshSettingsSnapshot(
     val defaultModelLabel: String = "",
     val defaultModelRevision: Int = 0,
 )
-

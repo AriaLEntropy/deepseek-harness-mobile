@@ -1,6 +1,5 @@
 package com.example.dsh.ui.search
 
-
 import com.example.dsh.session.DshSession
 import com.example.dsh.session.DshWorkspaceGroup
 import com.example.dsh.platform.currentTimeMillis

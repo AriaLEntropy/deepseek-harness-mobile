@@ -209,7 +209,6 @@ internal data class DshToolDetail(
     val filePath: String? = null,
 )
 
-
 internal fun dshExtractBashCommand(input: String): String {
     val trimmed = input.trim()
     if (!trimmed.startsWith("{")) return trimmed

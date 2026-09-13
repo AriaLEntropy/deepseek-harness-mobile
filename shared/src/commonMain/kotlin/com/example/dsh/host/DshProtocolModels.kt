@@ -1,12 +1,10 @@
 package com.example.dsh.host
 
-
 internal enum class DshConnectionMode {
     LOCAL,
     RELAY,
     SSH,
 }
-
 
 internal enum class DshHostRuntimePhase {
     DISCONNECTED,
@@ -19,7 +17,6 @@ internal enum class DshHostRuntimePhase {
     STOPPED,
 }
 
-
 internal data class DshHostRuntimeState(
     val phase: DshHostRuntimePhase,
     val generation: Long,
@@ -27,7 +24,6 @@ internal data class DshHostRuntimeState(
     val hostOpen: Boolean = false,
     val message: String = "",
 )
-
 
 internal enum class DshEventStream {
     MUX,
@@ -43,20 +39,17 @@ internal data class DshDownlinkFrame(
     val raw: String,
 )
 
-
 internal data class DshRpcError(
     val code: String,
     val message: String,
     val details: String = "{}",
 )
 
-
 internal fun dshIsTransportInterrupt(code: String, message: String = ""): Boolean {
     if (code == "generation-cancelled" || code == "cancelled") return true
     if (code.startsWith("transport-")) return true
     return message.contains("世代已失效") || message.contains("连接已停止")
 }
-
 
 internal enum class DshRemoteFailure {
     KEY_MISSING,
@@ -66,4 +59,3 @@ internal enum class DshRemoteFailure {
     SSH_PORT_IN_USE,
     DSH_UNAVAILABLE,
 }
-

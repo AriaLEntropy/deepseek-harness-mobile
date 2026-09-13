@@ -20,14 +20,12 @@ internal data class DshSessionScope(
     }
 }
 
-
 internal data class DshRelayProfile(
     val hostId: String,
     val hostName: String,
     val relayOrigin: String,
     val pairedAt: Long,
 )
-
 
 internal data class DshRemoteProfile(
     val profileId: String = DshSessionScope.DEFAULT_REMOTE_PROFILE_ID,
@@ -39,13 +37,11 @@ internal data class DshRemoteProfile(
     val hostFingerprint: String = "",
 )
 
-
 internal enum class DshSessionCacheState {
     SYNCED,
     STALE,
     SYNC_FAILED,
 }
-
 
 internal data class DshLegacyRemoteProfile(
     val mode: DshConnectionMode,
@@ -79,14 +75,12 @@ internal data class DshSession(
     val subscribedLastSeq: Int = -1,
 )
 
-
 internal data class DshQueueItem(
     val id: String,
     val placement: String,
     val preview: String,
     val text: String?,
 )
-
 
 internal data class DshJobItem(
     val id: String,
@@ -97,7 +91,6 @@ internal data class DshJobItem(
     val startedAt: Long,
     val finishedAt: Long?,
 )
-
 
 internal data class DshWorkspaceGroup(
     val workspaceId: String,
@@ -115,13 +108,11 @@ internal data class DshSessionMeta(
     val cwd: String,
 )
 
-
 internal data class DshDirectoryEntry(
     val name: String,
     val path: String,
     val hidden: Boolean,
 )
-
 
 internal data class DshDirectoryListing(
     val path: String,
@@ -131,14 +122,12 @@ internal data class DshDirectoryListing(
     val truncated: Boolean,
 )
 
-
 internal data class DshSkill(
     val name: String,
     val description: String,
     val whenToUse: String = "",
     val modelInvocable: Boolean = true,
 )
-
 
 internal data class DshGoalSnapshot(
     val id: String,
@@ -148,10 +137,8 @@ internal data class DshGoalSnapshot(
     val blockedReason: String = "",
 )
 
-
 internal data class DshSessionModels(
     val current: DshModelOption,
     val options: List<DshModelOption>,
     val routable: Boolean,
 )
-

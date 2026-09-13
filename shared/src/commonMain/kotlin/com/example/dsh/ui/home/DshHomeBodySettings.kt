@@ -177,7 +177,6 @@ internal fun DshHomePage.bodySettingsOverlays(): ViewBuilder {
     }
 }
 
-
 internal fun DshHomePage.bodySettingsChoiceAndCredentials(): ViewBuilder {
     val ctx = this
     return {
@@ -253,7 +252,6 @@ internal fun DshHomePage.bodySettingsChoiceAndCredentials(): ViewBuilder {
         }
     }
 }
-
 
 internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
     val ctx = this
@@ -378,5 +376,3 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
         }
     }
 }
-
-

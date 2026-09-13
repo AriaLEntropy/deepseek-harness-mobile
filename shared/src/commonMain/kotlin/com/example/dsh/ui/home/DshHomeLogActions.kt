@@ -138,6 +138,4 @@ internal fun DshHomePage.reportCrashRecord(raw: String, source: DshLogWriteBehin
     setTimeout(50) { receive() }
 }
 
-
-
 // ===== 重命名会话 =====

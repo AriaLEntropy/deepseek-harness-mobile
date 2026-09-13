@@ -52,7 +52,6 @@ internal fun DshHomePage.bodyTopBar(): ViewBuilder {
     }
 }
 
-
 internal fun DshHomePage.bodyMainContent(): ViewBuilder {
     val ctx = this
     val wide = pagerData.pageViewWidth >= 720f
@@ -430,7 +429,6 @@ internal fun DshHomePage.bodyMainContent(): ViewBuilder {
     }
 }
 
-
 internal fun DshHomePage.bodySessionDrawer(): ViewBuilder {
     val ctx = this
     return {
@@ -492,5 +490,3 @@ internal fun DshHomePage.bodySessionDrawer(): ViewBuilder {
 
     }
 }
-
-

@@ -84,7 +84,6 @@ internal fun DshHomePage.bodySessionSearchAndArchive(): ViewBuilder {
     }
 }
 
-
 internal fun DshHomePage.bodyPickers(): ViewBuilder {
     val ctx = this
     return {
@@ -232,7 +231,6 @@ internal fun DshHomePage.bodyPickers(): ViewBuilder {
     }
 }
 
-
 internal fun DshHomePage.bodyMessageOverlays(): ViewBuilder {
     val ctx = this
     return {
@@ -298,5 +296,3 @@ internal fun DshHomePage.bodyMessageOverlays(): ViewBuilder {
         )
     }
 }
-
-

@@ -215,7 +215,6 @@ internal fun dshThemeModeLabel(mode: DshThemeMode): String = when (mode) {
     DshThemeMode.SUNRISE_SUNSET -> "日出日落"
 }
 
-
 // ===== 设置页卡片规范 =====
 // 统一设置页三档间距：卡片到屏幕边缘、卡片内部内容到卡片边缘、卡片与卡片之间。
 private const val DSH_SETTINGS_SCREEN_MARGIN = 16f

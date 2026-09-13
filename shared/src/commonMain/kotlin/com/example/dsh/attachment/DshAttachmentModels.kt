@@ -104,7 +104,6 @@ internal data class DshImageAttachmentRef(
 /** 输入区待发送的通用文件草稿；仅内存，不落盘。旧 Host 无文件 content 类型，发送前由插件落盘。 */
 internal enum class DshFileDraftState { SELECTED, UPLOADING, FAILED }
 
-
 internal data class DshPendingFile(
     val clientId: String,
     val mediaType: String,
@@ -180,4 +179,3 @@ internal object DshFileHandle {
 
     fun hasHandle(text: String): Boolean = text.lineSequence().any { parse(it) != null }
 }
-

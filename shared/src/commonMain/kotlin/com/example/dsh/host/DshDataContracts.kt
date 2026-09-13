@@ -19,7 +19,6 @@ internal data class DshRawSessionEvent(
     val raw: String,
 )
 
-
 internal data class DshProjectionCell(
     val value: String,
     val seq: Int,
@@ -142,11 +141,9 @@ internal class DshHostStore {
     fun removePending(rpcId: String) { pendingInteractions.remove(rpcId) }
 }
 
-
 internal interface DshStreamHandle {
     fun cancel()
 }
-
 
 internal interface DshRepository {
     fun loadCredentialSetup(
@@ -270,4 +267,3 @@ internal interface DshRepository {
         onError: (String) -> Unit,
     ): DshStreamHandle
 }
-

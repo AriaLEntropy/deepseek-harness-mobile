@@ -166,7 +166,6 @@ internal fun dshShouldLogSessionEvent(type: String, data: JSONObject): Boolean {
     }
 }
 
-
 internal fun pendingInteractionRpcId(envelope: JSONObject, payload: JSONObject): String {
     val nested = payload.optJSONObject("payload")
     return listOf(

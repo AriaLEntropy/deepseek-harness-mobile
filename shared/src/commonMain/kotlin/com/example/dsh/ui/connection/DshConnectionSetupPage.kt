@@ -318,7 +318,6 @@ internal class DshConnectionSetupPage : BasePager() {
         }
     }
 
-
     private fun scanRelayQr() {
         if (!pageData.supportsRelayBridge) {
             error = "扫码连接目前仅支持 Android、iOS 和 HarmonyOS"
