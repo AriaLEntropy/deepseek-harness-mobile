@@ -1,4 +1,4 @@
-package com.example.dsh.message
+package com.example.dsh.ui.message
 
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri

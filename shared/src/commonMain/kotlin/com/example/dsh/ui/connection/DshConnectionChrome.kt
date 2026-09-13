@@ -1,4 +1,4 @@
-package com.example.dsh.connection
+package com.example.dsh.ui.connection
 
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
@@ -14,8 +14,8 @@ import com.tencent.kuikly.core.views.compose.Button
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.ui.home.DshHitButton
-import com.example.dsh.session.DshOverflowMenu
-import com.example.dsh.search.DshSessionSearchOverlay
+import com.example.dsh.ui.session.DshOverflowMenu
+import com.example.dsh.ui.search.DshSessionSearchOverlay
 
 internal fun ViewContainer<*, *>.DshConnectionSettingsModal(
     sshMode: () -> Boolean,

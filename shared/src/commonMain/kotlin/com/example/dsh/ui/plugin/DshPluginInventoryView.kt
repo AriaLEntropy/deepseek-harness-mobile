@@ -1,4 +1,4 @@
-package com.example.dsh.plugin
+package com.example.dsh.ui.plugin
 
 import com.example.dsh.plugin.DshPluginConfigCard
 import com.example.dsh.plugin.DshPluginEntry

@@ -1,8 +1,8 @@
 package com.example.dsh.search
 
-import com.example.dsh.search.DshSessionSearchHit
-import com.example.dsh.search.dshSearchPlainText
-import com.example.dsh.search.dshSearchSnippet
+import com.example.dsh.ui.search.DshSessionSearchHit
+import com.example.dsh.ui.search.dshSearchPlainText
+import com.example.dsh.ui.search.dshSearchSnippet
 
 import com.example.dsh.message.DshMessage
 import com.example.dsh.session.DshSession

@@ -1,4 +1,4 @@
-package com.example.dsh.models
+package com.example.dsh.ui.models
 
 import com.example.dsh.theme.DshColorTokens
 

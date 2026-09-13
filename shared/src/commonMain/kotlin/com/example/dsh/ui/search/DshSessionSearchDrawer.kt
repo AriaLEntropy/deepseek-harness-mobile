@@ -1,4 +1,4 @@
-package com.example.dsh.search
+package com.example.dsh.ui.search
 
 
 import com.example.dsh.session.DshSession
@@ -31,12 +31,12 @@ import com.example.dsh.session.DSH_WORKSPACE_DRAG_SCOPE
 import com.example.dsh.session.DshDrawerDrag
 import com.example.dsh.session.DshDrawerDragKind
 import com.example.dsh.session.dshRowDragOffset
-import com.example.dsh.connection.DshDrawerEdgeShadow
+import com.example.dsh.ui.connection.DshDrawerEdgeShadow
 import com.example.dsh.ui.home.DshHitButton
-import com.example.dsh.session.DshOverflowAction
-import com.example.dsh.session.DshOverflowMenu
-import com.example.dsh.session.DshViewOptionsMenu
-import com.example.dsh.connection.DshWordmark
+import com.example.dsh.ui.session.DshOverflowAction
+import com.example.dsh.ui.session.DshOverflowMenu
+import com.example.dsh.ui.session.DshViewOptionsMenu
+import com.example.dsh.ui.connection.DshWordmark
 
 /**
  * 搜索命中行：一条会话内匹配的消息（标题命中时退化为标题行）。

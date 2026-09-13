@@ -1,4 +1,4 @@
-package com.example.dsh.connection
+package com.example.dsh.ui.connection
 
 import com.example.dsh.host.DshConnectionMode
 import com.example.dsh.session.DshLegacyRemoteProfile
@@ -8,7 +8,7 @@ import com.example.dsh.host.DshRemoteHostRepository
 import com.example.dsh.host.DshRemoteRepository
 import com.example.dsh.host.DshRepository
 import com.example.dsh.session.DshSessionScope
-import com.example.dsh.connection.DshWordmark
+import com.example.dsh.ui.connection.DshWordmark
 import com.example.dsh.log.DshLogService
 import com.example.dsh.log.DshStreamLog
 import com.example.dsh.log.LogLevel
@@ -32,6 +32,13 @@ import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.host.DshHostConnection
 import com.example.dsh.host.DshWebSocketModule
 import com.tencent.kuikly.core.timer.setTimeout
+import com.example.dsh.connection.DshEngineModule
+import com.example.dsh.connection.DshRelayModule
+import com.example.dsh.connection.DshRelayPhase
+import com.example.dsh.connection.DshSshConfig
+import com.example.dsh.connection.DshSshPhase
+import com.example.dsh.connection.supportsRelayBridge
+import com.example.dsh.connection.supportsSshBridge
 
 /** First page shown by the app. It only selects a host and never starts an engine. */
 @Page("connection_setup")

@@ -1,4 +1,4 @@
-package com.example.dsh.message
+package com.example.dsh.ui.message
 
 import com.example.dsh.ui.home.DshHitButton
 import com.tencent.kuikly.core.base.*
@@ -11,6 +11,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
+import com.example.dsh.message.iconAsset
 
 internal data class DshMessageActionItem(
     val label: String,

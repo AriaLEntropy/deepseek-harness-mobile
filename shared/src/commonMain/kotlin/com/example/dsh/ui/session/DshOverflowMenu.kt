@@ -1,4 +1,4 @@
-package com.example.dsh.session
+package com.example.dsh.ui.session
 
 import com.example.dsh.message.iconAsset
 import com.tencent.kuikly.core.base.*

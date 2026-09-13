@@ -1,4 +1,4 @@
-package com.example.dsh.voice
+package com.example.dsh.ui.voice
 
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme

@@ -1,4 +1,4 @@
-package com.example.dsh.interaction
+package com.example.dsh.ui.interaction
 
 
 import com.example.dsh.ui.rendering.DshBottomSheet

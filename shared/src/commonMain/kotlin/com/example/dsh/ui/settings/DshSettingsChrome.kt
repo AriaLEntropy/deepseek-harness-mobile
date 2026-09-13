@@ -1,4 +1,4 @@
-package com.example.dsh.settings
+package com.example.dsh.ui.settings
 
 import com.example.dsh.theme.DshThemeMode
 

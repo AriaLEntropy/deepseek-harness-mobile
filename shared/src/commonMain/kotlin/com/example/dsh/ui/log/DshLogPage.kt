@@ -1,4 +1,4 @@
-package com.example.dsh.log
+package com.example.dsh.ui.log
 
 import com.example.dsh.base.BasePager
 import com.example.dsh.ui.rendering.DshBottomSheet

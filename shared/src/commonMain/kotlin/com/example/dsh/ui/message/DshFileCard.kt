@@ -1,4 +1,4 @@
-package com.example.dsh.message
+package com.example.dsh.ui.message
 
 import com.example.dsh.attachment.DshFileAttachment
 import com.example.dsh.attachment.DshPendingFile

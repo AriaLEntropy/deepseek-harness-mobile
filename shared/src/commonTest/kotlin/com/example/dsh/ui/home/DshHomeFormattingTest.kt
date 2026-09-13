@@ -2,8 +2,8 @@ package com.example.dsh.ui.home
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import com.example.dsh.interaction.dshPermissionIcon
-import com.example.dsh.search.dshRelativeTimeLabel
+import com.example.dsh.ui.interaction.dshPermissionIcon
+import com.example.dsh.ui.search.dshRelativeTimeLabel
 
 class DshHomeFormattingTest {
 

@@ -1,4 +1,4 @@
-package com.example.dsh
+package com.example.dsh.ui.dev
 
 import com.example.dsh.base.BasePager
 import com.tencent.kuikly.core.annotations.Page

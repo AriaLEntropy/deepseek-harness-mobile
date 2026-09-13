@@ -1,7 +1,7 @@
 package com.example.dsh.voice
 
-import com.example.dsh.voice.DSH_VOICE_CANCEL_THRESHOLD
-import com.example.dsh.voice.DSH_VOICE_WAVE_BARS
+import com.example.dsh.ui.voice.DSH_VOICE_CANCEL_THRESHOLD
+import com.example.dsh.ui.voice.DSH_VOICE_WAVE_BARS
 
 /** 波形无新采样后的衰减系数。 */
 internal const val DSH_VOICE_DECAY_FACTOR = 0.55f

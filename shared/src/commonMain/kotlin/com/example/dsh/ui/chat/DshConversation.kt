@@ -18,10 +18,10 @@ import com.example.dsh.message.dshTurnProcessGroup
 import com.example.dsh.message.dshTurnTailAssistant
 import com.example.dsh.ui.home.CHAT_INITIAL_RENDER_COUNT
 import com.example.dsh.ui.home.CHAT_MAX_RENDERED_MESSAGES
-import com.example.dsh.export.DshExportSelectionSheet
+import com.example.dsh.ui.export.DshExportSelectionSheet
 import com.example.dsh.ui.home.DshHitButton
-import com.example.dsh.interaction.dshPermissionIcon
-import com.example.dsh.interaction.dshPermissionTint
+import com.example.dsh.ui.interaction.dshPermissionIcon
+import com.example.dsh.ui.interaction.dshPermissionTint
 import com.example.dsh.ui.rendering.DshApprovalPanel
 import com.example.dsh.ui.rendering.DshDisclosureRow
 import com.example.dsh.ui.rendering.DshExpandedPayload
@@ -57,12 +57,12 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.voice.DshVoiceRecordOverlay
-import com.example.dsh.voice.dshVoiceStrings
-import com.example.dsh.voice.DshVoiceStrings
-import com.example.dsh.connection.DshConnectionStatusCapsule
-import com.example.dsh.message.DshDraftFileCard
-import com.example.dsh.message.DshMessageRow
+import com.example.dsh.ui.voice.DshVoiceRecordOverlay
+import com.example.dsh.ui.voice.dshVoiceStrings
+import com.example.dsh.ui.voice.DshVoiceStrings
+import com.example.dsh.ui.connection.DshConnectionStatusCapsule
+import com.example.dsh.ui.message.DshDraftFileCard
+import com.example.dsh.ui.message.DshMessageRow
 import com.example.dsh.message.iconAsset
 import com.example.dsh.message.visibleSkillList
 

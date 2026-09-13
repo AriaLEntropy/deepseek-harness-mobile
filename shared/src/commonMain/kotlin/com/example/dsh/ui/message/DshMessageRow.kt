@@ -1,4 +1,4 @@
-package com.example.dsh.message
+package com.example.dsh.ui.message
 
 import com.example.dsh.attachment.DshFileAttachment
 import com.example.dsh.attachment.DshFileHandle
@@ -33,6 +33,15 @@ import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.host.toolCardType
 import com.example.dsh.ui.chat.DshMessageFooterAction
+import com.example.dsh.message.boundedContextText
+import com.example.dsh.message.contextCanExpand
+import com.example.dsh.message.contextInstructions
+import com.example.dsh.message.contextRecalls
+import com.example.dsh.message.contextRelaySender
+import com.example.dsh.message.contextSections
+import com.example.dsh.message.dshLooksLikeJson
+import com.example.dsh.message.dshReasoningSummary
+import com.example.dsh.message.iconAsset
 
 internal fun ViewContainer<*, *>.DshMessageRow(
     message: DshMessage,
