@@ -15,7 +15,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 
 /** 工作区选择弹窗的两个界面：最近文件夹 / 添加文件夹。 */
 internal enum class DshWorkspacePickerScreen { RECENT, ADD }

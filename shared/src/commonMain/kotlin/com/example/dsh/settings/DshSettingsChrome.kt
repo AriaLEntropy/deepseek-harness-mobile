@@ -5,8 +5,8 @@ import com.example.dsh.theme.DshThemeMode
 import com.example.dsh.base.DshBottomSheet
 import com.example.dsh.models.DshSettingsChoice
 import com.example.dsh.models.DshSettingsSnapshot
-import com.example.dsh.rendering.DshProcessDisplayMode
-import com.example.dsh.rendering.dshProcessDisplayLabel
+import com.example.dsh.ui.rendering.DshProcessDisplayMode
+import com.example.dsh.ui.rendering.dshProcessDisplayLabel
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
@@ -30,7 +30,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     modelsSummary: () -> String,
     hostVersion: () -> String,
     themeMode: () -> DshThemeMode,
-    processDisplayMode: () -> com.example.dsh.rendering.DshProcessDisplayMode = { com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED },
+    processDisplayMode: () -> com.example.dsh.ui.rendering.DshProcessDisplayMode = { com.example.dsh.ui.rendering.DshProcessDisplayMode.UNIFIED },
     agentPresetLabel: () -> String,
     onClose: () -> Unit,
     onRetry: () -> Unit,
@@ -160,7 +160,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 DshSettingsRow(
                     "personalize.svg",
                     "个性化",
-                    { com.example.dsh.rendering.dshProcessDisplayLabel(processDisplayMode()) },
+                    { com.example.dsh.ui.rendering.dshProcessDisplayLabel(processDisplayMode()) },
                     onOpenPersonalization,
                     colors = colors,
                     showDivider = true,
@@ -422,11 +422,11 @@ internal fun ViewContainer<*, *>.DshSettingsChoicePicker(
 // 顶部与设置页一致的居中标题 + 右上 ×；下方按「选择规则」分组：
 // 「过程展示」为互斥单选，「展开方式」为可叠加开关，接近移动端设置范式。
 internal fun ViewContainer<*, *>.DshPersonalizationPage(
-    mode: () -> com.example.dsh.rendering.DshProcessDisplayMode,
+    mode: () -> com.example.dsh.ui.rendering.DshProcessDisplayMode,
     expandInModal: () -> Boolean,
     showConnectors: () -> Boolean,
     showResultCards: () -> Boolean,
-    onPickMode: (com.example.dsh.rendering.DshProcessDisplayMode) -> Unit,
+    onPickMode: (com.example.dsh.ui.rendering.DshProcessDisplayMode) -> Unit,
     onToggleExpandInModal: (Boolean) -> Unit,
     onToggleConnectors: (Boolean) -> Unit,
     onToggleResultCards: (Boolean) -> Unit,
@@ -478,15 +478,15 @@ internal fun ViewContainer<*, *>.DshPersonalizationPage(
             DshPersonalizationChoiceRow(
                 title = "统一折叠",
                 subtitle = "把一轮里的思考、工具调用与过程消息折叠成一条摘要（对齐最新 dsh）",
-                selected = { mode() == com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED },
-                onClick = { onPickMode(com.example.dsh.rendering.DshProcessDisplayMode.UNIFIED) },
+                selected = { mode() == com.example.dsh.ui.rendering.DshProcessDisplayMode.UNIFIED },
+                onClick = { onPickMode(com.example.dsh.ui.rendering.DshProcessDisplayMode.UNIFIED) },
                 colors = colors,
             )
             DshPersonalizationChoiceRow(
                 title = "经典",
                 subtitle = "思考与工具调用逐条展开，不做外层统一折叠（对齐电脑端 rc）",
-                selected = { mode() == com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC },
-                onClick = { onPickMode(com.example.dsh.rendering.DshProcessDisplayMode.CLASSIC) },
+                selected = { mode() == com.example.dsh.ui.rendering.DshProcessDisplayMode.CLASSIC },
+                onClick = { onPickMode(com.example.dsh.ui.rendering.DshProcessDisplayMode.CLASSIC) },
                 colors = colors,
             )
             DshSettingsGroupTitle("展开方式", colors = colors)

@@ -18,7 +18,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.views.compose.Button
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 
 /**
  * 设置页「模型」详情页：对齐电脑端 DSH settings.models 的右侧主内容区。

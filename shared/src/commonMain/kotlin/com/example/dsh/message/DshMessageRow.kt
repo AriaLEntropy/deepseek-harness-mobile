@@ -8,14 +8,14 @@ import com.example.dsh.tool.DshRemoteToolKind
 import com.example.dsh.models.DshToolCardType
 import com.example.dsh.tool.dshAskQuestionCard
 import com.example.dsh.tool.dshAskReadableBody
-import com.example.dsh.rendering.DSH_CHAT_BODY_FONT
-import com.example.dsh.rendering.DSH_CHAT_BODY_LINE
-import com.example.dsh.rendering.DshContextDetail
-import com.example.dsh.rendering.DshDisclosureRow
-import com.example.dsh.rendering.DshExpandedPayload
-import com.example.dsh.rendering.DshMarkdown
-import com.example.dsh.rendering.DshStreamingMarkdown
-import com.example.dsh.rendering.DshToolDetail
+import com.example.dsh.ui.rendering.DSH_CHAT_BODY_FONT
+import com.example.dsh.ui.rendering.DSH_CHAT_BODY_LINE
+import com.example.dsh.ui.rendering.DshContextDetail
+import com.example.dsh.ui.rendering.DshDisclosureRow
+import com.example.dsh.ui.rendering.DshExpandedPayload
+import com.example.dsh.ui.rendering.DshMarkdown
+import com.example.dsh.ui.rendering.DshStreamingMarkdown
+import com.example.dsh.ui.rendering.DshToolDetail
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.vfor
@@ -32,7 +32,7 @@ import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.host.toolCardType
-import com.example.dsh.chat.DshMessageFooterAction
+import com.example.dsh.ui.chat.DshMessageFooterAction
 
 internal fun ViewContainer<*, *>.DshMessageRow(
     message: DshMessage,

@@ -14,7 +14,7 @@ import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.*
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 
 internal fun pluginActionLabel(action: String): String = when (action) {
     "enable" -> "启用"

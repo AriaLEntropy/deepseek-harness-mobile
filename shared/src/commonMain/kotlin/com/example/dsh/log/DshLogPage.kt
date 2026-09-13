@@ -45,9 +45,9 @@ import kotlinx.coroutines.cancel
 import com.example.dsh.base.bridgeModule
 import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.timer.setTimeout
-import com.example.dsh.home.dotColor
-import com.example.dsh.home.LOG_INITIAL_RENDER_COUNT
-import com.example.dsh.home.LOG_MAX_RENDERED
+import com.example.dsh.ui.home.dotColor
+import com.example.dsh.ui.home.LOG_INITIAL_RENDER_COUNT
+import com.example.dsh.ui.home.LOG_MAX_RENDERED
 
 /**
  * 日志查看页（独立路由 Page，替代原先堆叠在主页上的全屏 Modal）。

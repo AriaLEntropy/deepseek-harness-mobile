@@ -6,7 +6,7 @@ import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.chat.DshMessageFooterAction
+import com.example.dsh.ui.chat.DshMessageFooterAction
 
 // 回答下方横向操作容器：复制 / 好的回答 / 有问题的回答 / 在新对话中分支 / 分享（对齐 dsh 原版）
 internal fun ViewContainer<*, *>.DshMessageFooter(

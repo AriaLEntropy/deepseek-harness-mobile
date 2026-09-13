@@ -17,7 +17,7 @@ import com.example.dsh.session.DSH_DRAWER_GROUP_FLAT
 import com.example.dsh.session.DSH_DRAWER_GROUP_WORKSPACE
 import com.example.dsh.session.DSH_DRAWER_ORDER_MANUAL
 import com.example.dsh.session.DSH_DRAWER_ORDER_UPDATED
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 
 /** 会话 topbar overflow menu 中的一个操作项。 */
 internal data class DshOverflowAction(

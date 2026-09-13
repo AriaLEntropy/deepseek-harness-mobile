@@ -1,6 +1,6 @@
 package com.example.dsh.message
 
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vforIndex

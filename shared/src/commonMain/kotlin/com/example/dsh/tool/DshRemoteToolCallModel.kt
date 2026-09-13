@@ -1,6 +1,6 @@
 package com.example.dsh.tool
 
-import com.example.dsh.rendering.DshAskQuestionCard
+import com.example.dsh.ui.rendering.DshAskQuestionCard
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.example.dsh.host.toolCardType

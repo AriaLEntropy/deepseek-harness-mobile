@@ -1,8 +1,8 @@
 package com.example.dsh.connection
 
-import com.example.dsh.home.connectionStatusTone
-import com.example.dsh.home.dotColor
-import com.example.dsh.home.topBarConnectingText
+import com.example.dsh.ui.home.connectionStatusTone
+import com.example.dsh.ui.home.dotColor
+import com.example.dsh.ui.home.topBarConnectingText
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.views.Text

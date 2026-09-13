@@ -32,7 +32,7 @@ import com.example.dsh.session.DshDrawerDrag
 import com.example.dsh.session.DshDrawerDragKind
 import com.example.dsh.session.dshRowDragOffset
 import com.example.dsh.connection.DshDrawerEdgeShadow
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 import com.example.dsh.session.DshOverflowAction
 import com.example.dsh.session.DshOverflowMenu
 import com.example.dsh.session.DshViewOptionsMenu

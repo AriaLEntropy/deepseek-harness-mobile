@@ -15,7 +15,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
-import com.example.dsh.home.DshHitButton
+import com.example.dsh.ui.home.DshHitButton
 
 internal data class DshPermissionOption(
     val value: String,
