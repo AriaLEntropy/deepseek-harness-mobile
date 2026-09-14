@@ -63,25 +63,14 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
             }
             View {
                 attr { flex(1f); flexDirectionRow(); alignItemsCenter() }
-                vif({ loading() }) {
-                    Text {
-                        attr {
-                            text("同步中")
-                            fontSize(12f)
-                            color(colors().labelTertiary)
-                        }
-                    }
-                }
-            }
-            Text { attr { text("设置"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
-            View {
-                attr { flex(1f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() }
                 View {
-                    attr { size(36f, 36f); allCenter() }
-                    Image { attr { src(ImageUri.commonAssets("x.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
+                    attr { size(40f, 40f); borderRadius(20f); backgroundColor(colors().bgModulePlatform); allCenter() }
+                    Image { attr { src(ImageUri.commonAssets("chevron-left.svg")); size(20f, 20f); tintColor(colors().labelPrimary) } }
                     event { click { onClose() } }
                 }
             }
+            Text { attr { text("设置"); fontSize(17f); fontWeightBold(); color(colors().labelPrimary) } }
+            View { attr { flex(1f); flexDirectionRow(); justifyContentFlexEnd(); alignItemsCenter() } }
         }
         Scroller {
             attr {

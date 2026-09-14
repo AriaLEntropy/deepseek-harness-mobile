@@ -82,6 +82,11 @@ internal const val COMPOSER_HEIGHT = 158f
 internal const val CHAT_INITIAL_RENDER_COUNT = 48
 internal const val CHAT_MAX_RENDERED_MESSAGES = 128
 
+/** 输入框「/」候选浮层：单行高、分组标题高与整体高度上限（超出才滚动）。 */
+internal const val SUGGEST_ROW_HEIGHT = 40f
+internal const val SUGGEST_GROUP_HEADER = 32f
+internal const val SUGGEST_MAX_HEIGHT = 336f
+
 /** 鏃ュ織璇︽儏鍒楄〃鍒濆鍖栧姞杞界獥鍙ｅ拰鏁翠釜鍔犺浇绐楀彛锛堣櫄鎷熷寲婊氬姩锛夈€?*/
 internal const val LOG_INITIAL_RENDER_COUNT = 48
 internal const val LOG_MAX_RENDERED = 128

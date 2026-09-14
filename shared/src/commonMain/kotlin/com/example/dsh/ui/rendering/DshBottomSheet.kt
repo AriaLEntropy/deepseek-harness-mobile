@@ -75,6 +75,10 @@ internal class DshBottomSheetAttr : ComposeAttr() {
     var largeHeightRatio: Float by observable(0.92f)
     /** 面板高度上限（dp）；<= 0 不限制。 */
     var heightCap: Float by observable(0f)
+    /** 非模态内联面板是否按内容自适应高度（默认 false：使用 [resolvedPanelHeight]）。 */
+    var wrapContent: Boolean by observable(false)
+    /** 面板内输入框上报的键盘遮挡高度；输入时面板展开并停在键盘上方。 */
+    var keyboardHeight: Float by observable(0f)
     var content: ViewContainer<*, *>.() -> Unit by observable({})
 }
 
@@ -96,9 +100,9 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
     private var dragOffset by observable(0f)
 
     private var dragging by observable(false)
-    private var dismissing = false
+    private var dismissing by observable(false)
 
-    private var currentDetent = DshSheetDetent.MEDIUM
+    private var currentDetent by observable(DshSheetDetent.MEDIUM)
 
     private var dragStartOffset = 0f
     private var dragStartY = 0f
@@ -145,14 +149,14 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
                         attr {
                             positionType(FlexPositionType.ABSOLUTE)
                             left(0f)
-                            bottom(0f)
+                            bottom(ctx.attr.keyboardHeight)
                             width(pagerData.pageViewWidth)
                             height(ctx.resolvedPanelHeight())
                             flexDirectionColumn()
                             borderRadius(BorderRectRadius(ctx.cornerRadius(), ctx.cornerRadius(), 0f, 0f))
                             backgroundColor(ctx.attr.panelBackground())
                             boxShadow(BoxShadow(0f, -4f, 16f, Color(0x14000000)))
-                            transform(Translate(0f, if (ctx.dragging) ctx.dragOffset else ctx.offset))
+                            transform(Translate(0f, ctx.displayOffset()))
                             if (!ctx.dragging) {
                                 animation(
                                     Animation.springEaseOut(SHEET_SPRING_DURATION_S, SHEET_SPRING_DAMPING, 0f),
@@ -174,7 +178,7 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
                 View {
                     attr {
                         width(pagerData.pageViewWidth)
-                        height(ctx.resolvedPanelHeight())
+                        if (!ctx.attr.wrapContent) height(ctx.resolvedPanelHeight())
                         flexDirectionColumn()
                         borderRadius(BorderRectRadius(ctx.cornerRadius(), ctx.cornerRadius(), 0f, 0f))
                         backgroundColor(ctx.attr.panelBackground())
@@ -210,26 +214,50 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
         // ===== 业务内容 =====
         parent.View {
             attr {
-                flex(1f)
+                if (!ctx.attr.wrapContent) flex(1f)
                 flexDirectionColumn()
-                paddingBottom(maxOf(0f, pagerData.safeAreaInsets.bottom))
+                if (ctx.attr.modal) paddingBottom(ctx.contentBottomInset())
             }
             ctx.attr.content.invoke(this)
         }
     }
 
+    /**
+     * Translate 只移动面板，不改变 Flex 布局高度；把屏幕外的高度扣出内容区，
+     * 让列表与底部操作在 medium/large 两档都落在可见区域内。
+     * 拖拽时跟随可见高度，低于 medium 后维持最小内容高度并随面板下移；
+     * 入场/关闭按当前档位布局，避免 offset = 1 时把内容压成零高。
+     */
+    private fun contentBottomInset(): Float {
+        if (attr.keyboardHeight > 0f) return 12f
+        val layoutOffset = if (dragging) {
+            dragOffset.coerceIn(0f, mediumOffsetFraction())
+        } else {
+            offsetForDetent(currentDetent)
+        }
+        return resolvedPanelHeight() * layoutOffset + maxOf(0f, pagerData.safeAreaInsets.bottom)
+    }
+
     private fun cornerRadius(): Float = DshDeviceCorner.screenRadiusDp()
 
     private fun scrimColor(): Color {
-        val progress = 1f - (if (dragging) dragOffset else offset).coerceIn(0f, 1f)
+        val progress = 1f - displayOffset().coerceIn(0f, 1f)
         return Color(0x000000, 0.5f * progress)
+    }
+
+    /** 关闭动画期间按 offset 下滑；键盘弹出时强制展开，避免位移与抬升叠加。 */
+    private fun displayOffset(): Float = when {
+        dismissing -> offset
+        attr.keyboardHeight > 0f -> 0f
+        dragging -> dragOffset
+        else -> offset
     }
 
     private fun resolvedPanelHeight(): Float {
         val pageHeight = pagerData.pageViewHeight
         val base = if (attr.panelHeight > 0f) attr.panelHeight else pageHeight * attr.largeHeightRatio
         val capped = if (attr.heightCap > 0f) base.coerceAtMost(attr.heightCap) else base
-        return capped.coerceAtMost(pageHeight * 0.96f)
+        return capped.coerceAtMost((pageHeight * 0.96f - attr.keyboardHeight).coerceAtLeast(0f))
     }
 
     /** medium 档对应的位移比例；面板本身不足半屏时返回 0（两档重合）。 */
@@ -244,7 +272,7 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
         if (detent == DshSheetDetent.LARGE) 0f else mediumOffsetFraction()
 
     private fun cycleDetent() {
-        if (dismissing) return
+        if (dismissing || attr.keyboardHeight > 0f) return
         val medium = mediumOffsetFraction()
         if (medium <= 0.001f) return
         currentDetent = if (currentDetent == DshSheetDetent.LARGE) DshSheetDetent.MEDIUM else DshSheetDetent.LARGE
@@ -252,7 +280,7 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
     }
 
     private fun onPan(params: PanGestureParams) {
-        if (dismissing) return
+        if (dismissing || attr.keyboardHeight > 0f) return
         val panel = resolvedPanelHeight()
         if (panel <= 0f) return
         when {
@@ -325,6 +353,8 @@ internal class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent
  * @param largeHeightRatio 未显式指定 [panelHeight] 时 large 档高度占比，默认 0.92。
  * @param heightCap 面板高度上限（dp），用于限制弹层最大高度。
  * @param panelBackground 面板底色。
+ * @param wrapContent 非模态内联面板是否按内容自适应高度（默认 false）。
+ * @param keyboardHeight 面板内输入框上报的键盘高度，默认不避让键盘。
  * @param content 面板业务内容（抓握条之下）。
  */
 internal fun ViewContainer<*, *>.DshBottomSheet(
@@ -337,6 +367,8 @@ internal fun ViewContainer<*, *>.DshBottomSheet(
     heightCap: Float = 0f,
     panelBackground: () -> Color = { colors().bgLayer1 },
     modal: Boolean = true,
+    wrapContent: Boolean = false,
+    keyboardHeight: () -> Float = { 0f },
     content: ViewContainer<*, *>.() -> Unit,
 ) {
     addChild(DshBottomSheetView()) {
@@ -350,6 +382,8 @@ internal fun ViewContainer<*, *>.DshBottomSheet(
             this.mediumHeightRatio = mediumHeightRatio
             this.largeHeightRatio = largeHeightRatio
             this.heightCap = heightCap
+            this.wrapContent = wrapContent
+            this.keyboardHeight = keyboardHeight().coerceAtLeast(0f)
             this.content = content
         }
     }

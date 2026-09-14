@@ -370,15 +370,24 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
     }
 }
 
-/** 归档会话 确认弹窗 → workspace.archiveSession。 */
-internal fun ViewContainer<*, *>.DshSessionArchiveDialog(
+/**
+ * 会话确认类弹窗（归档 / 删除）：组件结构与 [DshSessionRenameDialog] 保持一致——
+ * 居中加粗标题、20dp 边距说明文案、分隔线、等宽双按钮与竖分隔线，
+ * 确认色按语义区分（归档=主色，删除=错误红）。
+ */
+internal fun ViewContainer<*, *>.DshSessionConfirmDialog(
     visible: () -> Boolean,
+    title: String,
+    message: String,
+    busyLabel: String,
+    confirmLabel: String,
+    confirmColor: () -> Color,
     busy: () -> Boolean,
     error: () -> String,
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
     pageViewWidth: Float,
-    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+    colors: () -> DshColorTokens = { DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         Modal(inWindow = true) {
@@ -393,37 +402,91 @@ internal fun ViewContainer<*, *>.DshSessionArchiveDialog(
                 attr {
                     width(pageViewWidth - 40f)
                     maxWidth(420f)
-                    padding(20f)
                     borderRadius(16f)
                     backgroundColor(colors().bgLayer1)
                 }
-                Text { attr { text("归档会话?"); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
                 Text {
                     attr {
-                        text("归档后会话会从主列表隐藏，可在「已归档会话」中查看历史；不会删除会话或日志。")
-                        marginTop(8f)
-                        fontSize(13f)
-                        lineHeight(20f)
+                        text(title)
+                        marginTop(22f)
+                        alignSelfCenter()
+                        fontSize(18f)
+                        fontWeightBold()
+                        color(colors().labelPrimary)
+                    }
+                }
+                Text {
+                    attr {
+                        text(message)
+                        marginTop(12f)
+                        marginLeft(20f)
+                        marginRight(20f)
+                        fontSize(14f)
+                        lineHeight(21f)
+                        textAlignCenter()
                         color(colors().labelSecondary)
                     }
                 }
                 vif({ error().isNotEmpty() }) {
-                    Text { attr { text(error()); marginTop(8f); fontSize(12f); color(colors().stateErrorPrimary) } }
-                }
-                View {
-                    attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                     Text {
-                        attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(colors().labelTertiary) }
-                        event { click { onCancel() } }
+                        attr {
+                            text(error())
+                            marginTop(8f)
+                            marginLeft(20f)
+                            marginRight(20f)
+                            fontSize(12f)
+                            color(colors().stateErrorPrimary)
+                        }
                     }
-                    Text {
-                        attr { text(if (busy()) "归档中..." else "确认归档"); width(104f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(colors().stateBusinessPrimary) }
+                }
+                View { attr { marginTop(18f); height(1f); backgroundColor(colors().borderL1) } }
+                View {
+                    attr { height(54f); flexDirectionRow() }
+                    View {
+                        attr { flex(1f); allCenter() }
+                        Text {
+                            attr { text("取消"); fontSize(16f); color(colors().labelSecondary); opacity(if (busy()) 0.4f else 1f) }
+                        }
+                        event { click { if (!busy()) onCancel() } }
+                    }
+                    View { attr { width(1f); backgroundColor(colors().borderL1) } }
+                    View {
+                        attr { flex(1f); allCenter() }
+                        Text {
+                            attr { text(if (busy()) busyLabel else confirmLabel); fontSize(16f); fontWeightMedium(); color(confirmColor()); opacity(if (busy()) 0.5f else 1f) }
+                        }
                         event { click { if (!busy()) onConfirm() } }
                     }
                 }
             }
         }
     }
+}
+
+/** 归档会话 确认弹窗 → workspace.archiveSession。 */
+internal fun ViewContainer<*, *>.DshSessionArchiveDialog(
+    visible: () -> Boolean,
+    busy: () -> Boolean,
+    error: () -> String,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+    pageViewWidth: Float,
+    colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+) {
+    DshSessionConfirmDialog(
+        visible = visible,
+        title = "归档会话?",
+        message = "归档后会话会从主列表隐藏，可在「已归档会话」中查看历史；不会删除会话或日志。",
+        busyLabel = "归档中...",
+        confirmLabel = "确认归档",
+        confirmColor = { colors().stateBusinessPrimary },
+        busy = busy,
+        error = error,
+        onCancel = onCancel,
+        onConfirm = onConfirm,
+        pageViewWidth = pageViewWidth,
+        colors = colors,
+    )
 }
 
 /** 删除会话 确认弹窗（danger，红色按钮）→ dsh-session-manager 插件 /delete 端点。 */
@@ -436,48 +499,18 @@ internal fun ViewContainer<*, *>.DshSessionDeleteDialog(
     pageViewWidth: Float,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
-    vif({ visible() }) {
-        Modal(inWindow = true) {
-            attr {
-                absolutePositionAllZero()
-                allCenter()
-                paddingLeft(20f)
-                paddingRight(20f)
-                backgroundColor(Color(0x66000000))
-            }
-            View {
-                attr {
-                    width(pageViewWidth - 40f)
-                    maxWidth(420f)
-                    padding(20f)
-                    borderRadius(16f)
-                    backgroundColor(colors().bgLayer1)
-                }
-                Text { attr { text("删除会话?"); fontSize(18f); fontWeightBold(); color(colors().labelPrimary) } }
-                Text {
-                    attr {
-                        text("将永久删除该会话及其消息，此操作不可恢复。删除通过 dsh-session-manager 插件执行，若 Host 未安装该插件将无法完成。")
-                        marginTop(8f)
-                        fontSize(13f)
-                        lineHeight(20f)
-                        color(colors().labelSecondary)
-                    }
-                }
-                vif({ error().isNotEmpty() }) {
-                    Text { attr { text(error()); marginTop(8f); fontSize(12f); color(colors().stateErrorPrimary) } }
-                }
-                View {
-                    attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
-                    Text {
-                        attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(colors().labelTertiary) }
-                        event { click { onCancel() } }
-                    }
-                    Text {
-                        attr { text(if (busy()) "删除中..." else "永久删除"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(colors().stateErrorPrimary) }
-                        event { click { if (!busy()) onConfirm() } }
-                    }
-                }
-            }
-        }
-    }
+    DshSessionConfirmDialog(
+        visible = visible,
+        title = "删除会话?",
+        message = "将永久删除该会话及其消息，此操作不可恢复。删除通过 dsh-session-manager 插件执行，若 Host 未安装该插件将无法完成。",
+        busyLabel = "删除中...",
+        confirmLabel = "永久删除",
+        confirmColor = { colors().stateErrorPrimary },
+        busy = busy,
+        error = error,
+        onCancel = onCancel,
+        onConfirm = onConfirm,
+        pageViewWidth = pageViewWidth,
+        colors = colors,
+    )
 }

@@ -14,15 +14,16 @@ import com.example.dsh.session.DshSkill
 import com.example.dsh.models.DshToolCardType
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.tencent.kuikly.core.reactive.collection.ObservableList
 
-internal fun visibleSkillList(source: ObservableList<DshSkill>, query: String): ObservableList<DshSkill> {
-    val next = source.toList().filter { it.name.startsWith(query) }
-    skillFilterCache.diffUpdate(next) { old, new -> old.name == new.name }
-    return skillFilterCache
+/**
+ * 技能建议：按斜杠前缀（首个空格之前）做不区分大小写的前缀匹配。
+ * 空前缀返回全部，供刚输入单独 "/" 时展示技能组。
+ */
+internal fun dshSkillsMatching(source: List<DshSkill>, query: String): List<DshSkill> {
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return source.toList()
+    return source.filter { it.name.lowercase().startsWith(q) }
 }
-
-private val skillFilterCache = ObservableList<DshSkill>()
 
 internal fun isRemoteCatalogInvalidationEvent(event: String): Boolean = event in setOf(
     "commands/change",

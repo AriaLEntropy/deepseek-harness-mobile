@@ -254,6 +254,9 @@ internal fun DshHomePage.bodyMainContent(): ViewBuilder {
                         onExportCopy = { ctx.copyExportSelection() },
                         onExportMore = { ctx.toggleExportMoreShare() },
                         onExportClose = { ctx.cancelExportSelection() },
+                        exportStickySelectorVisible = { ctx.exportStickySelectorVisible() },
+                        exportStickySelectorSelected = { ctx.exportStickySelectorSelected() },
+                        onExportStickySelectorToggle = { ctx.toggleExportStickySelector() },
                     )
                     // -- 右侧「会话详情面板」--：仅远程模式显示，展示当前会话的标题、
                     //    工作目录、模型、运行状态、队列/作业数量。
@@ -422,6 +425,9 @@ internal fun DshHomePage.bodyMainContent(): ViewBuilder {
                     onExportCopy = { ctx.copyExportSelection() },
                     onExportMore = { ctx.toggleExportMoreShare() },
                     onExportClose = { ctx.cancelExportSelection() },
+                    exportStickySelectorVisible = { ctx.exportStickySelectorVisible() },
+                    exportStickySelectorSelected = { ctx.exportStickySelectorSelected() },
+                    onExportStickySelectorToggle = { ctx.toggleExportStickySelector() },
                 )
             }
         }

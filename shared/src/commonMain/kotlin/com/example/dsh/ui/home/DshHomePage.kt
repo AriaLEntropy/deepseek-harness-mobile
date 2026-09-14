@@ -123,6 +123,8 @@ internal class DshHomePage : BasePager() {
     internal var exportFormat by observable(DshExportFormat.HTML)
     internal var exportMoreShareVisible by observable(false)
     internal var exportPdfBusy by observable(false)
+    /** 吸顶选择器当前所属对话组 key（空=不显示）。 */
+    internal var exportStickyGroupKey by observable("")
     internal var timelineReadVersion = 0
     internal var pluginInventoryVisible by observable(false)
     internal var pluginInventoryLoading by observable(false)
@@ -387,6 +389,10 @@ internal class DshHomePage : BasePager() {
     internal var workspaceAddBusy by observable(false)
     internal var workspaceAddNewName by observable("")
     internal val workspaceAddEntries by observableList<DshDirectoryEntry>()
+    // 「添加文件夹」目录是否已加载（空目录缺省页/加载态判断）；键盘高度用于面板避让。
+    internal var workspaceAddDirectoryLoaded by observable(false)
+    internal var workspaceAddKeyboardHeight by observable(0f)
+    internal var workspaceAddInputView: InputView? = null
     // 「最近的文件夹」只列真实工作区（排除「未分组」占位），供 vfor 直接迭代。
     internal val workspacePickerFolders by observableList<DshWorkspaceGroup>()
     internal var workspacePickerGeneration = 0
@@ -457,6 +463,14 @@ internal class DshHomePage : BasePager() {
     internal var archiveBusy by observable(false)
     internal var archiveNotice by observable("")
     internal var archiveConfirm by observable<DshArchiveConfirm?>(null)
+    // 归档页行内 ⋯ 溢出菜单（取消归档 / 删除）
+    internal var archiveOverflowVisible by observable(false)
+    internal var archiveOverflowTargetId by observable("")
+    internal var archiveOverflowAnchorX by observable(-1f)
+    internal var archiveOverflowAnchorY by observable(-1f)
+    // 归档页筛选（所有项目 / 排序）上下文菜单锚点
+    internal var archiveFilterX by observable(-1f)
+    internal var archiveFilterY by observable(-1f)
     internal val archiveGroups by observableList<DshWorkspaceGroup>()
     internal val archiveProjectOptions by observableList<DshArchiveProjectOption>()
     internal var sessionCreatedAt by observable<Map<String, Long>>(emptyMap())
@@ -469,6 +483,8 @@ internal class DshHomePage : BasePager() {
     internal var sessionSearchActive by observable(false)
     internal val sessionSearchHits by observableList<DshSessionSearchHit>()
     internal var sessionSearchInputView: InputView? = null
+    /** 正在按需拉取历史的会话 id 集合：去重，避免同一次搜索重复请求。 */
+    internal val sessionSearchHistoryLoading = mutableSetOf<String>()
     // ===== 会话抽屉长按拖拽排序 =====
     internal var drawerDrag by observable(DshDrawerDrag())
     internal var sessionManualOrder by observable<Map<String, List<String>>>(emptyMap())

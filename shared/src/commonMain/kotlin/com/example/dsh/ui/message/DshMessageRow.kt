@@ -437,7 +437,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         }
         // AI 回答下方的横向操作容器（footer），对齐 dsh 原版 IconActions 行。
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
-        if (message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail()) {
+        // 用 vif 而非普通 if：流式结算发生在 cell 建好之后，只有响应式条件才会在
+        // settle 时补挂 footer，否则操作栏（尤其是首次回复）永远不渲染。
+        vif({ message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail() }) {
             DshMessageFooter(copied = copied(), colors = colors) { action ->
                 // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
                 if (action == DshMessageFooterAction.COPY) {

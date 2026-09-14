@@ -18,7 +18,11 @@ import com.example.dsh.message.dshTurnProcessGroup
 import com.example.dsh.message.dshTurnTailAssistant
 import com.example.dsh.ui.home.CHAT_INITIAL_RENDER_COUNT
 import com.example.dsh.ui.home.CHAT_MAX_RENDERED_MESSAGES
+import com.example.dsh.ui.home.SUGGEST_GROUP_HEADER
+import com.example.dsh.ui.home.SUGGEST_MAX_HEIGHT
+import com.example.dsh.ui.home.SUGGEST_ROW_HEIGHT
 import com.example.dsh.ui.export.DshExportSelectionSheet
+import com.example.dsh.ui.export.DshExportStickySelector
 import com.example.dsh.ui.home.DshHitButton
 import com.example.dsh.ui.interaction.dshPermissionIcon
 import com.example.dsh.ui.interaction.dshPermissionTint
@@ -64,7 +68,7 @@ import com.example.dsh.ui.connection.DshConnectionStatusCapsule
 import com.example.dsh.ui.message.DshDraftFileCard
 import com.example.dsh.ui.message.DshMessageRow
 import com.example.dsh.message.iconAsset
-import com.example.dsh.message.visibleSkillList
+import com.example.dsh.message.dshSkillsMatching
 
 internal fun ViewContainer<*, *>.DshConversation(
     conversationIds: () -> ObservableList<String>,
@@ -213,6 +217,10 @@ internal fun ViewContainer<*, *>.DshConversation(
     exportSelectedCount: () -> Int = { 0 },
     exportMoreShareExpanded: () -> Boolean = { false },
     exportPdfBusy: () -> Boolean = { false },
+    // 吸顶选择器：滚动时把当前对话组勾选框钉在顶部栏全选选择器正下方
+    exportStickySelectorVisible: () -> Boolean = { false },
+    exportStickySelectorSelected: () -> Boolean = { false },
+    onExportStickySelectorToggle: () -> Unit = {},
     onToggleExportMessage: (String) -> Unit = {},
     onExportFormatChange: (DshExportFormat) -> Unit = {},
     onExportConfirm: () -> Unit = {},
@@ -498,6 +506,14 @@ internal fun ViewContainer<*, *>.DshConversation(
                     !sessionRunning()
             }) {
                 DshNewSessionHome(colors = colors)
+            }
+            // 分享多选态吸顶选择器：当前对话组勾选框钉在顶部栏全选选择器正下方
+            vif({ exportSelectMode() && exportStickySelectorVisible() }) {
+                DshExportStickySelector(
+                    selected = exportStickySelectorSelected,
+                    onToggle = onExportStickySelectorToggle,
+                    colors = colors,
+                )
             }
         }
         // 队列停靠栏（Web 时间线）：展示等待执行的任务队列
@@ -1102,14 +1118,21 @@ internal fun ViewContainer<*, *>.DshConversation(
 
         // 命令 / 技能建议浮层：absolute 悬浮在输入框上方，命令在上技能在下，白卡圆角阴影，不参与流式布局
         vif({
-            draft().startsWith("/") && (
-                dshCommandsMatching(dshCommandPrefixFromDraft(draft()).removePrefix("/")).isNotEmpty() ||
-                    visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
-            )
+            draft().startsWith("/") && run {
+                val query = dshCommandPrefixFromDraft(draft()).removePrefix("/")
+                dshCommandsMatching(query).isNotEmpty() || dshSkillsMatching(skills(), query).isNotEmpty()
+            }
         }) {
-            val prefix = dshCommandPrefixFromDraft(draft()).removePrefix("/")
-            val commandList = dshCommandsMatching(prefix)
-            val skillList = visibleSkillList(skills(), draft().removePrefix("/"))
+            // vif 只在整体显隐时重建子树；匹配项仍在时条件持续为真，需用 vbind 按当前前缀重建列表，
+            // 否则继续输入后候选内容不会跟着筛选变化。
+            vbind({ dshCommandPrefixFromDraft(draft()) }) {
+            val query = dshCommandPrefixFromDraft(draft()).removePrefix("/")
+            val commandList = dshCommandsMatching(query)
+            val skillList = dshSkillsMatching(skills(), query)
+            // 由内容撑开高度（上限 336）：只有一两条匹配时不留大片空白，超出上限才滚动。
+            val suggestContentHeight =
+                (if (commandList.isNotEmpty()) SUGGEST_GROUP_HEADER else 0f) + commandList.size * SUGGEST_ROW_HEIGHT +
+                    (if (skillList.isNotEmpty()) SUGGEST_GROUP_HEADER else 0f) + skillList.size * SUGGEST_ROW_HEIGHT
             View {
                 attr {
                     positionAbsolute()
@@ -1118,7 +1141,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                     // 底部对齐「选择文件夹与模式」工具条上方：输入区被 marginBottom(keyboardHeight) 顶起，
                     // 故组件底需叠加键盘高度并上移到真实输入卡顶(~120)之上留间隙，避免与输入框重合
                     bottom(keyboardHeight() + 130f)
-                    height(336f)
+                    height(suggestContentHeight.coerceAtMost(SUGGEST_MAX_HEIGHT))
                     flexDirectionColumn()
                     backgroundColor(colors().specificMenu)
                     borderRadius(14f)
@@ -1198,7 +1221,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
                 }
-                vfor({ skillList }) { skill ->
+                vfor({ ObservableList<DshSkill>().apply { addAll(skillList) } }) { skill ->
                     View {
                         attr {
                             height(40f)
@@ -1230,6 +1253,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
                 }
+            }
             }
             }
         }

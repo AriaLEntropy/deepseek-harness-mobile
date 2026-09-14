@@ -174,6 +174,7 @@ internal fun DshHomePage.loadWorkspaceAddDirectory(path: String?) {
     if (workspacePickerBusy) return
     val generation = ++workspacePickerGeneration
     workspaceAddBusy = true
+    workspaceAddDirectoryLoaded = false
     workspacePickerError = ""
     remote.listDirectory(path) { listing, error ->
         postToUi {
@@ -187,6 +188,7 @@ internal fun DshHomePage.loadWorkspaceAddDirectory(path: String?) {
             }
             workspaceAddPath = listing.path
             workspaceAddHome = listing.home
+            workspaceAddDirectoryLoaded = true
             workspaceAddEntries.clear()
             workspaceAddEntries.addAll(listing.entries.filterNot { it.hidden })
         }

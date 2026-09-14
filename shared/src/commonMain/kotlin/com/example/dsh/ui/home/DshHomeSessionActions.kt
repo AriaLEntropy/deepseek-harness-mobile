@@ -144,6 +144,7 @@ internal fun DshHomePage.rebuildSessionSearch(rawQuery: String) {
         sessionSearchActive = false
         return
     }
+    sessionSearchInput = rawQuery
     val hits = DshSessionSearch.build(
         sessions = visibleSessions,
         messagesFor = { sessionMessageStates[it] },
@@ -153,6 +154,34 @@ internal fun DshHomePage.rebuildSessionSearch(rawQuery: String) {
     )
     sessionSearchHits.diffUpdate(hits)
     sessionSearchActive = true
+    // 远端：正文来自消息缓存；未缓存会话按需拉历史（限量 + 去重），拉到后重算。
+    // 避免每敲一个字就对全部会话发起请求。
+    if (isRemoteHost) {
+        visibleSessions.asSequence()
+            .filter { (sessionMessageStates[it.id]?.size ?: 0) == 0 }
+            .take(SESSION_SEARCH_HISTORY_LIMIT)
+            .forEach { loadSearchHistory(it.id) }
+    }
+}
+
+private const val SESSION_SEARCH_HISTORY_LIMIT = 24
+
+/** 按需拉取单会话历史补充搜索缓存；同会话在途时直接跳过（去重防重复请求）。 */
+internal fun DshHomePage.loadSearchHistory(sessionId: String) {
+    if (!sessionSearchHistoryLoading.add(sessionId)) return
+    val hostRepository = repository ?: run { sessionSearchHistoryLoading.remove(sessionId); return }
+    hostRepository.loadHistory(sessionId, { loaded ->
+        sessionSearchHistoryLoading.remove(sessionId)
+        if (!pageAlive) return@loadHistory
+        if (loaded.isNotEmpty()) {
+            val state = sessionMessageStates.getOrPut(sessionId) { ObservableList() }
+            if (state.isEmpty()) state.addAll(loaded)
+        }
+        sessionMessageReady.add(sessionId)
+        if (sessionSearchActive && sessionSearchInput.isNotBlank()) rebuildSessionSearch(sessionSearchInput)
+    }, { _ ->
+        sessionSearchHistoryLoading.remove(sessionId)
+    })
 }
 
 internal fun DshHomePage.sessionPending(sessionId: String): Boolean {
@@ -506,7 +535,6 @@ internal fun DshHomePage.overflowActions(): ObservableList<DshOverflowAction> {
     if (session != null && !session.blank) {
         result.add(DshOverflowAction("rename", "重命名", "rename.svg"))
         result.add(DshOverflowAction("archive", "归档", "archive.svg"))
-        result.add(DshOverflowAction("delete", "删除", "delete.svg", danger = true))
     }
     return result
 }

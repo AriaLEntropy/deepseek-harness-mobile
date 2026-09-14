@@ -3,6 +3,7 @@ package com.example.dsh.ui.home
 import com.example.dsh.base.setTimeout
 import com.example.dsh.export.DshExportFormat
 import com.example.dsh.message.DshMessage
+import com.example.dsh.message.messageRowKey
 import com.example.dsh.export.DshReadableContent
 import com.example.dsh.message.DshShareGroup
 import com.example.dsh.message.dshShareGroupForMessage
@@ -13,6 +14,7 @@ import com.example.dsh.log.shareExportFile
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.reactive.handler.*
+import com.tencent.kuikly.core.views.ListContentView
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
@@ -69,7 +71,10 @@ internal fun DshHomePage.enterExportSelection(sessionId: String, preselectId: St
     exportSelectedGroups = group?.let { setOf(it.key) } ?: emptySet()
     exportFormat = DshExportFormat.HTML
     exportMoreShareVisible = false
+    exportStickyGroupKey = ""
     exportSelectMode = true
+    // 列表已在进入前布局完成，稍等一帧取到行位置后确定首个吸顶组。
+    setTimeout(pagerId, 100) { if (exportSelectMode) updateExportStickySelector() }
 }
 
 /** 会话切换完成后再进入多选态，避免在多选态中对未激活会话操作。 */
@@ -125,6 +130,7 @@ internal fun DshHomePage.cancelExportSelection() {
     exportSelectedGroups = emptySet()
     exportMoreShareVisible = false
     exportPdfBusy = false
+    exportStickyGroupKey = ""
 }
 
 /** 流式助手正文优先使用实时内容；其余按已结算正文导出。 */
@@ -195,6 +201,43 @@ internal fun DshHomePage.toggleExportMoreShare() {
     if (exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return }
     exportMoreShareVisible = !exportMoreShareVisible
     if (exportMoreShareVisible) exportFormat = DshExportFormat.HTML
+}
+
+/** 吸顶选择器吸附点：当前对话组消息头滚过列表顶部该偏移后由它接管。 */
+private const val EXPORT_STICKY_PIN_PX = 4f
+
+/**
+ * 重算吸顶选择器所属对话组：取最后一个「消息头已滚过吸附点」的组。
+ * 下一组的消息头滚到吸附点时会替换当前组，与系统 section header 行为一致。
+ */
+internal fun DshHomePage.updateExportStickySelector() {
+    if (!exportSelectMode) {
+        if (exportStickyGroupKey.isNotEmpty()) exportStickyGroupKey = ""
+        return
+    }
+    val sessionId = exportSelectionSessionId()
+    val groups = exportGroups()
+    val offsetY = (messageScrollerRefs[sessionId]?.view?.contentView as? ListContentView)?.offsetY ?: 0f
+    var key = ""
+    for (group in groups) {
+        val headerId = group.userMessageId.ifEmpty { group.assistantMessageId ?: "" }
+        if (headerId.isEmpty()) continue
+        val frame = messageRowRefs[messageRowKey(sessionId, headerId)]?.view?.flexNode?.layoutFrame
+        if (frame == null || frame.isDefaultValue()) continue
+        if (frame.y - offsetY <= EXPORT_STICKY_PIN_PX) key = group.key else break
+    }
+    if (exportStickyGroupKey != key) exportStickyGroupKey = key
+}
+
+internal fun DshHomePage.exportStickySelectorVisible(): Boolean = exportStickyGroupKey.isNotEmpty()
+
+internal fun DshHomePage.exportStickySelectorSelected(): Boolean =
+    exportStickyGroupKey.isNotEmpty() && exportStickyGroupKey in exportSelectedGroups
+
+internal fun DshHomePage.toggleExportStickySelector() {
+    val group = exportGroups().firstOrNull { it.key == exportStickyGroupKey } ?: return
+    val headerId = group.userMessageId.ifEmpty { group.assistantMessageId ?: "" }
+    if (headerId.isNotEmpty()) toggleExportMessage(headerId)
 }
 
 /** 生成 PDF：Android 走原生 WebView 打印，其他端暂不支持。 */

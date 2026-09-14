@@ -25,7 +25,9 @@ import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.session.DSH_DRAWER_GROUP_WORKSPACE
 import com.example.dsh.session.DSH_DRAWER_ORDER_UPDATED
 import com.example.dsh.session.DSH_DRAWER_ROW_HEIGHT
+import com.example.dsh.session.DSH_DRAWER_WORKSPACE_GROUP_GAP
 import com.example.dsh.session.DSH_DRAWER_WORKSPACE_HEADER_HEIGHT
+import com.example.dsh.session.DSH_DRAWER_WORKSPACE_ROW_HEIGHT
 import com.example.dsh.session.DSH_WORKSPACE_DRAG_SCOPE
 import com.example.dsh.session.DshDrawerDrag
 import com.example.dsh.session.DshDrawerDragKind
@@ -64,6 +66,13 @@ private const val DSH_SEARCH_SNIPPET_MAX = DSH_SEARCH_SNIPPET_BEFORE + DSH_SEARC
 
 /** 抽屉底部固定区顶部的渐变遮罩高度：列表滑入该区间时被侧栏底色渐隐盖住。 */
 private const val DSH_DRAWER_FOOTER_MASK_HEIGHT = 32f
+
+/** 抽屉排版：工作区与会话同字号，固定行高保持紧凑的阅读节奏。 */
+private const val DSH_DRAWER_TITLE_FONT = 16f
+private const val DSH_DRAWER_CONTROL_FONT = 15f
+private const val DSH_DRAWER_TEXT_LINE = 22f
+private const val DSH_DRAWER_CAPTION_FONT = 12f
+private const val DSH_DRAWER_CAPTION_LINE = 16f
 
 private val DSH_SEARCH_FENCE = Regex("```[\\s\\S]*?```")
 private val DSH_SEARCH_IMAGE = Regex("!\\[[^\\]]*\\]\\([^)]*\\)")
@@ -178,8 +187,8 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 height(pagerData.pageViewHeight)
                 flexDirectionColumn()
                 paddingTop(pagerData.statusBarHeight + 10f)
-                paddingLeft(14f)
-                paddingRight(14f)
+                paddingLeft(12f)
+                paddingRight(12f)
                 paddingBottom(18f)
                 backgroundColor(colors().specificSidebarFill)
                 transform(Translate(if (animated()) 0f else -1f, 0f))
@@ -212,19 +221,22 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                         text("搜索对话内容…")
                         marginLeft(8f)
                         flex(1f)
-                        fontSize(14f)
+                        lines(1)
+                        fontSize(DSH_DRAWER_CONTROL_FONT)
+                        lineHeight(DSH_DRAWER_TEXT_LINE)
                         color(colors().labelTertiary)
                     }
                 }
                 DshHitButton { onOpenSearch() }
             }
             View {
-                attr { marginTop(16f); marginBottom(6f); flexDirectionRow(); alignItemsCenter() }
+                attr { marginTop(12f); marginBottom(4f); flexDirectionRow(); alignItemsCenter() }
                 Text {
                     attr {
                         text(if (dshGrouped()) "工作区" else "会话")
                         flex(1f)
-                        fontSize(12f)
+                        fontSize(DSH_DRAWER_CAPTION_FONT)
+                        lineHeight(DSH_DRAWER_CAPTION_LINE)
                         color(colors().labelTertiary)
                     }
                 }
@@ -280,8 +292,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                         val workspaceIndex = dshWorkspaceIndexOf(groupKey)
                         View {
                             attr {
-                                marginTop(4f)
-                                marginBottom(2f)
+                                marginTop(DSH_DRAWER_WORKSPACE_GROUP_GAP)
                                 flexDirectionColumn()
                                 if (groupKey.isNotEmpty()) {
                                     val state = dragState()
@@ -289,7 +300,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                                     // 用百分比位移（而非 dp offset）：dp offset 会走 frame task 延迟生效，
                                     // 松手后可能残留；百分比立即写入，且每次显式复位为 0。
                                     val groupHeight = (
-                                        40f + if (expandedGroupIds().contains(groupKey)) {
+                                        DSH_DRAWER_WORKSPACE_ROW_HEIGHT + if (expandedGroupIds().contains(groupKey)) {
                                             group.sessions.size * DSH_DRAWER_ROW_HEIGHT
                                         } else {
                                             0f
@@ -303,7 +314,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                             // 文件夹行：内嵌菜单头（文件夹图标 + 标题 + 旋转箭头）
                             View {
                                 attr {
-                                    height(40f)
+                                    height(DSH_DRAWER_WORKSPACE_ROW_HEIGHT)
                                     flexDirectionRow()
                                     alignItemsCenter()
                                     paddingLeft(8f)
@@ -328,7 +339,8 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                                         text(group.title)
                                         flex(1f)
                                         lines(1)
-                                        fontSize(14f)
+                                        fontSize(DSH_DRAWER_TITLE_FONT)
+                                        lineHeight(DSH_DRAWER_TEXT_LINE)
                                         fontWeightMedium()
                                         color(colors().labelPrimary)
                                     }
@@ -422,7 +434,17 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                     View {
                         attr { height(44f); flexDirectionRow(); alignItemsCenter(); paddingLeft(12f); paddingRight(12f) }
                         Image { attr { src(ImageUri.commonAssets("archive.svg")); size(20f, 20f); tintColor(colors().labelSecondary) } }
-                        Text { attr { text("已归档会话"); marginLeft(10f); fontSize(14f); color(colors().labelSecondary) } }
+                        Text {
+                            attr {
+                                text("已归档会话")
+                                marginLeft(8f)
+                                flex(1f)
+                                lines(1)
+                                fontSize(DSH_DRAWER_CONTROL_FONT)
+                                lineHeight(DSH_DRAWER_TEXT_LINE)
+                                color(colors().labelSecondary)
+                            }
+                        }
                         event { click { onOpenArchive() } }
                     }
                 }
@@ -454,8 +476,11 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                     Text {
                         attr {
                             text("设置")
-                            marginLeft(10f)
-                            fontSize(14f)
+                            marginLeft(8f)
+                            flex(1f)
+                            lines(1)
+                            fontSize(DSH_DRAWER_CONTROL_FONT)
+                            lineHeight(DSH_DRAWER_TEXT_LINE)
                             fontWeightMedium()
                             color(colors().labelSecondary)
                         }
@@ -548,8 +573,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
 ) {
     View {
         attr {
-            height(46f)
-            marginBottom(2f)
+            height(DSH_DRAWER_ROW_HEIGHT)
             flexDirectionRow()
             alignItemsCenter()
             paddingLeft(if (indented) 32f else 12f)
@@ -601,7 +625,9 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                 attr {
                     text(title)
                     lines(1)
-                    fontSize(14f)
+                    fontSize(DSH_DRAWER_TITLE_FONT)
+                    lineHeight(DSH_DRAWER_TEXT_LINE)
+                    if (active()) fontWeightMedium() else fontWeightNormal()
                     color(if (active()) colors().stateBusinessPrimary else colors().labelPrimary)
                 }
             }
@@ -611,7 +637,8 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                         text(subtitle)
                         lines(1)
                         marginTop(2f)
-                        fontSize(10f)
+                        fontSize(DSH_DRAWER_CAPTION_FONT)
+                        lineHeight(DSH_DRAWER_CAPTION_LINE)
                         color(colors().labelTertiary)
                     }
                 }
@@ -622,7 +649,9 @@ internal fun ViewContainer<*, *>.DshSessionDrawerRow(
                 attr {
                     text(dshRelativeTimeLabel(updatedAt, now))
                     marginLeft(6f)
-                    fontSize(11f)
+                    lines(1)
+                    fontSize(DSH_DRAWER_CAPTION_FONT)
+                    lineHeight(DSH_DRAWER_CAPTION_LINE)
                     color(colors().labelTertiary)
                 }
             }

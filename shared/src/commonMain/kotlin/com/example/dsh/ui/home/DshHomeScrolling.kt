@@ -79,6 +79,7 @@ internal fun DshHomePage.realizeVisibleMessages() {
 }
 
 internal fun DshHomePage.onConversationUserScroll(params: ScrollParams) {
+    if (exportSelectMode) updateExportStickySelector()
     val maxOffset = (params.contentHeight - params.viewHeight).coerceAtLeast(0f)
     val nearBottom = params.offsetY >= maxOffset - FOLLOW_LIST_SLACK_PX
     if (nearBottom) {
@@ -103,6 +104,18 @@ internal fun DshHomePage.scrollMessagesToEndAfterLayout() {
     val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
     val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
     scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
+}
+
+/**
+ * 流式跟随：用动画滚动到底，避免每个 token 硬跳到新高度造成“蹦一下”。
+ * 每帧被调用时原生会以新目标重定向动画。
+ */
+internal fun DshHomePage.scrollMessagesToEndAnimated() {
+    if (!followListTail) return
+    val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
+    val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
+    val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
+    scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = true)
 }
 
 internal fun DshHomePage.settleScrollToMessage(messageId: String, generation: Int, attempt: Int) {

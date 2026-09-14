@@ -38,11 +38,18 @@ internal object DshSessionSearch {
             }
             if (matches.isEmpty()) {
                 if (session.title.lowercase().contains(needle)) {
+                    val fallback = messagesFor(session.id)
+                        ?.lastOrNull { !it.hidden && !it.isReasoning && !it.isContextInjection && it.content.isNotEmpty() }
+                        ?.content
+                    val snippet = fallback?.let { dshSearchSnippet(it, query) }
                     hits.add(
                         DshSessionSearchHit(
                             sessionId = session.id,
                             title = session.title,
                             dateLabel = dateLabel(session.updatedAt),
+                            snippetBefore = snippet?.before.orEmpty(),
+                            snippetMatch = snippet?.match.orEmpty(),
+                            snippetAfter = snippet?.after.orEmpty(),
                         ),
                     )
                 }

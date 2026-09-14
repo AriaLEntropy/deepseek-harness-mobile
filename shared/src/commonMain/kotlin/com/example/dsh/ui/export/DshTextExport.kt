@@ -65,32 +65,10 @@ internal fun ViewContainer<*, *>.DshExportSelectionTopBar(
         View {
             attr { height(48f); flexDirectionRow(); alignItemsCenter(); paddingLeft(14f); paddingRight(14f) }
             event { click { onToggleAll() } }
-            View {
-                attr {
-                    size(22f, 22f)
-                    borderRadius(11f)
-                    allCenter()
-                    backgroundColor(
-                        if (allSelected() && totalCount() > 0) colors().stateBusinessPrimary
-                        else Color(0x00FFFFFF)
-                    )
-                    border(Border(
-                        1.5f,
-                        BorderStyle.SOLID,
-                        if (allSelected() && totalCount() > 0) colors().stateBusinessPrimary
-                        else colors().borderL2,
-                    ))
-                }
-                vif({ allSelected() && totalCount() > 0 }) {
-                    Image {
-                        attr {
-                            src(ImageUri.commonAssets("check.svg"))
-                            size(14f, 14f)
-                            tintColor(Color.WHITE)
-                        }
-                    }
-                }
-            }
+            DshExportCheckbox(
+                selected = { allSelected() && totalCount() > 0 },
+                colors = colors,
+            )
             Text {
                 attr {
                     text(if (allSelected() && totalCount() > 0) "取消全选" else "全选")
@@ -116,6 +94,68 @@ internal fun ViewContainer<*, *>.DshExportSelectionTopBar(
     }
 }
 
+/** 分享勾选框尺寸（消息行内 / 顶部栏 / 吸顶共用，避免滚动时大小不一致）。 */
+internal const val DSH_EXPORT_CHECKBOX_SIZE = 20f
+
+/**
+ * 分享多选态的圆形勾选框：选中蓝底白勾，未选中浅色描边。
+ * 不含点击事件，由外层容器决定点击行为（顶部栏整行、吸顶选择器自身）。
+ */
+internal fun ViewContainer<*, *>.DshExportCheckbox(
+    selected: () -> Boolean,
+    colors: () -> DshColorTokens,
+    size: Float = DSH_EXPORT_CHECKBOX_SIZE,
+    unselectedFill: Color = Color(0x00FFFFFF),
+) {
+    View {
+        attr {
+            size(size, size)
+            borderRadius(size / 2f)
+            allCenter()
+            backgroundColor(
+                if (selected()) colors().stateBusinessPrimary else unselectedFill
+            )
+            border(Border(
+                1.5f,
+                BorderStyle.SOLID,
+                if (selected()) colors().stateBusinessPrimary else colors().borderL2,
+            ))
+        }
+        vif({ selected() }) {
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("check.svg"))
+                    size(size * 0.64f, size * 0.64f)
+                    tintColor(Color.WHITE)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 分享多选态的吸顶选择器：滚动时把当前对话组的勾选框钉在顶部栏「全选」正下方，
+ * 与顶部栏选择器左对齐；下一组消息头滚到该位置时由页面切换 [selected] 对应的组。
+ */
+internal fun ViewContainer<*, *>.DshExportStickySelector(
+    selected: () -> Boolean,
+    onToggle: () -> Unit,
+    colors: () -> DshColorTokens,
+) {
+    View {
+        attr {
+            positionAbsolute()
+            top(2f)
+            left(14f)
+            size(DSH_EXPORT_CHECKBOX_SIZE, DSH_EXPORT_CHECKBOX_SIZE)
+            allCenter()
+            zIndex(30)
+        }
+        event { click { onToggle() } }
+        DshExportCheckbox(selected = selected, colors = colors, unselectedFill = colors().bgBase)
+    }
+}
+
 /**
  * 分享多选态底部弹窗：无 mask，占满底部、覆盖主输入框位置。
  * 顶部居中展示「已选择 N 组对话」，下方是生成 PDF / 复制内容 / 更多分享三个圆形动作；
@@ -138,12 +178,11 @@ internal fun ViewContainer<*, *>.DshExportSelectionSheet(
     DshBottomSheet(
         colors = colors,
         onClose = onClose,
-        largeHeightRatio = 0.58f,
         modal = false,
+        wrapContent = true,
     ) {
         View {
             attr {
-                flex(1f)
                 flexDirectionColumn()
                 paddingLeft(16f)
                 paddingRight(16f)

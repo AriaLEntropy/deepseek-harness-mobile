@@ -12,6 +12,7 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.example.dsh.ui.models.DshModelsPage
 import com.example.dsh.ui.session.DshWorkspacePickerModal
+import com.example.dsh.ui.session.DshWorkspacePickerScreen
 import com.example.dsh.ui.connection.DshConnectionSettingsModal
 import com.example.dsh.ui.connection.DshCredentialSetupModal
 import com.example.dsh.ui.settings.DshPersonalizationPage
@@ -273,6 +274,14 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
                 home = { ctx.workspaceAddHome },
                 entries = { ctx.workspaceAddEntries },
                 newName = { ctx.workspaceAddNewName },
+                keyboardHeight = { ctx.workspaceAddKeyboardHeight },
+                onKeyboardHeightChange = {
+                    if (ctx.workspacePickerVisible && ctx.workspacePickerScreen == DshWorkspacePickerScreen.ADD) {
+                        ctx.workspaceAddKeyboardHeight = it.coerceAtLeast(0f)
+                    }
+                },
+                onNewNameInputRef = { ctx.workspaceAddInputView = it },
+                directoryLoaded = { ctx.workspaceAddDirectoryLoaded },
                 onDirectorySelect = { ctx.loadWorkspaceAddDirectory(it) },
                 onNewNameChange = { ctx.workspaceAddNewName = it },
                 onCreateDirectory = { ctx.createWorkspaceAddDirectory() },

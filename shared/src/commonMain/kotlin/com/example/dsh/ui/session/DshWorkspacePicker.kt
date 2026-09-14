@@ -6,10 +6,13 @@ import com.example.dsh.session.DshWorkspaceGroup
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vif
+import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.reactive.collection.ObservableList
+import com.tencent.kuikly.core.views.ActivityIndicator
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Input
+import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
@@ -28,7 +31,7 @@ private val DSH_FOLDER_ICON_TINT = Color(0xFFF3B44C)
  *
  * - RECENT：列出 Host 已注册工作区（最近文件夹），单选圆圈标记当前工作区，点按立即切换。
  * - ADD：复用 Host 目录浏览（`host.listDirectory`，走 SSH/Relay 隧道）添加新文件夹。
- * 顶部返回按钮在 ADD 界面返回 RECENT，在 RECENT 界面关闭弹窗。
+ * 顶部返回按钮仅在 ADD 界面显示，返回 RECENT；弹窗通过遮罩或下滑关闭。
  */
 internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
     screen: () -> DshWorkspacePickerScreen,
@@ -43,7 +46,11 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
     path: () -> String,
     home: () -> String,
     entries: () -> ObservableList<DshDirectoryEntry>,
+    directoryLoaded: () -> Boolean,
     newName: () -> String,
+    keyboardHeight: () -> Float,
+    onKeyboardHeightChange: (Float) -> Unit,
+    onNewNameInputRef: (InputView?) -> Unit,
     onDirectorySelect: (String) -> Unit,
     onNewNameChange: (String) -> Unit,
     onCreateDirectory: () -> Unit,
@@ -54,8 +61,9 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
         colors = colors,
         onClose = onClose,
         largeHeightRatio = 0.82f,
+        keyboardHeight = keyboardHeight,
     ) {
-            // 头部：左侧圆形返回按钮 + 居中标题
+            // 头部：居中标题，仅添加文件夹子页显示返回按钮。
             View {
                 attr {
                     height(52f)
@@ -65,20 +73,25 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                     paddingRight(16f)
                 }
                 View {
-                    attr {
-                        size(40f, 40f)
-                        borderRadius(20f)
-                        backgroundColor(colors().bgModulePlatform)
-                        allCenter()
-                    }
-                    Image {
-                        attr {
-                            src(ImageUri.commonAssets("chevron-left.svg"))
-                            size(20f, 20f)
-                            tintColor(colors().labelPrimary)
+                    attr { size(40f, 40f) }
+                    vif({ screen() == DshWorkspacePickerScreen.ADD }) {
+                        View {
+                            attr {
+                                size(40f, 40f)
+                                borderRadius(20f)
+                                backgroundColor(colors().bgModulePlatform)
+                                allCenter()
+                            }
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-left.svg"))
+                                    size(20f, 20f)
+                                    tintColor(colors().labelPrimary)
+                                }
+                            }
+                            DshHitButton { onBack() }
                         }
                     }
-                    DshHitButton { onBack() }
                 }
                 Text {
                     attr {
@@ -140,7 +153,7 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                                             1.5f,
                                             BorderStyle.SOLID,
                                             if (activeWorkspaceId() == group.workspaceId) {
-                                                colors().stateBusinessPrimary
+                                                colors().buttonPrimaryFill
                                             } else {
                                                 colors().borderL2
                                             },
@@ -152,7 +165,7 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                                             attr {
                                                 size(11f, 11f)
                                                 borderRadius(5.5f)
-                                                backgroundColor(colors().stateBusinessPrimary)
+                                                backgroundColor(colors().buttonPrimaryFill)
                                             }
                                         }
                                     }
@@ -236,7 +249,7 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                                 text("主目录")
                                 marginLeft(8f)
                                 fontSize(13f)
-                                color(colors().stateBusinessPrimary)
+                                color(colors().labelPrimary)
                             }
                             event { click { if (!busy()) onDirectorySelect(home()) } }
                         }
@@ -247,13 +260,13 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                                 text("上一级")
                                 marginLeft(8f)
                                 fontSize(13f)
-                                color(colors().stateBusinessPrimary)
+                                color(colors().labelPrimary)
                             }
                             event { click { if (!busy()) onDirectorySelect(dshParentPath(path())) } }
                         }
                     }
                 }
-                Scroller {
+                View {
                     attr {
                         flex(1f)
                         marginTop(8f)
@@ -262,44 +275,98 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                         borderRadius(10f)
                         backgroundColor(colors().bgModulePlatform)
                     }
-                    vfor({ entries() }) { entry ->
+                    // 空目录 / 读取中的缺省页：图标用 Lucide folder-open（见 THIRD_PARTY_NOTICES.txt）。
+                    vif({ !directoryLoaded() || entries().isEmpty() }) {
                         View {
                             attr {
-                                height(48f)
-                                flexDirectionRow()
-                                alignItemsCenter()
-                                paddingLeft(12f)
-                                paddingRight(12f)
+                                flex(1f)
+                                allCenter()
+                                paddingLeft(16f)
+                                paddingRight(16f)
                             }
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("folder.svg"))
-                                    size(20f, 20f)
-                                    tintColor(DSH_FOLDER_ICON_TINT)
+                            vif({ !directoryLoaded() && busy() }) {
+                                ActivityIndicator { attr { isGrayStyle(true) } }
+                            }
+                            velse {
+                                Image {
+                                    attr {
+                                        src(ImageUri.commonAssets("folder-open-lucide.svg"))
+                                        size(40f, 40f)
+                                        tintColor(colors().labelTertiary)
+                                    }
                                 }
                             }
                             Text {
                                 attr {
-                                    text(entry.name)
-                                    flex(1f)
-                                    marginLeft(10f)
-                                    lines(1)
+                                    text(when {
+                                        directoryLoaded() -> "暂无子文件夹"
+                                        busy() -> "读取中…"
+                                        else -> "无法读取目录"
+                                    })
+                                    marginTop(8f)
                                     fontSize(15f)
-                                    color(colors().labelPrimary)
+                                    fontWeightMedium()
+                                    textAlignCenter()
+                                    color(colors().labelSecondary)
                                 }
                             }
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("chevron-right.svg"))
-                                    size(14f, 14f)
-                                    tintColor(colors().labelCaption)
+                            vif({ directoryLoaded() }) {
+                                Text {
+                                    attr {
+                                        text("可新建文件夹或选择上级目录")
+                                        marginTop(6f)
+                                        fontSize(12f)
+                                        lineHeight(18f)
+                                        textAlignCenter()
+                                        color(colors().labelTertiary)
+                                    }
                                 }
                             }
-                            event { click { if (!busy()) onDirectorySelect(entry.path) } }
+                        }
+                    }
+                    velse {
+                        Scroller {
+                            attr { flex(1f) }
+                            vfor({ entries() }) { entry ->
+                                View {
+                                    attr {
+                                        height(48f)
+                                        flexDirectionRow()
+                                        alignItemsCenter()
+                                        paddingLeft(12f)
+                                        paddingRight(12f)
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("folder.svg"))
+                                            size(20f, 20f)
+                                            tintColor(DSH_FOLDER_ICON_TINT)
+                                        }
+                                    }
+                                    Text {
+                                        attr {
+                                            text(entry.name)
+                                            flex(1f)
+                                            marginLeft(10f)
+                                            lines(1)
+                                            fontSize(15f)
+                                            color(colors().labelPrimary)
+                                        }
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("chevron-right.svg"))
+                                            size(14f, 14f)
+                                            tintColor(colors().labelCaption)
+                                        }
+                                    }
+                                    event { click { if (!busy()) onDirectorySelect(entry.path) } }
+                                }
+                            }
                         }
                     }
                 }
-                // 新建子文件夹
+                // 新建子文件夹：独立渲染容器，避免目录刷新后输入框与「新建」不重绘。
                 View {
                     attr {
                         height(44f)
@@ -308,30 +375,62 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                         marginRight(20f)
                         flexDirectionRow()
                         alignItemsCenter()
+                        backgroundColor(colors().bgLayer1)
                     }
-                    Input {
+                    View {
                         attr {
                             flex(1f)
-                            height(40f)
-                            fontSize(14f)
-                            placeholder("新建文件夹")
-                            placeholderColor(colors().labelTertiary)
+                            height(44f)
+                            paddingLeft(12f)
+                            paddingRight(12f)
+                            justifyContentCenter()
+                            borderRadius(10f)
+                            border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                            backgroundColor(colors().specificInputMajor)
                         }
-                        event { textDidChange { onNewNameChange(it.text) } }
+                        Input {
+                            ref { onNewNameInputRef(it.view) }
+                            attr {
+                                height(40f)
+                                fontSize(14f)
+                                color(colors().labelPrimary)
+                                tintColor(colors().labelPrimary)
+                                placeholder("新建文件夹")
+                                placeholderColor(colors().labelTertiary)
+                                returnKeyTypeDone()
+                                editable(!busy() && directoryLoaded())
+                            }
+                            event {
+                                textDidChange { onNewNameChange(it.text) }
+                                keyboardHeightChange { onKeyboardHeightChange(it.height) }
+                                inputReturn {
+                                    onNewNameChange(it.text)
+                                    if (!busy()) onCreateDirectory()
+                                }
+                            }
+                        }
                     }
-                    Text {
+                    View {
                         attr {
-                            text(if (busy()) "处理中..." else "新建")
                             marginLeft(10f)
-                            width(56f)
-                            textAlignCenter()
-                            fontSize(14f)
-                            color(colors().stateBusinessPrimary)
+                            width(72f)
+                            height(44f)
+                            borderRadius(10f)
+                            backgroundColor(colors().buttonGhostActiveFill)
+                            allCenter()
                         }
-                        event { click { if (!busy() && newName().isNotBlank()) onCreateDirectory() } }
+                        Text {
+                            attr {
+                                text(if (busy()) "处理中…" else "新建")
+                                fontSize(14f)
+                                fontWeightMedium()
+                                color(if (busy() || !directoryLoaded() || newName().isBlank()) colors().labelTertiary else colors().labelPrimary)
+                            }
+                        }
+                        DshHitButton { if (!busy() && directoryLoaded()) onCreateDirectory() }
                     }
                 }
-                // 使用当前目录
+                // 使用当前目录：与 Web primary 按钮一致，禁用态中性灰。
                 View {
                     attr {
                         height(52f)
@@ -339,18 +438,18 @@ internal fun ViewContainer<*, *>.DshWorkspacePickerModal(
                         marginLeft(20f)
                         marginRight(20f)
                         borderRadius(14f)
-                        backgroundColor(colors().stateBusinessPrimary)
+                        backgroundColor(if (busy() || !directoryLoaded() || path().isEmpty()) colors().buttonPrimaryDimmed else colors().buttonPrimaryFill)
                         allCenter()
                     }
                     Text {
                         attr {
-                            text(if (busy()) "处理中..." else "使用此文件夹")
+                            text(if (busy()) "处理中…" else "使用此文件夹")
                             fontSize(16f)
                             fontWeightMedium()
-                            color(Color(0xFFFFFFFF))
+                            color(if (busy() || !directoryLoaded() || path().isEmpty()) colors().labelTertiary else colors().labelPrimaryForeground)
                         }
                     }
-                    DshHitButton { if (!busy()) onAdopt() }
+                    DshHitButton { if (!busy() && directoryLoaded() && path().isNotEmpty()) onAdopt() }
                 }
             }
         }

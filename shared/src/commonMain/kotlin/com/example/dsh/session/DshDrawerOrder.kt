@@ -9,11 +9,15 @@ internal enum class DshDrawerDragKind { NONE, SESSION, WORKSPACE }
 /** 工作区拖拽使用的伪分组键，避免与会话的分组键（workspaceId）混淆。 */
 internal const val DSH_WORKSPACE_DRAG_SCOPE = "__dsh_workspaces__"
 
-/** 会话行固定高度：内容 46dp + 底部间距 2dp，用于拖拽落点估算。 */
-internal const val DSH_DRAWER_ROW_HEIGHT = 48f
+/** 会话行固定高度：46dp，无额外行间距，布局与拖拽落点共用。 */
+internal const val DSH_DRAWER_ROW_HEIGHT = 46f
 
-/** 工作区文件夹行（含间距）高度，用于拖拽落点估算。 */
-internal const val DSH_DRAWER_WORKSPACE_HEADER_HEIGHT = 46f
+internal const val DSH_DRAWER_WORKSPACE_ROW_HEIGHT = 40f
+internal const val DSH_DRAWER_WORKSPACE_GROUP_GAP = 2f
+
+/** 工作区文件夹行加分组上间距，用于拖拽落点估算。 */
+internal const val DSH_DRAWER_WORKSPACE_HEADER_HEIGHT =
+    DSH_DRAWER_WORKSPACE_ROW_HEIGHT + DSH_DRAWER_WORKSPACE_GROUP_GAP
 
 /** 抽屉视图选项：分组方式，对齐电脑端 WorkspaceBrowser 的 groupBy。 */
 internal const val DSH_DRAWER_GROUP_WORKSPACE = "workspace"

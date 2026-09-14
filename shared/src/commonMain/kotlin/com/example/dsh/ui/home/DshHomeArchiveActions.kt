@@ -16,6 +16,7 @@ import com.example.dsh.ui.session.DshArchiveConfirm
 import com.example.dsh.ui.session.DshArchiveConfirmKind
 import com.example.dsh.ui.session.DshArchiveProjectOption
 import com.example.dsh.ui.session.DshArchiveSort
+import com.example.dsh.ui.session.DshOverflowAction
 import com.example.dsh.ui.export.DshTextExportState
 
 internal fun DshHomePage.openArchiveList() {
@@ -31,6 +32,8 @@ internal fun DshHomePage.openArchiveList() {
     archiveMenu = ""
     archiveNotice = ""
     archiveConfirm = null
+    archiveOverflowVisible = false
+    archiveOverflowTargetId = ""
     archiveBusy = false
     archiveListVisible = true
     archiveOpeningId = ""
@@ -45,6 +48,8 @@ internal fun DshHomePage.closeArchiveList() {
     archiveListError = ""
     archiveBusy = false
     archiveConfirm = null
+    archiveOverflowVisible = false
+    archiveOverflowTargetId = ""
     archiveMenu = ""
     archivedSessions.clear()
     archiveGroups.clear()
@@ -134,7 +139,11 @@ internal fun DshHomePage.rebuildArchiveGroups() {
 
 internal fun DshHomePage.onArchiveSearch(value: String) { archiveSearch = value; rebuildArchiveGroups() }
 
-internal fun DshHomePage.onArchiveToggleMenu(menu: String) { archiveMenu = menu }
+internal fun DshHomePage.onArchiveToggleMenu(menu: String, anchorX: Float = -1f, anchorY: Float = -1f) {
+    archiveMenu = menu
+    archiveFilterX = anchorX
+    archiveFilterY = anchorY
+}
 
 internal fun DshHomePage.onArchivePickProject(id: String) { archiveProjectFilter = id; archiveMenu = ""; rebuildArchiveGroups() }
 
@@ -143,6 +152,37 @@ internal fun DshHomePage.onArchivePickSort(value: DshArchiveSort) { archiveSort 
 internal fun DshHomePage.requestArchiveDeleteSession(sessionId: String) {
     val session = archivedSessions.firstOrNull { it.id == sessionId } ?: return
     archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.SESSION, sessionId, session.title, 1)
+}
+
+/** 归档行 ⋯：复用主页面的 overflow menu，锚定到点击位置，菜单项为取消归档 / 删除。 */
+internal fun DshHomePage.openArchiveOverflowFor(sessionId: String, anchorX: Float = -1f, anchorY: Float = -1f) {
+    if (archiveBusy || archiveOpeningId.isNotEmpty()) return
+    if (archivedSessions.none { it.id == sessionId }) return
+    archiveOverflowTargetId = sessionId
+    archiveOverflowAnchorX = anchorX
+    archiveOverflowAnchorY = anchorY
+    archiveOverflowVisible = true
+}
+
+internal fun DshHomePage.dismissArchiveOverflow() {
+    archiveOverflowVisible = false
+}
+
+internal fun DshHomePage.archiveOverflowActions(): ObservableList<DshOverflowAction> {
+    val result = ObservableList<DshOverflowAction>()
+    if (archivedSessions.none { it.id == archiveOverflowTargetId }) return result
+    result.add(DshOverflowAction("unarchive", "取消归档", "archive.svg"))
+    result.add(DshOverflowAction("delete", "删除", "delete.svg", danger = true))
+    return result
+}
+
+internal fun DshHomePage.onArchiveOverflowAction(id: String) {
+    val targetId = archiveOverflowTargetId
+    dismissArchiveOverflow()
+    when (id) {
+        "unarchive" -> unarchiveArchivedSession(targetId)
+        "delete" -> requestArchiveDeleteSession(targetId)
+    }
 }
 
 /** 取消归档：走 host-plugin unarchive；成功后该会话回到主列表与工作区分组。 */
