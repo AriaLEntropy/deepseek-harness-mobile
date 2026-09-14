@@ -1,7 +1,7 @@
 package com.example.dsh.platform
 
 import kotlinx.cinterop.ExperimentalForeignApi
-import platform.Foundation.NSTimeZone
+import platform.Foundation.*
 import platform.posix.time
 
 @OptIn(ExperimentalForeignApi::class)
