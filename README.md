@@ -1,442 +1,202 @@
-# DeepSeek Harness Mobile
+# DSH App · DeepSeek Harness 移动端宿主
 
-将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 接到 Android / iOS 手机的实验性移动端宿主项目。
+> 一套 Kotlin 代码，跑 Android / iOS / OpenHarmony（鸿蒙）三端，把电脑上的 DeepSeek Harness Agent 塞进你的口袋。
 
-**本仓库只连接电脑上的 DSH**，不再内嵌 Node.js / Harness，APK 不再携带约 115 MB 的 `payload.zip`。
+![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-purple)
+![Kuikly](https://img.shields.io/badge/Kuikly-Cross--Platform-blue)
+![Android](https://img.shields.io/badge/Android-7.0%2B-green)
+![iOS](https://img.shields.io/badge/iOS-14.1%2B-lightgrey)
+![OpenHarmony](https://img.shields.io/badge/OpenHarmony-5.0-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-App 启动后先选连接方式，再进入聊天。**扫码连电脑的完整启动命令见 [怎么启动（扫码连电脑）](#怎么启动扫码连电脑)。**
+---
 
-- **扫码连接**：扫描电脑 DSH Settings 里的二维码，经 Relay 访问电脑上的 Harness。
-- **SSH**：用本机端口转发连到电脑上的 DSH。
+## 它解决了什么问题
 
-若要在手机上跑内嵌 Agent，请使用独立仓库 **[DSH Local](https://github.com/yukiykchen/deepseek-harness-local)**（`com.example.dsh.local`，需 Shizuku 与 `payload.zip`）。两个 App 可以同时安装。
+DeepSeek Harness 是一个跑在电脑上的 Agent 运行时——它要吃 API Key、要跑工具、要起 HTTP 服务。**它本来不是为手机设计的。**
 
-本项目的目标不是把 DeepSeek Harness 翻译成 Kotlin，而是用 Kotlin/Kuikly 做宿主界面，连到电脑上的 Host。
+直接把整个 Harness 塞进 App 不可行：光运行时就约 115 MB，模型推理吃手机内存，工具链和文件系统也对不上。
 
-> 当前项目处于开发和验证阶段。请不要把它当作生产版本使用。
+DSH App 选择了另一条路：
 
-## 项目定位
+```
+手机 App（薄客户端）  ──扫码 Relay / SSH──▶  电脑 DSH Host（Agent + 模型 + 工具）
+```
 
-DeepSeek Harness 本身是一个插件化 Agent 运行时。本仓库提供 Android / iOS 宿主：
+- App **不内嵌** Agent，不携带 `payload.zip`，APK 体积回到轻量；
+- 模型推理和工具执行仍然在电脑上，能力不缩水；
+- 手机只是一个远程的流式终端 + 工具调用面板 + 日志中心。
 
-- 使用 Kuikly/Kotlin Multiplatform 实现主要 UI 和跨平台协议层；
-- 扫码 / SSH 远程模式用 HTTP RPC + WebSocket（`events.mux`）；
-- 按连接模式隔离会话列表和消息缓存；
-- 通过扫码 Relay 或 SSH 隧道连接电脑上的 DSH Host。
+---
 
-### 日志中心
+## 30 秒看懂架构
 
-日志沿用 [DSH 会话事件](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/core/session/src/types.ts)的类型和关联信息：
+工程按 **页面 → 状态 → 数据 → 平台** 四层拆分，并且已经从单 `shared` 模块演进成 **5 个 core + 7 个 ui** 的多模块结构：
 
-- 会话事件保留 `turn/start`、`tool/call`、`tool/result`、`assistant/message`、`turn/end` 等原名，每个收到的事件只记录一次元数据摘要。
-- App 补充连接/重试、RPC 起止/失败、页面生命周期、会话切换、图片操作结果、交互响应结果及崩溃。新增 App 事件使用 `app.*` 前缀。
-- 按 Task 6 保留四种等级和结构性 `assistant/chunk` 的 Debug 摘要；逐 token delta、解析/渲染/触摸过程及内部性能打点不采集。正文、工具 JSON、附件 Base64 不复制进诊断日志。
-- 日志本地有界保存，支持筛选、详情、复制、脱敏导出和清空。它记录 App 观察到的事件；完整会话历史仍由 Host 管理。
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  平台壳层                                                     │
+│  androidApp · iosApp · ohosApp · h5App(预留) · miniApp(预留) │
+├──────────────────────────────────────────────────────────────┤
+│  聚合层：shared                                              │
+│  DshHomePage 主页（会话 / 消息 / 输入框 / 模型配置）          │
+├──────────────────────────────────────────────────────────────┤
+│  UI 层（Kuikly DSL）                                         │
+│  ui-base · ui-kit(渲染) · ui-settings · ui-export            │
+│  ui-voice · ui-web · ui-dev                                  │
+├──────────────────────────────────────────────────────────────┤
+│  Core 层（commonMain，一套逻辑跑三端）                       │
+│  core-platform · core-model · core-log · core-theme         │
+│  core-data（host 协议 / 消息 / 连接 / 附件 / 导出 / 诊断）   │
+└──────────────────────────────────────────────────────────────┘
+        ▲ 扫码 Relay / SSH（两条通道）
+┌────────┴─────────────────────────────────────────────────────┐
+│  电脑 DSH Host :3080                                          │
+│  ├─ host-plugin          ← 本仓库自研桥接（不改 DSH 源码）    │
+│  └─ dsh-scan-remote       ← 外部扫码 Relay 插件               │
+└───────────────────────────────────────────────────────────────┘
+```
 
-## 连接模式
+**三条设计原则**：
 
-启动后首页是「连接 DSH」。
+1. **业务逻辑全部下沉到 commonMain** —— 消息模型、Host 协议、日志、主题、附件校验、导出逻辑三端共用；平台只提供存储 / HTTP / WebSocket / 取图等能力。
+2. **协议对齐官方** —— RPC 方法名与官方 `packages/host/apiproxy` 完全一致，App 不自定义 JSON-RPC 方法，能跟着官方版本升级。
+3. **官方缺口用只读桥接补齐** —— 插件启停、取消归档、永久删除、通用文件上传都是官方能力缺口，由 `host-plugin` 基于公共 Cordis 服务补齐，**一行 DSH 核心源码都不改**。
 
-| 模式 | App 文案 | Agent 跑在哪 | 传输 | API Key 配在哪 | 会话缓存 |
-| --- | --- | --- | --- | --- | --- |
-| 远程 Relay | 扫码连接 | 电脑 DSH | Relay sealed tunnel + 本机 loopback WebSocket | 电脑 | `relay:<hostId>` |
-| 远程 SSH | SSH | 电脑 DSH | SSH 本地转发 + WebSocket | 电脑 | `ssh:default` |
-| 手机本地 | （独立 App） | 见 DSH Local | 本机 HTTP + SSE | 手机 | `local` |
+---
 
-App 连上 Host 之后的 JSON-RPC、事件流和会话时间线见 **[docs/app-host-protocol.md](docs/app-host-protocol.md)**。
+## 我们做了什么（不只是照着题目点功能）
 
-两种远程模式互不影响。从扫码切到 SSH 后，看不到另一套缓存，这是预期行为。
+围绕"AI 对话体验增强"共交付 **8 项任务**（Task 1–6 + 附加题），但下面这些是题目之外、自己挖出来的硬骨头：
 
-- 电脑已经在跑 DSH，手机和电脑同一 Wi-Fi / 热点：选 **扫码连接**。启动命令见上方「怎么启动（扫码连电脑）」。
-- 已有 SSH 私钥，或不想在电脑上跑 Relay：选 **SSH**。
+### 1. 流式 Markdown + LaTeX 双轨渲染
 
-扫码连接和 SSH 支持 Android 与 iOS。iOS 首次扫码会申请相机权限，首次 SSH 会要求确认主机指纹。
+KuiklyMarkdown 解析器认识 `$...$` / `$$...$$` 节点，但渲染器不画公式。我们在送渲染前自己切分文本与公式段：
 
-## 怎么启动（扫码连电脑）
+- 支持 WebView 的平台走 **内联 KaTeX**（CSS/JS 全量内联，无网络请求，深色模式单独配色）；
+- 不支持 WebView 的平台自动降级为 **Unicode 近似公式文本**；
+- 公式跨多个流式 chunk 到达时，闭合后才进渲染路径，未闭合不渲染、不崩、不丢消息。
 
-最终要**同时开着三样**：电脑上的 Relay、电脑上的 DSH、手机上的 App。建议开两个电脑终端，都不要关。
+### 2. 断线补偿与连接世代
 
-**终端 1 — Relay（默认 `127.0.0.1:8787`）**
+远程连接会断。重连后我们做了三件事：
+
+- mux 事件流重放；
+- Host 还在跑的 turn 用 `adoptLiveStream` 挂回当前会话，**不重复发 prompt**；
+- 按连接世代（generation）失效在途请求，过期结果不会写回当前会话。
+
+### 3. 日志中心（不只是个 logcat 面板）
+
+- 结构化日志落 **SQLite**（三端共用 kuiklySqlite），按类型 / 级别 / 会话过滤；
+- **写后缓存**：单后台任务 + 合并唤醒信号 + 指数退避重试，不卡 UI；
+- **容量硬上限**：5000 条 / 5 MiB 正文 / 50 MiB 磁盘，按真实文件字节核算，VACUUM 后 WAL TRUNCATE；
+- **隐私脱敏**：API Key / Authorization / access-ticket / clientToken / hostToken / 附件 Base64 全部正则脱敏后才允许导出；
+- 一键生成**问题反馈包**（脱敏日志 + 连接模式 + App 版本 + 设备型号），三端崩溃订阅，下次启动提示。
+
+### 4. host-plugin：不改 DSH 源码的桥接层
+
+官方 DSH 缺什么，我们补什么，但**不 fork、不 patch**：
+
+| 端点 | 补的官方缺口 |
+| --- | --- |
+| `GET /api/mobile-plugin-inventory/v1/list` | 插件清单 / 失败原因 / 脱敏配置摘要 |
+| `POST /api/mobile-plugin-inventory/v1/action` | 插件启停 / 重载（基于公共 `Entry.update()`） |
+| `POST /api/session-manager/unarchive` | 官方根本没有公开的取消归档 RPC |
+| `POST /api/session-manager/delete` / `deleteMany` | 永久删除（单条 / 项目内 / 全部） |
+| `POST /api/mobile-attachment/v1/upload` | `v0.1.5-alpha.1` 前没有的通用文件上传 backport |
+
+同时给电脑端 Web 加了两个**非侵入**入口：设置页「插件启停」标签页、侧边栏「已归档的聊天」管理页，样式跟随 DSH 明暗主题。桥接自己拒绝非回环请求、拒绝跨站来源、拒绝操作桥接自身，写操作串行执行。
+
+### 5. 消息模型与流状态机
+
+下行事件（`user/message`、`assistant/chunk`、`assistant/message`、`tool/call`、`tool/result`、`turn/end`）投影到内存 store，驱动气泡 / 工具卡片 / 流式 delta；`tool/call` + `tool/result` 折叠成一张卡片；历史按 `beforeSeq` 分页拉取，80 条是单页预算不是历史上限。
+
+### 6. 工程质量
+
+- 共享层业务逻辑全部有 `commonTest` 单测（协议解析、日志、附件校验、消息格式化、会话目录、搜索、导出选择、WebSocket URL……清理前 **205 项 0 失败**）；
+- 用独立探针驱动修复闭环：序号覆盖、容量不达标、降级误清除、取消前刷盘、复制漏工具结果——全部修完并固化回归；
+- SQLite 驱动从 `step()` 改 `execute()` 检查返回码，分页加结束哨兵，INSERT 拒绝冲突防覆盖。
+
+---
+
+## 任务完成度
+
+| 任务 | 主题 | 状态 |
+| --- | --- | --- |
+| Task 1 | 夜间模式与系统主题适配 | ✅ 基础 + 独立代码主题 |
+| 附加题 | Markdown 与 LaTeX 渲染 | ✅ KaTeX + Unicode 双轨 |
+| Task 2 | 文本选择、复制与导出 | ✅ 含 PDF / HTML / 多选批量 |
+| Task 3 | 图片与文件附件上传 | ✅ 预检 + Host 桥接 backport |
+| Task 4 | 会话删除、重命名与归档 | ✅ 含取消归档 / 永久删除 |
+| Task 5 | 插件菜单与插件状态展示 | ✅ 含详情 / 刷新 / 启停重载 |
+| Task 6 | 日志中心与问题反馈 | ✅ 含反馈包 / 崩溃捕获 / 跳回会话 |
+
+---
+
+## 技术栈
+
+| 层 | 选型 |
+| --- | --- |
+| 跨端 UI | 腾讯 Kuikly + Kotlin Multiplatform |
+| 并发 / 序列化 | kotlinx-coroutines 1.10.1 / kotlinx-serialization 1.8.0 |
+| 网络 | Ktor Client（Android OkHttp / iOS Darwin）+ 自研 WebSocket |
+| 本地存储 | kuiklySqlite（三端共用） |
+| Markdown / 公式 | KuiklyMarkdown + 自研流式增量渲染 + KaTeX 内联 |
+| Android | compileSdk 34 / minSdk 24 |
+| iOS | Xcode 15+ / iOS 14.1 / CocoaPods（NMSSH / PHPicker） |
+| 鸿蒙 | ArkTS 原生桥接 |
+| Host 桥接 | `host-plugin/`（Node.js，零额外依赖，装到 DSH `web` profile） |
+
+---
+
+## 怎么跑起来
+
+需要两个插件：外部的 `dsh-scan-remote`（扫码 Relay）+ 本仓库的 `host-plugin`（能力桥接）。
 
 ```bash
+# 1. 电脑起 Relay
 git clone https://github.com/yukiykchen/dsh-scan-remote.git
-cd dsh-scan-remote/relay
-cp .env.example .env
-npm ci
-npm run build
+cd dsh-scan-remote/relay && npm ci && npm run build
 HOST=127.0.0.1 PORT=8787 npm start
-```
 
-另开窗口确认还活着：
-
-```bash
-curl http://127.0.0.1:8787/health
-```
-
-**终端 2 — 安装插件并启动 DSH（默认 `127.0.0.1:3080`）**
-
-```bash
+# 2. 装外部扫码插件 + 本仓库桥接插件，起 DSH
 npx @deepseek-ai/dsh plugin --profile web add "github:yukiykchen/dsh-scan-remote#v0.0.1"
+npx @deepseek-ai/dsh plugin --profile web add "/absolute/path/deepseek-harness-mobile/host-plugin"
+PUBLIC_RELAY_URL=http://<电脑 LAN IP>:8787 npx @deepseek-ai/dsh web
 
-ipconfig getifaddr en0    # macOS Wi-Fi；Linux 用 ip addr / hostname -I
-export PUBLIC_RELAY_URL=http://192.168.1.10:8787   # 换成上一步的电脑 LAN IP，手机必须能打开
-npx @deepseek-ai/dsh web
-```
-
-浏览器打开本机 DSH，进入 **Settings > Remote Access**，应看到二维码。
-
-**手机 — 安装并打开 App**
-
-Android 试用包从 [GitHub Releases](https://github.com/yukiykchen/deepseek-harness-mobile/releases) 下载 `dsh-mobile-*.apk`，在系统设置里允许未知来源后安装。给仓库打 `v*` tag（例如 `v0.0.1`）会由 GitHub Actions 自动打 Release APK。
-
-也可以自己编：
-
-```bash
-git clone https://github.com/yukiykchen/deepseek-harness-mobile.git
-cd deepseek-harness-mobile
+# 3. 手机装 App（或自己编）
 ./gradlew :androidApp:installDebug
 ```
 
-或用 Android Studio 打开本仓库，运行 `androidApp`。打开 App → **扫码连接** → **扫描电脑二维码** → **连接已配对电脑**。
+App 里「扫码连接」扫电脑二维码即可；异地用 SSH 端口转发直连，不需要 Relay。
 
-DeepSeek API Key 配在电脑端 DSH，不要配在手机里。更细的说明、换网络、SSH 见下方各节。
+---
 
-## 工作原理
-
-### 扫码连接
+## 仓库结构
 
 ```text
-电脑 DSH :3080 (127.0.0.1)
-        ^
-        | 本机回环
-dsh-scan-remote 插件 --WSS--> Relay :8787 <--WSS-- 手机 App
-                                     ^
-                                     |
-                          二维码里的 publicRelayUrl
-                          必须是手机能访问的电脑 IP
+deepseek-harness-mobile/
+├── core-{model,platform,log,theme,data}/   # 5 个核心模块
+├── ui-{base,kit,settings,export,voice,web,dev}/  # 7 个 UI 模块
+├── shared/                                 # 聚合层 + DshHomePage 主页
+├── androidApp/ iosApp/ ohosApp/            # 三端宿主壳
+├── host-plugin/                            # ★ 本仓库自研 DSH 桥接插件
+│   ├── index.mjs       # 插件清单/启停/会话管理端点
+│   ├── attachment.mjs  # 通用文件附件 backport
+│   └── client.js        # 电脑端 Web 两个非侵入标签页
+├── tools/                                  # KaTeX 资源生成等
+└── docs/                                   # 协议 / 任务 / 设计文档
 ```
 
-手机配对成功后，在本机拉起一个 loopback WebSocket 网关，聊天协议与远程 Host 对齐。
+---
 
-### SSH
+## 它不是什么
 
-```text
-Android App -- HTTP/WS --> 127.0.0.1:<本地转发端口>
-                              |
-                         SSH tunnel
-                              |
-                         电脑 127.0.0.1:3080
-```
+- 不是离线模型——推理仍然走 DeepSeek 在线 API；
+- 不是 fork DSH——Host 侧零改动，全部能力走桥接；
+- 不是三端都验收完毕——iOS / 鸿蒙受 SDK 环境限制待真机回归；
+- 不是生产版本——仍在开发验证阶段。
 
-## 使用前置条件
+---
 
-### 1. DeepSeek API Key
-
-**扫码连接 / SSH**：Key 配在电脑端 DSH Host。
-
-请注意：
-
-- 不要把真实 API Key 写进 Git、截图或公开 Issue；
-- API Key 仍然用于访问 DeepSeek 在线模型，会产生网络流量和模型调用费用。
-
-### 2. 扫码连接需要电脑上的 Relay 和插件
-
-扫码模式不把 DSH 的 `3080` 端口暴露到公网。电脑上要额外跑一个 Relay（默认 `127.0.0.1:8787`），并给 DSH `web` profile 安装 `dsh-scan-remote`。下载、安装和启动步骤见下方「通过扫码连接」。
-
-电脑侧需要：
-
-- Node.js 18+（Relay 目录声明 `22.x`，用当前 LTS 即可）；
-- 已能在本机启动 `dsh web`（`npx @deepseek-ai/dsh` 或 Harness 仓库里的 `pnpm dsh web`）；
-- 手机和电脑在同一可互通网段（同一 Wi-Fi 或同一热点）。
-
-### 3. Android 开发环境
-
-建议使用：
-
-- Android Studio；
-- Android SDK、Platform 34 和对应的 Build Tools；
-- JDK 17 或 Android Studio 自带的 JBR；
-- 一台 Android 7.0（API 24）或更高版本的设备；
-- 已开启开发者选项和 USB 调试，或已配置无线调试。
-
-项目当前 Android 配置为：
-
-```text
-compileSdk = 34
-minSdk     = 24
-targetSdk  = 28
-```
-
-### 4. iOS 开发环境
-
-建议使用：
-
-- Xcode 15+（部署目标 iOS 14.1）；
-- CocoaPods（`iosApp` 目录执行 `pod install`）；
-- 一台 iOS 14.1 或更高版本的真机（扫码需要相机，SSH / 局域网 Relay 需要本机网络权限）。
-
-用 Xcode 打开 `iosApp/iosApp.xcworkspace`（不要只开 `xcodeproj`），选择 `iosApp` target 在真机上运行。NMSSH 自带的 OpenSSL 静态库是 iOS 真机切片，模拟器目前编不过 SSH 依赖；扫码也需要真机相机。
-
-## 获取源码
-
-```bash
-git clone git@github.com:yukiykchen/deepseek-harness-mobile.git
-cd deepseek-harness-mobile
-```
-
-如果使用 HTTPS：
-
-```bash
-git clone https://github.com/yukiykchen/deepseek-harness-mobile.git
-cd deepseek-harness-mobile
-```
-
-## 使用 Android Studio 启动
-
-1. 用 Android Studio 打开仓库根目录。
-2. 等待 Gradle Sync 完成，并确认 Android SDK、JDK 和依赖下载没有错误。
-3. 连接 Android 手机，确认 `adb devices` 能看到设备。
-4. 在 Android Studio 的运行配置中选择 `androidApp` 模块和目标手机。
-5. 点击 Run，等待 APK 安装并启动。
-6. 启动后先出现「连接 DSH」，选择扫码或 SSH。
-7. API Key 使用电脑上已配置的 Key。
-8. 创建会话并发送第一条消息。
-
-## 通过扫码连接电脑上的 DSH Host
-
-扫码模式走 [dsh-scan-remote](https://github.com/yukiykchen/dsh-scan-remote) 插件和本机 Relay。电脑上的 Harness 仍只监听 `127.0.0.1:3080`；手机和插件都出站连 Relay。更细的协议说明见[插件中文 README](https://github.com/yukiykchen/dsh-scan-remote/blob/master/README.zh-CN.md)。
-
-两件不要混：
-
-- `relay` / `DSH_RELAY`：插件连 Relay 用的地址，电脑本机一般是 `http://127.0.0.1:8787`。
-- `publicRelayUrl` / `PUBLIC_RELAY_URL`：写进二维码、给手机用的地址，必须是手机能打开的电脑 IP，例如 `http://192.168.1.10:8787`。
-
-先把手机和电脑连到**同一个 Wi-Fi 或同一个热点**。
-
-### 1. 下载并启动 Relay
-
-Relay 在插件仓库的 `relay/` 目录，没有单独的安装包。先克隆仓库：
-
-```bash
-git clone https://github.com/yukiykchen/dsh-scan-remote.git
-cd dsh-scan-remote/relay
-```
-
-用 npm 启动（需要 Node.js）：
-
-```bash
-cp .env.example .env
-npm ci
-npm run build
-HOST=127.0.0.1 PORT=8787 npm start
-```
-
-或用 Docker（仍在 `relay/` 目录）：
-
-```bash
-docker compose up --build
-```
-
-确认本机健康检查通过：
-
-```bash
-curl http://127.0.0.1:8787/health
-```
-
-Relay 要一直开着。关掉后手机扫码和隧道都会断。
-
-### 2. 给 DSH 安装扫码插件
-
-另开一个终端（Relay 那个窗口不要停）：
-
-```bash
-npx @deepseek-ai/dsh plugin --profile web add "github:yukiykchen/dsh-scan-remote#v0.0.1"
-```
-
-如果已经装过，可以跳过这一步。Settings 里没有 **Remote Access** 时，多半是插件没装到 `web` profile，或 Host 不是用这个 profile 启动的。
-
-### 3. 写入手机能访问的电脑地址并启动 DSH
-
-看电脑当前局域网 IP（手机必须能 ping 通这一台）：
-
-```bash
-ipconfig getifaddr en0    # macOS Wi-Fi
-# 或 ifconfig / ip addr
-```
-
-把这个地址写进二维码 origin 后启动 Host：
-
-```bash
-export PUBLIC_RELAY_URL=http://192.168.1.10:8787   # 换成上一步看到的电脑 LAN IP
-npx @deepseek-ai/dsh web
-```
-
-如果本机是从 DeepSeek Harness 仓库开发，也可以用仓库里的 `pnpm dsh web`。已经用过插件时，可以直接改 `~/.dsh-scan-remote/config.json` 的 `publicRelayUrl`，再重启 DSH。
-
-打开浏览器里的 DSH：**Settings > Remote Access**，应看到二维码、倒计时和电脑名。确认码里的地址是当前网段，而不是上一张网的 IP。
-
-### 4. 手机扫码
-
-1. 打开 Android 或 iOS App，选 **扫码连接**。
-2. 点 **扫描电脑二维码**，对准 Settings 页的码。
-3. 配对成功后点 **连接已配对电脑**。
-
-首版只保存一台电脑。换电脑先点「移除这台电脑」，再扫新码。
-
-二维码里的 origin 在生成时写死。电脑换 Wi-Fi、改连热点、或从公司网切到另一网段后，必须改 `publicRelayUrl`、重启 DSH、再扫**新码**。只把手机和电脑连到同一个 Wi-Fi 还不够，如果码里仍是旧 IP，手机照样超时。
-
-## 通过 SSH 连接电脑上的 DSH Host
-
-SSH 模式只建立本地端口转发，不通过 SSH 执行远程命令，也不需要把 DSH 端口暴露到公网。
-
-电脑端先启动 DSH，并保持回环监听（SSH 模式不需要 Relay）：
-
-```bash
-npx @deepseek-ai/dsh web --port 3080
-```
-
-推荐为手机使用的 SSH 用户配置 Ed25519 公钥：
-
-```bash
-ssh-keygen -t ed25519
-ssh-copy-id your-user@your-computer
-```
-
-Windows OpenSSH 用户可以把 `.pub` 文件内容追加到 `%USERPROFILE%\\.ssh\\authorized_keys`。手机和电脑不在同一局域网时，可以让两台设备加入同一个 Tailscale 或 ZeroTier 网络，然后在 App 中填写虚拟地址，例如 `100.86.12.34`。
-
-在 App 中填写 SSH 主机、SSH 端口、用户名和远程 DSH 端口，然后导入私钥。首次连接会展示 SSH 主机指纹；确认后会用于后续校验，指纹变化时需要重新确认。
-
-SSH 模式下 API Key 应配置在电脑端 DSH Host 中。扫码和 SSH 的会话缓存彼此隔离，远程 Host 是远程会话的最终数据来源。
-
-App 支持用户主动开启 Android 前台服务来保持后台 SSH 隧道，但 Android 可能限制长时间后台服务。网络切换或系统回收后，App 会尝试重连，并通过会话历史恢复已被远程 Host 接受的任务。
-
-## 使用 Gradle 命令行构建和安装
-
-在仓库根目录执行：
-
-```bash
-./gradlew :androidApp:assembleDebug
-```
-
-生成的 APK 位于：
-
-```text
-androidApp/build/outputs/apk/debug/androidApp-debug.apk
-```
-
-连接手机后可以直接安装：
-
-```bash
-./gradlew :androidApp:installDebug
-```
-
-或者使用 ADB：
-
-```bash
-adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
-```
-
-## 首次启动流程
-
-App 先打开「连接 DSH」，不会启动内嵌内核。
-
-**扫码连接**进入首页后：恢复 Relay 配对、经 Relay 建隧道、在本机 loopback 上连远程 `events.mux`（WebSocket）。
-
-**SSH** 进入首页后：建立本地端口转发，再按远程 Host 协议拉会话。
-
-## 当前支持的能力
-
-当前首页主要提供一个移动端 Harness Chat 界面，包括：
-
-- 创建和切换会话；
-- 恢复会话历史；
-- 查询可用模型并切换模型；
-- Markdown 消息渲染；
-- 流式回答；
-- 取消当前请求；
-- 展示工具调用事件；
-- 图片附件发送、历史图片预览（各平台取图能力与验收状态见任务清单）；
-- 本地 SQLite 会话和消息缓存。
-
-## 目录结构
-
-```text
-androidApp/
-  src/main/java/.../relay/          # 扫码、sealed tunnel、本机 loopback 网关
-  src/main/java/.../ssh/            # SSH 转发
-  src/main/java/.../module/         # Android/Kuikly 原生模块
-
-shared/
-  src/commonMain/.../dsh/            # 跨平台 UI、协议、模型和本地存储接口
-  src/androidMain/.../dsh/           # Android SQLite 存储实现
-  src/iosMain/.../dsh/               # iOS 存储实现
-  src/ohosMain/.../dsh/              # OpenHarmony 存储实现
-
-iosApp/                              # iOS 宿主工程
-ohosApp/                             # OpenHarmony 宿主工程
-```
-
-比较重要的文件：
-
-- [`DshConnectionSetupPage.kt`](shared/src/commonMain/kotlin/com/example/dsh/connection/DshConnectionSetupPage.kt)：启动时选择扫码 / SSH；
-- [`DshRelayManager.kt`](androidApp/src/main/java/com/example/dsh/relay/DshRelayManager.kt)：扫码配对、sealed tunnel 和本机 loopback 网关；
-- [`DshHostProtocol.kt`](shared/src/commonMain/kotlin/com/example/dsh/conversation/DshHostProtocol.kt)：App 与 Host 的 RPC 和事件协议；
-- [`DshHomePage.kt`](shared/src/commonMain/kotlin/com/example/dsh/home/DshHomePage.kt)：聊天、会话、输入框和模型配置；
-- [`DshLocalStore.android.kt`](shared/src/androidMain/kotlin/com/example/dsh/storage/DshLocalStore.android.kt)：按连接 scope 隔离的本地数据库。
-
-## 网络和通信说明
-
-远程模式最终都把 Host 看成「本机可访问的 DSH HTTP API」。方法表、信封和 mux/host 帧见 **[docs/app-host-protocol.md](docs/app-host-protocol.md)**。
-
-**扫码连接**：手机经 Relay 与电脑插件建 sealed tunnel，再在手机 `127.0.0.1:<loopback>` 上露出 Host。事件流是 WebSocket，不是 SSE。二维码 origin 必须是手机能打开的电脑地址；插件连 Relay 仍用电脑本机 `127.0.0.1:8787`。
-
-**SSH**：`127.0.0.1` 是手机上的 SSH 本地转发端点，实际流量到电脑 `127.0.0.1:3080`。远程模式使用 HTTP RPC + WebSocket，DSH API 路径不变。
-
-如果事件流断开，客户端仍会尝试用会话历史恢复结果。
-
-## 故障排查
-
-### 扫码后连不上电脑
-
-1. 电脑和手机是否在同一可互通网段，而不是只「看起来连了 Wi-Fi」；
-2. 二维码 / `publicRelayUrl` 是否仍是上一张网的 IP；
-3. 改完配置后是否重启了 `dsh web`，以及是否重新扫了新码；
-4. 电脑上 Relay 是否还在 `8787` 监听；
-5. 电脑防火墙是否拦截了来自手机的 `8787`。
-
-### API Key 配置成功但无法回答
-
-请检查：
-
-- API Key 是否有效，且已配在电脑端 DSH；
-- 手机是否可以访问 Relay / SSH 主机；
-- 当前选择的模型是否可用；
-- 手机时间是否正确，避免 TLS 或鉴权异常。
-
-## 开发说明
-
-当前任务、验证结果和剩余验收统一记录在 **[docs/tasks.md](docs/tasks.md)**。
-
-新增入口：消息菜单支持有序复制/选择与分享，代码块支持独立复制；会话菜单提供「导出可读文本」，会自动读取全部历史分页。设置中的「Host 插件」需要在电脑安装本仓库的只读桥接，安装方法见 **[host-plugin/README.md](host-plugin/README.md)**。
-
-修改 Kotlin 或 Kuikly 代码后，重新执行：
-
-```bash
-./gradlew :androidApp:assembleDebug
-```
-
-iOS 在 `iosApp` 执行 `pod install` 后，用 Xcode 打开 `iosApp.xcworkspace` 编译。
-
-## 当前限制
-
-- 当前主要验证 Android / iOS 移动端宿主流程；
-- 模型推理仍然依赖 DeepSeek 在线 API，不是完全离线模型；
-- 扫码二维码绑定电脑当前局域网 IP，换网络后必须改 `publicRelayUrl`、重启 DSH 并重新扫码；
-- Android 后台进程可能被系统或厂商策略回收；iOS 在后台时系统可能暂停本机 loopback / SSH 转发。
-
-## 许可证和上游项目
-
-本项目是移动端集成和实验性宿主代码。DeepSeek Harness 的许可证、第三方依赖和使用限制请以其上游仓库为准：
-
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-- [DeepSeek Harness 中文说明](https://github.com/deepseek-ai/deepseek-harness/blob/main/README.zh.md)
+> DeepSeek Harness · Kuikly · Kotlin Multiplatform —— 把 Agent 装进口袋。
