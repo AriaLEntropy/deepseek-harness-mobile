@@ -67,8 +67,8 @@ jobs:
       - name: Compile and link iOS frameworks
         run: >-
           ./gradlew
-          :shared:linkDebugFrameworkIosSimulatorArm64
-          :shared:linkDebugFrameworkIosArm64
+          :shared:linkPodDebugFrameworkIosSimulatorArm64
+          :shared:linkPodDebugFrameworkIosArm64
           --stacktrace
 
   host-plugin:
