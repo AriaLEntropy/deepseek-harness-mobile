@@ -31,6 +31,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Architecture layering check
+        run: ./gradlew checkLayering --stacktrace
+
       - name: Unit tests
         run: ./gradlew :shared:testDebugUnitTest --stacktrace
 
@@ -44,6 +47,29 @@ jobs:
           name: shared-test-report
           path: shared/build/reports/tests/testDebugUnitTest
           if-no-files-found: ignore
+
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generate podspec
+        run: ./gradlew :shared:podspec --stacktrace
+
+      - name: Compile and link iOS frameworks
+        run: >-
+          ./gradlew
+          :shared:linkDebugFrameworkIosSimulatorArm64
+          :shared:linkDebugFrameworkIosArm64
+          --stacktrace
 
   host-plugin:
     runs-on: ubuntu-latest

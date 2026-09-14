@@ -29,6 +29,18 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "DSH"
+include(":core-model")
+include(":core-platform")
+include(":core-log")
+include(":core-theme")
+include(":core-data")
+include(":ui-base")
+include(":ui-kit")
+include(":ui-voice")
+include(":ui-export")
+include(":ui-settings")
+include(":ui-web")
+include(":ui-dev")
 include(":androidApp")
 include(":shared")
 include(":h5App")

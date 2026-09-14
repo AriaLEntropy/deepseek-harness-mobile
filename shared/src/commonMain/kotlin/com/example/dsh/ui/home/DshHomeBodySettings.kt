@@ -24,18 +24,18 @@ internal fun DshHomePage.bodySettingsOverlays(): ViewBuilder {
     val ctx = this
     return {
         // ===== 设置页（ds 风格：顶部居中标题，账户/权限/应用/关于分组） =====
-        vif({ ctx.settingsPageVisible }) {
+        vif({ ctx.ui.settingsPageVisible }) {
             DshSettingsPage(
-                loading = { ctx.settingsLoading },
-                error = { ctx.settingsError },
-                snapshot = { ctx.settingsSnapshot },
+                loading = { ctx.ui.settingsLoading },
+                error = { ctx.ui.settingsError },
+                snapshot = { ctx.ui.settingsSnapshot },
                 isRemoteHost = { ctx.isRemoteHost },
                 connectionModeLabel = { ctx.connectionModeLabel() },
                 modelsSummary = { ctx.modelsSummary() },
-                hostVersion = { ctx.hostVersion },
+                hostVersion = { ctx.ui.hostVersion },
                 themeMode = { ctx.themeMode },
-                processDisplayMode = { ctx.chatProcessMode },
-                agentPresetLabel = { ctx.agentModeLabel },
+                processDisplayMode = { ctx.ui.chatProcessMode },
+                agentPresetLabel = { ctx.ui.agentModeLabel },
                 onClose = { ctx.closeSettingsPage() },
                 onRetry = { ctx.reloadSettings() },
                 onOpenConnection = { ctx.openConnectionSettings() },
@@ -53,12 +53,12 @@ internal fun DshHomePage.bodySettingsOverlays(): ViewBuilder {
         }
 
         // ===== 设置页「个性化」子页面：过程展示方式（互斥）+ 弹窗查看开关 =====
-        vif({ ctx.personalizationPageVisible }) {
+        vif({ ctx.ui.personalizationPageVisible }) {
             DshPersonalizationPage(
-                mode = { ctx.chatProcessMode },
-                expandInModal = { ctx.chatExpandInModal },
-                showConnectors = { ctx.chatShowConnectors },
-                showResultCards = { ctx.chatShowResultCards },
+                mode = { ctx.ui.chatProcessMode },
+                expandInModal = { ctx.ui.chatExpandInModal },
+                showConnectors = { ctx.ui.chatShowConnectors },
+                showResultCards = { ctx.ui.chatShowResultCards },
                 onPickMode = { ctx.applyChatProcessMode(it) },
                 onToggleExpandInModal = { ctx.applyChatExpandInModal(it) },
                 onToggleConnectors = { ctx.applyChatShowConnectors(it) },
@@ -69,38 +69,38 @@ internal fun DshHomePage.bodySettingsOverlays(): ViewBuilder {
         }
 
         // ===== 展开内容底部大弹层（「弹窗查看」开启时） =====
-        vif({ ctx.expandedPayload != null }) {
+        vif({ ctx.ui.expandedPayload != null }) {
             DshExpandedContentModal(
-                payload = { ctx.expandedPayload },
+                payload = { ctx.ui.expandedPayload },
                 onClose = { ctx.closeExpandedModal() },
                 colors = { ctx.themeColors },
             )
         }
 
-        vif({ ctx.pluginInventoryVisible }) {
+        vif({ ctx.ui.pluginInventoryVisible }) {
             DshPluginSettingsView(
-                activeTab = { ctx.pluginActiveTab }, onSelectTab = { ctx.selectPluginTab(it) },
-                loading = { ctx.pluginInventoryLoading }, error = { ctx.pluginInventoryError },
+                activeTab = { ctx.ui.pluginActiveTab }, onSelectTab = { ctx.selectPluginTab(it) },
+                loading = { ctx.ui.pluginInventoryLoading }, error = { ctx.ui.pluginInventoryError },
                 keyword = { ctx.pluginSearchInput }, onKeyword = { ctx.onPluginKeyword(it) },
-                hasKeyword = { ctx.pluginSearchHasText }, onClearKeyword = { ctx.clearPluginKeyword() },
+                hasKeyword = { ctx.ui.pluginSearchHasText }, onClearKeyword = { ctx.clearPluginKeyword() },
                 onSearchInputRef = { ctx.pluginSearchInputView = it.view },
                 onRefresh = { ctx.refreshPluginInventory() }, onClose = { ctx.closePluginInventory() },
-                rows = { ctx.pluginRows }, total = { ctx.pluginTotal },
-                expandedId = { ctx.pluginExpandedId }, busyId = { ctx.pluginBusyId },
+                rows = { ctx.ui.pluginRows }, total = { ctx.ui.pluginTotal },
+                expandedId = { ctx.ui.pluginExpandedId }, busyId = { ctx.ui.pluginBusyId },
                 onToggleExpand = { ctx.togglePluginExpanded(it) },
-                actionError = { ctx.pluginActionError }, actionNotice = { ctx.pluginNotice },
+                actionError = { ctx.ui.pluginActionError }, actionNotice = { ctx.ui.pluginNotice },
                 onToggleEnabled = { entry, enable -> ctx.requestPluginToggle(entry, enable) },
                 onReload = { ctx.requestPluginReload(it) },
-                confirmEntry = { ctx.pluginActionTarget }, confirmAction = { ctx.pluginConfirmAction },
+                confirmEntry = { ctx.ui.pluginActionTarget }, confirmAction = { ctx.ui.pluginConfirmAction },
                 onConfirm = { ctx.confirmPluginAction() }, onCancelConfirm = { ctx.cancelPluginAction() },
-                configCards = { ctx.pluginConfigCards }, configLoading = { ctx.pluginConfigLoading },
-                configError = { ctx.pluginConfigError }, configWritable = { ctx.pluginConfigWritable },
+                configCards = { ctx.ui.pluginConfigCards }, configLoading = { ctx.ui.pluginConfigLoading },
+                configError = { ctx.ui.pluginConfigError }, configWritable = { ctx.ui.pluginConfigWritable },
                 configDraft = { ns, key -> ctx.pluginConfigDraft(ns, key) },
                 configSecretDraft = { ns -> ctx.pluginConfigSecretDraft(ns) },
                 configCollapsed = { ns -> ctx.isPluginConfigCollapsed(ns) },
-                configBusyNamespace = { ctx.pluginConfigBusyNamespace },
-                configCardError = { ns -> ctx.pluginConfigCardError[ns] ?: "" },
-                configCardNotice = { ns -> ctx.pluginConfigCardNotice[ns] ?: "" },
+                configBusyNamespace = { ctx.ui.pluginConfigBusyNamespace },
+                configCardError = { ns -> ctx.ui.pluginConfigCardError[ns] ?: "" },
+                configCardNotice = { ns -> ctx.ui.pluginConfigCardNotice[ns] ?: "" },
                 configHasChanges = { ns -> ctx.hasPluginConfigChanges(ns) },
                 onConfigDraft = { ns, key, value -> ctx.onPluginConfigDraft(ns, key, value) },
                 onConfigSecretDraft = { ns, value -> ctx.onPluginConfigSecretDraft(ns, value) },
@@ -112,65 +112,65 @@ internal fun DshHomePage.bodySettingsOverlays(): ViewBuilder {
         }
 
         // ===== 设置页「模型」详情页（对齐电脑端 settings.models） =====
-        vif({ ctx.modelsPageVisible }) {
+        vif({ ctx.ui.modelsPageVisible }) {
             DshModelsPage(
-                loading = { ctx.modelsLoading },
-                error = { ctx.modelsError },
-                writable = { ctx.modelsWritable },
-                configuredProviders = { ctx.modelsConfiguredProviders },
-                addableProviders = { ctx.modelsAddableProviders },
-                editingProvider = { ctx.modelsEditingProvider },
-                pickerVisible = { ctx.modelsPickerVisible },
-                customAdding = { ctx.modelsCustomAdding },
-                savedNotice = { ctx.modelsSavedNotice },
-                editorAdvanced = { ctx.modelsEditorAdvanced },
-                onToggleEditorAdvanced = { ctx.modelsEditorAdvanced = !ctx.modelsEditorAdvanced },
-                draftBaseUrl = { ctx.modelsDraftBaseUrl },
-                draftApiKey = { ctx.modelsDraftApiKey },
-                draftModels = { ctx.modelsDraftModels },
-                saving = { ctx.modelsSaving },
-                saveError = { ctx.modelsSaveError },
-                customProtocols = { ctx.modelsProtocols },
-                customRoute = { ctx.modelsCustomRoute },
-                customName = { ctx.modelsCustomName },
-                customBaseUrl = { ctx.modelsCustomBaseUrl },
-                customProtocol = { ctx.modelsCustomProtocol },
-                customApiKey = { ctx.modelsCustomApiKey },
-                customModels = { ctx.modelsCustomModels },
-                customBusy = { ctx.modelsCustomBusy },
-                customError = { ctx.modelsCustomError },
-                deleteTarget = { ctx.modelsDeleteTarget },
-                deleting = { ctx.modelsDeleting },
+                loading = { ctx.ui.modelsLoading },
+                error = { ctx.ui.modelsError },
+                writable = { ctx.ui.modelsWritable },
+                configuredProviders = { ctx.ui.modelsConfiguredProviders },
+                addableProviders = { ctx.ui.modelsAddableProviders },
+                editingProvider = { ctx.ui.modelsEditingProvider },
+                pickerVisible = { ctx.ui.modelsPickerVisible },
+                customAdding = { ctx.ui.modelsCustomAdding },
+                savedNotice = { ctx.ui.modelsSavedNotice },
+                editorAdvanced = { ctx.ui.modelsEditorAdvanced },
+                onToggleEditorAdvanced = { ctx.ui.modelsEditorAdvanced = !ctx.ui.modelsEditorAdvanced },
+                draftBaseUrl = { ctx.ui.modelsDraftBaseUrl },
+                draftApiKey = { ctx.ui.modelsDraftApiKey },
+                draftModels = { ctx.ui.modelsDraftModels },
+                saving = { ctx.ui.modelsSaving },
+                saveError = { ctx.ui.modelsSaveError },
+                customProtocols = { ctx.ui.modelsProtocols },
+                customRoute = { ctx.ui.modelsCustomRoute },
+                customName = { ctx.ui.modelsCustomName },
+                customBaseUrl = { ctx.ui.modelsCustomBaseUrl },
+                customProtocol = { ctx.ui.modelsCustomProtocol },
+                customApiKey = { ctx.ui.modelsCustomApiKey },
+                customModels = { ctx.ui.modelsCustomModels },
+                customBusy = { ctx.ui.modelsCustomBusy },
+                customError = { ctx.ui.modelsCustomError },
+                deleteTarget = { ctx.ui.modelsDeleteTarget },
+                deleting = { ctx.ui.modelsDeleting },
                 onClose = { ctx.closeModelsPage() },
                 onRetry = { ctx.reloadModelsSettings() },
                 onEdit = { ctx.openProviderEditor(it) },
                 onCancelAdd = { ctx.cancelAddProvider() },
-                onOpenPicker = { ctx.modelsPickerVisible = true },
-                onClosePicker = { ctx.modelsPickerVisible = false },
+                onOpenPicker = { ctx.ui.modelsPickerVisible = true },
+                onClosePicker = { ctx.ui.modelsPickerVisible = false },
                 onSelectAddable = { ctx.selectAddableProvider(it) },
                 onOpenCustom = { ctx.openCustomProvider() },
                 onCancelCustom = { ctx.cancelCustomProvider() },
-                onBaseUrlChange = { ctx.modelsDraftBaseUrl = it; ctx.modelsSaveError = "" },
-                onApiKeyChange = { ctx.modelsDraftApiKey = it; ctx.modelsSaveError = "" },
+                onBaseUrlChange = { ctx.ui.modelsDraftBaseUrl = it; ctx.ui.modelsSaveError = "" },
+                onApiKeyChange = { ctx.ui.modelsDraftApiKey = it; ctx.ui.modelsSaveError = "" },
                 onModelChange = { index, field, value ->
                     ctx.updateDraftModel(index, field, value)
-                    ctx.modelsSaveError = ""
+                    ctx.ui.modelsSaveError = ""
                 },
                 onAddModel = { ctx.addDraftModel() },
                 onRemoveModel = { ctx.removeDraftModel(it) },
                 onApply = { ctx.applyProviderEditor(it) },
-                onCustomRoute = { ctx.modelsCustomRoute = it; ctx.modelsCustomError = "" },
-                onCustomName = { ctx.modelsCustomName = it },
-                onCustomBaseUrl = { ctx.modelsCustomBaseUrl = it; ctx.modelsCustomError = "" },
-                onCustomProtocol = { ctx.modelsCustomProtocol = it },
-                onCustomApiKey = { ctx.modelsCustomApiKey = it },
+                onCustomRoute = { ctx.ui.modelsCustomRoute = it; ctx.ui.modelsCustomError = "" },
+                onCustomName = { ctx.ui.modelsCustomName = it },
+                onCustomBaseUrl = { ctx.ui.modelsCustomBaseUrl = it; ctx.ui.modelsCustomError = "" },
+                onCustomProtocol = { ctx.ui.modelsCustomProtocol = it },
+                onCustomApiKey = { ctx.ui.modelsCustomApiKey = it },
                 onCustomModelChange = { index, field, value -> ctx.updateCustomModel(index, field, value) },
-                onCustomAddModel = { ctx.modelsCustomModels.add(DshProviderModel()) },
+                onCustomAddModel = { ctx.ui.modelsCustomModels.add(DshProviderModel()) },
                 onCustomRemoveModel = { ctx.removeCustomModel(it) },
                 onApplyCustom = { ctx.applyCustomProvider() },
                 onRequestDelete = { ctx.requestRemoveProvider(it) },
                 onConfirmDelete = { ctx.confirmRemoveProvider() },
-                onCancelDelete = { ctx.modelsDeleteTarget = null },
+                onCancelDelete = { ctx.ui.modelsDeleteTarget = null },
                 colors = { ctx.themeColors },
             )
         }
@@ -182,20 +182,20 @@ internal fun DshHomePage.bodySettingsChoiceAndCredentials(): ViewBuilder {
     val ctx = this
     return {
         // ===== 设置项选择器（权限预设 / 语言 / 外观） =====
-        vif({ ctx.settingsChoiceKind.isNotEmpty() }) {
+        vif({ ctx.ui.settingsChoiceKind.isNotEmpty() }) {
             DshSettingsChoicePicker(
-                title = ctx.settingsChoiceTitle,
-                options = { ctx.settingsChoiceOptions },
+                title = ctx.ui.settingsChoiceTitle,
+                options = { ctx.ui.settingsChoiceOptions },
                 selectedValue = {
-                    when (ctx.settingsChoiceKind) {
-                        "permission" -> ctx.settingsSnapshot.permissionPreset
-                        "locale" -> ctx.settingsSnapshot.localeValue
+                    when (ctx.ui.settingsChoiceKind) {
+                        "permission" -> ctx.ui.settingsSnapshot.permissionPreset
+                        "locale" -> ctx.ui.settingsSnapshot.localeValue
                         "theme" -> DshThemeManager.preferenceValue
                         else -> ""
                     }
                 },
-                busy = { ctx.settingsChoiceBusy },
-                onClose = { if (!ctx.settingsChoiceBusy) ctx.settingsChoiceKind = "" },
+                busy = { ctx.ui.settingsChoiceBusy },
+                onClose = { if (!ctx.ui.settingsChoiceBusy) ctx.ui.settingsChoiceKind = "" },
                 onSelect = { ctx.applySettingsChoice(it) },
                 colors = { ctx.themeColors },
             )
@@ -203,18 +203,18 @@ internal fun DshHomePage.bodySettingsChoiceAndCredentials(): ViewBuilder {
 
         // ===== API Key 设置弹窗 =====
         // 输入并保存 DeepSeek API Key（也可用于修改远程 DSH 的 Key）。
-        vif({ ctx.credentialSetupVisible }) {
+        vif({ ctx.ui.credentialSetupVisible }) {
             DshCredentialSetupModal(
-                title = { ctx.credentialSetupTitle },
-                busy = { ctx.credentialSetupBusy },
-                error = { ctx.credentialSetupError },
+                title = { ctx.ui.credentialSetupTitle },
+                busy = { ctx.ui.credentialSetupBusy },
+                error = { ctx.ui.credentialSetupError },
                 inputRef = {
                     ctx.apiKeyInputView = it.view
-                    ctx.apiKeyInputView?.setText(ctx.apiKeyDraft)
+                    ctx.apiKeyInputView?.setText(ctx.ui.apiKeyDraft)
                 },
                 onApiKeyChange = {
-                    ctx.apiKeyDraft = it
-                    ctx.credentialSetupError = ""
+                    ctx.ui.apiKeyDraft = it
+                    ctx.ui.credentialSetupError = ""
                 },
                 onSave = { ctx.saveDeepSeekApiKey() },
                 onClose = { ctx.closeCredentialSettings() },
@@ -223,24 +223,24 @@ internal fun DshHomePage.bodySettingsChoiceAndCredentials(): ViewBuilder {
         }
         // ===== 连接设置弹窗 =====
         // 配置连接方式（扫码 RELAY / SSH）：主机、端口、用户名、私钥导入、指纹确认、DSH 端口。
-        vif({ ctx.sshSettingsVisible }) {
+        vif({ ctx.ui.sshSettingsVisible }) {
             DshConnectionSettingsModal(
                 sshMode = { ctx.sshMode },
-                host = { ctx.sshHost },
-                user = { ctx.sshUser },
-                port = { ctx.sshPort },
-                dshPort = { ctx.sshDshPort },
-                keyLabel = { ctx.sshKeyLabel },
-                keyPassphrase = { ctx.sshKeyPassphrase },
-                busy = { ctx.sshSettingsBusy },
-                error = { ctx.sshSettingsError },
+                host = { ctx.ui.sshHost },
+                user = { ctx.ui.sshUser },
+                port = { ctx.ui.sshPort },
+                dshPort = { ctx.ui.sshDshPort },
+                keyLabel = { ctx.ui.sshKeyLabel },
+                keyPassphrase = { ctx.ui.sshKeyPassphrase },
+                busy = { ctx.ui.sshSettingsBusy },
+                error = { ctx.ui.sshSettingsError },
                 onModeChange = { ctx.setConnectionMode(it) },
-                onHostChange = { ctx.sshHost = it; ctx.sshSettingsError = "" },
-                onUserChange = { ctx.sshUser = it; ctx.sshSettingsError = "" },
-                onPortChange = { ctx.sshPort = it; ctx.sshSettingsError = "" },
-                onDshPortChange = { ctx.sshDshPort = it; ctx.sshSettingsError = "" },
+                onHostChange = { ctx.ui.sshHost = it; ctx.ui.sshSettingsError = "" },
+                onUserChange = { ctx.ui.sshUser = it; ctx.ui.sshSettingsError = "" },
+                onPortChange = { ctx.ui.sshPort = it; ctx.ui.sshSettingsError = "" },
+                onDshPortChange = { ctx.ui.sshDshPort = it; ctx.ui.sshSettingsError = "" },
                 onPickKey = { ctx.pickSshKey() },
-                onPassphraseChange = { ctx.sshKeyPassphrase = it },
+                onPassphraseChange = { ctx.ui.sshKeyPassphrase = it },
                 onTrustFingerprint = { ctx.trustSshFingerprint() },
                 onSave = { ctx.saveConnectionSettings() },
                 onClose = { ctx.updateSshSettingsVisibility(false) },
@@ -259,31 +259,31 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
     return {
         // ===== 新建会话-工作区选择弹窗（最近的文件夹 / 添加文件夹） =====
         // 仅远程模式、且当前会话尚未发送第一条消息（blank）时可用。
-        vif({ ctx.workspacePickerVisible && ctx.isRemoteHost }) {
+        vif({ ctx.ui.workspacePickerVisible && ctx.isRemoteHost }) {
             DshWorkspacePickerModal(
-                screen = { ctx.workspacePickerScreen },
-                folders = { ctx.workspacePickerFolders },
+                screen = { ctx.ui.workspacePickerScreen },
+                folders = { ctx.ui.workspacePickerFolders },
                 activeWorkspaceId = { ctx.activeWorkspaceId() },
-                busy = { ctx.workspacePickerBusy || ctx.workspaceAddBusy },
-                error = { ctx.workspacePickerError },
+                busy = { ctx.ui.workspacePickerBusy || ctx.ui.workspaceAddBusy },
+                error = { ctx.ui.workspacePickerError },
                 onSelectFolder = { ctx.switchWorkspaceTo(it) },
                 onAddFolder = { ctx.openWorkspaceAddFolder() },
                 onBack = { ctx.onWorkspacePickerBack() },
                 onClose = { ctx.closeWorkspacePicker() },
-                path = { ctx.workspaceAddPath },
-                home = { ctx.workspaceAddHome },
-                entries = { ctx.workspaceAddEntries },
-                newName = { ctx.workspaceAddNewName },
-                keyboardHeight = { ctx.workspaceAddKeyboardHeight },
+                path = { ctx.ui.workspaceAddPath },
+                home = { ctx.ui.workspaceAddHome },
+                entries = { ctx.ui.workspaceAddEntries },
+                newName = { ctx.ui.workspaceAddNewName },
+                keyboardHeight = { ctx.ui.workspaceAddKeyboardHeight },
                 onKeyboardHeightChange = {
-                    if (ctx.workspacePickerVisible && ctx.workspacePickerScreen == DshWorkspacePickerScreen.ADD) {
-                        ctx.workspaceAddKeyboardHeight = it.coerceAtLeast(0f)
+                    if (ctx.ui.workspacePickerVisible && ctx.ui.workspacePickerScreen == DshWorkspacePickerScreen.ADD) {
+                        ctx.ui.workspaceAddKeyboardHeight = it.coerceAtLeast(0f)
                     }
                 },
                 onNewNameInputRef = { ctx.workspaceAddInputView = it },
-                directoryLoaded = { ctx.workspaceAddDirectoryLoaded },
+                directoryLoaded = { ctx.ui.workspaceAddDirectoryLoaded },
                 onDirectorySelect = { ctx.loadWorkspaceAddDirectory(it) },
-                onNewNameChange = { ctx.workspaceAddNewName = it },
+                onNewNameChange = { ctx.ui.workspaceAddNewName = it },
                 onCreateDirectory = { ctx.createWorkspaceAddDirectory() },
                 onAdopt = { ctx.adoptWorkspaceAddDirectory() },
                 colors = { ctx.themeColors },
@@ -291,7 +291,7 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
         }
         // ===== 重命名工作区 弹窗 =====
         // 内嵌 Modal：输入新名称 → 保存/取消；错误信息红字显示。
-        vif({ ctx.workspaceRenameTargetId.isNotEmpty() && ctx.isRemoteHost }) {
+        vif({ ctx.ui.workspaceRenameTargetId.isNotEmpty() && ctx.isRemoteHost }) {
             Modal(inWindow = true) {
                 attr {
                     absolutePositionAllZero()
@@ -316,22 +316,22 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
                             fontSize(14f)
                             placeholder("工作区名称")
                             placeholderColor(ctx.themeColors.labelTertiary)
-                            text(ctx.workspaceRenameDraft)
+                            text(ctx.ui.workspaceRenameDraft)
                         }
-                        event { textDidChange { ctx.workspaceRenameDraft = it.text } }
+                        event { textDidChange { ctx.ui.workspaceRenameDraft = it.text } }
                     }
-                    vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                        Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(ctx.themeColors.stateErrorPrimary) } }
+                    vif({ ctx.ui.workspaceActionError.isNotEmpty() }) {
+                        Text { attr { text(ctx.ui.workspaceActionError); marginTop(8f); fontSize(12f); color(ctx.themeColors.stateErrorPrimary) } }
                     }
                     View {
                         attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                         Text {
                             attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(ctx.themeColors.labelTertiary) }
-                            event { click { ctx.workspaceRenameTargetId = ""; ctx.workspaceActionError = "" } }
+                            event { click { ctx.ui.workspaceRenameTargetId = ""; ctx.ui.workspaceActionError = "" } }
                         }
                         Text {
-                            attr { text(if (ctx.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(ctx.themeColors.stateBusinessPrimary) }
-                            event { click { if (!ctx.workspaceActionBusy) ctx.saveWorkspaceRename() } }
+                            attr { text(if (ctx.ui.workspaceActionBusy) "保存中..." else "保存"); width(78f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(ctx.themeColors.stateBusinessPrimary) }
+                            event { click { if (!ctx.ui.workspaceActionBusy) ctx.saveWorkspaceRename() } }
                         }
                     }
                 }
@@ -339,7 +339,7 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
         }
         // ===== 删除工作区注册 确认弹窗 =====
         // 仅从列表移除注册，不删除实际目录/会话/日志；红色「删除注册」按钮。
-        vif({ ctx.workspaceDeleteTargetId.isNotEmpty() && ctx.isRemoteHost }) {
+        vif({ ctx.ui.workspaceDeleteTargetId.isNotEmpty() && ctx.isRemoteHost }) {
             Modal(inWindow = true) {
                 attr {
                     absolutePositionAllZero()
@@ -366,18 +366,18 @@ internal fun DshHomePage.bodyWorkspaceDialogs(): ViewBuilder {
                             color(ctx.themeColors.labelSecondary)
                         }
                     }
-                    vif({ ctx.workspaceActionError.isNotEmpty() }) {
-                        Text { attr { text(ctx.workspaceActionError); marginTop(8f); fontSize(12f); color(ctx.themeColors.stateErrorPrimary) } }
+                    vif({ ctx.ui.workspaceActionError.isNotEmpty() }) {
+                        Text { attr { text(ctx.ui.workspaceActionError); marginTop(8f); fontSize(12f); color(ctx.themeColors.stateErrorPrimary) } }
                     }
                     View {
                         attr { height(40f); marginTop(18f); flexDirectionRow(); justifyContentFlexEnd() }
                         Text {
                             attr { text("取消"); width(78f); height(38f); textAlignCenter(); fontSize(14f); color(ctx.themeColors.labelTertiary) }
-                            event { click { ctx.workspaceDeleteTargetId = ""; ctx.workspaceActionError = "" } }
+                            event { click { ctx.ui.workspaceDeleteTargetId = ""; ctx.ui.workspaceActionError = "" } }
                         }
                         Text {
-                            attr { text(if (ctx.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(ctx.themeColors.stateErrorPrimary) }
-                            event { click { if (!ctx.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
+                            attr { text(if (ctx.ui.workspaceActionBusy) "删除中..." else "删除注册"); width(112f); height(38f); marginLeft(8f); textAlignCenter(); fontSize(14f); color(ctx.themeColors.stateErrorPrimary) }
+                            event { click { if (!ctx.ui.workspaceActionBusy) ctx.confirmWorkspaceDelete() } }
                         }
                     }
                 }

@@ -30,16 +30,16 @@ internal fun DshHomePage.cancelReadableExport() {
     readableExportVersion++
     readableExportWork?.cancel()
     readableExportWork = null
-    if (readableExportBusy) readableExport = readableExport.copy(phase = DshTextExportPhase.CANCELLED, error = "")
+    if (readableExportBusy) ui.readableExport = ui.readableExport.copy(phase = DshTextExportPhase.CANCELLED, error = "")
 }
 
 internal fun DshHomePage.closeReadableExportDialog() {
     if (readableExportBusy) cancelReadableExport()
-    readableExportDialogVisible = false
+    ui.readableExportDialogVisible = false
 }
 
 internal fun DshHomePage.failReadableExport(message: String) {
-    readableExport = readableExport.copy(phase = DshTextExportPhase.FAILED, error = message)
+    ui.readableExport = ui.readableExport.copy(phase = DshTextExportPhase.FAILED, error = message)
 }
 
 // ===== 分享多选态操作流程 =====
@@ -52,7 +52,7 @@ internal fun DshHomePage.beginExportSelection(sessionId: String, preselectId: St
     closeMessageActions()
     closeSelectTextModal()
     dismissKeyboard()
-    if (sessionId != activeSessionId) {
+    if (sessionId != ui.activeSessionId) {
         pendingExportSelectionSessionId = sessionId
         pendingExportSelectionPreselect = preselectId
         selectSession(sessionId)
@@ -62,33 +62,33 @@ internal fun DshHomePage.beginExportSelection(sessionId: String, preselectId: St
 }
 
 internal fun DshHomePage.enterExportSelection(sessionId: String, preselectId: String = "") {
-    if (sessionId.isBlank() || sessionId != activeSessionId) return
+    if (sessionId.isBlank() || sessionId != ui.activeSessionId) return
     exportSelectSessionId = sessionId
     // 默认选中点击消息所属的「对话组」：该条 AI 回复 + 触发它的用户 Prompt
     val group = if (preselectId.isNotEmpty()) {
         dshShareGroupForMessage(sessionMessageState(sessionId), preselectId)
     } else null
-    exportSelectedGroups = group?.let { setOf(it.key) } ?: emptySet()
-    exportFormat = DshExportFormat.HTML
-    exportMoreShareVisible = false
-    exportStickyGroupKey = ""
-    exportSelectMode = true
+    ui.exportSelectedGroups = group?.let { setOf(it.key) } ?: emptySet()
+    ui.exportFormat = DshExportFormat.HTML
+    ui.exportMoreShareVisible = false
+    ui.exportStickyGroupKey = ""
+    ui.exportSelectMode = true
     // 列表已在进入前布局完成，稍等一帧取到行位置后确定首个吸顶组。
-    setTimeout(pagerId, 100) { if (exportSelectMode) updateExportStickySelector() }
+    setTimeout(pagerId, 100) { if (ui.exportSelectMode) updateExportStickySelector() }
 }
 
 /** 会话切换完成后再进入多选态，避免在多选态中对未激活会话操作。 */
 
 internal fun DshHomePage.maybeEnterPendingExportSelection() {
     val pending = pendingExportSelectionSessionId
-    if (pending.isEmpty() || pending != activeSessionId) return
+    if (pending.isEmpty() || pending != ui.activeSessionId) return
     val preselect = pendingExportSelectionPreselect
     pendingExportSelectionSessionId = ""
     pendingExportSelectionPreselect = ""
     enterExportSelection(pending, preselect)
 }
 
-internal fun DshHomePage.exportSelectionSessionId(): String = exportSelectSessionId.ifEmpty { activeSessionId }
+internal fun DshHomePage.exportSelectionSessionId(): String = exportSelectSessionId.ifEmpty { ui.activeSessionId }
 
 internal fun DshHomePage.exportGroups(): List<DshShareGroup> =
     DshExportSelection.groups(sessionMessageState(exportSelectionSessionId()))
@@ -96,50 +96,50 @@ internal fun DshHomePage.exportGroups(): List<DshShareGroup> =
 /** 当前多选态下需要在消息列表打勾的消息 id（同组 Prompt 与回复同时勾选）。 */
 
 internal fun DshHomePage.exportSelectedMessageIds(): Set<String> =
-    DshExportSelection.selectedMessageIds(exportGroups(), exportSelectedGroups)
+    DshExportSelection.selectedMessageIds(exportGroups(), ui.exportSelectedGroups)
 
 internal fun DshHomePage.toggleExportMessage(messageId: String) {
-    if (!exportSelectMode) return
+    if (!ui.exportSelectMode) return
     val next = DshExportSelection.toggledGroupKey(
         sessionMessageState(exportSelectionSessionId()),
-        exportSelectedGroups,
+        ui.exportSelectedGroups,
         messageId,
     ) ?: return
-    exportSelectedGroups = next
-    if (exportSelectedGroups.isEmpty()) exportMoreShareVisible = false
+    ui.exportSelectedGroups = next
+    if (ui.exportSelectedGroups.isEmpty()) ui.exportMoreShareVisible = false
 }
 
 internal fun DshHomePage.exportTotalCount(): Int = exportGroups().size
 
 internal fun DshHomePage.exportSelectedCount(): Int =
-    DshExportSelection.selectedCount(exportGroups(), exportSelectedGroups)
+    DshExportSelection.selectedCount(exportGroups(), ui.exportSelectedGroups)
 
 internal fun DshHomePage.exportAllSelected(): Boolean =
-    DshExportSelection.allSelected(exportGroups(), exportSelectedGroups)
+    DshExportSelection.allSelected(exportGroups(), ui.exportSelectedGroups)
 
 internal fun DshHomePage.toggleExportSelectAll() {
-    exportSelectedGroups = DshExportSelection.toggleAll(exportGroups(), exportSelectedGroups)
-    if (exportSelectedGroups.isEmpty()) exportMoreShareVisible = false
+    ui.exportSelectedGroups = DshExportSelection.toggleAll(exportGroups(), ui.exportSelectedGroups)
+    if (ui.exportSelectedGroups.isEmpty()) ui.exportMoreShareVisible = false
 }
 
 internal fun DshHomePage.cancelExportSelection() {
-    exportSelectMode = false
+    ui.exportSelectMode = false
     exportSelectSessionId = ""
     pendingExportSelectionSessionId = ""
     pendingExportSelectionPreselect = ""
-    exportSelectedGroups = emptySet()
-    exportMoreShareVisible = false
-    exportPdfBusy = false
-    exportStickyGroupKey = ""
+    ui.exportSelectedGroups = emptySet()
+    ui.exportMoreShareVisible = false
+    ui.exportPdfBusy = false
+    ui.exportStickyGroupKey = ""
 }
 
 /** 流式助手正文优先使用实时内容；其余按已结算正文导出。 */
 
 internal fun DshHomePage.exportContentFor(sessionId: String, message: DshMessage): String =
-    if (streaming && activeSessionId == sessionId && streamingAssistantId == message.id &&
-        streamingAssistantContent.isNotEmpty()
+    if (ui.streaming && ui.activeSessionId == sessionId && ui.streamingAssistantId == message.id &&
+        ui.streamingAssistantContent.isNotEmpty()
     ) {
-        streamingAssistantContent
+        ui.streamingAssistantContent
     } else {
         message.content
     }
@@ -150,17 +150,17 @@ internal fun DshHomePage.exportContentFor(sessionId: String, message: DshMessage
  */
 
 internal fun DshHomePage.exportSelectedMessages(sessionId: String): List<DshMessage> =
-    DshExportSelection.selectedMessages(sessionMessageState(sessionId), exportSelectedGroups)
+    DshExportSelection.selectedMessages(sessionMessageState(sessionId), ui.exportSelectedGroups)
 
 /** 校验多选态并返回 (sessionId, 标题, 有序消息)；无有效选择时提示并返回 null。 */
 
 internal fun DshHomePage.currentExportSelection(): Triple<String, String, List<DshMessage>>? {
     val sessionId = exportSelectionSessionId()
-    if (sessionId.isBlank() || !exportSelectMode) return null
-    if (exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return null }
+    if (sessionId.isBlank() || !ui.exportSelectMode) return null
+    if (ui.exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return null }
     val ordered = exportSelectedMessages(sessionId)
     if (ordered.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return null }
-    val title = sessions.firstOrNull { it.id == sessionId }?.title ?: sessionId
+    val title = ui.sessions.firstOrNull { it.id == sessionId }?.title ?: sessionId
     return Triple(sessionId, title, ordered)
 }
 
@@ -170,15 +170,15 @@ internal fun DshHomePage.confirmExportSelection() {
     if (readableExportBusy) { bridgeModule.toast("正在分享，请稍候"); return }
     val selection = currentExportSelection() ?: return
     val (sessionId, title, ordered) = selection
-    val format = exportFormat
+    val format = ui.exportFormat
     val connection = activeConnectionId
     val text = DshReadableContent.selection(title, sessionId, ordered, format) { exportContentFor(sessionId, it) }
     cancelExportSelection()
     closeSessionDrawer()
     readableExportSourceText = text
     readableExportExtension = format.extension
-    readableExport = DshTextExportState(sessionId, connection, title, DshTextExportPhase.WRITING)
-    readableExportDialogVisible = true
+    ui.readableExport = DshTextExportState(sessionId, connection, title, DshTextExportPhase.WRITING)
+    ui.readableExportDialogVisible = true
     writeReadableExport(++readableExportVersion) { text }
 }
 
@@ -198,9 +198,9 @@ internal fun DshHomePage.copyExportSelection() {
 /** 更多分享：展开/收起格式选择行。 */
 
 internal fun DshHomePage.toggleExportMoreShare() {
-    if (exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return }
-    exportMoreShareVisible = !exportMoreShareVisible
-    if (exportMoreShareVisible) exportFormat = DshExportFormat.HTML
+    if (ui.exportSelectedGroups.isEmpty()) { bridgeModule.toast("请先选择要分享的对话"); return }
+    ui.exportMoreShareVisible = !ui.exportMoreShareVisible
+    if (ui.exportMoreShareVisible) ui.exportFormat = DshExportFormat.HTML
 }
 
 /** 吸顶选择器吸附点：当前对话组消息头滚过列表顶部该偏移后由它接管。 */
@@ -211,8 +211,8 @@ private const val EXPORT_STICKY_PIN_PX = 4f
  * 下一组的消息头滚到吸附点时会替换当前组，与系统 section header 行为一致。
  */
 internal fun DshHomePage.updateExportStickySelector() {
-    if (!exportSelectMode) {
-        if (exportStickyGroupKey.isNotEmpty()) exportStickyGroupKey = ""
+    if (!ui.exportSelectMode) {
+        if (ui.exportStickyGroupKey.isNotEmpty()) ui.exportStickyGroupKey = ""
         return
     }
     val sessionId = exportSelectionSessionId()
@@ -226,16 +226,16 @@ internal fun DshHomePage.updateExportStickySelector() {
         if (frame == null || frame.isDefaultValue()) continue
         if (frame.y - offsetY <= EXPORT_STICKY_PIN_PX) key = group.key else break
     }
-    if (exportStickyGroupKey != key) exportStickyGroupKey = key
+    if (ui.exportStickyGroupKey != key) ui.exportStickyGroupKey = key
 }
 
-internal fun DshHomePage.exportStickySelectorVisible(): Boolean = exportStickyGroupKey.isNotEmpty()
+internal fun DshHomePage.exportStickySelectorVisible(): Boolean = ui.exportStickyGroupKey.isNotEmpty()
 
 internal fun DshHomePage.exportStickySelectorSelected(): Boolean =
-    exportStickyGroupKey.isNotEmpty() && exportStickyGroupKey in exportSelectedGroups
+    ui.exportStickyGroupKey.isNotEmpty() && ui.exportStickyGroupKey in ui.exportSelectedGroups
 
 internal fun DshHomePage.toggleExportStickySelector() {
-    val group = exportGroups().firstOrNull { it.key == exportStickyGroupKey } ?: return
+    val group = exportGroups().firstOrNull { it.key == ui.exportStickyGroupKey } ?: return
     val headerId = group.userMessageId.ifEmpty { group.assistantMessageId ?: "" }
     if (headerId.isNotEmpty()) toggleExportMessage(headerId)
 }
@@ -243,17 +243,17 @@ internal fun DshHomePage.toggleExportStickySelector() {
 /** 生成 PDF：Android 走原生 WebView 打印，其他端暂不支持。 */
 
 internal fun DshHomePage.exportSelectionAsPdf() {
-    if (exportPdfBusy) { bridgeModule.toast("正在生成 PDF，请稍候"); return }
+    if (ui.exportPdfBusy) { bridgeModule.toast("正在生成 PDF，请稍候"); return }
     if (!pageData.isAndroid) { bridgeModule.toast("当前平台暂不支持生成 PDF"); return }
     val selection = currentExportSelection() ?: return
     val (sessionId, title, ordered) = selection
     val html = DshReadableContent.selection(title, sessionId, ordered, DshExportFormat.HTML) {
         exportContentFor(sessionId, it)
     }
-    exportPdfBusy = true
+    ui.exportPdfBusy = true
     val filename = "dsh-session-${currentTimeMillis()}.pdf"
     bridgeModule.htmlToPdf(html, filename) { ok, path, message ->
-        exportPdfBusy = false
+        ui.exportPdfBusy = false
         if (!pageAlive) return@htmlToPdf
         if (!ok) {
             bridgeModule.toast(message.ifEmpty { "生成 PDF 失败，请重试" })
@@ -276,12 +276,12 @@ internal fun DshHomePage.exportReadableSession(sessionId: String) {
     if (sessionId.isBlank() || readableExportBusy) return
     val version = ++readableExportVersion
     val connection = activeConnectionId
-    val title = sessions.firstOrNull { it.id == sessionId }?.title ?: sessionId
+    val title = ui.sessions.firstOrNull { it.id == sessionId }?.title ?: sessionId
     readableExportSourceText = null
     readableExportExtension = "txt"
-    readableExport = DshTextExportState(sessionId, connection, title, DshTextExportPhase.READING)
+    ui.readableExport = DshTextExportState(sessionId, connection, title, DshTextExportPhase.READING)
     closeSessionDrawer()
-    readableExportDialogVisible = true
+    ui.readableExportDialogVisible = true
     val remote = remoteRepo
     if (remote == null || !remote.isProductReady()) { failReadableExport("请先连接 Host 后重试"); return }
     fun current() = pageAlive && version == readableExportVersion && repository === remote && activeConnectionId == connection
@@ -293,7 +293,7 @@ internal fun DshHomePage.exportReadableSession(sessionId: String) {
         if (current()) failReadableExport(error)
     }, ::current)
     setTimeout(pagerId, 35_000) {
-        if (current() && readableExport.phase == DshTextExportPhase.READING) {
+        if (current() && ui.readableExport.phase == DshTextExportPhase.READING) {
             readableExportVersion++
             failReadableExport("读取完整会话超时，请重试")
         }
@@ -305,18 +305,18 @@ internal fun DshHomePage.exportReadableSession(sessionId: String) {
 internal fun DshHomePage.shareMessageSelection(message: DshMessage) {
     closeMessageActions()
     if (readableExportBusy) { bridgeModule.toast("正在分享，请稍候"); return }
-    beginExportSelection(activeSessionId, preselectId = message.id)
+    beginExportSelection(ui.activeSessionId, preselectId = message.id)
 }
 
 internal fun DshHomePage.retryReadableExport() {
     if (readableExportBusy) return
     val text = readableExportSourceText
-    if (text == null) exportReadableSession(readableExport.sessionId)
+    if (text == null) exportReadableSession(ui.readableExport.sessionId)
     else writeReadableExport(++readableExportVersion) { text }
 }
 
 internal fun DshHomePage.writeReadableExport(version: Int, content: () -> String) {
-    readableExport = readableExport.copy(phase = DshTextExportPhase.WRITING, path = "", error = "")
+    ui.readableExport = ui.readableExport.copy(phase = DshTextExportPhase.WRITING, path = "", error = "")
     val dir = exportDir
     val filename = "dsh-session-${currentTimeMillis()}-$version.$readableExportExtension"
     val work = DshLogWork(localReadScope) { cancelled -> publishReadableExport(dir, filename, content(), cancelled) }
@@ -327,7 +327,7 @@ internal fun DshHomePage.writeReadableExport(version: Int, content: () -> String
         if (result == null) { setTimeout(50) { receive() }; return }
         readableExportWork = null
         result.onSuccess {
-            readableExport = readableExport.copy(phase = DshTextExportPhase.READY, path = it)
+            ui.readableExport = ui.readableExport.copy(phase = DshTextExportPhase.READY, path = it)
             shareReadableExport()
         }.onFailure { failReadableExport(it.message ?: "无法生成文件，请重试") }
     }
@@ -335,19 +335,19 @@ internal fun DshHomePage.writeReadableExport(version: Int, content: () -> String
 }
 
 internal fun DshHomePage.shareReadableExport() {
-    if (readableExport.path.isEmpty() || readableExportBusy) return
+    if (ui.readableExport.path.isEmpty() || readableExportBusy) return
     closeSessionDrawer()
-    readableExportDialogVisible = true
+    ui.readableExportDialogVisible = true
     val version = readableExportVersion
-    val path = readableExport.path
-    readableExport = readableExport.copy(phase = DshTextExportPhase.SHARING, error = "")
+    val path = ui.readableExport.path
+    ui.readableExport = ui.readableExport.copy(phase = DshTextExportPhase.SHARING, error = "")
     bridgeModule.shareExportFile(path) { ok, message ->
-        if (!pageAlive || version != readableExportVersion || path != readableExport.path) return@shareExportFile
-        if (ok) readableExport = readableExport.copy(phase = DshTextExportPhase.READY)
+        if (!pageAlive || version != readableExportVersion || path != ui.readableExport.path) return@shareExportFile
+        if (ok) ui.readableExport = ui.readableExport.copy(phase = DshTextExportPhase.READY)
         else failReadableExport(message.ifEmpty { "无法打开系统分享，请重试" })
     }
     setTimeout(pagerId, 35_000) {
-        if (pageAlive && version == readableExportVersion && readableExport.phase == DshTextExportPhase.SHARING) {
+        if (pageAlive && version == readableExportVersion && ui.readableExport.phase == DshTextExportPhase.SHARING) {
             readableExportVersion++
             failReadableExport("系统分享未响应，可重新分享已生成的文件")
         }
@@ -356,7 +356,7 @@ internal fun DshHomePage.shareReadableExport() {
 
 internal fun DshHomePage.exportActiveSession() {
     val repository = remoteRepo ?: return
-    val url = repository.sessionExportUrl(activeSessionId)
+    val url = repository.sessionExportUrl(ui.activeSessionId)
     acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
         "link_view",
         JSONObject().apply {

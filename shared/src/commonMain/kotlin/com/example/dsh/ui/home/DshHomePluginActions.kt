@@ -16,12 +16,12 @@ import com.example.dsh.ui.plugin.pluginActionLabel
 
 internal fun DshHomePage.openPluginInventory() {
     dismissKeyboard()
-    settingsPageVisible = false
-    pluginInventoryVisible = true
-    pluginActiveTab = "config"
+    ui.settingsPageVisible = false
+    ui.pluginInventoryVisible = true
+    ui.pluginActiveTab = "config"
     pluginSearchInput = ""
-    pluginSearchHasText = false
-    pluginKeyword = ""
+    ui.pluginSearchHasText = false
+    ui.pluginKeyword = ""
     refreshPluginInventory()
     loadPluginConfig()
 }
@@ -30,109 +30,109 @@ internal fun DshHomePage.openPluginInventory() {
 
 internal fun DshHomePage.handlePluginInventoryBack() {
     when {
-        pluginConfirmAction.isNotEmpty() -> cancelPluginAction()
-        pluginExpandedId.isNotEmpty() -> pluginExpandedId = ""
+        ui.pluginConfirmAction.isNotEmpty() -> cancelPluginAction()
+        ui.pluginExpandedId.isNotEmpty() -> ui.pluginExpandedId = ""
         else -> closePluginInventory()
     }
 }
 
 internal fun DshHomePage.closePluginInventory() {
     pluginRequestVersion++
-    pluginInventoryVisible = false
-    pluginInventoryLoading = false
-    pluginExpandedId = ""
-    pluginActionTarget = null
-    pluginConfirmAction = ""
-    pluginBusyId = ""
-    pluginActionError = ""
-    pluginNotice = ""
-    pluginConfigLoading = false
-    pluginConfigError = ""
-    pluginConfigCards.clear()
-    pluginConfigDrafts = emptyMap()
-    pluginConfigSecretDrafts = emptyMap()
-    pluginConfigCollapsed = emptySet()
-    pluginConfigBusyNamespace = ""
-    pluginConfigCardError = emptyMap()
-    pluginConfigCardNotice = emptyMap()
-    settingsPageVisible = true
+    ui.pluginInventoryVisible = false
+    ui.pluginInventoryLoading = false
+    ui.pluginExpandedId = ""
+    ui.pluginActionTarget = null
+    ui.pluginConfirmAction = ""
+    ui.pluginBusyId = ""
+    ui.pluginActionError = ""
+    ui.pluginNotice = ""
+    ui.pluginConfigLoading = false
+    ui.pluginConfigError = ""
+    ui.pluginConfigCards.clear()
+    ui.pluginConfigDrafts = emptyMap()
+    ui.pluginConfigSecretDrafts = emptyMap()
+    ui.pluginConfigCollapsed = emptySet()
+    ui.pluginConfigBusyNamespace = ""
+    ui.pluginConfigCardError = emptyMap()
+    ui.pluginConfigCardNotice = emptyMap()
+    ui.settingsPageVisible = true
 }
 
 internal fun DshHomePage.selectPluginTab(tab: String) {
-    pluginActiveTab = tab
-    if (tab == "config" && pluginConfigCards.isEmpty() && !pluginConfigLoading) loadPluginConfig()
+    ui.pluginActiveTab = tab
+    if (tab == "config" && ui.pluginConfigCards.isEmpty() && !ui.pluginConfigLoading) loadPluginConfig()
 }
 
 internal fun DshHomePage.loadPluginConfig() {
     val remote = remoteRepo ?: run {
-        pluginConfigLoading = false; pluginConfigError = "请先连接 Host"; return
+        ui.pluginConfigLoading = false; ui.pluginConfigError = "请先连接 Host"; return
     }
     val connection = activeConnectionId
-    pluginConfigLoading = true
-    pluginConfigError = ""
+    ui.pluginConfigLoading = true
+    ui.pluginConfigError = ""
     remote.loadPluginConfig({ state ->
-        if (pageAlive && pluginInventoryVisible && connection == activeConnectionId && remote === repository) {
-            pluginConfigLoading = false
-            pluginConfigWritable = state.writable
+        if (pageAlive && ui.pluginInventoryVisible && connection == activeConnectionId && remote === repository) {
+            ui.pluginConfigLoading = false
+            ui.pluginConfigWritable = state.writable
             // 首次进入时配置卡默认收起（对齐原版）；后续刷新保留用户展开状态。
-            val firstLoad = pluginConfigCards.isEmpty()
-            pluginConfigCards.clear()
-            pluginConfigCards.addAll(state.cards)
-            if (firstLoad) pluginConfigCollapsed = state.cards.map { it.namespace }.toSet()
-            pluginConfigDrafts = emptyMap()
-            pluginConfigSecretDrafts = emptyMap()
-            pluginConfigCardError = emptyMap()
+            val firstLoad = ui.pluginConfigCards.isEmpty()
+            ui.pluginConfigCards.clear()
+            ui.pluginConfigCards.addAll(state.cards)
+            if (firstLoad) ui.pluginConfigCollapsed = state.cards.map { it.namespace }.toSet()
+            ui.pluginConfigDrafts = emptyMap()
+            ui.pluginConfigSecretDrafts = emptyMap()
+            ui.pluginConfigCardError = emptyMap()
         }
     }, { error ->
-        if (pageAlive && pluginInventoryVisible && connection == activeConnectionId && remote === repository) {
-            pluginConfigLoading = false
-            pluginConfigError = error
+        if (pageAlive && ui.pluginInventoryVisible && connection == activeConnectionId && remote === repository) {
+            ui.pluginConfigLoading = false
+            ui.pluginConfigError = error
         }
     })
 }
 
 internal fun DshHomePage.pluginConfigDraft(namespace: String, key: String): String {
-    val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return ""
+    val card = ui.pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return ""
     val fallback = card.fields.firstOrNull { it.key == key }?.value ?: ""
-    return pluginConfigDrafts["$namespace::$key"] ?: fallback
+    return ui.pluginConfigDrafts["$namespace::$key"] ?: fallback
 }
 
-internal fun DshHomePage.pluginConfigSecretDraft(namespace: String): String = pluginConfigSecretDrafts[namespace] ?: ""
+internal fun DshHomePage.pluginConfigSecretDraft(namespace: String): String = ui.pluginConfigSecretDrafts[namespace] ?: ""
 
-internal fun DshHomePage.isPluginConfigCollapsed(namespace: String): Boolean = namespace in pluginConfigCollapsed
+internal fun DshHomePage.isPluginConfigCollapsed(namespace: String): Boolean = namespace in ui.pluginConfigCollapsed
 
 internal fun DshHomePage.hasPluginConfigChanges(namespace: String): Boolean {
-    val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return false
-    if ((pluginConfigSecretDrafts[namespace] ?: "").isNotEmpty()) return true
+    val card = ui.pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return false
+    if ((ui.pluginConfigSecretDrafts[namespace] ?: "").isNotEmpty()) return true
     return card.fields.any { it.kind != DshPluginFieldKind.SECRET && pluginConfigDraft(namespace, it.key) != it.value }
 }
 
 internal fun DshHomePage.onPluginConfigDraft(namespace: String, key: String, value: String) {
-    pluginConfigDrafts = pluginConfigDrafts + ("$namespace::$key" to value)
+    ui.pluginConfigDrafts = ui.pluginConfigDrafts + ("$namespace::$key" to value)
 }
 
 internal fun DshHomePage.onPluginConfigSecretDraft(namespace: String, value: String) {
-    pluginConfigSecretDrafts = pluginConfigSecretDrafts + (namespace to value)
+    ui.pluginConfigSecretDrafts = ui.pluginConfigSecretDrafts + (namespace to value)
 }
 
 internal fun DshHomePage.togglePluginConfigCollapsed(namespace: String) {
-    pluginConfigCollapsed = if (namespace in pluginConfigCollapsed) {
-        pluginConfigCollapsed - namespace
+    ui.pluginConfigCollapsed = if (namespace in ui.pluginConfigCollapsed) {
+        ui.pluginConfigCollapsed - namespace
     } else {
-        pluginConfigCollapsed + namespace
+        ui.pluginConfigCollapsed + namespace
     }
 }
 
 internal fun DshHomePage.discardPluginConfigCard(namespace: String) {
     clearPluginConfigDrafts(namespace)
-    pluginConfigCardNotice = pluginConfigCardNotice - namespace
+    ui.pluginConfigCardNotice = ui.pluginConfigCardNotice - namespace
 }
 
 internal fun DshHomePage.savePluginConfigCard(namespace: String) {
-    val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return
-    if (pluginConfigBusyNamespace.isNotEmpty()) return
+    val card = ui.pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return
+    if (ui.pluginConfigBusyNamespace.isNotEmpty()) return
     val remote = remoteRepo ?: run {
-        pluginConfigCardError = pluginConfigCardError + (namespace to "请先连接 Host"); return
+        ui.pluginConfigCardError = ui.pluginConfigCardError + (namespace to "请先连接 Host"); return
     }
     val ops = JSONArray()
     var invalid = ""
@@ -158,7 +158,7 @@ internal fun DshHomePage.savePluginConfigCard(namespace: String) {
         }
     }
     if (invalid.isNotEmpty()) {
-        pluginConfigCardError = pluginConfigCardError + (namespace to invalid)
+        ui.pluginConfigCardError = ui.pluginConfigCardError + (namespace to invalid)
         return
     }
     val secret = pluginConfigSecretDraft(namespace).trim()
@@ -170,94 +170,94 @@ internal fun DshHomePage.savePluginConfigCard(namespace: String) {
         credentialRef = if (secret.isNotEmpty()) card.secretRef else "",
         credentialValue = secret,
     )
-    pluginConfigBusyNamespace = namespace
-    pluginConfigCardError = pluginConfigCardError - namespace
-    pluginConfigCardNotice = pluginConfigCardNotice - namespace
+    ui.pluginConfigBusyNamespace = namespace
+    ui.pluginConfigCardError = ui.pluginConfigCardError - namespace
+    ui.pluginConfigCardNotice = ui.pluginConfigCardNotice - namespace
     remote.savePluginConfig(save, {
-        if (pageAlive && pluginInventoryVisible) {
-            pluginConfigBusyNamespace = ""
+        if (pageAlive && ui.pluginInventoryVisible) {
+            ui.pluginConfigBusyNamespace = ""
             clearPluginConfigDrafts(namespace)
-            pluginConfigCardNotice = pluginConfigCardNotice + (namespace to "已保存")
+            ui.pluginConfigCardNotice = ui.pluginConfigCardNotice + (namespace to "已保存")
             loadPluginConfig()
         }
     }, { error ->
-        if (pageAlive && pluginInventoryVisible) {
-            pluginConfigBusyNamespace = ""
-            pluginConfigCardError = pluginConfigCardError + (namespace to error)
+        if (pageAlive && ui.pluginInventoryVisible) {
+            ui.pluginConfigBusyNamespace = ""
+            ui.pluginConfigCardError = ui.pluginConfigCardError + (namespace to error)
         }
     })
 }
 
 internal fun DshHomePage.clearPluginConfigDrafts(namespace: String) {
     val prefix = "$namespace::"
-    pluginConfigDrafts = pluginConfigDrafts.filterKeys { !it.startsWith(prefix) }
-    pluginConfigSecretDrafts = pluginConfigSecretDrafts - namespace
-    pluginConfigCardError = pluginConfigCardError - namespace
+    ui.pluginConfigDrafts = ui.pluginConfigDrafts.filterKeys { !it.startsWith(prefix) }
+    ui.pluginConfigSecretDrafts = ui.pluginConfigSecretDrafts - namespace
+    ui.pluginConfigCardError = ui.pluginConfigCardError - namespace
 }
 
 internal fun DshHomePage.togglePluginExpanded(entry: DshPluginEntry) {
-    pluginExpandedId = if (pluginExpandedId == entry.id) "" else entry.id
+    ui.pluginExpandedId = if (ui.pluginExpandedId == entry.id) "" else entry.id
 }
 
 /** 启用直接执行；停用先弹二次确认。 */
 
 internal fun DshHomePage.requestPluginToggle(entry: DshPluginEntry, enable: Boolean) {
-    if (pluginBusyId.isNotEmpty()) return
-    pluginActionTarget = entry
-    pluginActionError = ""
-    pluginNotice = ""
-    if (enable) performPluginAction("enable") else pluginConfirmAction = "disable"
+    if (ui.pluginBusyId.isNotEmpty()) return
+    ui.pluginActionTarget = entry
+    ui.pluginActionError = ""
+    ui.pluginNotice = ""
+    if (enable) performPluginAction("enable") else ui.pluginConfirmAction = "disable"
 }
 
 /** 重载先弹二次确认。 */
 
 internal fun DshHomePage.requestPluginReload(entry: DshPluginEntry) {
-    if (pluginBusyId.isNotEmpty()) return
-    pluginActionTarget = entry
-    pluginActionError = ""
-    pluginNotice = ""
-    pluginConfirmAction = "reload"
+    if (ui.pluginBusyId.isNotEmpty()) return
+    ui.pluginActionTarget = entry
+    ui.pluginActionError = ""
+    ui.pluginNotice = ""
+    ui.pluginConfirmAction = "reload"
 }
 
 internal fun DshHomePage.cancelPluginAction() {
-    pluginConfirmAction = ""
-    pluginActionError = ""
+    ui.pluginConfirmAction = ""
+    ui.pluginActionError = ""
 }
 
 internal fun DshHomePage.confirmPluginAction() {
-    val action = pluginConfirmAction
-    pluginConfirmAction = ""
+    val action = ui.pluginConfirmAction
+    ui.pluginConfirmAction = ""
     if (action.isNotEmpty()) performPluginAction(action)
 }
 
 internal fun DshHomePage.performPluginAction(action: String) {
-    val entry = pluginActionTarget ?: run {
-        pluginActionError = "未选择插件"; return
+    val entry = ui.pluginActionTarget ?: run {
+        ui.pluginActionError = "未选择插件"; return
     }
     val remote = remoteRepo ?: run {
-        pluginActionError = "请先连接 Host"; return
+        ui.pluginActionError = "请先连接 Host"; return
     }
-    if (pluginBusyId.isNotEmpty()) return
+    if (ui.pluginBusyId.isNotEmpty()) return
     val connection = activeConnectionId
-    pluginBusyId = entry.id
-    pluginActionError = ""
-    pluginNotice = ""
+    ui.pluginBusyId = entry.id
+    ui.pluginActionError = ""
+    ui.pluginNotice = ""
     remote.pluginAction(entry.id, action, {
         if (pageAlive && connection == activeConnectionId) {
-            pluginBusyId = ""
-            pluginNotice = "${pluginActionLabel(action)}指令已下发，正在刷新状态"
+            ui.pluginBusyId = ""
+            ui.pluginNotice = "${pluginActionLabel(action)}指令已下发，正在刷新状态"
             refreshPluginInventory()
         }
     }, { error ->
         if (pageAlive && connection == activeConnectionId) {
-            pluginBusyId = ""
-            pluginActionError = error
+            ui.pluginBusyId = ""
+            ui.pluginActionError = error
         }
     })
     setTimeout(35_000) {
-        if (pageAlive && pluginBusyId == entry.id && connection == activeConnectionId) {
-            pluginBusyId = ""
-            pluginActionError = "操作超时，请刷新确认结果"
+        if (pageAlive && ui.pluginBusyId == entry.id && connection == activeConnectionId) {
+            ui.pluginBusyId = ""
+            ui.pluginActionError = "操作超时，请刷新确认结果"
         }
     }
 }
@@ -266,8 +266,8 @@ internal fun DshHomePage.performPluginAction(action: String) {
 
 internal fun DshHomePage.onPluginKeyword(value: String) {
     pluginSearchInput = value
-    pluginSearchHasText = value.isNotEmpty()
-    pluginKeyword = value
+    ui.pluginSearchHasText = value.isNotEmpty()
+    ui.pluginKeyword = value
     applyPluginFilters()
 }
 
@@ -275,42 +275,42 @@ internal fun DshHomePage.onPluginKeyword(value: String) {
 
 internal fun DshHomePage.clearPluginKeyword() {
     pluginSearchInput = ""
-    pluginSearchHasText = false
-    pluginKeyword = ""
+    ui.pluginSearchHasText = false
+    ui.pluginKeyword = ""
     pluginSearchInputView?.setText("")
     applyPluginFilters()
 }
 
 internal fun DshHomePage.applyPluginFilters() {
-    pluginTotal = pluginInventory.size
-    pluginRows.diffUpdate(filterDshPlugins(pluginInventory, pluginKeyword, pluginPhase)) { old, new -> old == new }
+    ui.pluginTotal = pluginInventory.size
+    ui.pluginRows.diffUpdate(filterDshPlugins(pluginInventory, ui.pluginKeyword, ui.pluginPhase)) { old, new -> old == new }
 }
 
 internal fun DshHomePage.refreshPluginInventory() {
     val remote = remoteRepo ?: run {
-        pluginInventoryLoading = false; pluginInventoryError = "请先连接 Host"; return
+        ui.pluginInventoryLoading = false; ui.pluginInventoryError = "请先连接 Host"; return
     }
     val version = ++pluginRequestVersion
     val connection = activeConnectionId
-    pluginInventoryLoading = true
-    pluginInventoryError = ""
-    fun current() = pageAlive && pluginInventoryVisible && version == pluginRequestVersion &&
+    ui.pluginInventoryLoading = true
+    ui.pluginInventoryError = ""
+    fun current() = pageAlive && ui.pluginInventoryVisible && version == pluginRequestVersion &&
         remote === repository && connection == activeConnectionId
     remote.loadPluginInventory({ entries ->
         if (current()) {
-            pluginInventoryLoading = false
+            ui.pluginInventoryLoading = false
             pluginInventory = entries
             val ids = entries.map { it.id }.toSet()
-            if (pluginExpandedId.isNotEmpty() && pluginExpandedId !in ids) pluginExpandedId = ""
-            pluginActionTarget = pluginActionTarget?.let { old -> entries.firstOrNull { it.id == old.id } }
+            if (ui.pluginExpandedId.isNotEmpty() && ui.pluginExpandedId !in ids) ui.pluginExpandedId = ""
+            ui.pluginActionTarget = ui.pluginActionTarget?.let { old -> entries.firstOrNull { it.id == old.id } }
             applyPluginFilters()
         }
     }, { error ->
-        if (current()) { pluginInventoryLoading = false; pluginInventoryError = error }
+        if (current()) { ui.pluginInventoryLoading = false; ui.pluginInventoryError = error }
     })
     setTimeout(35_000) {
-        if (current() && pluginInventoryLoading) {
-            pluginRequestVersion++; pluginInventoryLoading = false; pluginInventoryError = "读取插件超时，请刷新重试"
+        if (current() && ui.pluginInventoryLoading) {
+            pluginRequestVersion++; ui.pluginInventoryLoading = false; ui.pluginInventoryError = "读取插件超时，请刷新重试"
         }
     }
 }

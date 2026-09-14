@@ -15,8 +15,8 @@ import com.example.dsh.session.dshApplyOrder
 import com.example.dsh.ui.session.DshWorkspacePickerScreen
 
 internal fun DshHomePage.toggleWorkspaceExpanded(workspaceId: String) {
-    workspaceExpandedIds = if (workspaceId in workspaceExpandedIds) workspaceExpandedIds - workspaceId
-    else workspaceExpandedIds + workspaceId
+    ui.workspaceExpandedIds = if (workspaceId in ui.workspaceExpandedIds) ui.workspaceExpandedIds - workspaceId
+    else ui.workspaceExpandedIds + workspaceId
 }
 
 /** 会话是否有待用户决策（审批/提问），供抽屉行状态点显示；本地模式恒 false。 */
@@ -24,36 +24,36 @@ internal fun DshHomePage.toggleWorkspaceExpanded(workspaceId: String) {
 internal fun DshHomePage.refreshWorkspaceGroups() {
     ensureDrawerOrdersLoaded()
     if (!isRemoteHost) {
-        workspaceGroups = ObservableList()
-        workspacePickerFolders.clear()
+        ui.workspaceGroups = ObservableList()
+        ui.workspacePickerFolders.clear()
         return
     }
     val repository = remoteRepo ?: return
-    val byId = sessions.associateBy { it.id }
+    val byId = ui.sessions.associateBy { it.id }
     val groups = repository.workspaceGroups().map { group ->
         val resolved = group.sessions.map { byId[it.id] ?: it }
-        val order = if (drawerViewOrderBy == DSH_DRAWER_ORDER_MANUAL) {
-            sessionManualOrder[group.workspaceId].orEmpty()
+        val order = if (ui.drawerViewOrderBy == DSH_DRAWER_ORDER_MANUAL) {
+            ui.sessionManualOrder[group.workspaceId].orEmpty()
         } else {
             emptyList()
         }
         val orderedSessions = when {
             order.isNotEmpty() -> dshApplyOrder(resolved, order) { it.id }
-            drawerViewOrderBy == DSH_DRAWER_ORDER_UPDATED ->
+            ui.drawerViewOrderBy == DSH_DRAWER_ORDER_UPDATED ->
                 resolved.sortedWith(compareByDescending<DshSession> { it.updatedAt }.thenBy { it.id })
             else -> resolved
         }
         group.copy(sessions = orderedSessions)
     }
-    val orderedGroups = if (workspaceManualOrder.isEmpty()) {
+    val orderedGroups = if (ui.workspaceManualOrder.isEmpty()) {
         groups
     } else {
-        dshApplyOrder(groups, workspaceManualOrder) { it.workspaceId }
+        dshApplyOrder(groups, ui.workspaceManualOrder) { it.workspaceId }
     }
-    if (orderedGroups != workspaceGroups.toList()) workspaceGroups = ObservableList(orderedGroups.toMutableList())
+    if (orderedGroups != ui.workspaceGroups.toList()) ui.workspaceGroups = ObservableList(orderedGroups.toMutableList())
     val folders = orderedGroups.filter { it.workspaceId.isNotEmpty() }
-    workspacePickerFolders.clear()
-    workspacePickerFolders.addAll(folders)
+    ui.workspacePickerFolders.clear()
+    ui.workspacePickerFolders.addAll(folders)
 }
 
 // ===== 会话抽屉拖拽排序 =====
@@ -69,30 +69,30 @@ internal fun DshHomePage.openWorkspacePicker() {
     dismissKeyboard()
     closeSessionDrawer()
     workspacePickerGeneration++
-    workspacePickerVisible = true
-    workspacePickerScreen = DshWorkspacePickerScreen.RECENT
-    workspacePickerBusy = false
-    workspacePickerError = ""
-    workspaceAddNewName = ""
+    ui.workspacePickerVisible = true
+    ui.workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+    ui.workspacePickerBusy = false
+    ui.workspacePickerError = ""
+    ui.workspaceAddNewName = ""
     refreshWorkspaceGroups()
 }
 
 internal fun DshHomePage.closeWorkspacePicker() {
     workspacePickerGeneration++
-    workspacePickerVisible = false
-    workspacePickerBusy = false
-    workspaceAddBusy = false
-    workspacePickerError = ""
-    workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+    ui.workspacePickerVisible = false
+    ui.workspacePickerBusy = false
+    ui.workspaceAddBusy = false
+    ui.workspacePickerError = ""
+    ui.workspacePickerScreen = DshWorkspacePickerScreen.RECENT
 }
 
 /** 返回键/左上返回：ADD 界面回 RECENT，RECENT 界面关闭弹窗。 */
 
 internal fun DshHomePage.onWorkspacePickerBack() {
-    if (workspacePickerBusy || workspaceAddBusy) return
-    if (workspacePickerScreen == DshWorkspacePickerScreen.ADD) {
-        workspacePickerScreen = DshWorkspacePickerScreen.RECENT
-        workspacePickerError = ""
+    if (ui.workspacePickerBusy || ui.workspaceAddBusy) return
+    if (ui.workspacePickerScreen == DshWorkspacePickerScreen.ADD) {
+        ui.workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+        ui.workspacePickerError = ""
     } else {
         closeWorkspacePicker()
     }
@@ -105,7 +105,7 @@ internal fun DshHomePage.onWorkspacePickerBack() {
 
 internal fun DshHomePage.switchWorkspaceTo(workspaceId: String) {
     val remote = remoteRepo ?: return
-    if (workspacePickerBusy) return
+    if (ui.workspacePickerBusy) return
     if (!isBlankSession()) {
         bridgeModule.toast("会话已开始，工作区不可修改")
         return
@@ -116,15 +116,15 @@ internal fun DshHomePage.switchWorkspaceTo(workspaceId: String) {
     }
     val generation = ++workspacePickerGeneration
     val connection = activeConnectionId
-    val sourceSession = activeSessionId
-    workspacePickerBusy = true
-    workspacePickerError = ""
-    fun current() = pageAlive && workspacePickerVisible && generation == workspacePickerGeneration &&
-        remote === this.repository && connection == activeConnectionId && sourceSession == activeSessionId
+    val sourceSession = ui.activeSessionId
+    ui.workspacePickerBusy = true
+    ui.workspacePickerError = ""
+    fun current() = pageAlive && ui.workspacePickerVisible && generation == workspacePickerGeneration &&
+        remote === this.repository && connection == activeConnectionId && sourceSession == ui.activeSessionId
     fun fail(message: String) {
         if (!current()) return
-        workspacePickerBusy = false
-        workspacePickerError = message
+        ui.workspacePickerBusy = false
+        ui.workspacePickerError = message
     }
     fun openSession(sessionId: String) {
         remote.loadHistory(sessionId, { history ->
@@ -144,16 +144,16 @@ internal fun DshHomePage.switchWorkspaceTo(workspaceId: String) {
         if (!current()) return@createSession
         remote.loadSessionCatalog({ catalog ->
             if (!current()) return@loadSessionCatalog
-            sessions = catalog.sessions
+            ui.sessions = catalog.sessions
             reorderSessionsByUpdatedAt()
             refreshVisibleSessions()
             refreshWorkspaceGroups()
             preferBlankHomeOnNextLoad = false
             openSession(sessionId)
         }, { error -> fail("无法同步工作区：${error.message}") })
-    }, { error -> fail("无法创建会话：$error") }, permission = permissionValue, agentPreset = agentModeValue)
+    }, { error -> fail("无法创建会话：$error") }, permission = ui.permissionValue, agentPreset = ui.agentModeValue)
     setTimeout(pagerId, 35_000) {
-        if (current() && workspacePickerBusy) {
+        if (current() && ui.workspacePickerBusy) {
             fail("切换超时，请重试")
             workspacePickerGeneration++
         }
@@ -163,57 +163,57 @@ internal fun DshHomePage.switchWorkspaceTo(workspaceId: String) {
 internal fun DshHomePage.openWorkspaceAddFolder() {
     if (!isRemoteHost) return
     dismissKeyboard()
-    workspacePickerScreen = DshWorkspacePickerScreen.ADD
-    workspacePickerError = ""
-    workspaceAddNewName = ""
+    ui.workspacePickerScreen = DshWorkspacePickerScreen.ADD
+    ui.workspacePickerError = ""
+    ui.workspaceAddNewName = ""
     loadWorkspaceAddDirectory(null)
 }
 
 internal fun DshHomePage.loadWorkspaceAddDirectory(path: String?) {
     val remote = remoteRepo ?: return
-    if (workspacePickerBusy) return
+    if (ui.workspacePickerBusy) return
     val generation = ++workspacePickerGeneration
-    workspaceAddBusy = true
-    workspaceAddDirectoryLoaded = false
-    workspacePickerError = ""
+    ui.workspaceAddBusy = true
+    ui.workspaceAddDirectoryLoaded = false
+    ui.workspacePickerError = ""
     remote.listDirectory(path) { listing, error ->
         postToUi {
-            if (!pageAlive || !workspacePickerVisible || workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
+            if (!pageAlive || !ui.workspacePickerVisible || ui.workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
                 generation != workspacePickerGeneration || remote !== this.repository
             ) return@postToUi
-            workspaceAddBusy = false
+            ui.workspaceAddBusy = false
             if (error != null || listing == null) {
-                workspacePickerError = error?.message ?: "无法读取目录"
+                ui.workspacePickerError = error?.message ?: "无法读取目录"
                 return@postToUi
             }
-            workspaceAddPath = listing.path
-            workspaceAddHome = listing.home
-            workspaceAddDirectoryLoaded = true
-            workspaceAddEntries.clear()
-            workspaceAddEntries.addAll(listing.entries.filterNot { it.hidden })
+            ui.workspaceAddPath = listing.path
+            ui.workspaceAddHome = listing.home
+            ui.workspaceAddDirectoryLoaded = true
+            ui.workspaceAddEntries.clear()
+            ui.workspaceAddEntries.addAll(listing.entries.filterNot { it.hidden })
         }
     }
 }
 
 internal fun DshHomePage.createWorkspaceAddDirectory() {
     val remote = remoteRepo ?: return
-    if (workspacePickerBusy || workspaceAddBusy) return
-    val name = workspaceAddNewName.trim()
-    if (workspaceAddPath.isEmpty() || name.isEmpty()) return
+    if (ui.workspacePickerBusy || ui.workspaceAddBusy) return
+    val name = ui.workspaceAddNewName.trim()
+    if (ui.workspaceAddPath.isEmpty() || name.isEmpty()) return
     val generation = workspacePickerGeneration
-    workspaceAddBusy = true
-    workspacePickerError = ""
-    remote.createDirectory(workspaceAddPath, name) { createdPath, error ->
+    ui.workspaceAddBusy = true
+    ui.workspacePickerError = ""
+    remote.createDirectory(ui.workspaceAddPath, name) { createdPath, error ->
         postToUi {
-            if (!pageAlive || !workspacePickerVisible || workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
+            if (!pageAlive || !ui.workspacePickerVisible || ui.workspacePickerScreen != DshWorkspacePickerScreen.ADD ||
                 generation != workspacePickerGeneration || remote !== this.repository
             ) return@postToUi
-            workspaceAddBusy = false
+            ui.workspaceAddBusy = false
             if (error != null || createdPath == null) {
-                workspacePickerError = error?.message ?: "无法创建目录"
+                ui.workspacePickerError = error?.message ?: "无法创建目录"
                 return@postToUi
             }
-            workspaceAddNewName = ""
+            ui.workspaceAddNewName = ""
             loadWorkspaceAddDirectory(createdPath)
         }
     }
@@ -223,39 +223,39 @@ internal fun DshHomePage.createWorkspaceAddDirectory() {
 
 internal fun DshHomePage.adoptWorkspaceAddDirectory() {
     val remote = remoteRepo ?: return
-    val path = workspaceAddPath
-    if (path.isEmpty() || workspacePickerBusy || workspaceAddBusy) return
-    workspaceAddBusy = true
-    workspacePickerError = ""
+    val path = ui.workspaceAddPath
+    if (path.isEmpty() || ui.workspacePickerBusy || ui.workspaceAddBusy) return
+    ui.workspaceAddBusy = true
+    ui.workspacePickerError = ""
     remote.createWorkspace(path) { value, error ->
         postToUi {
-            if (!pageAlive || !workspacePickerVisible || remote !== this.repository) return@postToUi
+            if (!pageAlive || !ui.workspacePickerVisible || remote !== this.repository) return@postToUi
             if (error != null) {
-                workspaceAddBusy = false
-                workspacePickerError = error.message
+                ui.workspaceAddBusy = false
+                ui.workspacePickerError = error.message
                 return@postToUi
             }
             // 重新拉取 workspace.list 基线，确保新注册工作区已进入本地投影后再解析其 id。
             remote.loadSessionCatalog({ catalog ->
-                if (!pageAlive || !workspacePickerVisible || remote !== this.repository) return@loadSessionCatalog
-                sessions = catalog.sessions
+                if (!pageAlive || !ui.workspacePickerVisible || remote !== this.repository) return@loadSessionCatalog
+                ui.sessions = catalog.sessions
                 reorderSessionsByUpdatedAt()
                 refreshVisibleSessions()
                 refreshWorkspaceGroups()
                 val workspaceId = value?.optString("workspaceId")?.takeIf { it.isNotEmpty() }
-                    ?: workspaceGroups.firstOrNull { it.path == path }?.workspaceId.orEmpty()
+                    ?: ui.workspaceGroups.firstOrNull { it.path == path }?.workspaceId.orEmpty()
                 if (workspaceId.isEmpty()) {
-                    workspaceAddBusy = false
-                    workspacePickerError = "Host 尚未返回该目录对应的工作区"
+                    ui.workspaceAddBusy = false
+                    ui.workspacePickerError = "Host 尚未返回该目录对应的工作区"
                     return@loadSessionCatalog
                 }
-                workspaceAddBusy = false
-                workspacePickerScreen = DshWorkspacePickerScreen.RECENT
+                ui.workspaceAddBusy = false
+                ui.workspacePickerScreen = DshWorkspacePickerScreen.RECENT
                 switchWorkspaceTo(workspaceId)
             }, { syncError ->
-                if (!pageAlive || !workspacePickerVisible) return@loadSessionCatalog
-                workspaceAddBusy = false
-                workspacePickerError = "无法同步工作区：${syncError.message}"
+                if (!pageAlive || !ui.workspacePickerVisible) return@loadSessionCatalog
+                ui.workspaceAddBusy = false
+                ui.workspacePickerError = "无法同步工作区：${syncError.message}"
             })
         }
     }
@@ -263,51 +263,51 @@ internal fun DshHomePage.adoptWorkspaceAddDirectory() {
 
 internal fun DshHomePage.openWorkspaceRename(workspaceId: String, currentTitle: String) {
     dismissKeyboard()
-    workspaceRenameTargetId = workspaceId
-    workspaceRenameDraft = currentTitle
-    workspaceActionError = ""
+    ui.workspaceRenameTargetId = workspaceId
+    ui.workspaceRenameDraft = currentTitle
+    ui.workspaceActionError = ""
 }
 
 internal fun DshHomePage.saveWorkspaceRename() {
     val repository = remoteRepo ?: return
-    val workspaceId = workspaceRenameTargetId
-    val title = workspaceRenameDraft.trim()
+    val workspaceId = ui.workspaceRenameTargetId
+    val title = ui.workspaceRenameDraft.trim()
     if (workspaceId.isEmpty() || title.isEmpty()) return
-    workspaceActionBusy = true
-    workspaceActionError = ""
+    ui.workspaceActionBusy = true
+    ui.workspaceActionError = ""
     repository.renameWorkspace(workspaceId, title) { _, error ->
         postToUi {
-            workspaceActionBusy = false
+            ui.workspaceActionBusy = false
             if (error != null) {
-                workspaceActionError = error.message
+                ui.workspaceActionError = error.message
                 return@postToUi
             }
-            workspaceRenameTargetId = ""
-            workspaceRenameDraft = ""
+            ui.workspaceRenameTargetId = ""
+            ui.workspaceRenameDraft = ""
             refreshWorkspaceGroups()
         }
     }
 }
 
 internal fun DshHomePage.openWorkspaceDelete(workspaceId: String) {
-    workspaceDeleteTargetId = workspaceId
-    workspaceActionError = ""
+    ui.workspaceDeleteTargetId = workspaceId
+    ui.workspaceActionError = ""
 }
 
 internal fun DshHomePage.confirmWorkspaceDelete() {
     val repository = remoteRepo ?: return
-    val workspaceId = workspaceDeleteTargetId
+    val workspaceId = ui.workspaceDeleteTargetId
     if (workspaceId.isEmpty()) return
-    workspaceActionBusy = true
-    workspaceActionError = ""
+    ui.workspaceActionBusy = true
+    ui.workspaceActionError = ""
     repository.deleteWorkspace(workspaceId) { _, error ->
         postToUi {
-            workspaceActionBusy = false
+            ui.workspaceActionBusy = false
             if (error != null) {
-                workspaceActionError = error.message
+                ui.workspaceActionError = error.message
                 return@postToUi
             }
-            workspaceDeleteTargetId = ""
+            ui.workspaceDeleteTargetId = ""
             refreshWorkspaceGroups()
         }
     }
@@ -315,7 +315,7 @@ internal fun DshHomePage.confirmWorkspaceDelete() {
 
 internal fun DshHomePage.moveWorkspace(workspaceId: String, delta: Int) {
     val repository = remoteRepo ?: return
-    val ordered = workspaceGroups.filter { it.workspaceId.isNotEmpty() }
+    val ordered = ui.workspaceGroups.filter { it.workspaceId.isNotEmpty() }
     val index = ordered.indexOfFirst { it.workspaceId == workspaceId }
     if (index < 0) return
     val targetIndex = index + delta
@@ -325,13 +325,13 @@ internal fun DshHomePage.moveWorkspace(workspaceId: String, delta: Int) {
     } else {
         ordered[targetIndex].workspaceId
     }
-    workspaceActionBusy = true
-    workspaceActionError = ""
+    ui.workspaceActionBusy = true
+    ui.workspaceActionError = ""
     repository.moveWorkspaceBefore(workspaceId, beforeWorkspaceId) { _, error ->
         postToUi {
-            workspaceActionBusy = false
+            ui.workspaceActionBusy = false
             if (error != null) {
-                workspaceActionError = error.message
+                ui.workspaceActionError = error.message
                 return@postToUi
             }
             refreshWorkspaceGroups()

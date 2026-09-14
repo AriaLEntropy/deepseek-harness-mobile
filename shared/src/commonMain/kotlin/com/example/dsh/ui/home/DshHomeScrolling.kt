@@ -11,7 +11,7 @@ import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.timer.setTimeout
 
 internal fun DshHomePage.refreshMountedSessionRenderTrees() {
-    conversationPanelIds.toList().forEach { refreshSessionRenderTree(it) }
+    ui.conversationPanelIds.toList().forEach { refreshSessionRenderTree(it) }
 }
 
 internal fun DshHomePage.refreshSessionRenderTree(sessionId: String) {
@@ -26,11 +26,11 @@ internal fun DshHomePage.realizeSessionAfterData(
     refreshSessionRenderTree(sessionId)
     addTaskWhenPagerUpdateLayoutFinish {
         refreshSessionRenderTree(sessionId)
-        if (scrollToEndAfterLoad && activeSessionId == sessionId) scrollMessagesToEnd()
+        if (scrollToEndAfterLoad && ui.activeSessionId == sessionId) scrollMessagesToEnd()
     }
     setTimeout(pagerId, 16) {
         refreshSessionRenderTree(sessionId)
-        if (scrollToEndAfterLoad && activeSessionId == sessionId) scrollMessagesToEnd()
+        if (scrollToEndAfterLoad && ui.activeSessionId == sessionId) scrollMessagesToEnd()
     }
 }
 
@@ -72,14 +72,14 @@ internal fun DshHomePage.settleScrollToEnd(generation: Int, attempt: Int) {
 }
 
 internal fun DshHomePage.realizeVisibleMessages() {
-    val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
+    val scroller = messageScrollerRefs[ui.activeSessionId]?.view ?: return
     val content = scroller.contentView as? ListContentView ?: return
     content.flexNode.markDirty()
     content.createRenderViewsOnVisibleRect()
 }
 
 internal fun DshHomePage.onConversationUserScroll(params: ScrollParams) {
-    if (exportSelectMode) updateExportStickySelector()
+    if (ui.exportSelectMode) updateExportStickySelector()
     val maxOffset = (params.contentHeight - params.viewHeight).coerceAtLeast(0f)
     val nearBottom = params.offsetY >= maxOffset - FOLLOW_LIST_SLACK_PX
     if (nearBottom) {
@@ -100,7 +100,7 @@ internal fun DshHomePage.pinFollowListTail() {
 
 internal fun DshHomePage.scrollMessagesToEndAfterLayout() {
     if (!followListTail) return
-    val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
+    val scroller = messageScrollerRefs[ui.activeSessionId]?.view ?: return
     val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
     val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
     scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = false)
@@ -112,7 +112,7 @@ internal fun DshHomePage.scrollMessagesToEndAfterLayout() {
  */
 internal fun DshHomePage.scrollMessagesToEndAnimated() {
     if (!followListTail) return
-    val scroller = messageScrollerRefs[activeSessionId]?.view ?: return
+    val scroller = messageScrollerRefs[ui.activeSessionId]?.view ?: return
     val contentHeight = scroller.contentView?.flexNode?.layoutFrame?.height ?: return
     val viewportHeight = scroller.flexNode?.layoutFrame?.height ?: return
     scroller.setContentOffset(0f, (contentHeight - viewportHeight).coerceAtLeast(0f), animated = true)
@@ -120,10 +120,10 @@ internal fun DshHomePage.scrollMessagesToEndAnimated() {
 
 internal fun DshHomePage.settleScrollToMessage(messageId: String, generation: Int, attempt: Int) {
     if (generation != scrollSettleGeneration) return
-    val row = messageRowRefs[messageRowKey(activeSessionId, messageId)]?.view
+    val row = messageRowRefs[messageRowKey(ui.activeSessionId, messageId)]?.view
     val rowY = row?.flexNode?.layoutFrame?.y
     if (rowY != null) {
-        messageScrollerRefs[activeSessionId]?.view?.setContentOffset(
+        messageScrollerRefs[ui.activeSessionId]?.view?.setContentOffset(
             0f,
             rowY.coerceAtLeast(0f),
             animated = false,

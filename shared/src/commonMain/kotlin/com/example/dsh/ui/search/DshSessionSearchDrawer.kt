@@ -1,5 +1,6 @@
 package com.example.dsh.ui.search
 
+import com.example.dsh.search.DshSessionSearchHit
 import com.example.dsh.session.DshSession
 import com.example.dsh.session.DshWorkspaceGroup
 import com.example.dsh.platform.currentTimeMillis
@@ -39,31 +40,6 @@ import com.example.dsh.ui.session.DshOverflowMenu
 import com.example.dsh.ui.session.DshViewOptionsMenu
 import com.example.dsh.ui.connection.DshWordmark
 
-/**
- * 搜索命中行：一条会话内匹配的消息（标题命中时退化为标题行）。
- * 同一会话有多条内容命中时拆成多行，用 [matchBadge]（如「1/2」）标注序号。
- * 摘要拆成 before/match/after 三段，渲染时把 match 加粗。
- */
-internal data class DshSessionSearchHit(
-    val sessionId: String,
-    val title: String,
-    val dateLabel: String,
-    val snippetBefore: String = "",
-    val snippetMatch: String = "",
-    val snippetAfter: String = "",
-    val matchBadge: String = "",
-)
-
-internal data class DshSessionSearchSnippet(
-    val before: String,
-    val match: String,
-    val after: String,
-)
-
-private const val DSH_SEARCH_SNIPPET_BEFORE = 12
-private const val DSH_SEARCH_SNIPPET_AFTER = 26
-private const val DSH_SEARCH_SNIPPET_MAX = DSH_SEARCH_SNIPPET_BEFORE + DSH_SEARCH_SNIPPET_AFTER
-
 /** 抽屉底部固定区顶部的渐变遮罩高度：列表滑入该区间时被侧栏底色渐隐盖住。 */
 private const val DSH_DRAWER_FOOTER_MASK_HEIGHT = 32f
 
@@ -73,49 +49,6 @@ private const val DSH_DRAWER_CONTROL_FONT = 15f
 private const val DSH_DRAWER_TEXT_LINE = 22f
 private const val DSH_DRAWER_CAPTION_FONT = 12f
 private const val DSH_DRAWER_CAPTION_LINE = 16f
-
-private val DSH_SEARCH_FENCE = Regex("```[\\s\\S]*?```")
-private val DSH_SEARCH_IMAGE = Regex("!\\[[^\\]]*\\]\\([^)]*\\)")
-private val DSH_SEARCH_LINK = Regex("\\[([^\\]]*)\\]\\([^)]*\\)")
-private val DSH_SEARCH_HTML = Regex("<[^>]+>")
-private val DSH_SEARCH_HEADING = Regex("(?m)^\\s*#{1,6}\\s*")
-private val DSH_SEARCH_QUOTE = Regex("(?m)^\\s*>\\s?")
-private val DSH_SEARCH_LIST = Regex("(?m)^\\s*(?:[-*+]|\\d+[.)])\\s+")
-private val DSH_SEARCH_INLINE_CODE = Regex("`([^`]*)`")
-private val DSH_SEARCH_EMPHASIS = Regex("(\\*\\*|__|\\*|_|~~)")
-private val DSH_SEARCH_WHITESPACE = Regex("\\s+")
-
-/** 去掉 Markdown/HTML 语法（代码块、图片、链接、标题、列表、强调、标签），压成单行纯文本。 */
-internal fun dshSearchPlainText(content: String): String {
-    var text = content
-    text = DSH_SEARCH_FENCE.replace(text, " ")
-    text = DSH_SEARCH_IMAGE.replace(text, " ")
-    text = DSH_SEARCH_LINK.replace(text) { it.groupValues[1] }
-    text = DSH_SEARCH_HTML.replace(text, " ")
-    text = DSH_SEARCH_HEADING.replace(text, "")
-    text = DSH_SEARCH_QUOTE.replace(text, "")
-    text = DSH_SEARCH_LIST.replace(text, "")
-    text = DSH_SEARCH_INLINE_CODE.replace(text) { it.groupValues[1] }
-    text = DSH_SEARCH_EMPHASIS.replace(text, "")
-    return DSH_SEARCH_WHITESPACE.replace(text, " ").trim()
-}
-
-/**
- * 生成单行摘要：以匹配词为中心取上下文，两端按需补省略号；
- * 匹配段单独返回，供结果行加粗显示。
- */
-internal fun dshSearchSnippet(content: String, needle: String): DshSessionSearchSnippet {
-    val plain = dshSearchPlainText(content)
-    val index = plain.lowercase().indexOf(needle.lowercase())
-    if (index < 0) return DshSessionSearchSnippet(plain.take(DSH_SEARCH_SNIPPET_MAX), "", "")
-    val start = (index - DSH_SEARCH_SNIPPET_BEFORE).coerceAtLeast(0)
-    val matchEnd = (index + needle.length).coerceAtMost(plain.length)
-    val end = (matchEnd + DSH_SEARCH_SNIPPET_AFTER).coerceAtMost(plain.length)
-    val before = (if (start > 0) "…" else "") + plain.substring(start, index)
-    val match = plain.substring(index, matchEnd)
-    val after = plain.substring(matchEnd, end) + (if (end < plain.length) "…" else "")
-    return DshSessionSearchSnippet(before, match, after)
-}
 
 internal fun ViewContainer<*, *>.DshSessionDrawer(
     sessions: () -> ObservableList<DshSession>,

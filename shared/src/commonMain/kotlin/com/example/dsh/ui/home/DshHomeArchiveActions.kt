@@ -23,68 +23,68 @@ internal fun DshHomePage.openArchiveList() {
     dismissKeyboard()
     closeMessageActions()
     closeSessionDrawerImmediately()
-    archivedSessions.clear()
-    archiveGroups.clear()
-    archiveProjectOptions.clear()
-    archiveSearch = ""
-    archiveProjectFilter = ""
-    archiveSort = DshArchiveSort.UPDATED
-    archiveMenu = ""
-    archiveNotice = ""
-    archiveConfirm = null
-    archiveOverflowVisible = false
-    archiveOverflowTargetId = ""
-    archiveBusy = false
-    archiveListVisible = true
-    archiveOpeningId = ""
+    ui.archivedSessions.clear()
+    ui.archiveGroups.clear()
+    ui.archiveProjectOptions.clear()
+    ui.archiveSearch = ""
+    ui.archiveProjectFilter = ""
+    ui.archiveSort = DshArchiveSort.UPDATED
+    ui.archiveMenu = ""
+    ui.archiveNotice = ""
+    ui.archiveConfirm = null
+    ui.archiveOverflowVisible = false
+    ui.archiveOverflowTargetId = ""
+    ui.archiveBusy = false
+    ui.archiveListVisible = true
+    ui.archiveOpeningId = ""
     refreshArchiveList()
 }
 
 internal fun DshHomePage.closeArchiveList() {
     archiveRequestGeneration++
-    archiveListVisible = false
-    archiveListLoading = false
-    archiveOpeningId = ""
-    archiveListError = ""
-    archiveBusy = false
-    archiveConfirm = null
-    archiveOverflowVisible = false
-    archiveOverflowTargetId = ""
-    archiveMenu = ""
-    archivedSessions.clear()
-    archiveGroups.clear()
-    archiveProjectOptions.clear()
+    ui.archiveListVisible = false
+    ui.archiveListLoading = false
+    ui.archiveOpeningId = ""
+    ui.archiveListError = ""
+    ui.archiveBusy = false
+    ui.archiveConfirm = null
+    ui.archiveOverflowVisible = false
+    ui.archiveOverflowTargetId = ""
+    ui.archiveMenu = ""
+    ui.archivedSessions.clear()
+    ui.archiveGroups.clear()
+    ui.archiveProjectOptions.clear()
 }
 
 internal fun DshHomePage.refreshArchiveList() {
-    if (!archiveListVisible || archiveOpeningId.isNotEmpty()) return
+    if (!ui.archiveListVisible || ui.archiveOpeningId.isNotEmpty()) return
     val remote = remoteRepo
     if (remote == null || !remote.isProductReady()) {
-        archiveListLoading = false
-        archiveListError = "未连接到 Host，请连接后刷新"
+        ui.archiveListLoading = false
+        ui.archiveListError = "未连接到 Host，请连接后刷新"
         return
     }
     val expected = ++archiveRequestGeneration
     val connection = activeConnectionId
-    fun current() = pageAlive && archiveListVisible && expected == archiveRequestGeneration &&
+    fun current() = pageAlive && ui.archiveListVisible && expected == archiveRequestGeneration &&
         repository === remote && activeConnectionId == connection
-    archiveListLoading = true
-    archiveListError = ""
+    ui.archiveListLoading = true
+    ui.archiveListError = ""
     // 先读 meta（createdAt/cwd），失败也继续，只影响「创建时间」排序。
     remote.loadSessionMeta({ meta ->
         if (!current()) return@loadSessionMeta
-        sessionCreatedAt = meta.associate { it.sessionId to it.createdAt }
+        ui.sessionCreatedAt = meta.associate { it.sessionId to it.createdAt }
         loadArchiveCatalog(remote, ::current)
     }, {
         if (!current()) return@loadSessionMeta
-        sessionCreatedAt = emptyMap()
+        ui.sessionCreatedAt = emptyMap()
         loadArchiveCatalog(remote, ::current)
     })
     setTimeout(pagerId, 35_000) {
-        if (current() && archiveListLoading) {
+        if (current() && ui.archiveListLoading) {
             archiveRequestGeneration++
-            archiveListLoading = false
-            archiveListError = "归档列表加载超时，请刷新重试"
+            ui.archiveListLoading = false
+            ui.archiveListError = "归档列表加载超时，请刷新重试"
         }
     }
 }
@@ -92,15 +92,15 @@ internal fun DshHomePage.refreshArchiveList() {
 internal fun DshHomePage.loadArchiveCatalog(remote: DshRemoteRepository, current: () -> Boolean) {
     remote.loadSessionCatalog({ catalog ->
         if (!current()) return@loadSessionCatalog
-        archiveListLoading = false
-        archivedSessions.diffUpdate(catalog.archived) { old, new -> old == new }
+        ui.archiveListLoading = false
+        ui.archivedSessions.diffUpdate(catalog.archived) { old, new -> old == new }
         refreshVisibleSessions()
         refreshWorkspaceGroups()
         rebuildArchiveGroups()
     }, { error ->
         if (!current()) return@loadSessionCatalog
-        archiveListLoading = false
-        archiveListError = "归档列表未更新：${error.message}。请点击刷新重试。"
+        ui.archiveListLoading = false
+        ui.archiveListError = "归档列表未更新：${error.message}。请点击刷新重试。"
     })
 }
 
@@ -108,21 +108,21 @@ internal fun DshHomePage.rebuildArchiveGroups() {
     val remote = remoteRepo ?: return
     val all = remote.archivedWorkspaceGroups()
     // 项目筛选是「按工作区/文件夹」入口：列出全部工作区，而不是仅有归档会话的工作区。
-    archiveProjectOptions.diffUpdate(
+    ui.archiveProjectOptions.diffUpdate(
         remote.workspaceGroups()
             .filter { it.workspaceId.isNotEmpty() }
             .map { DshArchiveProjectOption(it.workspaceId, it.title) },
     ) { old, new -> old == new }
     var groups = all
-    if (archiveProjectFilter.isNotEmpty()) groups = groups.filter { it.workspaceId == archiveProjectFilter }
-    val query = archiveSearch.trim()
+    if (ui.archiveProjectFilter.isNotEmpty()) groups = groups.filter { it.workspaceId == ui.archiveProjectFilter }
+    val query = ui.archiveSearch.trim()
     if (query.isNotEmpty()) {
         groups = groups.mapNotNull { group ->
             val matched = group.sessions.filter { it.title.contains(query, ignoreCase = true) }
             if (matched.isEmpty()) null else group.copy(sessions = matched)
         }
     }
-    val comparator = when (archiveSort) {
+    val comparator = when (ui.archiveSort) {
         DshArchiveSort.UPDATED -> compareByDescending<DshSession> { it.updatedAt }
         DshArchiveSort.CREATED -> compareByDescending<DshSession> { it.createdAt }
         DshArchiveSort.NAME -> compareBy { it.title.lowercase() }
@@ -130,54 +130,54 @@ internal fun DshHomePage.rebuildArchiveGroups() {
     val enriched = groups.map { group ->
         group.copy(
             sessions = group.sessions
-                .map { session -> sessionCreatedAt[session.id]?.let { session.copy(createdAt = it) } ?: session }
+                .map { session -> ui.sessionCreatedAt[session.id]?.let { session.copy(createdAt = it) } ?: session }
                 .sortedWith(comparator),
         )
     }
-    archiveGroups.diffUpdate(enriched) { old, new -> old == new }
+    ui.archiveGroups.diffUpdate(enriched) { old, new -> old == new }
 }
 
-internal fun DshHomePage.onArchiveSearch(value: String) { archiveSearch = value; rebuildArchiveGroups() }
+internal fun DshHomePage.onArchiveSearch(value: String) { ui.archiveSearch = value; rebuildArchiveGroups() }
 
 internal fun DshHomePage.onArchiveToggleMenu(menu: String, anchorX: Float = -1f, anchorY: Float = -1f) {
-    archiveMenu = menu
-    archiveFilterX = anchorX
-    archiveFilterY = anchorY
+    ui.archiveMenu = menu
+    ui.archiveFilterX = anchorX
+    ui.archiveFilterY = anchorY
 }
 
-internal fun DshHomePage.onArchivePickProject(id: String) { archiveProjectFilter = id; archiveMenu = ""; rebuildArchiveGroups() }
+internal fun DshHomePage.onArchivePickProject(id: String) { ui.archiveProjectFilter = id; ui.archiveMenu = ""; rebuildArchiveGroups() }
 
-internal fun DshHomePage.onArchivePickSort(value: DshArchiveSort) { archiveSort = value; archiveMenu = ""; rebuildArchiveGroups() }
+internal fun DshHomePage.onArchivePickSort(value: DshArchiveSort) { ui.archiveSort = value; ui.archiveMenu = ""; rebuildArchiveGroups() }
 
 internal fun DshHomePage.requestArchiveDeleteSession(sessionId: String) {
-    val session = archivedSessions.firstOrNull { it.id == sessionId } ?: return
-    archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.SESSION, sessionId, session.title, 1)
+    val session = ui.archivedSessions.firstOrNull { it.id == sessionId } ?: return
+    ui.archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.SESSION, sessionId, session.title, 1)
 }
 
 /** 归档行 ⋯：复用主页面的 overflow menu，锚定到点击位置，菜单项为取消归档 / 删除。 */
 internal fun DshHomePage.openArchiveOverflowFor(sessionId: String, anchorX: Float = -1f, anchorY: Float = -1f) {
-    if (archiveBusy || archiveOpeningId.isNotEmpty()) return
-    if (archivedSessions.none { it.id == sessionId }) return
-    archiveOverflowTargetId = sessionId
-    archiveOverflowAnchorX = anchorX
-    archiveOverflowAnchorY = anchorY
-    archiveOverflowVisible = true
+    if (ui.archiveBusy || ui.archiveOpeningId.isNotEmpty()) return
+    if (ui.archivedSessions.none { it.id == sessionId }) return
+    ui.archiveOverflowTargetId = sessionId
+    ui.archiveOverflowAnchorX = anchorX
+    ui.archiveOverflowAnchorY = anchorY
+    ui.archiveOverflowVisible = true
 }
 
 internal fun DshHomePage.dismissArchiveOverflow() {
-    archiveOverflowVisible = false
+    ui.archiveOverflowVisible = false
 }
 
 internal fun DshHomePage.archiveOverflowActions(): ObservableList<DshOverflowAction> {
     val result = ObservableList<DshOverflowAction>()
-    if (archivedSessions.none { it.id == archiveOverflowTargetId }) return result
+    if (ui.archivedSessions.none { it.id == ui.archiveOverflowTargetId }) return result
     result.add(DshOverflowAction("unarchive", "取消归档", "archive.svg"))
     result.add(DshOverflowAction("delete", "删除", "delete.svg", danger = true))
     return result
 }
 
 internal fun DshHomePage.onArchiveOverflowAction(id: String) {
-    val targetId = archiveOverflowTargetId
+    val targetId = ui.archiveOverflowTargetId
     dismissArchiveOverflow()
     when (id) {
         "unarchive" -> unarchiveArchivedSession(targetId)
@@ -188,133 +188,133 @@ internal fun DshHomePage.onArchiveOverflowAction(id: String) {
 /** 取消归档：走 host-plugin unarchive；成功后该会话回到主列表与工作区分组。 */
 
 internal fun DshHomePage.unarchiveArchivedSession(sessionId: String) {
-    if (archiveBusy) return
+    if (ui.archiveBusy) return
     val remote = remoteRepo ?: run {
-        archiveListError = "未连接 Host"
+        ui.archiveListError = "未连接 Host"
         return
     }
     val connection = activeConnectionId
-    archiveBusy = true
-    archiveListError = ""
-    archiveNotice = ""
+    ui.archiveBusy = true
+    ui.archiveListError = ""
+    ui.archiveNotice = ""
     remote.unarchiveSession(sessionId) { _, error ->
         postToUi {
             if (!pageAlive || this.repository !== remote || activeConnectionId != connection) return@postToUi
-            archiveBusy = false
+            ui.archiveBusy = false
             if (error != null) {
-                archiveListError = "取消归档失败：${error.message}"
+                ui.archiveListError = "取消归档失败：${error.message}"
                 return@postToUi
             }
-            archiveNotice = "已取消归档"
-            archivedSessions.diffUpdate(archivedSessions.filterNot { it.id == sessionId }) { old, new -> old == new }
+            ui.archiveNotice = "已取消归档"
+            ui.archivedSessions.diffUpdate(ui.archivedSessions.filterNot { it.id == sessionId }) { old, new -> old == new }
             refreshVisibleSessions()
             refreshWorkspaceGroups()
             rebuildArchiveGroups()
         }
     }
     setTimeout(pagerId, 35_000) {
-        if (pageAlive && archiveBusy) {
-            archiveBusy = false
-            archiveListError = "取消归档超时，请刷新确认结果"
+        if (pageAlive && ui.archiveBusy) {
+            ui.archiveBusy = false
+            ui.archiveListError = "取消归档超时，请刷新确认结果"
         }
     }
 }
 
 internal fun DshHomePage.requestArchiveDeleteProject(group: DshWorkspaceGroup) {
-    archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.PROJECT, group.workspaceId, group.title, group.sessions.size)
+    ui.archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.PROJECT, group.workspaceId, group.title, group.sessions.size)
 }
 
 internal fun DshHomePage.requestArchiveDeleteAll() {
-    archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.ALL, "", "", archivedSessions.size)
+    ui.archiveConfirm = DshArchiveConfirm(DshArchiveConfirmKind.ALL, "", "", ui.archivedSessions.size)
 }
 
-internal fun DshHomePage.cancelArchiveConfirm() { archiveConfirm = null }
+internal fun DshHomePage.cancelArchiveConfirm() { ui.archiveConfirm = null }
 
 internal fun DshHomePage.archiveDateLabel(timestamp: Long): String =
     if (timestamp <= 0) "" else bridgeModule.dateFormatter(timestamp, "yyyy年M月d日, HH:mm")
 
 internal fun DshHomePage.confirmArchiveDelete() {
-    val target = archiveConfirm ?: return
-    if (archiveBusy) return
-    val remote = remoteRepo ?: run { archiveListError = "未连接 Host"; return }
+    val target = ui.archiveConfirm ?: return
+    if (ui.archiveBusy) return
+    val remote = remoteRepo ?: run { ui.archiveListError = "未连接 Host"; return }
     val ids = when (target.kind) {
         DshArchiveConfirmKind.SESSION -> listOf(target.id)
         DshArchiveConfirmKind.PROJECT -> remote.archivedWorkspaceGroups()
             .firstOrNull { it.workspaceId == target.id }?.sessions?.map { it.id } ?: emptyList()
-        DshArchiveConfirmKind.ALL -> archivedSessions.map { it.id }
+        DshArchiveConfirmKind.ALL -> ui.archivedSessions.map { it.id }
     }
-    if (ids.isEmpty()) { archiveConfirm = null; return }
-    archiveBusy = true
-    archiveConfirm = null
-    archiveNotice = ""
+    if (ids.isEmpty()) { ui.archiveConfirm = null; return }
+    ui.archiveBusy = true
+    ui.archiveConfirm = null
+    ui.archiveNotice = ""
     remote.deleteSessions(ids) { deleted, failed ->
-        archiveBusy = false
-        archiveNotice = if (failed.isEmpty()) "已删除 ${deleted.size} 条会话"
+        ui.archiveBusy = false
+        ui.archiveNotice = if (failed.isEmpty()) "已删除 ${deleted.size} 条会话"
         else "已删除 ${deleted.size} 条，${failed.size} 条失败：${failed.first().second}"
         refreshArchiveList()
     }
     setTimeout(pagerId, 35_000) {
-        if (pageAlive && archiveBusy) {
-            archiveBusy = false
-            archiveListError = "删除超时，请刷新确认结果"
+        if (pageAlive && ui.archiveBusy) {
+            ui.archiveBusy = false
+            ui.archiveListError = "删除超时，请刷新确认结果"
         }
     }
 }
 
 internal fun DshHomePage.openArchivedSession(sessionId: String) {
-    if (archiveListLoading || archiveOpeningId.isNotEmpty()) return
+    if (ui.archiveListLoading || ui.archiveOpeningId.isNotEmpty()) return
     val expected = ++archiveRequestGeneration
-    val previousSession = activeSessionId
-    archiveOpeningId = sessionId
-    archiveListError = ""
-    fun current() = archiveListVisible && expected == archiveRequestGeneration && activeSessionId == previousSession
+    val previousSession = ui.activeSessionId
+    ui.archiveOpeningId = sessionId
+    ui.archiveListError = ""
+    fun current() = ui.archiveListVisible && expected == archiveRequestGeneration && ui.activeSessionId == previousSession
     jumpToSession(sessionId, isCurrent = ::current) { ok, message ->
-        if (!archiveListVisible || expected != archiveRequestGeneration) return@jumpToSession
+        if (!ui.archiveListVisible || expected != archiveRequestGeneration) return@jumpToSession
         if (ok) closeArchiveList() else {
-            archiveOpeningId = ""
-            archiveListError = message
+            ui.archiveOpeningId = ""
+            ui.archiveListError = message
         }
     }
     setTimeout(pagerId, 35_000) {
-        if (pageAlive && current() && archiveOpeningId.isNotEmpty()) {
+        if (pageAlive && current() && ui.archiveOpeningId.isNotEmpty()) {
             archiveRequestGeneration++
-            archiveOpeningId = ""
-            archiveListError = "读取历史超时，请重试"
+            ui.archiveOpeningId = ""
+            ui.archiveListError = "读取历史超时，请重试"
         }
     }
 }
 
 internal fun DshHomePage.confirmSessionArchive() {
-    if (sessionArchiveBusy) return
-    val targetId = sessionActionTargetId
+    if (ui.sessionArchiveBusy) return
+    val targetId = ui.sessionActionTargetId
     if (targetId.isEmpty()) return
     val repository = remoteRepo ?: run {
-        sessionArchiveError = "当前连接不支持归档会话"
+        ui.sessionArchiveError = "当前连接不支持归档会话"
         return
     }
-    sessionArchiveBusy = true
-    sessionArchiveError = ""
+    ui.sessionArchiveBusy = true
+    ui.sessionArchiveError = ""
     val expectedConnection = activeConnectionId
     repository.archiveSession(targetId) { _, error ->
         postToUi {
             if (!pageAlive || this.repository !== repository || activeConnectionId != expectedConnection) return@postToUi
-            sessionArchiveBusy = false
+            ui.sessionArchiveBusy = false
             if (error != null) {
-                sessionArchiveError = error.message
+                ui.sessionArchiveError = error.message
                 return@postToUi
             }
-            sessionArchiveVisible = false
+            ui.sessionArchiveVisible = false
             refreshVisibleSessions()
             refreshWorkspaceGroups()
-            val catalog = repository.sessionCatalog(sessions.toList())
-            val next = catalog.nextActive(activeSessionId.takeUnless { it == targetId })
+            val catalog = repository.sessionCatalog(ui.sessions.toList())
+            val next = catalog.nextActive(ui.activeSessionId.takeUnless { it == targetId })
             if (next != null) {
                 selectMountedSession(next.id)
                 loadRepository(preferredSessionId = next.id, restoreOnError = false)
             } else {
                 cancelStreamingForSessionSwitch()
-                activeSessionId = ""
-                messages = ObservableList()
+                ui.activeSessionId = ""
+                ui.messages = ObservableList()
                 createSession()
             }
         }
@@ -324,37 +324,37 @@ internal fun DshHomePage.confirmSessionArchive() {
 // ===== 删除会话（dsh-session-manager 插件 /delete）=====
 
 internal fun DshHomePage.confirmSessionDelete() {
-    if (sessionDeleteBusy) return
-    val targetId = sessionActionTargetId
+    if (ui.sessionDeleteBusy) return
+    val targetId = ui.sessionActionTargetId
     if (targetId.isEmpty()) return
     val repository = remoteRepo ?: run {
-        sessionDeleteError = "当前连接不支持删除会话"
+        ui.sessionDeleteError = "当前连接不支持删除会话"
         return
     }
-    sessionDeleteBusy = true
-    sessionDeleteError = ""
+    ui.sessionDeleteBusy = true
+    ui.sessionDeleteError = ""
     val connection = activeConnectionId
     repository.callPlugin("delete", JSONObject().apply { put("sessionId", targetId) }) { _, error ->
         postToUi {
             if (!pageAlive || this.repository !== repository || activeConnectionId != connection) return@postToUi
-            sessionDeleteBusy = false
+            ui.sessionDeleteBusy = false
             if (error != null) {
-                sessionDeleteError = error.message
+                ui.sessionDeleteError = error.message
                 return@postToUi
             }
-            sessionDeleteVisible = false
-            val remaining = sessions.toList().filterNot { it.id == targetId }
-            sessions = remaining
+            ui.sessionDeleteVisible = false
+            val remaining = ui.sessions.toList().filterNot { it.id == targetId }
+            ui.sessions = remaining
             repository.removeSession(targetId)
             sessionMessageStates.remove(targetId)
             sessionCacheStates.remove(targetId)
             sessionMessageReady.remove(targetId)
-            conversationPanelIds.remove(targetId)
+            ui.conversationPanelIds.remove(targetId)
             refreshVisibleSessions()
             runCatching { localStore?.deleteSession(activeConnectionId, targetId) }
             refreshWorkspaceGroups()
-            if (activeSessionId != targetId) return@postToUi
-            val next = repository.sessionCatalog(sessions).nextActive(null)
+            if (ui.activeSessionId != targetId) return@postToUi
+            val next = repository.sessionCatalog(ui.sessions).nextActive(null)
             if (next == null) {
                 createSession()
             } else {
@@ -365,14 +365,14 @@ internal fun DshHomePage.confirmSessionDelete() {
 }
 
 internal fun DshHomePage.resetSessionActions() {
-    sessionRenameVisible = false; sessionRenameBusy = false; sessionRenameError = ""
-    sessionArchiveVisible = false; sessionArchiveBusy = false; sessionArchiveError = ""
-    sessionDeleteVisible = false; sessionDeleteBusy = false; sessionDeleteError = ""
-    sessionActionTargetId = ""
-    pendingSessionIds = emptySet()
+    ui.sessionRenameVisible = false; ui.sessionRenameBusy = false; ui.sessionRenameError = ""
+    ui.sessionArchiveVisible = false; ui.sessionArchiveBusy = false; ui.sessionArchiveError = ""
+    ui.sessionDeleteVisible = false; ui.sessionDeleteBusy = false; ui.sessionDeleteError = ""
+    ui.sessionActionTargetId = ""
+    ui.pendingSessionIds = emptySet()
     cancelReadableExport()
     cancelExportSelection()
-    readableExport = DshTextExportState()
+    ui.readableExport = DshTextExportState()
     readableExportSourceText = null
-    readableExportDialogVisible = false
+    ui.readableExportDialogVisible = false
 }

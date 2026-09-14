@@ -7,11 +7,11 @@ import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.example.dsh.models.selectedReasoningEffortName
 
 internal fun DshHomePage.removeCustomModel(index: Int) {
-    if (index in 0 until modelsCustomModels.size) modelsCustomModels.removeAt(index)
+    if (index in 0 until ui.modelsCustomModels.size) ui.modelsCustomModels.removeAt(index)
 }
 
 internal fun DshHomePage.composerFolderLabel(): String {
-    val session = sessions.firstOrNull { it.id == activeSessionId }
+    val session = ui.sessions.firstOrNull { it.id == ui.activeSessionId }
     val cwd = session?.cwd
     if (cwd.isNullOrEmpty()) return "文件夹（可选）"
     // 只显示绝对路径最后一段（兼容 Windows 反斜杠与 Unix 斜杠，过滤空段），
@@ -22,7 +22,7 @@ internal fun DshHomePage.composerFolderLabel(): String {
 
 internal fun DshHomePage.archiveActiveSession() {
     val repository = remoteRepo ?: return
-    repository.archiveSession(activeSessionId) { _, _ ->
+    repository.archiveSession(ui.activeSessionId) { _, _ ->
         postToUi {
             loadRepository(preferredSessionId = null)
             refreshWorkspaceGroups()
@@ -36,44 +36,44 @@ internal fun DshHomePage.loadModels(sessionId: String) {
     val hostRepository = repository ?: return
     val version = ++modelRequestVersion
     hostRepository.loadModels(sessionId, { loaded ->
-        if (!pageAlive || repository !== hostRepository || activeSessionId != sessionId || version != modelRequestVersion) return@loadModels
-        selectedModelLabel = loaded.current.name
-        selectedEffortLabel = selectedReasoningEffortName(loaded.current)
-        modelOptions = ObservableList(loaded.options.toMutableList())
-        modelPickerBusy = false
-        modelPickerError = if (loaded.routable) "" else "当前模型不可用，请选择其他模型。"
+        if (!pageAlive || repository !== hostRepository || ui.activeSessionId != sessionId || version != modelRequestVersion) return@loadModels
+        ui.selectedModelLabel = loaded.current.name
+        ui.selectedEffortLabel = selectedReasoningEffortName(loaded.current)
+        ui.modelOptions = ObservableList(loaded.options.toMutableList())
+        ui.modelPickerBusy = false
+        ui.modelPickerError = if (loaded.routable) "" else "当前模型不可用，请选择其他模型。"
     }, { error ->
-        if (!pageAlive || repository !== hostRepository || activeSessionId != sessionId || version != modelRequestVersion) return@loadModels
-        modelPickerBusy = false
-        modelPickerError = error
+        if (!pageAlive || repository !== hostRepository || ui.activeSessionId != sessionId || version != modelRequestVersion) return@loadModels
+        ui.modelPickerBusy = false
+        ui.modelPickerError = error
     })
 }
 
 internal fun DshHomePage.openModelPicker() {
-    if (sessions.isEmpty()) return
+    if (ui.sessions.isEmpty()) return
     dismissKeyboard()
-    commandSheetVisible = false
-    modelEffortsVisible = false
-    modelPickerVisible = true
-    modelPickerBusy = true
-    modelPickerError = ""
-    loadModels(activeSessionId)
+    ui.commandSheetVisible = false
+    ui.modelEffortsVisible = false
+    ui.modelPickerVisible = true
+    ui.modelPickerBusy = true
+    ui.modelPickerError = ""
+    loadModels(ui.activeSessionId)
 }
 
 internal fun DshHomePage.selectModel(option: DshModelOption) {
     val hostRepository = repository ?: return
-    if (modelPickerBusy) return
-    val sessionId = activeSessionId
+    if (ui.modelPickerBusy) return
+    val sessionId = ui.activeSessionId
     val version = ++modelRequestVersion
-    modelPickerBusy = true
-    modelPickerError = ""
+    ui.modelPickerBusy = true
+    ui.modelPickerError = ""
     hostRepository.selectModel(sessionId, option, { selected ->
-        if (!pageAlive || repository !== hostRepository || activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
-        selectedModelLabel = selected.name
-        selectedEffortLabel = selectedReasoningEffortName(selected)
-        modelPickerBusy = false
-        modelPickerVisible = false
-        modelOptions = ObservableList(modelOptions.map {
+        if (!pageAlive || repository !== hostRepository || ui.activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
+        ui.selectedModelLabel = selected.name
+        ui.selectedEffortLabel = selectedReasoningEffortName(selected)
+        ui.modelPickerBusy = false
+        ui.modelPickerVisible = false
+        ui.modelOptions = ObservableList(ui.modelOptions.map {
             if (it.provider == selected.provider && it.model == selected.model) {
                 it.copy(selected = true, reasoningEffort = selected.reasoningEffort)
             } else {
@@ -81,9 +81,9 @@ internal fun DshHomePage.selectModel(option: DshModelOption) {
             }
         }.toMutableList())
     }, { error ->
-        if (!pageAlive || repository !== hostRepository || activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
-        modelPickerBusy = false
-        modelPickerError = error
+        if (!pageAlive || repository !== hostRepository || ui.activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
+        ui.modelPickerBusy = false
+        ui.modelPickerError = error
     })
 }
 
@@ -91,18 +91,18 @@ internal fun DshHomePage.selectModel(option: DshModelOption) {
 
 internal fun DshHomePage.selectModelEffort(effortId: String) {
     val hostRepository = repository ?: return
-    if (modelPickerBusy) return
-    val sessionId = activeSessionId
+    if (ui.modelPickerBusy) return
+    val sessionId = ui.activeSessionId
     val version = ++modelRequestVersion
-    val current = modelOptions.firstOrNull { it.selected } ?: return
-    modelPickerBusy = true
-    modelPickerError = ""
+    val current = ui.modelOptions.firstOrNull { it.selected } ?: return
+    ui.modelPickerBusy = true
+    ui.modelPickerError = ""
     hostRepository.selectModel(sessionId, current.copy(reasoningEffort = effortId), { selected ->
-        if (!pageAlive || repository !== hostRepository || activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
-        selectedModelLabel = selected.name
-        selectedEffortLabel = selectedReasoningEffortName(selected)
-        modelPickerBusy = false
-        modelOptions = ObservableList(modelOptions.map {
+        if (!pageAlive || repository !== hostRepository || ui.activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
+        ui.selectedModelLabel = selected.name
+        ui.selectedEffortLabel = selectedReasoningEffortName(selected)
+        ui.modelPickerBusy = false
+        ui.modelOptions = ObservableList(ui.modelOptions.map {
             if (it.provider == selected.provider && it.model == selected.model) {
                 it.copy(selected = true, reasoningEffort = selected.reasoningEffort)
             } else {
@@ -110,9 +110,9 @@ internal fun DshHomePage.selectModelEffort(effortId: String) {
             }
         }.toMutableList())
     }, { error ->
-        if (!pageAlive || repository !== hostRepository || activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
-        modelPickerBusy = false
-        modelPickerError = error
+        if (!pageAlive || repository !== hostRepository || ui.activeSessionId != sessionId || version != modelRequestVersion) return@selectModel
+        ui.modelPickerBusy = false
+        ui.modelPickerError = error
     })
 }
 

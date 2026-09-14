@@ -38,7 +38,7 @@ internal fun DshHomePage.loadHistory(
     // Show the selected session immediately. The Host history request is
     // remote and can take a moment, so keeping the previous list here
     // makes a session switch look stuck.
-    messages = sessionMessageState(
+    ui.messages = sessionMessageState(
         sessionId,
         scrollToEndAfterLoad = scrollToEndAfterLoad,
     )
@@ -59,7 +59,7 @@ internal fun DshHomePage.fetchHostHistory(
     val requestGeneration = historyRequestGeneration
     val hostRepository = repository ?: return
     hostRepository.loadHistory(sessionId, { loaded ->
-        if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
+        if (requestGeneration != historyRequestGeneration || ui.activeSessionId != sessionId) return@loadHistory
         sessionMessageReady.add(sessionId)
         sessionCacheStates[sessionId] = DshSessionCacheState.SYNCED
         replaceMessagesIfChanged(loaded)
@@ -67,8 +67,8 @@ internal fun DshHomePage.fetchHostHistory(
         completePendingSessionSelection(sessionId)
         realizeSessionAfterData(sessionId, scrollToEndAfterLoad)
     }, { error ->
-        if (requestGeneration != historyRequestGeneration || activeSessionId != sessionId) return@loadHistory
-        if (messages.isNotEmpty()) {
+        if (requestGeneration != historyRequestGeneration || ui.activeSessionId != sessionId) return@loadHistory
+        if (ui.messages.isNotEmpty()) {
             if (isRemoteHost) {
                 sessionCacheStates[sessionId] = DshSessionCacheState.SYNC_FAILED
                 connectionLabel = "远程历史同步失败 · 已显示缓存"
@@ -76,7 +76,7 @@ internal fun DshHomePage.fetchHostHistory(
                 connectionLabel = "内核连接失败 · 已显示缓存"
             }
         } else {
-            messages.add(DshMessage("history-error", DshMessageRole.ERROR, error))
+            ui.messages.add(DshMessage("history-error", DshMessageRole.ERROR, error))
         }
     })
 }
@@ -91,7 +91,7 @@ internal fun DshHomePage.loadWebTimeline(
     val requestVersion = ++timelineReadVersion
     val scopeId = activeConnectionId
     fun current() = pageAlive && repository === hostRepository && activeConnectionId == scopeId &&
-        activeSessionId == sessionId && requestVersion == timelineReadVersion
+        ui.activeSessionId == sessionId && requestVersion == timelineReadVersion
     hostRepository.loadWebTimeline(sessionId, { items ->
         if (!current()) return@loadWebTimeline
         // 先收集所有 attachmentIds，加载 dataUrl 后再创建消息（vforLazy 不响应列表变化，必须在消息入列时就有 imagePreviews）
@@ -177,7 +177,7 @@ internal fun DshHomePage.loadWebTimeline(
             val tryApply = {
                 if (!applied && current()) {
                     applied = true
-                    attachmentRevision += 1
+                    ui.attachmentRevision += 1
                     applyTimeline()
                 }
             }
@@ -194,7 +194,7 @@ internal fun DshHomePage.loadWebTimeline(
             }
             // 兜底超时：15 秒后即使有回调丢失也强制 apply，避免会话一直空白
             setTimeout(pagerId, 15000) {
-                if (!applied && activeSessionId == sessionId) {
+                if (!applied && ui.activeSessionId == sessionId) {
                     DshStreamLog.log(LogLevel.WARN, "ui.att-timeout", "attachment preload timeout, force apply session=$sessionId remaining=$remaining", sessionId, null)
                     tryApply()
                 }
@@ -205,7 +205,7 @@ internal fun DshHomePage.loadWebTimeline(
         if (!current()) return@loadWebTimeline
         sessionCacheStates[sessionId] = DshSessionCacheState.SYNC_FAILED
         bridgeModule.toast("历史读取失败：$error，可重新进入会话重试")
-        if (forceReplace && !sessionRunning && (streaming || stopButtonVisible)) {
+        if (forceReplace && !ui.sessionRunning && (ui.streaming || ui.stopButtonVisible)) {
             finishStreamingFromHistory(sessionId)
         }
         afterApply()
@@ -213,46 +213,46 @@ internal fun DshHomePage.loadWebTimeline(
 }
 
 internal fun DshHomePage.resyncStreamingWithHost(sessionId: String, reason: String) {
-    if (!isRemoteHost || sessionId != activeSessionId) return
+    if (!isRemoteHost || sessionId != ui.activeSessionId) return
     // A local prompt is already painting this turn. Reloading the web
     // timeline remounts every markdown bubble and delays the first token.
     if (reason == "host-session-running" && isLocalPromptInFlight()) {
         return
     }
-    DshStreamLog.i("ui.resync.begin reason=$reason session=$sessionId running=$sessionRunning")
-    if (sessionRunning) {
+    DshStreamLog.i("ui.resync.begin reason=$reason session=$sessionId running=$ui.sessionRunning")
+    if (ui.sessionRunning) {
         loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = true) {
             resumeStreamingFromHistory(sessionId, reason)
         }
     } else {
-        val forceReplace = streaming || stopButtonVisible
+        val forceReplace = ui.streaming || ui.stopButtonVisible
         loadWebTimeline(sessionId, scrollToEndAfterLoad = true, forceReplace = forceReplace) {
             finishStreamingFromHistory(sessionId)
             connectionLabel = "已连接"
-            DshStreamLog.i("ui.resync.settled reason=$reason session=$sessionId messages=${messages.size}")
+            DshStreamLog.i("ui.resync.settled reason=$reason session=$sessionId ui.messages=${ui.messages.size}")
         }
     }
 }
 
 internal fun DshHomePage.isLocalPromptInFlight(): Boolean =
-    streaming && streamingAssistantRootId.isNotEmpty()
+    ui.streaming && streamingAssistantRootId.isNotEmpty()
 
 internal fun DshHomePage.rebindStreamingToHistoryTail(): Boolean {
-    val live = dshHistoryTailToResume(messages.toList(), streamingTurnAnchorAssistantId)
+    val live = dshHistoryTailToResume(ui.messages.toList(), streamingTurnAnchorAssistantId)
         ?: return false
-    streamingAssistantId = live.id
+    ui.streamingAssistantId = live.id
     streamingAssistantRootId = live.id
     streamingAssistantSegment = 0
     streamingSourceSeq = live.sourceSeq
-    streamingAssistantContent = live.content
+    ui.streamingAssistantContent = live.content
     return true
 }
 
 internal fun DshHomePage.finishStreamingFromHistory(sessionId: String) {
-    if (!(streaming || stopButtonVisible)) return
+    if (!(ui.streaming || ui.stopButtonVisible)) return
     flushAssistantDelta()
     if (rebindStreamingToHistoryTail()) {
-        settleStreamingMessage(DshMessageRole.ASSISTANT, streamingAssistantContent)
+        settleStreamingMessage(DshMessageRole.ASSISTANT, ui.streamingAssistantContent)
     } else {
         releaseStreamingUi()
     }
@@ -262,42 +262,42 @@ internal fun DshHomePage.finishStreamingFromHistory(sessionId: String) {
 }
 
 internal fun DshHomePage.resumeStreamingFromHistory(sessionId: String, reason: String) {
-    if (sessionId != activeSessionId) return
+    if (sessionId != ui.activeSessionId) return
     val rebound = rebindStreamingToHistoryTail()
     if (rebound) {
-        streaming = true
-        stopButtonVisible = true
+        ui.streaming = true
+        ui.stopButtonVisible = true
         connectionLabel = "正在生成"
-        val index = messages.indexOfFirst { it.id == streamingAssistantId }
+        val index = ui.messages.indexOfFirst { it.id == ui.streamingAssistantId }
         if (index >= 0) {
-            messages[index] = messages[index].copy(streaming = true)
+            ui.messages[index] = ui.messages[index].copy(streaming = true)
         }
     } else {
         if (streamingAssistantRootId.isEmpty()) {
-            streamingAssistantRootId = "assistant-adopted-${messages.size}"
+            streamingAssistantRootId = "assistant-adopted-${ui.messages.size}"
         }
-        val liveStillPresent = streamingAssistantId.isNotEmpty() &&
-            messages.any { it.id == streamingAssistantId }
+        val liveStillPresent = ui.streamingAssistantId.isNotEmpty() &&
+            ui.messages.any { it.id == ui.streamingAssistantId }
         if (!liveStillPresent) {
-            val kept = streamingAssistantContent + pendingAssistantDelta.toString()
+            val kept = ui.streamingAssistantContent + pendingAssistantDelta.toString()
             pendingAssistantDelta.setLength(0)
-            streamingAssistantId = ""
+            ui.streamingAssistantId = ""
             streamingAssistantSegment = 0
-            streamingAssistantContent = ""
+            ui.streamingAssistantContent = ""
             if (kept.isNotEmpty()) {
                 ensureStreamingAssistantSegment()
-                streamingAssistantContent = kept
+                ui.streamingAssistantContent = kept
                 updateStreamingMessage(kept, streaming = true)
             }
         }
-        streaming = true
-        stopButtonVisible = true
+        ui.streaming = true
+        ui.stopButtonVisible = true
         connectionLabel = "正在生成"
     }
     attachAdoptedLiveStream(sessionId)
     syncTurnStatusTicker()
     DshStreamLog.i(
-        "ui.resync.resume reason=$reason rebound=$rebound id=${streamingAssistantId.ifEmpty { streamingAssistantRootId }} chars=${streamingAssistantContent.length}",
+        "ui.resync.resume reason=$reason rebound=$rebound id=${ui.streamingAssistantId.ifEmpty { streamingAssistantRootId }} chars=${ui.streamingAssistantContent.length}",
     )
 }
 
@@ -306,39 +306,39 @@ internal fun DshHomePage.attachAdoptedLiveStream(sessionId: String) {
     streamHandle = hostRepository.adoptLiveStream(
         sessionId = sessionId,
         onDelta = { delta, isReasoning ->
-            if (!connectionCoordinator.isActive(connectionMode) || activeSessionId != sessionId) return@adoptLiveStream
+            if (!connectionCoordinator.isActive(ui.connectionMode) || ui.activeSessionId != sessionId) return@adoptLiveStream
             if (isReasoning) {
                 val reasoningId = streamingReasoningId.ifEmpty { "$streamingAssistantRootId-reasoning" }
                 if (streamingReasoningId.isEmpty()) streamingReasoningId = reasoningId
                 queueReasoningDelta(reasoningId, delta)
             } else {
                 if (streamingAssistantRootId.isEmpty()) {
-                    streamingAssistantRootId = "assistant-adopted-${messages.size}"
+                    streamingAssistantRootId = "assistant-adopted-${ui.messages.size}"
                 }
                 queueAssistantDelta(streamingAssistantRootId, delta)
             }
         },
         onComplete = { result ->
-            if (!connectionCoordinator.isActive(connectionMode)) return@adoptLiveStream
+            if (!connectionCoordinator.isActive(ui.connectionMode)) return@adoptLiveStream
             flushAssistantDelta()
-            if (streamingAssistantId.isEmpty() && result.isNotEmpty()) {
+            if (ui.streamingAssistantId.isEmpty() && result.isNotEmpty()) {
                 ensureStreamingAssistantSegment()
             }
-            val completedContent = streamingAssistantContent.ifEmpty { result }
+            val completedContent = ui.streamingAssistantContent.ifEmpty { result }
             settleStreamingMessage(DshMessageRole.ASSISTANT, completedContent)
             persistMessages(sessionId)
             connectionLabel = "已连接"
             streamHandle = null
         },
         onError = { error ->
-            if (!connectionCoordinator.isActive(connectionMode)) return@adoptLiveStream
+            if (!connectionCoordinator.isActive(ui.connectionMode)) return@adoptLiveStream
             if (dshIsTransportInterrupt("", error)) {
                 DshStreamLog.i("ui.adopt-interrupt session=$sessionId message='${DshStreamLog.preview(error)}'")
                 return@adoptLiveStream
             }
             flushAssistantDelta()
             ensureStreamingAssistantSegment()
-            DshStreamLog.log(LogLevel.ERROR, "ui.error", "ui.error session=$sessionId message='${DshStreamLog.preview(error)}'", sessionId, null)
+            DshStreamLog.log(LogLevel.ERROR, "error", "ui.error session=$sessionId message='${DshStreamLog.preview(error)}'", sessionId, null)
             settleStreamingMessage(DshMessageRole.ERROR, error)
             persistMessages(sessionId)
             connectionLabel = "已连接"
@@ -349,15 +349,15 @@ internal fun DshHomePage.attachAdoptedLiveStream(sessionId: String) {
 
 internal fun DshHomePage.loadSkills(sessionId: String) {
     if (!isRemoteHost) {
-        skills.clear()
+        ui.skills.clear()
         return
     }
     val remote = remoteRepo ?: return
-    skills.clear()
+    ui.skills.clear()
     remote.loadSkills(sessionId, onSuccess = { loaded ->
-        if (!isRemoteHost || activeSessionId != sessionId) return@loadSkills
-        skills.clear()
-        skills.addAll(loaded)
+        if (!isRemoteHost || ui.activeSessionId != sessionId) return@loadSkills
+        ui.skills.clear()
+        ui.skills.addAll(loaded)
     })
 }
 
@@ -370,7 +370,7 @@ internal fun DshHomePage.loadAttachment(sessionId: String, attachmentId: String)
             return@loadAttachment
         }
         cachedAttachmentDataUrls[attachmentId] = dataUrl
-        attachmentRevision += 1
+        ui.attachmentRevision += 1
     }
 }
 
@@ -378,28 +378,28 @@ internal fun DshHomePage.restoreCachedSessions() {
     val store = localStore ?: return
     val cached = runCatching { store.loadSessions(activeConnectionId) }.getOrDefault(emptyList())
     if (cached.isEmpty()) return
-    sessions = cached.toList()
+    ui.sessions = cached.toList()
     refreshVisibleSessions()
     val homeId = cached.firstOrNull { it.blank }?.id
     if (homeId != null) {
-        activeSessionId = homeId
+        ui.activeSessionId = homeId
         val state = sessionMessageStates[homeId] ?: ObservableList()
         state.clear()
         sessionMessageStates[homeId] = state
         sessionMessageReady.add(homeId)
-        messages = state
+        ui.messages = state
         ensureConversationPanel(homeId)
         return
     }
     val state = ObservableList<DshMessage>()
-    messages = state
-    sessionMessageStates[activeSessionId] = state
-    sessionMessageReady.add(activeSessionId)
-    ensureConversationPanel(activeSessionId)
+    ui.messages = state
+    sessionMessageStates[ui.activeSessionId] = state
+    sessionMessageReady.add(ui.activeSessionId)
+    ensureConversationPanel(ui.activeSessionId)
 }
 
 internal fun DshHomePage.loadCachedHistory(sessionId: String) {
-    messages = sessionMessageState(sessionId, loadFromDisk = false)
+    ui.messages = sessionMessageState(sessionId, loadFromDisk = false)
     ensureConversationPanel(sessionId)
     loadMessagesFromDisk(sessionId)
 }
@@ -423,7 +423,7 @@ internal fun DshHomePage.sessionMessageState(
  */
 
 internal fun DshHomePage.preloadAllSessionMessages() {
-    val sessionIds = sessions.toList().map { it.id }
+    val sessionIds = ui.sessions.toList().map { it.id }
     // Load data first. Do not mount empty ListViews: LazyLoop initializes
     // its visible range from the initial list and may not realize the
     // first items when the list is populated later.
@@ -451,12 +451,12 @@ internal fun DshHomePage.preloadAllSessionMessages() {
                 val state = sessionMessageStates[sessionId] ?: return@postToUi
                 sessionMessageReady.add(sessionId)
                 if (state.isEmpty() && loaded.isNotEmpty() &&
-                    sessions.firstOrNull { it.id == sessionId }?.blank != true
+                    ui.sessions.firstOrNull { it.id == sessionId }?.blank != true
                 ) {
                     state.addAll(loaded)
                     remountConversationList(sessionId)
                 }
-                if (conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) {
+                if (ui.conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT) {
                     ensureConversationPanel(sessionId)
                 }
                 realizeSessionAfterData(sessionId, scrollToEndAfterLoad = false)
@@ -483,7 +483,7 @@ internal fun DshHomePage.loadMessagesFromDisk(
             // a disk snapshot that finishes later. The state is keyed by
             // session ID, so an inactive session can be updated safely.
             if (state.isEmpty() && loaded.isNotEmpty() &&
-                sessions.firstOrNull { it.id == sessionId }?.blank != true
+                ui.sessions.firstOrNull { it.id == sessionId }?.blank != true
             ) {
                 state.addAll(loaded)
                 remountConversationList(sessionId)
@@ -498,14 +498,14 @@ internal fun DshHomePage.loadMessagesFromDisk(
 internal fun DshHomePage.completePendingSessionSelection(sessionId: String) {
     if (!pendingSessionSelections.remove(sessionId)) return
     postToUi {
-        if (activeSessionId != sessionId) selectSession(sessionId)
+        if (ui.activeSessionId != sessionId) selectSession(sessionId)
     }
 }
 
 internal fun DshHomePage.warmRecentSessionCache(
-    sessionIds: kotlin.collections.List<String> = sessions.asSequence()
+    sessionIds: kotlin.collections.List<String> = ui.sessions.asSequence()
         .map { it.id }
-        .filter { it != activeSessionId && !conversationPanelIds.contains(it) }
+        .filter { it != ui.activeSessionId && !ui.conversationPanelIds.contains(it) }
         .take(SESSION_CACHE_WARM_LIMIT)
         .toList(),
     index: Int = 0,
@@ -526,26 +526,26 @@ internal fun DshHomePage.warmRecentSessionCache(
 }
 
 internal fun DshHomePage.ensureConversationPanel(sessionId: String) {
-    if (conversationPanelIds.contains(sessionId)) return
+    if (ui.conversationPanelIds.contains(sessionId)) return
     try {
-        if (conversationPanelIds.size >= CONVERSATION_PANEL_CACHE_LIMIT) {
-            val evictIndex = conversationPanelIds.indexOfFirst { it != activeSessionId }
+        if (ui.conversationPanelIds.size >= CONVERSATION_PANEL_CACHE_LIMIT) {
+            val evictIndex = ui.conversationPanelIds.indexOfFirst { it != ui.activeSessionId }
             if (evictIndex >= 0) {
-                val evictedId = conversationPanelIds.removeAt(evictIndex)
+                val evictedId = ui.conversationPanelIds.removeAt(evictIndex)
                 messageScrollerRefs.remove(evictedId)
             }
         }
-        conversationPanelIds.add(sessionId)
+        ui.conversationPanelIds.add(sessionId)
     } catch (e: ConcurrentModificationException) {
         // 渲染该列表期间新增 panel 会触发 Kuikly 对同一响应式列表的自注册，
         // 迭代中修改被绑定的 observers 集合导致 CME。此时元素通常已入列，
         // 下一消息幂等兜底收敛，避免拖垮整个页面。
         postToUi {
             runCatching {
-                if (!conversationPanelIds.contains(sessionId) &&
-                    conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT
+                if (!ui.conversationPanelIds.contains(sessionId) &&
+                    ui.conversationPanelIds.size < CONVERSATION_PANEL_CACHE_LIMIT
                 ) {
-                    conversationPanelIds.add(sessionId)
+                    ui.conversationPanelIds.add(sessionId)
                 }
             }
         }
@@ -553,48 +553,48 @@ internal fun DshHomePage.ensureConversationPanel(sessionId: String) {
 }
 
 internal fun DshHomePage.persistMessages(sessionId: String) {
-    val snapshot = messages.toList()
-    sessionMessageStates[sessionId] = messages
+    val snapshot = ui.messages.toList()
+    sessionMessageStates[sessionId] = ui.messages
     runCatching { localStore?.replaceMessages(activeConnectionId, sessionId, snapshot) }
 }
 
 internal fun DshHomePage.replaceMessagesIfChanged(next: List<DshMessage>, force: Boolean = false) {
     val filtered = next.filterNot { it.isRuntimeContextSnapshot() }
-    if (streaming && isRemoteHost && !force) {
+    if (ui.streaming && isRemoteHost && !force) {
         // History is a snapshot that can arrive while the current turn is
         // still being projected. Replacing the observable list here drops
         // optimistic text segments and their in-order tool cards.
         return
     }
-    val current = messages.toList()
+    val current = ui.messages.toList()
     if (current == filtered) return
     if (dshMessagesVisuallyEqual(current, filtered)) {
         // Preserve stable UI ids, but still hydrate anchors in pre-upgrade/live caches.
         for (index in current.indices) {
             val synced = dshSyncMessageForkAnchor(current[index], filtered[index])
-            if (synced != current[index]) messages[index] = synced
+            if (synced != current[index]) ui.messages[index] = synced
         }
         return
     }
     val remount = force || current.isEmpty() && filtered.isNotEmpty()
     applyMessagesInPlace(filtered)
-    sessionMessageStates[activeSessionId] = messages
-    if (remount) remountConversationList(activeSessionId)
+    sessionMessageStates[ui.activeSessionId] = ui.messages
+    if (remount) remountConversationList(ui.activeSessionId)
 }
 
 internal fun DshHomePage.applyMessagesInPlace(next: List<DshMessage>) {
-    val shared = minOf(messages.size, next.size)
+    val shared = minOf(ui.messages.size, next.size)
     for (index in 0 until shared) {
-        if (messages[index] != next[index]) messages[index] = next[index]
+        if (ui.messages[index] != next[index]) ui.messages[index] = next[index]
     }
     when {
-        next.size < messages.size -> {
-            for (index in messages.lastIndex downTo next.size) {
-                messages.removeAt(index)
+        next.size < ui.messages.size -> {
+            for (index in ui.messages.lastIndex downTo next.size) {
+                ui.messages.removeAt(index)
             }
         }
-        next.size > messages.size -> {
-            messages.addAll(next.subList(messages.size, next.size))
+        next.size > ui.messages.size -> {
+            ui.messages.addAll(next.subList(ui.messages.size, next.size))
         }
     }
 }

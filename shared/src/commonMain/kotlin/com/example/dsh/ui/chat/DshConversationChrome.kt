@@ -14,14 +14,6 @@ import com.example.dsh.theme.DshDefaultTheme
 // AI 回答下方横向操作容器（footer）的可用操作项，对齐 dsh 原版 IconActions 行
 internal enum class DshMessageFooterAction { COPY, GOOD, BAD, BRANCH, SHARE }
 
-// 过程项左侧装饰连接线的度量：标题下方分成 [竖线 | 内容] 左右两列。
-// 线体宽度、内容列整体右移预留的沟槽宽度，以及线与内容之间保留的空隙。
-internal const val DSH_CONNECTOR_LINE_WIDTH = 1f
-internal const val DSH_CONNECTOR_GUTTER = 14f
-internal const val DSH_CONNECTOR_LINE_GAP = 6f
-internal const val DSH_CONNECTOR_LINE_LEFT =
-    DSH_CONNECTOR_GUTTER - DSH_CONNECTOR_LINE_GAP - DSH_CONNECTOR_LINE_WIDTH
-
 internal fun ViewContainer<*, *>.DshTurnStatus(
     visible: () -> Boolean,
     reconnecting: () -> Boolean,

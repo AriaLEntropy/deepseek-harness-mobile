@@ -34,13 +34,13 @@ internal fun DshHomePage.showRunningTool(event: DshRawSessionEvent) {
     val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
     val model = DshRemoteToolCallModels.fromLiveCall(payload) ?: return
     val id = "tool-${event.seq}"
-    if (messages.any { it.id == id }) return
+    if (ui.messages.any { it.id == id }) return
     // The Host emits tool/call after the assistant block that introduced
     // it. Seal that block before appending its card so the list follows the
     // actual event order instead of grouping all cards at the turn end.
     splitStreamingAssistantBeforeTool()
-    messages.add(model.toRemoteMessage(id).copy(sourceSeq = event.seq))
-    refreshSessionRenderTree(activeSessionId)
+    ui.messages.add(model.toRemoteMessage(id).copy(sourceSeq = event.seq))
+    refreshSessionRenderTree(ui.activeSessionId)
     scrollMessagesToEnd()
 }
 
@@ -51,8 +51,8 @@ internal fun DshHomePage.showContextInjection(event: DshRawSessionEvent) {
     if (source.optString("kind") == "user") {
         val content = data.optJSONArray("content") ?: return
         val text = textFromBlocks(content)
-        val index = messages.indexOfLast { it.role == DshMessageRole.USER && it.content == text }
-        if (index >= 0) messages[index] = messages[index].copy(
+        val index = ui.messages.indexOfLast { it.role == DshMessageRole.USER && it.content == text }
+        if (index >= 0) ui.messages[index] = ui.messages[index].copy(
             readableContent = DshReadableContent.blocks(content),
             attachmentIds = attachmentIdsFromBlocks(content),
             sourceSeq = event.seq,
@@ -60,7 +60,7 @@ internal fun DshHomePage.showContextInjection(event: DshRawSessionEvent) {
         return
     }
     val id = "context-${event.seq}"
-    if (messages.any { it.id == id }) return
+    if (ui.messages.any { it.id == id }) return
     val content = data.optJSONArray("content") ?: return
     val text = buildString {
         for (index in 0 until content.length()) {
@@ -69,7 +69,7 @@ internal fun DshHomePage.showContextInjection(event: DshRawSessionEvent) {
         }
     }.trim()
     if (text.isEmpty()) return
-    messages.add(DshMessage(
+    ui.messages.add(DshMessage(
         id = id,
         role = DshMessageRole.TOOL,
         content = text,
@@ -91,11 +91,11 @@ internal fun DshHomePage.showAssistantBlocks(event: DshRawSessionEvent) {
     val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
     val data = dshWireEvent(payload).optJSONObject("data") ?: return
     val blocks = (data.optJSONObject("message") ?: data).optJSONArray("content") ?: return
-    if (streaming) {
+    if (ui.streaming) {
         streamingSourceSeq = event.seq
         flushAssistantDelta()
-        val textIndex = messages.indexOfFirst { it.id == streamingAssistantId }
-        if (textIndex >= 0) messages[textIndex] = messages[textIndex].copy(sourceSeq = event.seq)
+        val textIndex = ui.messages.indexOfFirst { it.id == ui.streamingAssistantId }
+        if (textIndex >= 0) ui.messages[textIndex] = ui.messages[textIndex].copy(sourceSeq = event.seq)
     }
     for (index in 0 until blocks.length()) {
         val block = blocks.optJSONObject(index) ?: continue
@@ -105,8 +105,8 @@ internal fun DshHomePage.showAssistantBlocks(event: DshRawSessionEvent) {
                 val inlineUrl = inlineImageDataUrl(block)
                 if (attachmentId.isEmpty() && inlineUrl == null) continue
                 val id = "image-${event.seq}-$index"
-                if (messages.none { it.id == id }) {
-                    messages.add(DshMessage(
+                if (ui.messages.none { it.id == id }) {
+                    ui.messages.add(DshMessage(
                         id = id,
                         role = DshMessageRole.ASSISTANT,
                         content = "",
@@ -116,13 +116,13 @@ internal fun DshHomePage.showAssistantBlocks(event: DshRawSessionEvent) {
                         sourceSeq = event.seq,
                     ))
                 }
-                if (attachmentId.isNotEmpty()) loadAttachment(activeSessionId, attachmentId)
+                if (attachmentId.isNotEmpty()) loadAttachment(ui.activeSessionId, attachmentId)
             }
             "text", "reasoning", "tool-call" -> Unit
             else -> {
                 val id = "block-${event.seq}-$index"
-                if (messages.none { it.id == id }) {
-                    messages.add(DshMessage(
+                if (ui.messages.none { it.id == id }) {
+                    ui.messages.add(DshMessage(
                         id = id,
                         role = DshMessageRole.TOOL,
                         content = block.toString(),
@@ -146,86 +146,86 @@ internal fun DshHomePage.settleRunningTool(event: DshRawSessionEvent) {
         ?: message?.optJSONObject("source")?.optString("callId")
         ?: eventData.optString("callId")
     if (callId.isEmpty()) return
-    val index = messages.indexOfFirst { it.role == DshMessageRole.TOOL && it.toolCallId == callId }
+    val index = ui.messages.indexOfFirst { it.role == DshMessageRole.TOOL && it.toolCallId == callId }
     if (index < 0) return
-    val previous = messages[index].remoteTool ?: return
+    val previous = ui.messages[index].remoteTool ?: return
     val model = DshRemoteToolCallModels.settleLiveResult(previous, payload) ?: return
-    messages[index] = model.toRemoteMessage(messages[index].id).copy(sourceSeq = messages[index].sourceSeq)
+    ui.messages[index] = model.toRemoteMessage(ui.messages[index].id).copy(sourceSeq = ui.messages[index].sourceSeq)
 }
 
 internal fun DshHomePage.attachmentDataUrl(attachmentId: String): String? {
-    attachmentRevision // Read the reactive revision so image rows rerender after downloads.
+    ui.attachmentRevision // Read the reactive revision so image rows rerender after downloads.
     return cachedAttachmentDataUrls[attachmentId]
 }
 
 internal fun DshHomePage.refreshQueueDock() {
     if (!isRemoteHost) {
-        queueItems = ObservableList()
+        ui.queueItems = ObservableList()
         return
     }
     val repository = remoteRepo ?: return
-    val items = repository.queue(activeSessionId)
-    queueItems = ObservableList(items.toMutableList())
+    val items = repository.queue(ui.activeSessionId)
+    ui.queueItems = ObservableList(items.toMutableList())
     if (items.isEmpty()) {
-        queueDockExpanded = false
+        ui.queueDockExpanded = false
         cancelQueueItemEdit()
-    } else if (queueEditingId.isNotEmpty() && items.none { it.id == queueEditingId }) {
+    } else if (ui.queueEditingId.isNotEmpty() && items.none { it.id == ui.queueEditingId }) {
         cancelQueueItemEdit()
     }
 }
 
 internal fun DshHomePage.refreshJobsPanel() {
     if (!isRemoteHost) {
-        jobItems = ObservableList()
-        liveJobItems = ObservableList()
-        jobsPanelExpanded = false
+        ui.jobItems = ObservableList()
+        ui.liveJobItems = ObservableList()
+        ui.jobsPanelExpanded = false
         return
     }
     val repository = remoteRepo ?: return
-    val items = repository.jobs(activeSessionId)
-    jobItems = ObservableList(items.toMutableList())
-    liveJobItems = ObservableList(dshLiveJobs(items).toMutableList())
-    if (liveJobItems.isEmpty()) jobsPanelExpanded = false
-    if (jobsPanelExpanded) {
-        jobsNow = bridgeModule.currentTimeStamp()
+    val items = repository.jobs(ui.activeSessionId)
+    ui.jobItems = ObservableList(items.toMutableList())
+    ui.liveJobItems = ObservableList(dshLiveJobs(items).toMutableList())
+    if (ui.liveJobItems.isEmpty()) ui.jobsPanelExpanded = false
+    if (ui.jobsPanelExpanded) {
+        ui.jobsNow = bridgeModule.currentTimeStamp()
         scheduleJobsClock()
     }
 }
 
 internal fun DshHomePage.toggleJobsPanel() {
-    jobsPanelExpanded = !jobsPanelExpanded
-    if (jobsPanelExpanded) {
-        jobsNow = bridgeModule.currentTimeStamp()
+    ui.jobsPanelExpanded = !ui.jobsPanelExpanded
+    if (ui.jobsPanelExpanded) {
+        ui.jobsNow = bridgeModule.currentTimeStamp()
         scheduleJobsClock()
     }
 }
 
 internal fun DshHomePage.scheduleJobsClock() {
-    if (!jobsPanelExpanded || jobsClockScheduled || liveJobItems.isEmpty()) return
-    jobsClockScheduled = true
+    if (!ui.jobsPanelExpanded || ui.jobsClockScheduled || ui.liveJobItems.isEmpty()) return
+    ui.jobsClockScheduled = true
     setTimeout(pagerId, 1_000) {
-        jobsClockScheduled = false
-        if (!jobsPanelExpanded) return@setTimeout
-        jobsNow = bridgeModule.currentTimeStamp()
+        ui.jobsClockScheduled = false
+        if (!ui.jobsPanelExpanded) return@setTimeout
+        ui.jobsNow = bridgeModule.currentTimeStamp()
         scheduleJobsClock()
     }
 }
 
 internal fun DshHomePage.editQueueItem(itemId: String) {
-    val item = queueItems.firstOrNull { it.id == itemId } ?: return
+    val item = ui.queueItems.firstOrNull { it.id == itemId } ?: return
     val text = item.text ?: return
-    queueDockExpanded = true
-    queueEditingId = itemId
-    queueEditingText = text
+    ui.queueDockExpanded = true
+    ui.queueEditingId = itemId
+    ui.queueEditingText = text
 }
 
 internal fun DshHomePage.saveQueueItem(itemId: String) {
     val repository = remoteRepo ?: return
-    val text = queueEditingText.trim()
-    if (queueActionBusy || itemId != queueEditingId || text.isEmpty()) return
-    queueActionBusy = true
+    val text = ui.queueEditingText.trim()
+    if (ui.queueActionBusy || itemId != ui.queueEditingId || text.isEmpty()) return
+    ui.queueActionBusy = true
     repository.updateQueue(
-        sessionId = activeSessionId,
+        sessionId = ui.activeSessionId,
         itemId = itemId,
         action = JSONObject().apply {
             put("kind", "edit")
@@ -233,7 +233,7 @@ internal fun DshHomePage.saveQueueItem(itemId: String) {
         },
     ) { _, _ ->
         postToUi {
-            queueActionBusy = false
+            ui.queueActionBusy = false
             cancelQueueItemEdit()
             refreshQueueDock()
         }
@@ -241,8 +241,8 @@ internal fun DshHomePage.saveQueueItem(itemId: String) {
 }
 
 internal fun DshHomePage.cancelQueueItemEdit() {
-    queueEditingId = ""
-    queueEditingText = ""
+    ui.queueEditingId = ""
+    ui.queueEditingText = ""
 }
 
 internal fun DshHomePage.removeQueueItem(itemId: String) {
@@ -255,15 +255,15 @@ internal fun DshHomePage.steerQueueItem(itemId: String) {
 
 internal fun DshHomePage.updateQueueItem(itemId: String, action: JSONObject) {
     val repository = remoteRepo ?: return
-    if (queueActionBusy) return
-    queueActionBusy = true
+    if (ui.queueActionBusy) return
+    ui.queueActionBusy = true
     repository.updateQueue(
-        sessionId = activeSessionId,
+        sessionId = ui.activeSessionId,
         itemId = itemId,
         action = action,
     ) { _, _ ->
         postToUi {
-            queueActionBusy = false
+            ui.queueActionBusy = false
             refreshQueueDock()
         }
     }

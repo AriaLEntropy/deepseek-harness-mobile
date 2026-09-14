@@ -28,21 +28,21 @@ internal data class DshVoiceUiState(
 
 internal fun DshHomePage.toggleVoice() {
     dismissKeyboard()
-    commandSheetVisible = false
+    ui.commandSheetVisible = false
     // 切换模式时若正在录音，先取消，避免遗留会话
-    if (voiceUi.recording) {
+    if (ui.voiceUi.recording) {
         voiceCancelRequested = true
         bridgeModule.cancelVoiceRecognition()
         finishVoiceRecord(cancelled = true)
     }
-    voiceUi = voiceUi.copy(active = !voiceUi.active)
-    if (!voiceUi.active) resetVoiceVisual()
+    ui.voiceUi = ui.voiceUi.copy(active = !ui.voiceUi.active)
+    if (!ui.voiceUi.active) resetVoiceVisual()
 }
 
 /** 按住说话：按下，开始语音识别并显示录音浮层。 */
 internal fun DshHomePage.beginVoiceRecord(startPageY: Float) {
-    if (voiceUi.recording) return
-    voiceUi = voiceUi.copy(active = true)
+    if (ui.voiceUi.recording) return
+    ui.voiceUi = ui.voiceUi.copy(active = true)
     dismissKeyboard()
     voiceHoldStartY = startPageY
     voiceStopping = false
@@ -51,10 +51,10 @@ internal fun DshHomePage.beginVoiceRecord(startPageY: Float) {
     voiceLastLevelAt = 0L
     voiceStopFallbackScheduled = false
     voiceWaveformModel.clear()
-    voiceUi = voiceUi.copy(
+    ui.voiceUi = ui.voiceUi.copy(
         cancelArmed = false,
         partialText = "",
-        waveformRevision = voiceUi.waveformRevision + 1,
+        waveformRevision = ui.voiceUi.waveformRevision + 1,
         recording = true,
     )
     bridgeModule.startVoiceRecognition { raw -> handleVoiceEvent(raw) }
@@ -64,15 +64,15 @@ internal fun DshHomePage.beginVoiceRecord(startPageY: Float) {
 
 /** 按住说话：移动，上滑超过阈值进入取消态。 */
 internal fun DshHomePage.updateVoiceHold(currentPageY: Float) {
-    if (!voiceUi.recording) return
-    voiceUi = voiceUi.copy(cancelArmed = dshVoiceCancelArmed(voiceHoldStartY, currentPageY))
+    if (!ui.voiceUi.recording) return
+    ui.voiceUi = ui.voiceUi.copy(cancelArmed = dshVoiceCancelArmed(voiceHoldStartY, currentPageY))
 }
 
 /** 按住说话：松手，取消或提交识别。 */
 internal fun DshHomePage.endVoiceRecord() {
-    if (!voiceUi.recording || voiceStopping) return
+    if (!ui.voiceUi.recording || voiceStopping) return
     voiceStopping = true
-    if (voiceUi.cancelArmed) {
+    if (ui.voiceUi.cancelArmed) {
         voiceCancelRequested = true
         bridgeModule.cancelVoiceRecognition()
         finishVoiceRecord(cancelled = true)
@@ -91,7 +91,7 @@ internal fun DshHomePage.endVoiceRecord() {
         setTimeout(pagerId, DSH_VOICE_STOP_TIMEOUT_MS) {
             if (generation != voiceDecayGeneration) return@setTimeout
             voiceStopFallbackScheduled = false
-            if (voiceUi.recording) finishVoiceRecord(cancelled = voiceCancelRequested)
+            if (ui.voiceUi.recording) finishVoiceRecord(cancelled = voiceCancelRequested)
         }
     }
 }
@@ -105,22 +105,22 @@ internal fun DshHomePage.handleVoiceEvent(raw: String) {
         "level" -> appendVoiceLevel(event.optDouble("level").toFloat())
         "partial" -> {
             val text = event.optString("text")
-            if (text.isNotEmpty()) voiceUi = voiceUi.copy(partialText = text)
+            if (text.isNotEmpty()) ui.voiceUi = ui.voiceUi.copy(partialText = text)
         }
         "final" -> {
             val text = event.optString("text")
             if (text.isNotEmpty()) {
                 voiceCommittedText = text
-                voiceUi = voiceUi.copy(partialText = text)
+                ui.voiceUi = ui.voiceUi.copy(partialText = text)
             }
         }
         "error" -> {
             val message = dshVoiceErrorMessage(
                 code = event.optString("code"),
-                locale = settingsSnapshot.localeValue,
+                locale = ui.settingsSnapshot.localeValue,
                 fallback = event.optString("message"),
             )
-            val wasRecording = voiceUi.recording
+            val wasRecording = ui.voiceUi.recording
             finishVoiceRecord(cancelled = true)
             if (wasRecording) bridgeModule.toast(message)
         }
@@ -135,7 +135,7 @@ internal fun DshHomePage.handleVoiceEvent(raw: String) {
 
 /** 音量事件节流后写入滚动窗口，驱动浮层方块高度。 */
 internal fun DshHomePage.appendVoiceLevel(level: Float) {
-    if (!voiceUi.recording) return
+    if (!ui.voiceUi.recording) return
     val now = DateTime.currentTimestamp()
     if (now - voiceLastLevelAt < DSH_VOICE_LEVEL_INTERVAL_MS) return
     voiceLastLevelAt = now
@@ -145,7 +145,7 @@ internal fun DshHomePage.appendVoiceLevel(level: Float) {
 /** 把新音量推入滚动窗口左移一格；每次自增 revision 触发波形重绘。 */
 internal fun DshHomePage.pushVoiceLevel(level: Float) {
     voiceWaveformModel.push(level)
-    voiceUi = voiceUi.copy(waveformRevision = voiceUi.waveformRevision + 1)
+    ui.voiceUi = ui.voiceUi.copy(waveformRevision = ui.voiceUi.waveformRevision + 1)
 }
 
 /**
@@ -153,10 +153,10 @@ internal fun DshHomePage.pushVoiceLevel(level: Float) {
  * 波形看起来「卡住不动」。
  */
 internal fun DshHomePage.scheduleVoiceDecay(generation: Int) {
-    if (!voiceUi.recording || generation != voiceDecayGeneration) return
+    if (!ui.voiceUi.recording || generation != voiceDecayGeneration) return
     val now = DateTime.currentTimestamp()
     if (now - voiceLastLevelAt >= DSH_VOICE_DECAY_GAP_MS) {
-        if (voiceWaveformModel.decay()) voiceUi = voiceUi.copy(waveformRevision = voiceUi.waveformRevision + 1)
+        if (voiceWaveformModel.decay()) ui.voiceUi = ui.voiceUi.copy(waveformRevision = ui.voiceUi.waveformRevision + 1)
     }
     setTimeout(pagerId, DSH_VOICE_DECAY_TICK_MS) { scheduleVoiceDecay(generation) }
 }
@@ -173,19 +173,19 @@ internal fun DshHomePage.onInputViewCreated(view: TextAreaView?) {
 
 /** 结束录音：取消丢弃，或把最终文本写入输入框并切回文字模式。 */
 internal fun DshHomePage.finishVoiceRecord(cancelled: Boolean) {
-    if (!voiceUi.recording) return
-    voiceUi = voiceUi.copy(recording = false)
+    if (!ui.voiceUi.recording) return
+    ui.voiceUi = ui.voiceUi.copy(recording = false)
     // 递增代次，使仍在等待的旧兜底定时器/权限回调失效
     voiceDecayGeneration += 1
     // 会话结束，释放跨事件回调
     bridgeModule.releaseVoiceRecognition()
-    val text = dshVoiceResolvedText(voiceCommittedText, voiceUi.partialText)
+    val text = dshVoiceResolvedText(voiceCommittedText, ui.voiceUi.partialText)
     val shouldCommit = dshVoiceShouldCommit(cancelled, text)
     resetVoiceVisual()
     if (shouldCommit) {
         // 切回文字模式后 TextArea 会重新挂载，待其 ref 回调时回填原生文本
-        voiceUi = voiceUi.copy(active = false)
-        draft = text
+        ui.voiceUi = ui.voiceUi.copy(active = false)
+        ui.draft = text
         pendingVoiceDraft = text
     }
 }
@@ -195,9 +195,9 @@ internal fun DshHomePage.resetVoiceVisual() {
     voiceStopping = false
     voiceCancelRequested = false
     voiceWaveformModel.clear()
-    voiceUi = voiceUi.copy(
+    ui.voiceUi = ui.voiceUi.copy(
         partialText = "",
         cancelArmed = false,
-        waveformRevision = voiceUi.waveformRevision + 1,
+        waveformRevision = ui.voiceUi.waveformRevision + 1,
     )
 }

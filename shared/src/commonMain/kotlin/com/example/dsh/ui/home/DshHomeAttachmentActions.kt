@@ -18,7 +18,7 @@ import com.example.dsh.attachment.parsePickedFiles
 import com.example.dsh.attachment.parsePickedImages
 
 internal fun DshHomePage.onAttachmentTile(tile: DshCommandSheetTile) {
-    commandSheetVisible = false
+    ui.commandSheetVisible = false
     when (tile) {
         DshCommandSheetTile.CAMERA -> pickImageFrom("camera")
         DshCommandSheetTile.GALLERY -> pickImageFrom("album")
@@ -29,10 +29,10 @@ internal fun DshHomePage.onAttachmentTile(tile: DshCommandSheetTile) {
 /** 平台选文件 → 解析 → 大小/数量预检 → 加入输入区草稿；取消静默，失败 toast。 */
 
 internal fun DshHomePage.pickFileFrom() {
-    val expectedSession = activeSessionId
+    val expectedSession = ui.activeSessionId
     val expectedConnection = activeConnectionId
     bridgeModule.pickFile { raw ->
-        if (!pageAlive || expectedSession != activeSessionId || expectedConnection != activeConnectionId) return@pickFile
+        if (!pageAlive || expectedSession != ui.activeSessionId || expectedConnection != activeConnectionId) return@pickFile
         val result = runCatching {
             com.tencent.kuikly.core.nvi.serialization.json.JSONObject(raw)
         }.getOrNull()
@@ -51,34 +51,34 @@ internal fun DshHomePage.pickFileFrom() {
             bridgeModule.toast("文件解析失败")
             return@pickFile
         }
-        DshAttachmentIntake.planFiles(pendingFiles.toList(), picked).forEach { intake ->
+        DshAttachmentIntake.planFiles(ui.pendingFiles.toList(), picked).forEach { intake ->
             when (intake) {
-                is DshFileIntake.Accepted -> pendingFiles.add(intake.file)
+                is DshFileIntake.Accepted -> ui.pendingFiles.add(intake.file)
                 is DshFileIntake.Rejected -> bridgeModule.toast(intake.reason)
             }
         }
-        attachmentEpoch += 1
+        ui.attachmentEpoch += 1
     }
 }
 
 internal fun DshHomePage.removePendingFile(clientId: String) {
-    pendingFiles.removeAll { it.clientId == clientId }
-    attachmentEpoch += 1
+    ui.pendingFiles.removeAll { it.clientId == clientId }
+    ui.attachmentEpoch += 1
 }
 
 internal fun DshHomePage.retryPendingFile(clientId: String) {
-    val index = pendingFiles.indexOfFirst { it.clientId == clientId }
+    val index = ui.pendingFiles.indexOfFirst { it.clientId == clientId }
     if (index < 0) return
-    val file = pendingFiles[index]
+    val file = ui.pendingFiles[index]
     if (file.state != DshFileDraftState.FAILED) return
-    pendingFiles[index] = file.copy(
+    ui.pendingFiles[index] = file.copy(
         state = DshFileDraftState.SELECTED,
         error = "",
         handle = "",
         path = "",
         sha256 = "",
     )
-    attachmentEpoch += 1
+    ui.attachmentEpoch += 1
 }
 
 /**
@@ -105,7 +105,7 @@ internal fun DshHomePage.uploadFilesForMessage(
         }
         val file = files[index]
         hostRepository.uploadAttachment(sessionId, file.name, file.mediaType, file.dataBase64) { uploaded, error ->
-            if (!pageAlive || activeSessionId != sessionId) return@uploadAttachment
+            if (!pageAlive || ui.activeSessionId != sessionId) return@uploadAttachment
             if (error != null || uploaded == null) {
                 bridgeModule.toast(error?.message ?: "附件上传失败")
                 onDone(false, results.toList())
@@ -125,13 +125,13 @@ internal fun DshHomePage.uploadFilesForMessage(
     uploadNext()
 }
 
-/** 平台取图 → 解析 → imageLimits 预检 → 加入输入区草稿；取消静默，失败 toast。 */
+/** 平台取图 → 解析 → ui.imageLimits 预检 → 加入输入区草稿；取消静默，失败 toast。 */
 
 internal fun DshHomePage.pickImageFrom(source: String) {
-    val expectedSession = activeSessionId
+    val expectedSession = ui.activeSessionId
     val expectedConnection = activeConnectionId
     bridgeModule.pickImage(source) { raw ->
-        if (!pageAlive || expectedSession != activeSessionId || expectedConnection != activeConnectionId) return@pickImage
+        if (!pageAlive || expectedSession != ui.activeSessionId || expectedConnection != activeConnectionId) return@pickImage
         val result = runCatching {
             com.tencent.kuikly.core.nvi.serialization.json.JSONObject(raw)
         }.getOrNull()
@@ -152,9 +152,9 @@ internal fun DshHomePage.pickImageFrom(source: String) {
             bridgeModule.toast("取图解析失败")
             return@pickImage
         }
-        val limits = imageLimits ?: DshImageLimits.DEFAULT
+        val limits = ui.imageLimits ?: DshImageLimits.DEFAULT
         val intakes = try {
-            DshAttachmentIntake.planImages(pendingImages.toList(), picked, limits)
+            DshAttachmentIntake.planImages(ui.pendingImages.toList(), picked, limits)
         } catch (t: Throwable) {
             DshStreamLog.log(LogLevel.ERROR, "app.image.failed", "phase=validate error='${DshStreamLog.preview(t.message.orEmpty())}'", expectedSession)
             picked.map { DshImageIntake.Accepted(it) }
@@ -163,7 +163,7 @@ internal fun DshHomePage.pickImageFrom(source: String) {
             when (intake) {
                 is DshImageIntake.Accepted -> {
                     val pending = intake.image
-                    pendingImages.add(pending)
+                    ui.pendingImages.add(pending)
                     DshStreamLog.log(
                         LogLevel.INFO, "app.image.selected",
                         "source=$source mediaType=${pending.mediaType} width=${pending.width} height=${pending.height} bytes=${pending.bytes}",
@@ -172,7 +172,7 @@ internal fun DshHomePage.pickImageFrom(source: String) {
                 }
                 is DshImageIntake.Rejected -> {
                     val pending = intake.image
-                    pendingImages.add(pending)
+                    ui.pendingImages.add(pending)
                     bridgeModule.toast(intake.reason)
                     DshStreamLog.log(
                         LogLevel.WARN, "app.image.rejected",
@@ -182,7 +182,7 @@ internal fun DshHomePage.pickImageFrom(source: String) {
                 }
             }
         }
-        attachmentEpoch += 1
+        ui.attachmentEpoch += 1
     }
 }
 
@@ -204,21 +204,21 @@ internal fun DshHomePage.saveImageToGallery(dataUrl: String) {
 }
 
 internal fun DshHomePage.removePendingImage(clientId: String) {
-    pendingImages.removeAll { it.clientId == clientId }
-    attachmentEpoch += 1
+    ui.pendingImages.removeAll { it.clientId == clientId }
+    ui.attachmentEpoch += 1
 }
 
 internal fun DshHomePage.retryPendingImage(clientId: String) {
-    val index = pendingImages.indexOfFirst { it.clientId == clientId }
+    val index = ui.pendingImages.indexOfFirst { it.clientId == clientId }
     if (index < 0) return
-    val image = pendingImages[index]
+    val image = ui.pendingImages[index]
     if (image.state == DshImageDraftState.INVALID) {
         bridgeModule.toast(image.error.ifEmpty { "图片不符合发送要求，请重新选择" })
         return
     }
     if (image.state != DshImageDraftState.FAILED) return
-    pendingImages[index] = image.copy(state = DshImageDraftState.SELECTED, error = "")
-    attachmentEpoch += 1
+    ui.pendingImages[index] = image.copy(state = DshImageDraftState.SELECTED, error = "")
+    ui.attachmentEpoch += 1
 }
 
 /** 切换「+」命令半屏面板；打开时收起键盘 */

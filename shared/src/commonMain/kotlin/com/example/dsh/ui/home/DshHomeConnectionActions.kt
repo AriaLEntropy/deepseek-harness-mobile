@@ -48,53 +48,53 @@ internal fun DshHomePage.loadRepository(preferredSessionId: String? = null, rest
     val hostRepository = repository ?: return
     val expectedConnection = activeConnectionId
     val requestGeneration = ++catalogRequestGeneration
-    val requestedActiveId = activeSessionId
+    val requestedActiveId = ui.activeSessionId
     fun current() = pageAlive && repository === hostRepository && activeConnectionId == expectedConnection &&
-        requestGeneration == catalogRequestGeneration && connectionCoordinator.isActive(connectionMode)
+        requestGeneration == catalogRequestGeneration && connectionCoordinator.isActive(ui.connectionMode)
     val onLoaded: (DshSessionCatalog) -> Unit = loaded@{ catalog ->
         if (!current()) return@loaded
         val loaded = catalog.sessions
         val loadedIds = loaded.map { it.id }.toSet()
-        sessions.map { it.id }
+        ui.sessions.map { it.id }
             .filterNot { loadedIds.contains(it) }
             .forEach {
                 sessionMessageStates.remove(it)
                 sessionCacheStates.remove(it)
                 sessionMessageReady.remove(it)
-                conversationPanelIds.remove(it)
+                ui.conversationPanelIds.remove(it)
             }
         if (isRemoteHost) {
             loaded.forEach { sessionCacheStates[it.id] = DshSessionCacheState.STALE }
         }
         // 会话列表按消息时间（updatedAt = 最新消息时间）从新到旧排序，不按创建时间。
-        sessions = loaded.toList()
+        ui.sessions = loaded.toList()
         reorderSessionsByUpdatedAt()
         refreshVisibleSessions()
-        runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
+        runCatching { localStore?.replaceSessions(activeConnectionId, ui.sessions.toList()) }
         preloadAllSessionMessages()
         connectionLabel = if (loaded.isEmpty()) "已连接 · 无会话" else "已连接 · 正在同步远程历史"
         refreshWorkspaceGroups()
-        val selectionChanged = activeSessionId != requestedActiveId
-        val preferred = if (selectionChanged) activeSessionId else preferredSessionId
+        val selectionChanged = ui.activeSessionId != requestedActiveId
+        val preferred = if (selectionChanged) ui.activeSessionId else preferredSessionId
         val nextId = catalog.forReload(preferred, preferBlankHomeOnNextLoad && !selectionChanged)?.id
         preferBlankHomeOnNextLoad = false
         if (nextId != null) {
-            if (activeSessionId != nextId) cancelStreamingForSessionSwitch()
-            activeSessionId = nextId
-            sessionRunning = loaded.firstOrNull { it.id == activeSessionId }?.running == true
+            if (ui.activeSessionId != nextId) cancelStreamingForSessionSwitch()
+            ui.activeSessionId = nextId
+            ui.sessionRunning = loaded.firstOrNull { it.id == ui.activeSessionId }?.running == true
             refreshQueueDock()
             refreshJobsPanel()
             refreshPendingInteractions()
-            loadModels(activeSessionId)
-            loadHistory(activeSessionId, scrollToEndAfterLoad = false)
-            if (streaming || stopButtonVisible || sessionRunning) {
-                resyncStreamingWithHost(activeSessionId, "session-list")
+            loadModels(ui.activeSessionId)
+            loadHistory(ui.activeSessionId, scrollToEndAfterLoad = false)
+            if (ui.streaming || ui.stopButtonVisible || ui.sessionRunning) {
+                resyncStreamingWithHost(ui.activeSessionId, "session-list")
             }
         } else {
             preferBlankHomeOnNextLoad = false
             cancelStreamingForSessionSwitch()
-            activeSessionId = ""
-            messages = ObservableList()
+            ui.activeSessionId = ""
+            ui.messages = ObservableList()
             createSession()
         }
     }
@@ -106,9 +106,9 @@ internal fun DshHomePage.loadRepository(preferredSessionId: String? = null, rest
         }
         connectionLabel = "内核连接失败"
         restoreCachedSessions()
-        if (sessions.isEmpty()) {
-            messages.clear()
-            messages.add(DshMessage("load-error", DshMessageRole.ERROR, error))
+        if (ui.sessions.isEmpty()) {
+            ui.messages.clear()
+            ui.messages.add(DshMessage("load-error", DshMessageRole.ERROR, error))
         } else {
             connectionLabel = "连接失败 · 已显示缓存"
         }
@@ -123,8 +123,8 @@ internal fun DshHomePage.loadRepository(preferredSessionId: String? = null, rest
 }
 
 internal fun DshHomePage.startConnection() {
-    val generation = connectionCoordinator.begin(connectionMode)
-    when (connectionMode) {
+    val generation = connectionCoordinator.begin(ui.connectionMode)
+    when (ui.connectionMode) {
         DshConnectionMode.SSH -> {
             startSshEngine(generation)
             return
@@ -142,13 +142,13 @@ internal fun DshHomePage.startConnection() {
 
 internal fun DshHomePage.loadSshConfig() {
     val profile = runCatching { localStore?.loadRemoteProfile() }.getOrNull()
-    sshHost = profile?.host.orEmpty()
-    sshUser = profile?.username.orEmpty()
-    sshPort = profile?.sshPort?.toString() ?: "22"
-    sshDshPort = profile?.remoteDshPort?.toString() ?: "3080"
-    sshKeyId = profile?.keyId.orEmpty()
-    sshFingerprint = profile?.hostFingerprint.orEmpty()
-    sshKeyLabel = if (sshKeyId.isEmpty()) "未导入私钥" else "已导入私钥"
+    ui.sshHost = profile?.host.orEmpty()
+    ui.sshUser = profile?.username.orEmpty()
+    ui.sshPort = profile?.sshPort?.toString() ?: "22"
+    ui.sshDshPort = profile?.remoteDshPort?.toString() ?: "3080"
+    ui.sshKeyId = profile?.keyId.orEmpty()
+    ui.sshFingerprint = profile?.hostFingerprint.orEmpty()
+    ui.sshKeyLabel = if (ui.sshKeyId.isEmpty()) "未导入私钥" else "已导入私钥"
 }
 
 internal fun DshHomePage.startRelayEngine(generation: Long) {
@@ -165,7 +165,7 @@ internal fun DshHomePage.startRelayEngine(generation: Long) {
                 val endpoint = "http://127.0.0.1:${state.localPort}"
                 engineReady = true
                 connectionLabel = state.message.ifEmpty { "扫码隧道已连接" }
-                if (state.hostId.isNotEmpty()) remoteProfileId = state.hostId
+                if (state.hostId.isNotEmpty()) ui.remoteProfileId = state.hostId
                 if (relayEngineEndpoint == endpoint && repository != null) return@connect
                 relayEngineEndpoint = endpoint
                 connectRemoteEngine(endpoint, state.localToken)
@@ -198,7 +198,7 @@ internal fun DshHomePage.startRelayEngine(generation: Long) {
 }
 
 internal fun DshHomePage.startSshEngine(generation: Long) {
-    if (sshHost.isBlank() || sshUser.isBlank() || sshKeyId.isBlank()) {
+    if (ui.sshHost.isBlank() || ui.sshUser.isBlank() || ui.sshKeyId.isBlank()) {
         connectionLabel = "请配置 SSH 连接"
         openConnectionSettings()
         return
@@ -207,19 +207,19 @@ internal fun DshHomePage.startSshEngine(generation: Long) {
     engineModule = module
     connectionLabel = "正在连接 SSH"
     module.startSsh(DshSshConfig(
-        host = sshHost,
-        port = sshPort.toIntOrNull() ?: 22,
-        username = sshUser,
-        remoteDshPort = sshDshPort.toIntOrNull() ?: 3080,
-        keyId = sshKeyId,
-        hostFingerprint = sshFingerprint,
-        keyPassphrase = sshKeyPassphrase,
+        host = ui.sshHost,
+        port = ui.sshPort.toIntOrNull() ?: 22,
+        username = ui.sshUser,
+        remoteDshPort = ui.sshDshPort.toIntOrNull() ?: 3080,
+        keyId = ui.sshKeyId,
+        hostFingerprint = ui.sshFingerprint,
+        keyPassphrase = ui.sshKeyPassphrase,
     )) { state ->
         if (!isCurrent(generation, DshConnectionMode.SSH)) return@startSsh
         when (state.phase) {
             DshSshPhase.FINGERPRINT_REQUIRED -> {
-                sshFingerprint = state.message
-                sshSettingsError = "首次连接需要确认主机指纹：${state.message}"
+                ui.sshFingerprint = state.message
+                ui.sshSettingsError = "首次连接需要确认主机指纹：${state.message}"
                 openConnectionSetup()
             }
             DshSshPhase.READY -> {
@@ -231,7 +231,7 @@ internal fun DshHomePage.startSshEngine(generation: Long) {
             DshSshPhase.ERROR -> {
                 engineReady = false
                 connectionLabel = "SSH 连接失败"
-                sshSettingsError = state.message
+                ui.sshSettingsError = state.message
                 openConnectionSetup()
             }
             DshSshPhase.STOPPED -> {
@@ -249,9 +249,9 @@ internal fun DshHomePage.connectRemoteEngine(baseUrl: String, token: String = ""
     messageForkVersion++
     messageForkBusy = false
     closeArchiveList()
-    sessionArchiveVisible = false
-    sessionArchiveBusy = false
-    sessionArchiveError = ""
+    ui.sessionArchiveVisible = false
+    ui.sessionArchiveBusy = false
+    ui.sessionArchiveError = ""
     (remoteRepo)?.stop()
     repository = DshRemoteHostRepository(
         network = acquireModule<NetworkModule>(NetworkModule.MODULE_NAME),
@@ -260,19 +260,19 @@ internal fun DshHomePage.connectRemoteEngine(baseUrl: String, token: String = ""
         pagerId = pagerId,
         onState = { state -> handleHostRuntimeState(state) },
         onQueueSnapshot = { sessionId ->
-            if (sessionId == activeSessionId) {
+            if (sessionId == ui.activeSessionId) {
                 refreshQueueDock()
                 refreshPendingInteractions()
             }
         },
         onJobsSnapshot = { sessionId ->
-            if (sessionId == activeSessionId) refreshJobsPanel()
+            if (sessionId == ui.activeSessionId) refreshJobsPanel()
         },
         onSessionStatus = { sessionId, running ->
             updateSessionMetadata(sessionId) { it.copy(running = running) }
-            if (sessionId == activeSessionId) {
-                val wasRunning = sessionRunning
-                sessionRunning = running
+            if (sessionId == ui.activeSessionId) {
+                val wasRunning = ui.sessionRunning
+                ui.sessionRunning = running
                 if (wasRunning != running) {
                     resyncStreamingWithHost(
                         sessionId,
@@ -287,16 +287,16 @@ internal fun DshHomePage.connectRemoteEngine(baseUrl: String, token: String = ""
                 val title = value.trim().removeSurrounding("\"")
                 if (title.isNotEmpty()) updateSessionMetadata(sessionId) { it.copy(title = title) }
             }
-            if (sessionId == activeSessionId) {
+            if (sessionId == ui.activeSessionId) {
                 when (key) {
-                    "goal" -> goalSnapshot = parseGoalProjection(value)
+                    "goal" -> ui.goalSnapshot = parseGoalProjection(value)
                     "imageLimits" -> {
                         val limits = runCatching {
                             DshImageLimits.fromJson(
                                 com.tencent.kuikly.core.nvi.serialization.json.JSONObject(value),
                             )
                         }.getOrNull()
-                        if (limits != null) imageLimits = limits
+                        if (limits != null) ui.imageLimits = limits
                     }
                 }
             }
@@ -304,10 +304,10 @@ internal fun DshHomePage.connectRemoteEngine(baseUrl: String, token: String = ""
         onSessionEvent = { sessionId, event ->
             // HostProtocol records each event with its original type and metadata.
             // UI projection must not duplicate it or mislabel assistant/message as a chunk.
-            if (sessionId == activeSessionId) {
+            if (sessionId == ui.activeSessionId) {
                 when (event.type) {
                     "turn/start" -> streamingSourceSeq = null
-                    "assistant/chunk" -> if (streaming) streamingSourceSeq = event.seq
+                    "assistant/chunk" -> if (ui.streaming) streamingSourceSeq = event.seq
                     "tool/call" -> showRunningTool(event)
                     "tool/result" -> settleRunningTool(event)
                     "user/message" -> showContextInjection(event)
@@ -316,24 +316,24 @@ internal fun DshHomePage.connectRemoteEngine(baseUrl: String, token: String = ""
             }
         },
         onRemoteEvent = { event ->
-            if (activeSessionId.isNotEmpty() && isRemoteCatalogInvalidationEvent(event)) {
-                loadSkills(activeSessionId)
-                loadModels(activeSessionId)
+            if (ui.activeSessionId.isNotEmpty() && isRemoteCatalogInvalidationEvent(event)) {
+                loadSkills(ui.activeSessionId)
+                loadModels(ui.activeSessionId)
             }
         },
         onPendingInteraction = { sessionId ->
             refreshPendingSessionIds()
-            if (sessionId == activeSessionId) {
+            if (sessionId == ui.activeSessionId) {
                 refreshPendingInteractions()
                 loadWebTimeline(sessionId, scrollToEndAfterLoad = true)
             }
         },
     )
-    loadRepository(preferredSessionId = activeSessionId)
+    loadRepository(preferredSessionId = ui.activeSessionId)
 }
 
 internal fun DshHomePage.handleHostRuntimeState(state: DshHostRuntimeState) {
-    if (!connectionCoordinator.isActive(connectionMode)) return
+    if (!connectionCoordinator.isActive(ui.connectionMode)) return
     val wasReconnecting = isReconnectLabel(connectionLabel)
     connectionLabel = when (state.phase) {
         DshHostRuntimePhase.CONNECTING -> "正在打开远程事件流"
@@ -357,20 +357,20 @@ internal fun DshHomePage.handleHostRuntimeState(state: DshHostRuntimeState) {
     }
     val connLogLevel = if (state.phase == DshHostRuntimePhase.ERROR) LogLevel.ERROR else LogLevel.INFO
     val connErr = state.message.let { if (it.isNotEmpty()) " error='${DshStreamLog.preview(it)}'" else "" }
-    DshStreamLog.log(connLogLevel, connLogType, "$connLogType mode=$connectionMode$connErr", null, null)
-    if (archiveListVisible && state.phase in listOf(DshHostRuntimePhase.RECONNECTING, DshHostRuntimePhase.ERROR, DshHostRuntimePhase.STOPPED)) {
+    DshStreamLog.log(connLogLevel, connLogType, "$connLogType mode=$ui.connectionMode$connErr", null, null)
+    if (ui.archiveListVisible && state.phase in listOf(DshHostRuntimePhase.RECONNECTING, DshHostRuntimePhase.ERROR, DshHostRuntimePhase.STOPPED)) {
         archiveRequestGeneration++
-        archiveListLoading = false
-        archiveOpeningId = ""
-        archiveListError = "连接已中断，请连接后刷新归档列表"
-        archivedSessions.clear()
-        archiveGroups.clear()
-        archiveProjectOptions.clear()
-        archiveConfirm = null
-        archiveBusy = false
+        ui.archiveListLoading = false
+        ui.archiveOpeningId = ""
+        ui.archiveListError = "连接已中断，请连接后刷新归档列表"
+        ui.archivedSessions.clear()
+        ui.archiveGroups.clear()
+        ui.archiveProjectOptions.clear()
+        ui.archiveConfirm = null
+        ui.archiveBusy = false
     }
     if (state.phase == DshHostRuntimePhase.READY && wasReconnecting) {
-        loadRepository(preferredSessionId = activeSessionId)
+        loadRepository(preferredSessionId = ui.activeSessionId)
     }
     syncTurnStatusTicker()
 }
@@ -399,8 +399,8 @@ internal fun DshHomePage.syncLocalCredential(apiKey: String, attempt: Int) {
             }
         } else {
             connectionLabel = "内核启动失败"
-            messages.clear()
-            messages.add(DshMessage(
+            ui.messages.clear()
+            ui.messages.add(DshMessage(
                 "engine-start-error",
                 DshMessageRole.ERROR,
                 "本地 DeepSeek Harness 内核暂未就绪：$error",
@@ -410,31 +410,31 @@ internal fun DshHomePage.syncLocalCredential(apiKey: String, attempt: Int) {
 }
 
 internal fun DshHomePage.saveDeepSeekApiKey() {
-    val key = apiKeyDraft.trim()
+    val key = ui.apiKeyDraft.trim()
     when {
         key.isEmpty() -> {
-            credentialSetupError = "请输入 API Key 后继续。"
+            ui.credentialSetupError = "请输入 API Key 后继续。"
             return
         }
         key.any { it.code !in 0x21..0x7E } -> {
-            credentialSetupError = "API Key 格式错误，请检查后重试。"
+            ui.credentialSetupError = "API Key 格式错误，请检查后重试。"
             return
         }
     }
-    credentialSetupBusy = true
-    credentialSetupError = ""
+    ui.credentialSetupBusy = true
+    ui.credentialSetupError = ""
     if (sshMode) {
         val hostRepository = repository
         if (hostRepository == null) {
-            credentialSetupBusy = false
-            credentialSetupError = "远程 DSH 尚未就绪"
+            ui.credentialSetupBusy = false
+            ui.credentialSetupError = "远程 DSH 尚未就绪"
             return
         }
         hostRepository.saveDeepSeekApiKey(key, {
             postToUi {
-                apiKeyDraft = ""
+                ui.apiKeyDraft = ""
                 apiKeyInputView?.setText("")
-                credentialSetupBusy = false
+                ui.credentialSetupBusy = false
                 updateCredentialSetupVisibility(false)
                 dismissKeyboard()
                 connectionLabel = "远程 DSH 已更新"
@@ -442,22 +442,22 @@ internal fun DshHomePage.saveDeepSeekApiKey() {
             }
         }, { error ->
             postToUi {
-                credentialSetupBusy = false
-                credentialSetupError = "无法修改电脑端 DSH：$error"
+                ui.credentialSetupBusy = false
+                ui.credentialSetupError = "无法修改电脑端 DSH：$error"
             }
         })
         return
     }
     val saved = runCatching { localStore?.saveApiKey(key) }
     if (saved.isFailure || localStore == null) {
-        credentialSetupBusy = false
-        credentialSetupError = saved.exceptionOrNull()?.message ?: "本地数据库不可用"
+        ui.credentialSetupBusy = false
+        ui.credentialSetupError = saved.exceptionOrNull()?.message ?: "本地数据库不可用"
         return
     }
-    apiKeyDraft = ""
+    ui.apiKeyDraft = ""
     apiKeyInputView?.setText("")
-    credentialSetupBusy = false
-    credentialSetupError = ""
+    ui.credentialSetupBusy = false
+    ui.credentialSetupError = ""
     updateCredentialSetupVisibility(false)
     dismissKeyboard()
     pendingApiKey = key
@@ -468,7 +468,7 @@ internal fun DshHomePage.saveDeepSeekApiKey() {
     }
 }
 
-internal fun DshHomePage.connectionModeLabel(): String = dshConnectionModeLabel(connectionMode)
+internal fun DshHomePage.connectionModeLabel(): String = dshConnectionModeLabel(ui.connectionMode)
 
 internal fun DshHomePage.disconnectFromHost() {
     DshStreamLog.log(LogLevel.INFO, "connect.disconnect", "connect.disconnect by user", null, null)
@@ -479,36 +479,36 @@ internal fun DshHomePage.disconnectFromHost() {
 
 internal fun DshHomePage.openConnectionSettings(preserveError: Boolean = false) {
     dismissKeyboard()
-    commandSheetVisible = false
-    if (!preserveError) sshSettingsError = ""
+    ui.commandSheetVisible = false
+    if (!preserveError) ui.sshSettingsError = ""
     updateSshSettingsVisibility(true)
 }
 
 internal fun DshHomePage.updateSshSettingsVisibility(visible: Boolean) {
-    sshSettingsVisible = visible
+    ui.sshSettingsVisible = visible
     if (pageData.isAndroid || pageData.isIOS) {
         bridgeModule.setSystemBarsDimmed(visible)
     }
 }
 
 internal fun DshHomePage.setConnectionMode(useSsh: Boolean) {
-    connectionMode = if (useSsh) DshConnectionMode.SSH else DshConnectionMode.RELAY
-    sshSettingsError = ""
+    ui.connectionMode = if (useSsh) DshConnectionMode.SSH else DshConnectionMode.RELAY
+    ui.sshSettingsError = ""
 }
 
 internal fun DshHomePage.pickSshKey() {
     bridgeModule.pickSshKey { uri ->
         if (uri.isEmpty()) return@pickSshKey
-        sshSettingsBusy = true
+        ui.sshSettingsBusy = true
         bridgeModule.importSshKey(uri) { keyId ->
             postToUi {
-                sshSettingsBusy = false
+                ui.sshSettingsBusy = false
                 if (keyId.isEmpty()) {
-                    sshSettingsError = "无法导入 SSH 私钥"
+                    ui.sshSettingsError = "无法导入 SSH 私钥"
                 } else {
-                    sshKeyId = keyId
-                    sshKeyLabel = "已导入私钥"
-                    sshSettingsError = ""
+                    ui.sshKeyId = keyId
+                    ui.sshKeyLabel = "已导入私钥"
+                    ui.sshSettingsError = ""
                 }
             }
         }
@@ -516,33 +516,33 @@ internal fun DshHomePage.pickSshKey() {
 }
 
 internal fun DshHomePage.trustSshFingerprint() {
-    if (sshFingerprint.isBlank()) return
-    acquireModule<DshEngineModule>(DshEngineModule.MODULE_NAME).trustSshFingerprint(sshFingerprint)
+    if (ui.sshFingerprint.isBlank()) return
+    acquireModule<DshEngineModule>(DshEngineModule.MODULE_NAME).trustSshFingerprint(ui.sshFingerprint)
     runCatching {
         localStore?.saveRemoteProfile(DshRemoteProfile(
-            host = sshHost.trim(),
-            sshPort = sshPort.toIntOrNull() ?: 22,
-            username = sshUser.trim(),
-            remoteDshPort = sshDshPort.toIntOrNull() ?: 3080,
-            keyId = sshKeyId,
-            hostFingerprint = sshFingerprint,
+            host = ui.sshHost.trim(),
+            sshPort = ui.sshPort.toIntOrNull() ?: 22,
+            username = ui.sshUser.trim(),
+            remoteDshPort = ui.sshDshPort.toIntOrNull() ?: 3080,
+            keyId = ui.sshKeyId,
+            hostFingerprint = ui.sshFingerprint,
         ))
     }
-    sshSettingsError = "正在使用已确认的主机指纹连接"
+    ui.sshSettingsError = "正在使用已确认的主机指纹连接"
 }
 
 internal fun DshHomePage.saveConnectionSettings() {
     if (sshMode) {
-        when (val validation = dshValidateSshSettings(sshHost, sshUser, sshPort, sshDshPort, sshKeyId)) {
-            is DshSshSettingsValidation.Invalid -> sshSettingsError = validation.message
+        when (val validation = dshValidateSshSettings(ui.sshHost, ui.sshUser, ui.sshPort, ui.sshDshPort, ui.sshKeyId)) {
+            is DshSshSettingsValidation.Invalid -> ui.sshSettingsError = validation.message
             is DshSshSettingsValidation.Valid -> {
                 runCatching { localStore?.saveRemoteProfile(DshRemoteProfile(
-                    host = sshHost.trim(),
+                    host = ui.sshHost.trim(),
                     sshPort = validation.sshPort,
-                    username = sshUser.trim(),
+                    username = ui.sshUser.trim(),
                     remoteDshPort = validation.dshPort,
-                    keyId = sshKeyId,
-                    hostFingerprint = sshFingerprint,
+                    keyId = ui.sshKeyId,
+                    hostFingerprint = ui.sshFingerprint,
                 )) }
                 runCatching { localStore?.saveLastConnectionMode(DshConnectionMode.SSH) }
                 updateSshSettingsVisibility(false)
@@ -562,23 +562,23 @@ internal fun DshHomePage.stopCurrentEngine() {
     resetSessionActions()
     cancelReadableExport()
     pluginRequestVersion++
-    pluginInventoryLoading = false
-    pluginInventory = emptyList(); pluginRows.clear(); pluginTotal = 0
-    pluginSearchInput = ""; pluginSearchHasText = false; pluginKeyword = ""
-    pluginExpandedId = ""; pluginActionTarget = null; pluginConfirmAction = ""; pluginBusyId = ""
-    pluginActionError = ""; pluginNotice = ""
-    pluginConfigLoading = false; pluginConfigCards.clear(); pluginConfigDrafts = emptyMap()
-    pluginConfigSecretDrafts = emptyMap(); pluginConfigCollapsed = emptySet()
-    pluginConfigBusyNamespace = ""; pluginConfigCardError = emptyMap(); pluginConfigCardNotice = emptyMap()
-    if (pluginInventoryVisible) pluginInventoryError = "连接已断开，请连接 Host 后刷新"
+    ui.pluginInventoryLoading = false
+    pluginInventory = emptyList(); ui.pluginRows.clear(); ui.pluginTotal = 0
+    pluginSearchInput = ""; ui.pluginSearchHasText = false; ui.pluginKeyword = ""
+    ui.pluginExpandedId = ""; ui.pluginActionTarget = null; ui.pluginConfirmAction = ""; ui.pluginBusyId = ""
+    ui.pluginActionError = ""; ui.pluginNotice = ""
+    ui.pluginConfigLoading = false; ui.pluginConfigCards.clear(); ui.pluginConfigDrafts = emptyMap()
+    ui.pluginConfigSecretDrafts = emptyMap(); ui.pluginConfigCollapsed = emptySet()
+    ui.pluginConfigBusyNamespace = ""; ui.pluginConfigCardError = emptyMap(); ui.pluginConfigCardNotice = emptyMap()
+    if (ui.pluginInventoryVisible) ui.pluginInventoryError = "连接已断开，请连接 Host 后刷新"
     timelineReadVersion++
-    val mode = connectionCoordinator.activeModeOr(connectionMode)
+    val mode = connectionCoordinator.activeModeOr(ui.connectionMode)
     connectionCoordinator.stop()
     (remoteRepo)?.stop()
     repository = null
-    goalSnapshot = null
-    goalActionBusy = false
-    goalActionError = ""
+    ui.goalSnapshot = null
+    ui.goalActionBusy = false
+    ui.goalActionError = ""
     streamHandle?.cancel()
     streamHandle = null
     when (mode) {
@@ -603,6 +603,6 @@ internal fun DshHomePage.openConnectionSetup() {
     )
 }
 
-internal fun DshHomePage.reconnectLabel(): String = dshReconnectLabel(connectionMode)
+internal fun DshHomePage.reconnectLabel(): String = dshReconnectLabel(ui.connectionMode)
 
-internal fun DshHomePage.syncBusyLabel(): String = dshSyncBusyLabel(connectionMode)
+internal fun DshHomePage.syncBusyLabel(): String = dshSyncBusyLabel(ui.connectionMode)

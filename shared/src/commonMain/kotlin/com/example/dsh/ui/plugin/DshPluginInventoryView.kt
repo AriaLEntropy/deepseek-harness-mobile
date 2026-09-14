@@ -346,11 +346,13 @@ private fun ViewContainer<*, *>.PluginInventoryRow(
                 if (entry.enabled) {
                     PluginDetailRow("Cordis 状态", pluginPhaseLabel(entry.phase), colors().labelSecondary, colors)
                 }
-                if (entry.failureSummary != null) {
-                    PluginDetailRow("失败原因", entry.failureSummary, colors().stateErrorPrimary, colors)
+                val entryFailureSummary = entry.failureSummary
+                if (entryFailureSummary != null) {
+                    PluginDetailRow("失败原因", entryFailureSummary, colors().stateErrorPrimary, colors)
                 }
-                if (entry.disabledExpr != null) {
-                    PluginDetailRow("禁用表达式", entry.disabledExpr, colors().labelSecondary, colors)
+                val entryDisabledExpr = entry.disabledExpr
+                if (entryDisabledExpr != null) {
+                    PluginDetailRow("禁用表达式", entryDisabledExpr, colors().labelSecondary, colors)
                 }
                 if (!entry.canToggle && entry.toggleHint.isNotEmpty()) {
                     PluginDetailRow("不可启停", entry.toggleHint, colors().stateWarnLabel, colors)

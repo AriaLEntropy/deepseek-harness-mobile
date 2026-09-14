@@ -1151,7 +1151,8 @@ internal class DshLogPage : BasePager() {
                     }
                 }
                 this@DshLogPage.detailMetaRow(this, "类型", e.type)
-                this@DshLogPage.detailMetaRow(this, "会话", if (e.sessionId.isNullOrEmpty()) "未关联会话" else "${this@DshLogPage.sessionTitle(e.sessionId)}\n${e.sessionId}")
+                val eventSessionId = e.sessionId
+                this@DshLogPage.detailMetaRow(this, "会话", if (eventSessionId.isNullOrEmpty()) "未关联会话" else "${this@DshLogPage.sessionTitle(eventSessionId)}\n$eventSessionId")
                 this@DshLogPage.detailMetaRow(this, "RPC", e.rpcId ?: "-")
                 this@DshLogPage.detailMetaRow(this, "序号 / 大小", "#${e.seq} · ${e.size} B")
             }

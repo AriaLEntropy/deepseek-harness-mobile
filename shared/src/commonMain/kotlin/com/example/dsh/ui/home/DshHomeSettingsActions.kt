@@ -23,83 +23,83 @@ import com.example.dsh.ui.interaction.DshPermissionOption
 
 internal fun DshHomePage.openCredentialSettings() {
     dismissKeyboard()
-    commandSheetVisible = false
+    ui.commandSheetVisible = false
     //closeSessionDrawer()
-    credentialSetupTitle = if (sshMode) "修改电脑端 DSH 的 API Key" else "设置 DeepSeek API Key"
-    credentialSetupError = ""
-    apiKeyDraft = pendingApiKey
+    ui.credentialSetupTitle = if (sshMode) "修改电脑端 DSH 的 API Key" else "设置 DeepSeek API Key"
+    ui.credentialSetupError = ""
+    ui.apiKeyDraft = pendingApiKey
     updateCredentialSetupVisibility(true)
 }
 
 internal fun DshHomePage.openSettingsPage() {
     dismissKeyboard()
-    commandSheetVisible = false
+    ui.commandSheetVisible = false
     closeSessionDrawerImmediately()
     reloadSettings()
     loadHostVersion()
     if (isRemoteHost) reloadModelsSettings(showLoading = false)
-    settingsPageVisible = true
+    ui.settingsPageVisible = true
 }
 
 internal fun DshHomePage.closeSettingsPage() {
-    settingsPageVisible = false
-    settingsChoiceKind = ""
-    settingsChoiceBusy = false
+    ui.settingsPageVisible = false
+    ui.settingsChoiceKind = ""
+    ui.settingsChoiceBusy = false
 }
 
 // ===== 个性化「对话展示」 =====
 
 internal fun DshHomePage.openPersonalizationPage() {
     dismissKeyboard()
-    personalizationPageVisible = true
+    ui.personalizationPageVisible = true
 }
 
 internal fun DshHomePage.closePersonalizationPage() {
-    personalizationPageVisible = false
+    ui.personalizationPageVisible = false
 }
 
 internal fun DshHomePage.applyChatProcessMode(mode: DshProcessDisplayMode) {
-    chatProcessMode = mode
+    ui.chatProcessMode = mode
     runCatching {
         acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
             .setString(DSH_PREF_PROCESS_DISPLAY, dshProcessDisplayValue(mode))
     }
-    remountConversationList(activeSessionId)
+    remountConversationList(ui.activeSessionId)
 }
 
 internal fun DshHomePage.applyChatExpandInModal(enabled: Boolean) {
-    chatExpandInModal = enabled
+    ui.chatExpandInModal = enabled
     runCatching {
         acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
             .setString(DSH_PREF_EXPAND_MODAL, if (enabled) "1" else "0")
     }
-    remountConversationList(activeSessionId)
+    remountConversationList(ui.activeSessionId)
 }
 
 internal fun DshHomePage.applyChatShowConnectors(enabled: Boolean) {
-    chatShowConnectors = enabled
+    ui.chatShowConnectors = enabled
     runCatching {
         acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
             .setString(DSH_PREF_SHOW_CONNECTORS, if (enabled) "1" else "0")
     }
-    remountConversationList(activeSessionId)
+    remountConversationList(ui.activeSessionId)
 }
 
 internal fun DshHomePage.applyChatShowResultCards(enabled: Boolean) {
-    chatShowResultCards = enabled
+    ui.chatShowResultCards = enabled
     runCatching {
         acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
             .setString(DSH_PREF_SHOW_RESULT_CARDS, if (enabled) "1" else "0")
     }
-    remountConversationList(activeSessionId)
+    remountConversationList(ui.activeSessionId)
 }
 
 internal fun DshHomePage.openExpandedModal(payload: DshExpandedPayload) {
-    expandedPayload = payload
+    ui.expandedPayload = payload
 }
 
 internal fun DshHomePage.closeExpandedModal() {
-    expandedPayload = null
+    ui.expandedPayload = null
 }
 
 /** 设置页「模型」摘要：已配置的提供方数量。 */
@@ -107,71 +107,71 @@ internal fun DshHomePage.closeExpandedModal() {
 internal fun DshHomePage.reloadSettings(showLoading: Boolean = true) {
     // 保存后的回读只更新数据，避免加载提示插入列表导致滚动位置跳动。
     if (showLoading) {
-        settingsLoading = true
-        settingsError = ""
+        ui.settingsLoading = true
+        ui.settingsError = ""
     }
     val repo = repository
     if (repo == null) {
-        settingsLoading = false
-        if (showLoading) settingsError = "未连接电脑端"
+        ui.settingsLoading = false
+        if (showLoading) ui.settingsError = "未连接电脑端"
         return
     }
     repo.describeSettings({
-        settingsSnapshot = it
-        settingsError = ""
-        settingsLoading = false
+        ui.settingsSnapshot = it
+        ui.settingsError = ""
+        ui.settingsLoading = false
     }, {
-        settingsLoading = false
-        if (showLoading) settingsError = it
+        ui.settingsLoading = false
+        if (showLoading) ui.settingsError = it
         else bridgeModule.toast("设置刷新失败：$it")
     })
 }
 
 internal fun DshHomePage.loadHostVersion() {
     val repo = repository ?: return
-    repo.loadHostVersion({ hostVersion = it }, { })
+    repo.loadHostVersion({ ui.hostVersion = it }, { })
 }
 
 internal fun DshHomePage.openAgentModePicker(title: String = "选择模式") {
-    agentModePickerTitle = title
-    if (agentPresetOptions.isEmpty()) {
+    ui.agentModePickerTitle = title
+    if (ui.agentPresetOptions.isEmpty()) {
         val repo = repository
         repo?.loadAgentPresets({
-            agentPresetOptions.clear()
-            agentPresetOptions.addAll(it)
-            agentModePickerVisible = true
+            ui.agentPresetOptions.clear()
+            ui.agentPresetOptions.addAll(it)
+            ui.agentModePickerVisible = true
         }, {
-            agentModePickerVisible = true
+            ui.agentModePickerVisible = true
         })
     } else {
-        agentModePickerVisible = true
+        ui.agentModePickerVisible = true
     }
 }
 
 internal fun DshHomePage.openSettingsChoice(kind: String, title: String) {
-    if (settingsChoiceBusy) return
-    settingsChoiceTitle = title
-    settingsChoiceOptions.clear()
+    if (ui.settingsChoiceBusy) return
+    ui.settingsChoiceTitle = title
+    ui.settingsChoiceOptions.clear()
     when (kind) {
-        "permission" -> settingsChoiceOptions.addAll(settingsSnapshot.permissionChoices)
+        "permission" -> ui.settingsChoiceOptions.addAll(ui.settingsSnapshot.permissionChoices)
         "locale" -> {
-            settingsChoiceOptions.add(DshSettingsChoice("zh", "简体中文"))
-            settingsChoiceOptions.add(DshSettingsChoice("en", "English"))
+            ui.settingsChoiceOptions.add(DshSettingsChoice("zh", "简体中文"))
+            ui.settingsChoiceOptions.add(DshSettingsChoice("en", "English"))
         }
         "theme" -> {
-            settingsChoiceOptions.add(DshSettingsChoice("system", "跟随系统"))
-            settingsChoiceOptions.add(DshSettingsChoice("sunrise-sunset", "日出日落"))
-            settingsChoiceOptions.add(DshSettingsChoice("dark", "深色"))
-            settingsChoiceOptions.add(DshSettingsChoice("light", "浅色"))
+            ui.settingsChoiceOptions.add(DshSettingsChoice("system", "跟随系统"))
+            ui.settingsChoiceOptions.add(DshSettingsChoice("sunrise-sunset", "日出日落"))
+            ui.settingsChoiceOptions.add(DshSettingsChoice("dark", "深色"))
+            ui.settingsChoiceOptions.add(DshSettingsChoice("light", "浅色"))
         }
     }
-    settingsChoiceKind = kind
+    ui.settingsChoiceKind = kind
 }
 
 internal fun DshHomePage.applySettingsChoice(choice: DshSettingsChoice) {
-    val kind = settingsChoiceKind
-    if (kind.isEmpty() || settingsChoiceBusy) return
-    settingsChoiceKind = ""
+    val kind = ui.settingsChoiceKind
+    if (kind.isEmpty() || ui.settingsChoiceBusy) return
+    ui.settingsChoiceKind = ""
     if (kind == "theme") {
         // 本地外观不依赖电脑连接；同步失败也保留移动端选择。
         runCatching {
@@ -180,10 +180,10 @@ internal fun DshHomePage.applySettingsChoice(choice: DshSettingsChoice) {
         }
         DshThemeManager.applyPreference(choice.value)
     }
-    settingsChoiceBusy = true
+    ui.settingsChoiceBusy = true
     val repo = repository
     if (repo == null) {
-        settingsChoiceBusy = false
+        ui.settingsChoiceBusy = false
         if (kind != "theme") bridgeModule.toast("未连接电脑端")
         return
     }
@@ -191,43 +191,43 @@ internal fun DshHomePage.applySettingsChoice(choice: DshSettingsChoice) {
         "permission" -> repo.updateSetting(
             "permission",
             JSONObject().apply { put("defaultPreset", choice.value) },
-            settingsSnapshot.permissionRevision,
+            ui.settingsSnapshot.permissionRevision,
             {
-                settingsChoiceBusy = false
+                ui.settingsChoiceBusy = false
                 reloadSettings(showLoading = false)
             },
             {
-                settingsChoiceBusy = false
+                ui.settingsChoiceBusy = false
                 bridgeModule.toast("权限设置失败：$it")
             },
         )
         "locale" -> repo.updateSetting(
             "locale",
             JSONObject().apply { put("preference", choice.value) },
-            settingsSnapshot.localeRevision,
+            ui.settingsSnapshot.localeRevision,
             {
-                settingsChoiceBusy = false
+                ui.settingsChoiceBusy = false
                 reloadSettings(showLoading = false)
             },
             {
-                settingsChoiceBusy = false
+                ui.settingsChoiceBusy = false
                 bridgeModule.toast("语言设置失败：$it")
             },
         )
         "theme" -> {
-            settingsChoiceBusy = false
+            ui.settingsChoiceBusy = false
             // 日出日落为移动端本地模式，电脑端不支持该偏好，不做同步。
             if (choice.value == "sunrise-sunset") return
             // 顺带同步电脑端外观（失败仅提示，不影响移动端）
             repo.updateSetting(
                 "ui-theme",
                 JSONObject().apply { put("preference", choice.value) },
-                settingsSnapshot.themeRevision,
+                ui.settingsSnapshot.themeRevision,
                 { reloadSettings(showLoading = false) },
                 { bridgeModule.toast("外观同步电脑端失败：$it") },
             )
         }
-        else -> settingsChoiceBusy = false
+        else -> ui.settingsChoiceBusy = false
     }
 }
 
@@ -236,10 +236,10 @@ internal fun DshHomePage.applySettingsChoice(choice: DshSettingsChoice) {
 
 internal fun DshHomePage.openPermissionPicker() {
     dismissKeyboard()
-    commandSheetVisible = false
-    permissionPickerVisible = true
+    ui.commandSheetVisible = false
+    ui.permissionPickerVisible = true
     // 快照未加载（通常还没打开过设置页）时预热拉取，弹窗选项展示 host 真实预设。
-    if (repository != null && settingsSnapshot.permissionChoices.isEmpty()) {
+    if (repository != null && ui.settingsSnapshot.permissionChoices.isEmpty()) {
         reloadSettings(showLoading = false)
     }
 }
@@ -249,35 +249,35 @@ internal fun DshHomePage.applyPermissionPreset(option: DshPermissionOption) {
         bridgeModule.toast("未连接电脑端，权限已本地记住，连接后可在设置页同步")
         return
     }
-    if (settingsChoiceBusy) return
-    if (settingsSnapshot.permissionChoices.isEmpty()) {
+    if (ui.settingsChoiceBusy) return
+    if (ui.settingsSnapshot.permissionChoices.isEmpty()) {
         // 设置快照尚未加载：先拉取一次 host settings（拿到 revision），成功后再写入。
-        settingsChoiceBusy = true
+        ui.settingsChoiceBusy = true
         repo.describeSettings({
-            settingsChoiceBusy = false
-            settingsSnapshot = it
+            ui.settingsChoiceBusy = false
+            ui.settingsSnapshot = it
             pushPermissionPreset(repo, option, it.permissionRevision)
         }, {
-            settingsChoiceBusy = false
+            ui.settingsChoiceBusy = false
             bridgeModule.toast("获取权限设置失败：$it")
         })
         return
     }
-    pushPermissionPreset(repo, option, settingsSnapshot.permissionRevision)
+    pushPermissionPreset(repo, option, ui.settingsSnapshot.permissionRevision)
 }
 
 internal fun DshHomePage.pushPermissionPreset(repo: DshRepository, option: DshPermissionOption, revision: Int) {
-    settingsChoiceBusy = true
+    ui.settingsChoiceBusy = true
     repo.updateSetting(
         "permission",
         JSONObject().apply { put("defaultPreset", option.value) },
         revision,
         {
-            settingsChoiceBusy = false
+            ui.settingsChoiceBusy = false
             reloadSettings(showLoading = false)
         },
         {
-            settingsChoiceBusy = false
+            ui.settingsChoiceBusy = false
             bridgeModule.toast("权限设置失败：$it")
         },
     )
@@ -289,7 +289,7 @@ internal fun DshHomePage.closeCredentialSettings() {
 }
 
 internal fun DshHomePage.updateCredentialSetupVisibility(visible: Boolean) {
-    credentialSetupVisible = visible
+    ui.credentialSetupVisible = visible
     if (pageData.isAndroid || pageData.isIOS) {
         bridgeModule.setSystemBarsDimmed(visible)
     }
@@ -308,7 +308,7 @@ internal fun DshHomePage.loadApiKeyAsync() {
             pendingApiKey = apiKey
             if (apiKey.isEmpty()) {
                 showCredentialSetupIfNeeded(apiKey)
-            } else if (engineReady && repository == null && connectionMode == DshConnectionMode.LOCAL) {
+            } else if (engineReady && repository == null && ui.connectionMode == DshConnectionMode.LOCAL) {
                 connectLocalEngine(apiKey)
             }
         }
@@ -320,8 +320,8 @@ internal fun DshHomePage.showCredentialSetupIfNeeded(apiKey: String) {
     if (pendingApiKey.isNotEmpty() || apiKey.isNotEmpty()) return
     connectionLabel = "等待配置"
     updateCredentialSetupVisibility(true)
-    if (messages.none { it.id == "api-key-required" }) {
-        messages.add(
+    if (ui.messages.none { it.id == "api-key-required" }) {
+        ui.messages.add(
             DshMessage(
                 id = "api-key-required",
                 role = DshMessageRole.ASSISTANT,

@@ -135,8 +135,9 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         return
     }
     // 附件图片卡片：消息附带的上传图片，加载中显示占位文案
-    if (isWebTimeline && message.attachmentId != null) {
-        val dataUrl = attachmentDataUrl(message.attachmentId)
+    val webAttachmentId = message.attachmentId
+    if (isWebTimeline && webAttachmentId != null) {
+        val dataUrl = attachmentDataUrl(webAttachmentId)
         View {
             attr {
                 width(rowWidth.coerceAtLeast(0f))
@@ -200,8 +201,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         return
     }
     // Skill 调用卡片：展示技能执行摘要与结果
-    if (isWebTimeline && message.remoteTool?.kind == DshRemoteToolKind.SKILL) {
-        val remoteTool = message.remoteTool
+    val remoteTool = message.remoteTool
+    if (isWebTimeline && remoteTool?.kind == DshRemoteToolKind.SKILL) {
         View {
             attr {
                 width(rowWidth.coerceAtLeast(0f))

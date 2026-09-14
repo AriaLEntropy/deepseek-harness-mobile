@@ -12,25 +12,25 @@ import com.tencent.kuikly.core.timer.setTimeout
 
 internal fun DshHomePage.onConnectionLabelChanged(label: String) {
     if (label == "正在生成" || label == "正在聆听") {
-        if (connectionCapsuleVisible) {
-            connectionCapsuleVisible = false
-            connectionCapsuleFadeOut = false
+        if (ui.connectionCapsuleVisible) {
+            ui.connectionCapsuleVisible = false
+            ui.connectionCapsuleFadeOut = false
         }
         return
     }
     if (!isConnectionReadyLabel(label)) {
-        connectionCapsuleVisible = true
-        connectionCapsuleFadeOut = false
-    } else if (connectionCapsuleVisible) {
+        ui.connectionCapsuleVisible = true
+        ui.connectionCapsuleFadeOut = false
+    } else if (ui.connectionCapsuleVisible) {
         connectionCapsuleVersion++
         val version = connectionCapsuleVersion
         setTimeout(pagerId, DshHomePage.CONNECTION_CAPSULE_HOLD_MS) {
             if (version == connectionCapsuleVersion && isConnectionReadyLabel(connectionLabel)) {
-                connectionCapsuleFadeOut = true
+                ui.connectionCapsuleFadeOut = true
                 setTimeout(pagerId, DshHomePage.CONNECTION_CAPSULE_FADE_MS) {
                     if (version == connectionCapsuleVersion) {
-                        connectionCapsuleVisible = false
-                        connectionCapsuleFadeOut = false
+                        ui.connectionCapsuleVisible = false
+                        ui.connectionCapsuleFadeOut = false
                     }
                 }
             }
@@ -40,14 +40,14 @@ internal fun DshHomePage.onConnectionLabelChanged(label: String) {
 
 internal fun DshHomePage.refreshPendingSessionIds() {
     val remote = remoteRepo
-    pendingSessionIds = sessions.filter { session ->
+    ui.pendingSessionIds = ui.sessions.filter { session ->
         val pending = remote?.pendingInteractions(session.id)
         pending?.first != null || pending?.second != null
     }.map { it.id }.toSet()
 }
 
 internal fun DshHomePage.isWebDisclosureExpanded(id: String): Boolean {
-    webDisclosureRevision
+    ui.webDisclosureRevision
     return webDisclosureStates[id] == true
 }
 
@@ -57,48 +57,48 @@ internal fun DshHomePage.toggleWebDisclosure(id: String) {
     if (!next) {
         webJsonNodeStates.keys.filter { it.startsWith("$id:") }.toList().forEach(webJsonNodeStates::remove)
     }
-    webDisclosureRevision += 1
-    refreshSessionRenderTree(activeSessionId)
+    ui.webDisclosureRevision += 1
+    refreshSessionRenderTree(ui.activeSessionId)
 }
 
 internal fun DshHomePage.isWebJsonNodeExpanded(messageId: String, nodeId: String): Boolean {
-    webDisclosureRevision
+    ui.webDisclosureRevision
     return webJsonNodeStates["$messageId:$nodeId"] == true
 }
 
 internal fun DshHomePage.toggleWebJsonNode(messageId: String, nodeId: String) {
     val key = "$messageId:$nodeId"
     webJsonNodeStates[key] = webJsonNodeStates[key] != true
-    webDisclosureRevision += 1
-    refreshSessionRenderTree(activeSessionId)
+    ui.webDisclosureRevision += 1
+    refreshSessionRenderTree(ui.activeSessionId)
 }
 
-internal fun DshHomePage.isBlankSession(sessionId: String = activeSessionId): Boolean =
-    sessions.firstOrNull { it.id == sessionId }?.blank == true
+internal fun DshHomePage.isBlankSession(sessionId: String = ui.activeSessionId): Boolean =
+    ui.sessions.firstOrNull { it.id == sessionId }?.blank == true
 
 internal fun DshHomePage.conversationListEpochFor(sessionId: String): Int {
-    conversationListEpoch
+    ui.conversationListEpoch
     return conversationListEpochs[sessionId] ?: 0
 }
 
 internal fun DshHomePage.remountConversationList(sessionId: String) {
     conversationListEpochs[sessionId] = (conversationListEpochs[sessionId] ?: 0) + 1
-    conversationListEpoch += 1
+    ui.conversationListEpoch += 1
 }
 
 internal fun DshHomePage.applyActiveSessionChrome() {
-    pendingApproval = null
-    pendingQuestion = null
-    selectedQuestionOptions.clear()
-    questionCustom = ""
-    questionIndex = 0
-    questionError = ""
+    ui.pendingApproval = null
+    ui.pendingQuestion = null
+    ui.selectedQuestionOptions.clear()
+    ui.questionCustom = ""
+    ui.questionIndex = 0
+    ui.questionError = ""
     questionDrafts.clear()
-    goalSnapshot = null
+    ui.goalSnapshot = null
     if (!isRemoteHost) {
-        queueItems = ObservableList()
-        jobItems = ObservableList()
-        liveJobItems = ObservableList()
+        ui.queueItems = ObservableList()
+        ui.jobItems = ObservableList()
+        ui.liveJobItems = ObservableList()
         return
     }
     refreshQueueDock()
@@ -107,13 +107,13 @@ internal fun DshHomePage.applyActiveSessionChrome() {
 }
 
 internal fun DshHomePage.isTurnStatusActive(): Boolean =
-    streaming || stopButtonVisible || sessionRunning
+    ui.streaming || ui.stopButtonVisible || ui.sessionRunning
 
 internal fun DshHomePage.syncTurnStatusTicker() {
     if (!isTurnStatusActive()) {
         turnStatusTickerGeneration += 1
         turnStatusMark = null
-        turnElapsedMs = 0
+        ui.turnElapsedMs = 0
         turnStatusClockBucket = -1L
         return
     }
@@ -125,7 +125,7 @@ internal fun DshHomePage.syncTurnStatusTicker() {
         if (token != turnStatusTickerGeneration) return
         if (!isTurnStatusActive()) {
             turnStatusMark = null
-            turnElapsedMs = 0
+            ui.turnElapsedMs = 0
             turnStatusClockBucket = -1L
             return
         }
@@ -134,7 +134,7 @@ internal fun DshHomePage.syncTurnStatusTicker() {
         val clockBucket = if (showClock) elapsed / 1_000L else 0L
         if (clockBucket != turnStatusClockBucket) {
             turnStatusClockBucket = clockBucket
-            turnElapsedMs = elapsed
+            ui.turnElapsedMs = elapsed
         }
         val wait = if (showClock) 1_000L else (TURN_STATUS_CLOCK_AFTER_MS - elapsed).coerceAtLeast(200L)
         setTimeout(pagerId, wait.toInt()) { tick() }

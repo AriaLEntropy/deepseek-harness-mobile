@@ -45,7 +45,7 @@ internal fun DshHomePage.openLogPage(logSessionId: String) {
             put("connectionMode", connectionModeLabel())
             put(DshLogPageContract.KEY_OWNER, pagerId)
             put(DshLogPageContract.KEY_SESSION_TITLES, JSONArray().apply {
-                sessions.forEach { session ->
+                ui.sessions.forEach { session ->
                     put(JSONObject().apply {
                         put(DshLogPageContract.KEY_SESSION_ID, session.id)
                         put(DshLogPageContract.KEY_SESSION_TITLE, session.title)
@@ -90,13 +90,13 @@ internal fun DshHomePage.jumpToSession(sessionId: String, isCurrent: () -> Boole
         remote.loadHistory(sessionId, { loaded ->
             if (!pageAlive || !isCurrent()) return@loadHistory
             if (repository !== remote || activeConnectionId != expectedConnection) { onResult(false, "连接已切换"); return@loadHistory }
-            if (sessions.none { it.id == sessionId }) sessions = sessions + target
+            if (ui.sessions.none { it.id == sessionId }) ui.sessions = ui.sessions + target
             val targetState = sessionMessageState(sessionId, loadFromDisk = false)
             targetState.diffUpdate(loaded) { old, new -> old == new }
             sessionMessageReady.add(sessionId)
             closeSettingsPage()
             closeSessionDrawer()
-            if (activeSessionId == sessionId) {
+            if (ui.activeSessionId == sessionId) {
                 loadWebTimeline(sessionId, forceReplace = true)
             } else {
                 selectMountedSession(sessionId)

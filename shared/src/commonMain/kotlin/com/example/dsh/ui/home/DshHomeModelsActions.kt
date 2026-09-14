@@ -12,130 +12,130 @@ import com.example.dsh.models.dshValidateCustomProvider
 import com.example.dsh.models.dshValidateProviderDraft
 
 internal fun DshHomePage.modelsSummary(): String {
-    val configured = modelsProviders.count { it.configured }
+    val configured = ui.modelsProviders.count { it.configured }
     return if (configured > 0) "已配置 $configured 个" else ""
 }
 
 internal fun DshHomePage.openModelsPage() {
     dismissKeyboard()
-    modelsEditingProvider = ""
-    modelsSaveError = ""
-    modelsDeleteTarget = null
-    modelsAdding = false
-    modelsPickerVisible = false
-    modelsCustomAdding = false
-    modelsEditorAdvanced = false
-    modelsSavedNotice = ""
-    modelsPageVisible = true
+    ui.modelsEditingProvider = ""
+    ui.modelsSaveError = ""
+    ui.modelsDeleteTarget = null
+    ui.modelsAdding = false
+    ui.modelsPickerVisible = false
+    ui.modelsCustomAdding = false
+    ui.modelsEditorAdvanced = false
+    ui.modelsSavedNotice = ""
+    ui.modelsPageVisible = true
     reloadModelsSettings()
 }
 
 internal fun DshHomePage.closeModelsPage() {
-    modelsPageVisible = false
-    modelsEditingProvider = ""
-    modelsDraftApiKey = ""
-    modelsSaveError = ""
-    modelsDeleteTarget = null
-    modelsAdding = false
-    modelsPickerVisible = false
-    modelsCustomAdding = false
-    modelsEditorAdvanced = false
-    modelsSavedNotice = ""
+    ui.modelsPageVisible = false
+    ui.modelsEditingProvider = ""
+    ui.modelsDraftApiKey = ""
+    ui.modelsSaveError = ""
+    ui.modelsDeleteTarget = null
+    ui.modelsAdding = false
+    ui.modelsPickerVisible = false
+    ui.modelsCustomAdding = false
+    ui.modelsEditorAdvanced = false
+    ui.modelsSavedNotice = ""
 }
 
 internal fun DshHomePage.reloadModelsSettings(showLoading: Boolean = true) {
     if (showLoading) {
-        modelsLoading = true
-        modelsError = ""
+        ui.modelsLoading = true
+        ui.modelsError = ""
     }
     val repo = repository
     if (repo == null) {
-        modelsLoading = false
-        if (showLoading) modelsError = "未连接电脑端"
+        ui.modelsLoading = false
+        if (showLoading) ui.modelsError = "未连接电脑端"
         return
     }
     repo.loadModelsSettings({
-        modelsWritable = it.writable
-        modelsProviders.clear()
-        modelsProviders.addAll(it.providers)
-        modelsConfiguredProviders.clear()
-        modelsConfiguredProviders.addAll(it.providers.filter { p -> p.configured })
-        modelsAddableProviders.clear()
-        modelsAddableProviders.addAll(it.providers.filter { p -> !p.configured && p.settingsNs.isNotEmpty() })
-        modelsProtocols = it.protocols
-        modelsCustomRevision = it.customRevision
-        if (modelsCustomProtocol.isEmpty()) modelsCustomProtocol = it.protocols.firstOrNull() ?: ""
-        modelsError = ""
-        modelsLoading = false
+        ui.modelsWritable = it.writable
+        ui.modelsProviders.clear()
+        ui.modelsProviders.addAll(it.providers)
+        ui.modelsConfiguredProviders.clear()
+        ui.modelsConfiguredProviders.addAll(it.providers.filter { p -> p.configured })
+        ui.modelsAddableProviders.clear()
+        ui.modelsAddableProviders.addAll(it.providers.filter { p -> !p.configured && p.settingsNs.isNotEmpty() })
+        ui.modelsProtocols = it.protocols
+        ui.modelsCustomRevision = it.customRevision
+        if (ui.modelsCustomProtocol.isEmpty()) ui.modelsCustomProtocol = it.protocols.firstOrNull() ?: ""
+        ui.modelsError = ""
+        ui.modelsLoading = false
     }, {
-        modelsLoading = false
-        if (showLoading) modelsError = it else bridgeModule.toast("模型设置刷新失败：$it")
+        ui.modelsLoading = false
+        if (showLoading) ui.modelsError = it else bridgeModule.toast("模型设置刷新失败：$it")
     })
 }
 
 internal fun DshHomePage.openProviderEditor(provider: DshProviderConfig) {
-    if (modelsEditingProvider == provider.provider && !modelsAdding) {
-        modelsEditingProvider = ""
+    if (ui.modelsEditingProvider == provider.provider && !ui.modelsAdding) {
+        ui.modelsEditingProvider = ""
         return
     }
-    modelsAdding = false
-    modelsCustomAdding = false
-    modelsEditingProvider = provider.provider
-    modelsEditorAdvanced = false
-    modelsDraftBaseUrl = provider.baseUrl
-    modelsDraftApiKey = ""
-    modelsSaveError = ""
-    modelsDraftModels.clear()
+    ui.modelsAdding = false
+    ui.modelsCustomAdding = false
+    ui.modelsEditingProvider = provider.provider
+    ui.modelsEditorAdvanced = false
+    ui.modelsDraftBaseUrl = provider.baseUrl
+    ui.modelsDraftApiKey = ""
+    ui.modelsSaveError = ""
+    ui.modelsDraftModels.clear()
     // 保留 raw，保存时才能带出未在编辑器展示的字段（如容量）。
-    modelsDraftModels.addAll(provider.models.map { it.copy() })
+    ui.modelsDraftModels.addAll(provider.models.map { it.copy() })
 }
 
 internal fun DshHomePage.cancelAddProvider() {
-    modelsAdding = false
-    modelsEditingProvider = ""
-    modelsSaveError = ""
+    ui.modelsAdding = false
+    ui.modelsEditingProvider = ""
+    ui.modelsSaveError = ""
 }
 
 /** 选择要添加的已有提供方：以空草稿打开其编辑器。 */
 
 internal fun DshHomePage.selectAddableProvider(provider: DshProviderConfig) {
-    modelsPickerVisible = false
-    modelsCustomAdding = false
-    modelsAdding = true
-    modelsEditingProvider = provider.provider
-    modelsEditorAdvanced = false
-    modelsDraftBaseUrl = provider.baseUrl
-    modelsDraftApiKey = ""
-    modelsSaveError = ""
-    modelsSavedNotice = ""
-    modelsDraftModels.clear()
-    modelsDraftModels.addAll(provider.models.map { it.copy() })
+    ui.modelsPickerVisible = false
+    ui.modelsCustomAdding = false
+    ui.modelsAdding = true
+    ui.modelsEditingProvider = provider.provider
+    ui.modelsEditorAdvanced = false
+    ui.modelsDraftBaseUrl = provider.baseUrl
+    ui.modelsDraftApiKey = ""
+    ui.modelsSaveError = ""
+    ui.modelsSavedNotice = ""
+    ui.modelsDraftModels.clear()
+    ui.modelsDraftModels.addAll(provider.models.map { it.copy() })
 }
 
 internal fun DshHomePage.openCustomProvider() {
-    modelsAdding = false
-    modelsEditingProvider = ""
-    modelsCustomAdding = true
-    modelsSavedNotice = ""
-    modelsCustomError = ""
-    modelsCustomRoute = ""
-    modelsCustomName = ""
-    modelsCustomBaseUrl = ""
-    modelsCustomApiKey = ""
-    modelsCustomProtocol = modelsProtocols.firstOrNull() ?: ""
-    modelsCustomModels.clear()
-    modelsCustomModels.add(DshProviderModel())
+    ui.modelsAdding = false
+    ui.modelsEditingProvider = ""
+    ui.modelsCustomAdding = true
+    ui.modelsSavedNotice = ""
+    ui.modelsCustomError = ""
+    ui.modelsCustomRoute = ""
+    ui.modelsCustomName = ""
+    ui.modelsCustomBaseUrl = ""
+    ui.modelsCustomApiKey = ""
+    ui.modelsCustomProtocol = ui.modelsProtocols.firstOrNull() ?: ""
+    ui.modelsCustomModels.clear()
+    ui.modelsCustomModels.add(DshProviderModel())
 }
 
 internal fun DshHomePage.cancelCustomProvider() {
-    modelsCustomAdding = false
-    modelsCustomError = ""
+    ui.modelsCustomAdding = false
+    ui.modelsCustomError = ""
 }
 
 internal fun DshHomePage.updateCustomModel(index: Int, field: String, value: String) {
-    if (index !in 0 until modelsCustomModels.size) return
-    val current = modelsCustomModels[index]
-    modelsCustomModels[index] = when (field) {
+    if (index !in 0 until ui.modelsCustomModels.size) return
+    val current = ui.modelsCustomModels[index]
+    ui.modelsCustomModels[index] = when (field) {
         "id" -> current.copy(id = value)
         "name" -> current.copy(name = value)
         else -> current
@@ -143,51 +143,51 @@ internal fun DshHomePage.updateCustomModel(index: Int, field: String, value: Str
 }
 
 internal fun DshHomePage.applyCustomProvider() {
-    if (modelsCustomBusy) return
-    val route = modelsCustomRoute.trim()
-    val taken = modelsConfiguredProviders.map { it.provider } + modelsAddableProviders.map { it.provider }
-    val baseUrl = modelsCustomBaseUrl.trim()
+    if (ui.modelsCustomBusy) return
+    val route = ui.modelsCustomRoute.trim()
+    val taken = ui.modelsConfiguredProviders.map { it.provider } + ui.modelsAddableProviders.map { it.provider }
+    val baseUrl = ui.modelsCustomBaseUrl.trim()
     val validationError = dshValidateCustomProvider(
         route = route,
         baseUrl = baseUrl,
-        protocol = modelsCustomProtocol,
-        models = modelsCustomModels,
+        protocol = ui.modelsCustomProtocol,
+        models = ui.modelsCustomModels,
         takenRoutes = taken,
     )
     if (validationError != null) {
-        modelsCustomError = validationError
+        ui.modelsCustomError = validationError
         return
     }
-    val repo = repository ?: run { modelsCustomError = "未连接电脑端"; return }
-    modelsCustomBusy = true
-    modelsCustomError = ""
+    val repo = repository ?: run { ui.modelsCustomError = "未连接电脑端"; return }
+    ui.modelsCustomBusy = true
+    ui.modelsCustomError = ""
     dshCreateCustomProvider(
         repo = repo,
         route = route,
-        displayName = modelsCustomName,
+        displayName = ui.modelsCustomName,
         baseUrl = baseUrl,
-        protocol = modelsCustomProtocol,
-        apiKey = modelsCustomApiKey.trim(),
-        models = modelsCustomModels.toList(),
-        revision = modelsCustomRevision,
+        protocol = ui.modelsCustomProtocol,
+        apiKey = ui.modelsCustomApiKey.trim(),
+        models = ui.modelsCustomModels.toList(),
+        revision = ui.modelsCustomRevision,
         onSuccess = {
-            modelsCustomBusy = false
-            modelsCustomAdding = false
-            modelsSavedNotice = "已保存 ${modelsCustomName.trim().ifEmpty { route }}。"
+            ui.modelsCustomBusy = false
+            ui.modelsCustomAdding = false
+            ui.modelsSavedNotice = "已保存 ${ui.modelsCustomName.trim().ifEmpty { route }}。"
             reloadModelsSettings(showLoading = false)
             reloadSettings(showLoading = false)
         },
         onError = {
-            modelsCustomBusy = false
-            modelsCustomError = it
+            ui.modelsCustomBusy = false
+            ui.modelsCustomError = it
         },
     )
 }
 
 internal fun DshHomePage.updateDraftModel(index: Int, field: String, value: String) {
-    if (index !in 0 until modelsDraftModels.size) return
-    val current = modelsDraftModels[index]
-    modelsDraftModels[index] = when (field) {
+    if (index !in 0 until ui.modelsDraftModels.size) return
+    val current = ui.modelsDraftModels[index]
+    ui.modelsDraftModels[index] = when (field) {
         "id" -> current.copy(id = value)
         "name" -> current.copy(name = value)
         else -> current
@@ -195,73 +195,73 @@ internal fun DshHomePage.updateDraftModel(index: Int, field: String, value: Stri
 }
 
 internal fun DshHomePage.addDraftModel() {
-    modelsDraftModels.add(DshProviderModel())
+    ui.modelsDraftModels.add(DshProviderModel())
 }
 
 internal fun DshHomePage.removeDraftModel(index: Int) {
-    if (index in 0 until modelsDraftModels.size) modelsDraftModels.removeAt(index)
+    if (index in 0 until ui.modelsDraftModels.size) ui.modelsDraftModels.removeAt(index)
 }
 
 internal fun DshHomePage.applyProviderEditor(provider: DshProviderConfig) {
-    if (modelsSaving) return
-    val draftError = dshValidateProviderDraft(modelsDraftModels)
+    if (ui.modelsSaving) return
+    val draftError = dshValidateProviderDraft(ui.modelsDraftModels)
     if (draftError != null) {
-        modelsSaveError = draftError
+        ui.modelsSaveError = draftError
         return
     }
     val repo = repository
     if (repo == null) {
-        modelsSaveError = "未连接电脑端"
+        ui.modelsSaveError = "未连接电脑端"
         return
     }
-    modelsSaving = true
-    modelsSaveError = ""
+    ui.modelsSaving = true
+    ui.modelsSaveError = ""
     dshSaveProviderProfile(
         repo = repo,
         provider = provider,
-        apiKey = modelsDraftApiKey.trim(),
-        baseUrl = modelsDraftBaseUrl,
-        models = modelsDraftModels.toList(),
+        apiKey = ui.modelsDraftApiKey.trim(),
+        baseUrl = ui.modelsDraftBaseUrl,
+        models = ui.modelsDraftModels.toList(),
         onSuccess = {
-            modelsSaving = false
-            modelsEditingProvider = ""
-            modelsAdding = false
-            modelsDraftApiKey = ""
-            modelsSavedNotice = "已保存 ${provider.displayName}。"
+            ui.modelsSaving = false
+            ui.modelsEditingProvider = ""
+            ui.modelsAdding = false
+            ui.modelsDraftApiKey = ""
+            ui.modelsSavedNotice = "已保存 ${provider.displayName}。"
             reloadModelsSettings(showLoading = false)
             reloadSettings(showLoading = false)
         },
         onError = {
-            modelsSaving = false
-            modelsSaveError = it
+            ui.modelsSaving = false
+            ui.modelsSaveError = it
         },
     )
 }
 
 internal fun DshHomePage.requestRemoveProvider(provider: DshProviderConfig) {
-    modelsSaveError = ""
-    modelsDeleteTarget = provider
+    ui.modelsSaveError = ""
+    ui.modelsDeleteTarget = provider
 }
 
 internal fun DshHomePage.confirmRemoveProvider() {
-    val provider = modelsDeleteTarget ?: return
-    if (modelsDeleting) return
+    val provider = ui.modelsDeleteTarget ?: return
+    if (ui.modelsDeleting) return
     val repo = repository
     if (repo == null) {
         bridgeModule.toast("未连接电脑端")
         return
     }
-    modelsDeleting = true
+    ui.modelsDeleting = true
     dshRemoveProviderProfile(repo, provider, {
-        modelsDeleting = false
-        modelsDeleteTarget = null
-        if (modelsEditingProvider == provider.provider) {
-            modelsEditingProvider = ""
-            modelsAdding = false
+        ui.modelsDeleting = false
+        ui.modelsDeleteTarget = null
+        if (ui.modelsEditingProvider == provider.provider) {
+            ui.modelsEditingProvider = ""
+            ui.modelsAdding = false
         }
         reloadModelsSettings(showLoading = false)
     }, {
-        modelsDeleting = false
+        ui.modelsDeleting = false
         bridgeModule.toast("删除提供方失败：$it")
     })
 }
