@@ -97,13 +97,13 @@ KuiklyMarkdown 解析器认识 `$...$` / `$$...$$` 节点，但渲染器不画�
 
 官方 DSH 缺什么，我们补什么，但**不 fork、不 patch**：
 
-| 端点 | 补的官方缺口 |
-| --- | --- |
-| `GET /api/mobile-plugin-inventory/v1/list` | 插件清单 / 失败原因 / 脱敏配置摘要 |
-| `POST /api/mobile-plugin-inventory/v1/action` | 插件启停 / 重载（基于公共 `Entry.update()`） |
-| `POST /api/session-manager/unarchive` | 官方根本没有公开的取消归档 RPC |
-| `POST /api/session-manager/delete` / `deleteMany` | 永久删除（单条 / 项目内 / 全部） |
-| `POST /api/mobile-attachment/v1/upload` | `v0.1.5-alpha.1` 前没有的通用文件上传 backport |
+| 端点                                                  | 补的官方缺口                                     |
+| ----------------------------------------------------- | ------------------------------------------------ |
+| `GET /api/mobile-plugin-inventory/v1/list`          | 插件清单 / 失败原因 / 脱敏配置摘要               |
+| `POST /api/mobile-plugin-inventory/v1/action`       | 插件启停 / 重载（基于公共`Entry.update()`）    |
+| `POST /api/session-manager/unarchive`               | 官方根本没有公开的取消归档 RPC                   |
+| `POST /api/session-manager/delete` / `deleteMany` | 永久删除（单条 / 项目内 / 全部）                 |
+| `POST /api/mobile-attachment/v1/upload`             | `v0.1.5-alpha.1` 前没有的通用文件上传 backport |
 
 同时给电脑端 Web 加了两个**非侵入**入口：设置页「插件启停」标签页、侧边栏「已归档的聊天」管理页，样式跟随 DSH 明暗主题。桥接自己拒绝非回环请求、拒绝跨站来源、拒绝操作桥接自身，写操作串行执行。
 
@@ -121,31 +121,31 @@ KuiklyMarkdown 解析器认识 `$...$` / `$$...$$` 节点，但渲染器不画�
 
 ## 任务完成度
 
-| 任务 | 主题 | 状态 |
-| --- | --- | --- |
-| Task 1 | 夜间模式与系统主题适配 | ✅ 基础 + 独立代码主题 |
-| 附加题 | Markdown 与 LaTeX 渲染 | ✅ KaTeX + Unicode 双轨 |
-| Task 2 | 文本选择、复制与导出 | ✅ 含 PDF / HTML / 多选批量 |
-| Task 3 | 图片与文件附件上传 | ✅ 预检 + Host 桥接 backport |
-| Task 4 | 会话删除、重命名与归档 | ✅ 含取消归档 / 永久删除 |
-| Task 5 | 插件菜单与插件状态展示 | ✅ 含详情 / 刷新 / 启停重载 |
-| Task 6 | 日志中心与问题反馈 | ✅ 含反馈包 / 崩溃捕获 / 跳回会话 |
+| 任务   | 主题                   | 状态                              |
+| ------ | ---------------------- | --------------------------------- |
+| Task 1 | 夜间模式与系统主题适配 | ✅ 基础 + 独立代码主题            |
+| 附加题 | Markdown 与 LaTeX 渲染 | ✅ KaTeX + Unicode 双轨           |
+| Task 2 | 文本选择、复制与导出   | ✅ 含 PDF / HTML / 多选批量       |
+| Task 3 | 图片与文件附件上传     | ✅ 预检 + Host 桥接 backport      |
+| Task 4 | 会话删除、重命名与归档 | ✅ 含取消归档 / 永久删除          |
+| Task 5 | 插件菜单与插件状态展示 | ✅ 含详情 / 刷新 / 启停重载       |
+| Task 6 | 日志中心与问题反馈     | ✅ 含反馈包 / 崩溃捕获 / 跳回会话 |
 
 ---
 
 ## 技术栈
 
-| 层 | 选型 |
-| --- | --- |
-| 跨端 UI | 腾讯 Kuikly + Kotlin Multiplatform |
-| 并发 / 序列化 | kotlinx-coroutines 1.10.1 / kotlinx-serialization 1.8.0 |
-| 网络 | Ktor Client（Android OkHttp / iOS Darwin）+ 自研 WebSocket |
-| 本地存储 | kuiklySqlite（三端共用） |
-| Markdown / 公式 | KuiklyMarkdown + 自研流式增量渲染 + KaTeX 内联 |
-| Android | compileSdk 34 / minSdk 24 |
-| iOS | Xcode 15+ / iOS 14.1 / CocoaPods（NMSSH / PHPicker） |
-| 鸿蒙 | ArkTS 原生桥接 |
-| Host 桥接 | `host-plugin/`（Node.js，零额外依赖，装到 DSH `web` profile） |
+| 层              | 选型                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| 跨端 UI         | 腾讯 Kuikly + Kotlin Multiplatform                                |
+| 并发 / 序列化   | kotlinx-coroutines 1.10.1 / kotlinx-serialization 1.8.0           |
+| 网络            | Ktor Client（Android OkHttp / iOS Darwin）+ 自研 WebSocket        |
+| 本地存储        | kuiklySqlite（三端共用）                                          |
+| Markdown / 公式 | KuiklyMarkdown + 自研流式增量渲染 + KaTeX 内联                    |
+| Android         | compileSdk 34 / minSdk 24                                         |
+| iOS             | Xcode 15+ / iOS 14.1 / CocoaPods（NMSSH / PHPicker）              |
+| 鸿蒙            | ArkTS 原生桥接                                                    |
+| Host 桥接       | `host-plugin/`（Node.js，零额外依赖，装到 DSH `web` profile） |
 
 ---
 
@@ -187,16 +187,5 @@ deepseek-harness-mobile/
 ├── tools/                                  # KaTeX 资源生成等
 └── docs/                                   # 协议 / 任务 / 设计文档
 ```
-
----
-
-## 它不是什么
-
-- 不是离线模型——推理仍然走 DeepSeek 在线 API；
-- 不是 fork DSH——Host 侧零改动，全部能力走桥接；
-- 不是三端都验收完毕——iOS / 鸿蒙受 SDK 环境限制待真机回归；
-- 不是生产版本——仍在开发验证阶段。
-
----
 
 > DeepSeek Harness · Kuikly · Kotlin Multiplatform —— 把 Agent 装进口袋。
