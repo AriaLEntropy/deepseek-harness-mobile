@@ -10,8 +10,8 @@ import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Input
-import com.tencent.kuikly.core.views.InputView
+import com.tencent.kuikly.core.views.TextArea
+import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.ListView
@@ -134,7 +134,7 @@ internal fun ViewContainer<*, *>.DshConversation(
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
-    inputRef: (com.tencent.kuikly.core.base.ViewRef<InputView>) -> Unit,
+    inputRef: (com.tencent.kuikly.core.base.ViewRef<TextAreaView>) -> Unit,
     onInputFocusChange: (Boolean) -> Unit,
     onDraftChange: (String) -> Unit,
     onKeyboardHeightChange: (KeyboardParams) -> Unit,
@@ -407,7 +407,6 @@ internal fun ViewContainer<*, *>.DshConversation(
         }
             View {
                 attr {
-                    height(COMPOSER_HEIGHT)
                     width(availableWidth)
                     flexDirectionColumn()
                     padding(12f, 14f, 12f, 14f)
@@ -460,10 +459,11 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
                 }
-            Input {
+            TextArea {
                 ref { inputRef(it) }
                 attr {
-                    height(58f)
+                    minHeight(58f)
+                    maxHeight(120f)
                     backgroundColor(Color(0x00FFFFFF))
                     fontSize(15f)
                     color(Color(0xFF28323C))
@@ -476,7 +476,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                         },
                     )
                     placeholderColor(Color(0xFF91A0AA))
-                    returnKeyTypeSend()
                     editable(!voiceActive())
                 }
                 event {
@@ -487,7 +486,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                         onInputFocusChange(false)
                         onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
                     }
-                    inputReturn { onSend() }
                 }
             }
 
