@@ -323,6 +323,8 @@ internal class DshHomePage : BasePager() {
     internal val sessionMessageStates = mutableMapOf<String, ObservableList<DshMessage>>()
     internal val conversationListEpochs = mutableMapOf<String, Int>()
     internal var conversationListEpoch by observable(0)
+    // 每轮流式结算 +1：驱动已上屏消息行就地重算过程分组与 footer，避免等下一次历史重挂。
+    internal var messageRenderEpoch by observable(0)
     internal val sessionMessageReady = mutableSetOf<String>()
     internal val pendingSessionSelections = mutableSetOf<String>()
     internal val localReadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

@@ -79,6 +79,14 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     // 旧 Host 文件附件以 `[file] ... path: ...` handle 行嵌在用户正文里：
     // 气泡可见正文去掉 handle，文件另渲染为卡片。
     val userFileAttachments = if (isUser) DshFileHandle.parseAll(message.content) else emptyList()
+    // 上传中：handle 尚未写入正文，先用本地草稿卡片占位，handle 落地后由正文解析接管。
+    val userPendingFiles = if (isUser) message.pendingFileAttachments else emptyList()
+    val userFileCards = if (userPendingFiles.isNotEmpty()) {
+        userPendingFiles.map { DshFileAttachment(it.name, it.bytes, it.sha256, it.path) }
+    } else {
+        userFileAttachments
+    }
+    val userHasFiles = userFileCards.isNotEmpty()
     val visibleUserText = if (isUser) DshFileHandle.strip(message.content) else message.content
     if (
         message.role == DshMessageRole.ASSISTANT &&
@@ -339,7 +347,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 }
             }
             if (isUser || isError) {
-                vif({ visibleUserText.isNotEmpty() || userFileAttachments.isEmpty() }) {
+                vif({ visibleUserText.isNotEmpty() || !userHasFiles }) {
                     Text {
                         attr {
                             text(visibleUserText)
@@ -414,13 +422,24 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                                 click { onPreviewImage(preview) }
                             }
                         }
+                        vif({ message.attachmentUploading }) {
+                            View {
+                                attr {
+                                    absolutePositionAllZero()
+                                    borderRadius(8f)
+                                    backgroundColor(Color(0x66000000))
+                                    allCenter()
+                                }
+                                DshLoadingSpinner(diameter = 24f, tint = Color.WHITE)
+                            }
+                        }
                     }
                 }
             }
         }
         // 用户消息随文文件（旧 Host：prompt handle 行解析为卡片）：横向排布可滑动
-        vif({ isUser && userFileAttachments.isNotEmpty() }) {
-            val filesWidth = (192f * userFileAttachments.size).coerceAtMost(rowWidth.coerceAtMost(620f))
+        vif({ isUser && userFileCards.isNotEmpty() }) {
+            val filesWidth = (192f * userFileCards.size).coerceAtMost(rowWidth.coerceAtMost(620f))
             Scroller {
                 attr {
                     width(filesWidth)
@@ -430,8 +449,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     showScrollerIndicator(false)
                     scrollWithParent(false)
                 }
-                vfor({ ObservableList<DshFileAttachment>().apply { addAll(userFileAttachments) } }) { file ->
-                    DshUserFileCard(file = file, colors = colors)
+                vfor({ ObservableList<DshFileAttachment>().apply { addAll(userFileCards) } }) { file ->
+                    DshUserFileCard(file = file, uploading = message.attachmentUploading, colors = colors)
                 }
             }
         }

@@ -82,59 +82,42 @@ internal fun DshHomePage.retryPendingFile(clientId: String) {
 }
 
 /**
- * 逐个上传文件草稿；全部成功回调 true，任一步失败保留 FAILED 状态并回调 false。
- * 上传成功后回填 path/handle，供 prompt 组装。
+ * 为用户消息（附件已移出输入区）上传文件草稿；全部成功回调 true 并回传带 handle 的列表，
+ * 任一步失败回调 false。上传不改动输入区状态，避免附件在输入框里显示上传中。
  */
 
-internal fun DshHomePage.uploadPendingFiles(
+internal fun DshHomePage.uploadFilesForMessage(
     sessionId: String,
     files: List<DshPendingFile>,
-    onDone: (Boolean) -> Unit,
+    onDone: (Boolean, List<DshPendingFile>) -> Unit,
 ) {
     val hostRepository = remoteRepo
     if (hostRepository == null) {
-        onDone(false)
+        onDone(false, files)
         return
     }
-    files.forEach { file ->
-        val idx = pendingFiles.indexOfFirst { it.clientId == file.clientId }
-        if (idx >= 0) {
-            pendingFiles[idx] = pendingFiles[idx].copy(state = DshFileDraftState.UPLOADING, error = "")
-        }
-    }
-    attachmentEpoch += 1
+    val results = files.toMutableList()
     var index = 0
     fun uploadNext() {
         if (index >= files.size) {
-            onDone(true)
+            onDone(true, results.toList())
             return
         }
         val file = files[index]
         hostRepository.uploadAttachment(sessionId, file.name, file.mediaType, file.dataBase64) { uploaded, error ->
             if (!pageAlive || activeSessionId != sessionId) return@uploadAttachment
-            val idx = pendingFiles.indexOfFirst { it.clientId == file.clientId }
             if (error != null || uploaded == null) {
-                if (idx >= 0) {
-                    pendingFiles[idx] = pendingFiles[idx].copy(
-                        state = DshFileDraftState.FAILED,
-                        error = error?.message ?: "上传失败",
-                    )
-                }
-                attachmentEpoch += 1
                 bridgeModule.toast(error?.message ?: "附件上传失败")
-                onDone(false)
+                onDone(false, results.toList())
                 return@uploadAttachment
             }
-            if (idx >= 0) {
-                pendingFiles[idx] = pendingFiles[idx].copy(
-                    state = DshFileDraftState.SELECTED,
-                    path = uploaded.path,
-                    sha256 = uploaded.sha256,
-                    handle = uploaded.handle,
-                    error = "",
-                )
-            }
-            attachmentEpoch += 1
+            results[index] = file.copy(
+                state = DshFileDraftState.SELECTED,
+                path = uploaded.path,
+                sha256 = uploaded.sha256,
+                handle = uploaded.handle,
+                error = "",
+            )
             index += 1
             uploadNext()
         }

@@ -60,11 +60,16 @@ internal fun ViewContainer<*, *>.DshFileCard(
                 allCenter()
                 backgroundColor(palette.bgModulePlatform)
             }
-            Image {
-                attr {
-                    src(ImageUri.commonAssets(dshFileIconAsset(name)))
-                    size(22f, 22f)
-                    tintColor(dshFileIconTint(name, palette))
+            if (uploading) {
+                // 上传中：文件图标让位给加载圈，与 desc「上传中…」共同表达发送态。
+                DshLoadingSpinner(diameter = 22f, tint = palette.labelSecondary)
+            } else {
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets(dshFileIconAsset(name)))
+                        size(22f, 22f)
+                        tintColor(dshFileIconTint(name, palette))
+                    }
                 }
             }
         }
@@ -116,9 +121,10 @@ internal fun ViewContainer<*, *>.DshFileCard(
 // 已发送用户气泡内的文件卡片：不可移除，横向滑动由外层 Scroller 负责。
 internal fun ViewContainer<*, *>.DshUserFileCard(
     file: DshFileAttachment,
+    uploading: Boolean = false,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
 ) {
-    DshFileCard(name = file.name, bytes = file.bytes, mediaType = "", colors = colors)
+    DshFileCard(name = file.name, bytes = file.bytes, mediaType = "", uploading = uploading, colors = colors)
 }
 
 // 输入区文件草稿卡片：带移除与失败重试。

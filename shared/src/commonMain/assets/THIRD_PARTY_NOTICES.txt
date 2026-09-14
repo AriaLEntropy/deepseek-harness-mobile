@@ -4,6 +4,12 @@ Source: https://github.com/lucide-icons/lucide/blob/main/icons/folder-open.svg
 Retrieved: 2026-09-14. SVG geometry and styling are unchanged.
 License source: https://github.com/lucide-icons/lucide/blob/main/LICENSE
 
+loader-circle.svg
+Project: Lucide (https://lucide.dev/icons/loader-circle)
+Source: https://github.com/lucide-icons/lucide/blob/main/icons/loader-circle.svg
+Retrieved: 2026-09-14. SVG geometry and styling are unchanged.
+License source: https://github.com/lucide-icons/lucide/blob/main/LICENSE
+
 ISC License
 
 Copyright (c) 2026 Lucide Icons and Contributors

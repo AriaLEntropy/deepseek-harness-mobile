@@ -177,6 +177,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     sessionRunning: () -> Boolean,
     isBlankConversation: () -> Boolean,
     conversationListEpoch: (String) -> Int,
+    /** 流式结算 +1：驱动消息行就地重算过程分组，结算当帧即折叠，不用等历史重挂。 */
+    messageRenderEpoch: () -> Int = { 0 },
     turnReconnecting: () -> Boolean,
     turnElapsedMs: () -> Long,
     onToggleQueue: () -> Unit,
@@ -303,14 +305,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     maxLoadItem = CHAT_MAX_RENDERED_MESSAGES,
                                 // 单条消息行：包一层宽度约束，内部由 DshMessageRow 渲染
                                 ) { message, _, _ ->
-                                    val processGroup = if (
-                                        isWebTimeline() &&
-                                        processDisplayMode() == DshProcessDisplayMode.UNIFIED
-                                    ) {
-                                        dshTurnProcessGroup(messagesForSession(sessionId), message)
-                                    } else {
-                                        null
-                                    }
                                     // 是否给过程项绘制左侧装饰连接线：标题下方按 [竖线 | 内容]
                                     // 两列布局，由 DshDisclosureRow 自身处理（经典/统一模式一致）。
                                     // 单条消息渲染入口；过程分组展开时成员复用同一入口。
@@ -387,56 +381,67 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             paddingLeft(if (exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId))) 30f else 0f)
                                             borderRadius(if (exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId))) 10f else 0f)
                                         }
-                                        when {
-                                            // 普通消息：直接渲染。
-                                            processGroup == null -> this.renderMessage(message, false)
-                                            // 过程分组首条：整个过程块放进同一行，避免 vforLazy
-                                            // 无法为折叠态零高度的后续行补建视图导致展开不生效。
-                                            processGroup.isFirst -> View {
-                                                attr {
-                                                    width((availableWidth - 36f).coerceAtLeast(0f))
-                                                    flexDirectionColumn()
-                                                    marginBottom(6f)
-                                                }
-                                                // 摘要头保持最左，不缩进也不带竖线。
-                                                DshDisclosureRow {
+                                        // 结算 epoch 变化时就地重算过程分组：折叠态在结算当帧生效。
+                                        vbind({ messageRenderEpoch() }) {
+                                            val processGroup = if (
+                                                isWebTimeline() &&
+                                                processDisplayMode() == DshProcessDisplayMode.UNIFIED
+                                            ) {
+                                                dshTurnProcessGroup(messagesForSession(sessionId), message)
+                                            } else {
+                                                null
+                                            }
+                                            when {
+                                                // 普通消息：直接渲染。
+                                                processGroup == null -> this.renderMessage(message, false)
+                                                // 过程分组首条：整个过程块放进同一行，避免 vforLazy
+                                                // 无法为折叠态零高度的后续行补建视图导致展开不生效。
+                                                processGroup.isFirst -> View {
                                                     attr {
-                                                        title = processGroup.label
-                                                        iconAsset = "think.svg"
-                                                        this.colors = colors()
-                                                        open = isDisclosureExpanded(processGroup.key)
-                                                        expandable = true
-                                                        this.onToggle = { onToggleDisclosure(processGroup.key) }
-                                                        compact = true
-                                                        chrome = true
-                                                        headerOnly = true
+                                                        width((availableWidth - 36f).coerceAtLeast(0f))
+                                                        flexDirectionColumn()
+                                                        marginBottom(6f)
                                                     }
-                                                }
-                                                // 展开明细：每个思考项的标题下由各自的 [竖线 | 内容]
-                                                // 两列布局呈现（见 DshDisclosureRow），摘要头不缩进。
-                                                vif({ isDisclosureExpanded(processGroup.key) }) {
-                                                    View {
+                                                    // 摘要头保持最左，不缩进也不带竖线。
+                                                    DshDisclosureRow {
                                                         attr {
-                                                            flexDirectionColumn()
-                                                            marginTop(6f)
+                                                            title = processGroup.label
+                                                            iconAsset = "think.svg"
+                                                            this.colors = colors()
+                                                            open = isDisclosureExpanded(processGroup.key)
+                                                            expandable = true
+                                                            this.onToggle = { onToggleDisclosure(processGroup.key) }
+                                                            compact = true
+                                                            chrome = true
+                                                            headerOnly = true
                                                         }
-                                                        // 过程明细：成员各自折叠；每个成员正文自行限高
-                                                        // 内部滚动、展开箭头固定在滚动区外，故外层不再套
-                                                        // 固定高度滚动区（避免嵌套滚动把箭头一起带走）。
+                                                    }
+                                                    // 展开明细：每个思考项的标题下由各自的 [竖线 | 内容]
+                                                    // 两列布局呈现（见 DshDisclosureRow），摘要头不缩进。
+                                                    vif({ isDisclosureExpanded(processGroup.key) }) {
                                                         View {
                                                             attr {
                                                                 flexDirectionColumn()
-                                                                marginBottom(8f)
+                                                                marginTop(6f)
                                                             }
-                                                            processGroup.members.forEach { member ->
-                                                                this.renderMessage(member, false)
+                                                            // 过程明细：成员各自折叠；每个成员正文自行限高
+                                                            // 内部滚动、展开箭头固定在滚动区外，故外层不再套
+                                                            // 固定高度滚动区（避免嵌套滚动把箭头一起带走）。
+                                                            View {
+                                                                attr {
+                                                                    flexDirectionColumn()
+                                                                    marginBottom(8f)
+                                                                }
+                                                                processGroup.members.forEach { member ->
+                                                                    this.renderMessage(member, false)
+                                                                }
                                                             }
                                                         }
                                                     }
                                                 }
+                                                // 其余过程成员：始终并入首行分组，本行不渲染。
+                                                else -> Unit
                                             }
-                                            // 其余过程成员：始终并入首行分组，本行不渲染。
-                                            else -> Unit
                                         }
                                         // 多选态：左侧圆形勾选框 + 覆盖整行的点击热区（不影响列表滚动）
                                         vif({ exportSelectMode() && message.id in dshShareSelectableIds(messagesForSession(sessionId)) }) {
@@ -732,101 +737,93 @@ internal fun ViewContainer<*, *>.DshConversation(
                         border(Border(1f, BorderStyle.SOLID, colors().borderL2))
                         boxShadow(BoxShadow(0f, 4f, 12f, Color(0x0D000000)))
                     }
-                    // 附件预览条：输入框上方横向滚动；超限/失败项带状态遮罩，可移除，失败可点按重试
+                    // 附件预览条：图片与文件统一放进同一条横向滚动条，两类附件并排而不是上下堆叠；
+                    // 超限/失败项带状态遮罩，可移除，失败可点按重试。
                     // vbind 订阅 attachmentEpoch，add/remove/retry 等变化强制重建此子树，
-                    // 重建时 vfor 重新求值读最新 pendingImages。
+                    // 重建时 vfor 重新求值读最新 pendingImages / pendingFiles。
                     vbind({ attachmentEpoch() }) {
-                        vif({ pendingImages().isNotEmpty() }) {
-                        View {
-                            attr {
-                                width((availableWidth - 24f).coerceAtLeast(0f))
-                                flexDirectionRow()
-                                height(60f)
-                                padding(2f, 10f, 2f, 0f)
-                            }
-                            vfor({ pendingImages() }) { image ->
-                                                                View {
-                                    attr {
-                                        size(56f, 56f)
-                                        marginRight(8f)
-                                        borderRadius(8f)
-                                        backgroundColor(colors().bgModulePlatform)
-                                        border(Border(1f, BorderStyle.SOLID, colors().borderL1))
-                                    }
-                                    Image {
-                                        attr {
-                                            src(image.previewDataUrl)
-                                            width(56f)
-                                            height(56f)
-                                            resizeCover()
-                                        }
-                                    }
-                                    vif({ image.isUploading }) {
-                                        View {
-                                            attr {
-                                                absolutePositionAllZero()
-                                                backgroundColor(Color(0x66000000))
-                                                allCenter()
-                                            }
-                                            Text {
-                                                attr {
-                                                    text("发送中")
-                                                    fontSize(10f)
-                                                    color(Color(0xFFFFFFFF))
-                                                }
-                                            }
-                                        }
-                                    }
-                                    vif({ image.isInvalid || image.state == DshImageDraftState.FAILED }) {
-                                        View {
-                                            attr {
-                                                absolutePositionAllZero()
-                                                backgroundColor(Color(0x4D000000))
-                                                allCenter()
-                                            }
-                                            Text {
-                                                attr {
-                                                    text(if (image.state == DshImageDraftState.FAILED) "失败" else "超限")
-                                                    fontSize(10f)
-                                                    color(Color(0xFFFFFFFF))
-                                                }
-                                            }
-                                            event { click { onRetryPendingImage(image.clientId) } }
-                                        }
-                                    }
-                                    View {
-                                        attr {
-                                            positionType(FlexPositionType.ABSOLUTE)
-                                            top(2f)
-                                            right(2f)
-                                            size(18f, 18f)
-                                            borderRadius(9f)
-                                            backgroundColor(Color(0x99000000))
-                                            allCenter()
-                                        }
-                                        Image {
-                                            attr {
-                                                src(ImageUri.commonAssets("x.svg"))
-                                                size(10f, 10f)
-                                                tintColor(Color.WHITE)
-                                            }
-                                        }
-                                        DshHitButton { onRemovePendingImage(image.clientId) }
-                                    }
-                                }
-                            }
-                        }
-                        }
-                        vif({ pendingFiles().isNotEmpty() }) {
+                        vif({ pendingImages().isNotEmpty() || pendingFiles().isNotEmpty() }) {
                             Scroller {
                                 attr {
                                     width((availableWidth - 24f).coerceAtLeast(0f))
-                                    height(64f)
+                                    height(68f)
                                     flexDirection(FlexDirection.ROW)
+                                    alignItems(FlexAlign.CENTER)
                                     paddingLeft(10f)
                                     paddingRight(12f)
                                     showScrollerIndicator(false)
                                     scrollWithParent(false)
+                                }
+                                vfor({ pendingImages() }) { image ->
+                                    View {
+                                        attr {
+                                            size(56f, 56f)
+                                            marginRight(8f)
+                                            borderRadius(8f)
+                                            backgroundColor(colors().bgModulePlatform)
+                                            border(Border(1f, BorderStyle.SOLID, colors().borderL1))
+                                        }
+                                        Image {
+                                            attr {
+                                                src(image.previewDataUrl)
+                                                width(56f)
+                                                height(56f)
+                                                resizeCover()
+                                            }
+                                        }
+                                        vif({ image.isUploading }) {
+                                            View {
+                                                attr {
+                                                    absolutePositionAllZero()
+                                                    backgroundColor(Color(0x66000000))
+                                                    allCenter()
+                                                }
+                                                Text {
+                                                    attr {
+                                                        text("发送中")
+                                                        fontSize(10f)
+                                                        color(Color(0xFFFFFFFF))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        vif({ image.isInvalid || image.state == DshImageDraftState.FAILED }) {
+                                            View {
+                                                attr {
+                                                    absolutePositionAllZero()
+                                                    backgroundColor(Color(0x4D000000))
+                                                    allCenter()
+                                                }
+                                                Text {
+                                                    attr {
+                                                        text(if (image.state == DshImageDraftState.FAILED) "失败" else "超限")
+                                                        fontSize(10f)
+                                                        color(Color(0xFFFFFFFF))
+                                                    }
+                                                }
+                                                event { click { onRetryPendingImage(image.clientId) } }
+                                            }
+                                        }
+                                        View {
+                                            attr {
+                                                positionType(FlexPositionType.ABSOLUTE)
+                                                top(2f)
+                                                right(2f)
+                                                size(18f, 18f)
+                                                borderRadius(9f)
+                                                backgroundColor(Color(0x99000000))
+                                                allCenter()
+                                            }
+                                            Image {
+                                                attr {
+                                                    src(ImageUri.commonAssets("x.svg"))
+                                                    size(10f, 10f)
+                                                    tintColor(Color.WHITE)
+                                                }
+                                            }
+                                            DshHitButton { onRemovePendingImage(image.clientId) }
+                                        }
+                                    }
                                 }
                                 vfor({ pendingFiles() }) { file ->
                                     DshDraftFileCard(

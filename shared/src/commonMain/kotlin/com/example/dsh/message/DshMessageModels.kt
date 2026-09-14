@@ -1,6 +1,7 @@
 package com.example.dsh.message
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
+import com.example.dsh.attachment.DshPendingFile
 import com.example.dsh.message.contextInstructions
 import com.example.dsh.message.contextRecalls
 import com.example.dsh.message.contextRelaySender
@@ -61,6 +62,16 @@ internal data class DshMessage(
      * 的 attachmentId，见 [DshImageAttachmentRef]。
      */
     val imagePreviews: List<String> = emptyList(),
+    /**
+     * 附件正在发送/上传中：用户气泡在对话区展示加载圈与「上传中」文件卡片，
+     * 由发送流程在 settle 时清除。仅内存态，不进入持久化。
+     */
+    val attachmentUploading: Boolean = false,
+    /**
+     * 用户消息随文文件的本地草稿：上传完成前在对话区以卡片呈现（handle 尚未写入正文）。
+     * 仅内存态，不进入持久化；handle 落地后由正文 handle 行接管渲染。
+     */
+    val pendingFileAttachments: List<DshPendingFile> = emptyList(),
     /** Remote-only structured tool state; LOCAL keeps this null. */
     val remoteTool: DshRemoteToolCallModel? = null,
     /** Ordered readable source including attachment metadata, never preview/Base64 data. */
@@ -411,6 +422,8 @@ internal fun DshMessage.visuallyEquals(other: DshMessage): Boolean =
         attachmentId == other.attachmentId &&
         attachmentIds == other.attachmentIds &&
         imagePreviews == other.imagePreviews &&
+        attachmentUploading == other.attachmentUploading &&
+        pendingFileAttachments == other.pendingFileAttachments &&
         toolCallId == other.toolCallId &&
         remoteTool == other.remoteTool
 
