@@ -162,8 +162,19 @@ internal fun DshHomePage.updateUserMessage(
     val state = sessionMessageStates[sessionId] ?: return
     val index = state.indexOfFirst { it.id == messageId }
     if (index < 0) return
-    state[index] = transform(state[index])
+    val before = state[index]
+    val after = transform(before)
+    if (after == before) return
+    state[index] = after
     if (messages === state) realizeVisibleMessages()
+    // 附件上传态/预览/待发文件变化时强制消息行重算：LazyLoop 可能复用旧 cell，
+    // 仅替换列表项不会让 loading 遮罩消失。
+    if (before.attachmentUploading != after.attachmentUploading ||
+        before.imagePreviews != after.imagePreviews ||
+        before.pendingFileAttachments != after.pendingFileAttachments
+    ) {
+        messageRenderEpoch += 1
+    }
 }
 
 internal fun DshHomePage.submitDraft(

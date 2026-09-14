@@ -309,7 +309,11 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     // 两列布局，由 DshDisclosureRow 自身处理（经典/统一模式一致）。
                                     // 单条消息渲染入口；过程分组展开时成员复用同一入口。
                                     // inProcess=true 会锁开成员卡片正文（只读明细），且不显示 footer。
-                                    val renderMessage: ViewContainer<*, *>.(DshMessage, Boolean) -> Unit = { target, inProcess ->
+                                    // 从实时列表按 id 取最新消息：附件上传态/正文可能在列表项被替换后变化，
+                                    // LazyLoop 复用旧 cell 时会拿到过期对象，导致 loading 不消失。
+                                    val renderMessage: ViewContainer<*, *>.(DshMessage, Boolean) -> Unit = { raw, inProcess ->
+                                        val target =
+                                            messagesForSession(sessionId).firstOrNull { it.id == raw.id } ?: raw
                                         DshMessageRow(
                                             target,
                                             pageStreaming = {
