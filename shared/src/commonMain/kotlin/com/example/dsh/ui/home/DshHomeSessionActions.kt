@@ -246,7 +246,10 @@ internal fun DshHomePage.createSession() {
     // 只有工作区选择器里的「添加文件夹」才会创建新工作区。
     val activeSession = sessions.firstOrNull { it.id == activeSessionId }
     val currentWorkspaceId = if (isRemoteHost) {
-        activeWorkspaceId().takeIf { it.isNotEmpty() }
+        // 注意：activeWorkspaceId() 在无活动会话时返回 UI 分组哨兵 __none__，
+        // 不能当作真实 workspaceId 发给 Host（会被判定为未知工作区而创建失败）。
+        activeWorkspaceId()
+            .takeIf { it.isNotEmpty() && it != DshHomePage.NO_ACTIVE_WORKSPACE }
             ?: activeSession?.cwd?.takeIf { it.isNotEmpty() }
                 ?.let { cwd -> workspaceGroups.firstOrNull { it.path == cwd }?.workspaceId }
             ?: remoteRepository?.workspaceIdForSession(activeSessionId)
