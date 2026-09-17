@@ -64,6 +64,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlin.time.TimeMark
 import com.example.dsh.voice.DshVoiceWaveform
 import com.example.dsh.base.setTimeout
@@ -99,9 +100,11 @@ internal class DshHomePage : BasePager() {
     /** 仅远程模式可用的能力面；本地模式为 null。 */
     internal val remoteRepo: DshRemoteRepository? get() = repository as? DshRemoteRepository
 
-    /** 下一帧执行：统一 Kuikly 的 setTimeout(pagerId, 0) 写法，明确“稍后执行”意图。 */
-    internal inline fun postToUi(crossinline block: () -> Unit) {
-        setTimeout(pagerId, 0) { block() }
+    /** 下一帧执行：统一 Kuikly 的 setTimeout(pagerId, 0) 写法，明确“稍后执行”意图。
+     *  必须从 Kuikly context / 主线程调用（Kotlin→native 桥有线程断言）；
+     *  后台协程（localReadScope 等）调用时经 mainScope 派发到主队列，避免线程断言崩溃。 */
+    internal fun postToUi(block: () -> Unit) {
+        mainScope.launch { setTimeout(pagerId, 0) { block() } }
     }
     internal var localStore: DshLocalStore? = null
     internal var logJumpNotifyRef: CallbackRef? = null

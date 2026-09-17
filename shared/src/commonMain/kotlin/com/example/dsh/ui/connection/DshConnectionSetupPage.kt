@@ -65,6 +65,7 @@ internal class DshConnectionSetupPage : BasePager() {
     private var engineModule: DshEngineModule? = null
     private var probeRepository: DshRepository? = null
     private var autoConnectAttempted = false
+    private var databaseDir = ""
 
     override fun created() {
         super.created()
@@ -74,7 +75,7 @@ internal class DshConnectionSetupPage : BasePager() {
                 acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
             }
         })
-        val databaseDir = pageData.params.optString("databaseDir")
+        databaseDir = pageData.params.optString("databaseDir")
         // 首个页面即启动应用级日志服务，覆盖随后连接探测产生的日志；
         // 主页创建时复用同一实例，主页重建不再重新建库或重置序号。
         runCatching { DshLogService.ensureStarted(databaseDir) }
@@ -537,6 +538,7 @@ internal class DshConnectionSetupPage : BasePager() {
                 DshConnectionMode.RELAY -> relayHostId.ifEmpty { DshSessionScope.DEFAULT_REMOTE_PROFILE_ID }
                 else -> DshSessionScope.DEFAULT_REMOTE_PROFILE_ID
             })
+            put("databaseDir", databaseDir)
         })
     }
 

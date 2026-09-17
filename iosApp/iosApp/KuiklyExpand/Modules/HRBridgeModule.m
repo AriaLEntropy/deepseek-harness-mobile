@@ -130,6 +130,11 @@ static void DshUncaughtExceptionHandler(NSException *exception) {
     }];
 }
 
+- (NSString *)timezoneOffset:(NSDictionary *)args {
+    NSTimeInterval offset = [[NSTimeZone localTimeZone] secondsFromGMT];
+    return [NSString stringWithFormat:@"%lld", (long long)(offset * 1000.0)];
+}
+
 - (NSString *)readLastCrash:(NSDictionary *)args {
     NSString *path = DshLastCrashPath();
     if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return @"";
