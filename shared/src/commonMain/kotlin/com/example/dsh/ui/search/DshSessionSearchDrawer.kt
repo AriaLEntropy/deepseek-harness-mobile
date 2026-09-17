@@ -350,6 +350,8 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                 attr { flexDirectionColumn() }
                 vif({ isWebTimeline() }) {
                     // 半透明遮罩：底部取侧栏底色、向上渐隐并叠进滚动列表的底缘。
+                    // 终点用「同色透明」（fill.opacity(0f)）而非 Color.TRANSPARENT（透明黑）：
+                    // iOS 的 CAGradientLayer 对 sidebar 色 → 透明黑 的插值会向黑色偏移，导致底部灰条。
                     View {
                         attr {
                             positionAbsolute()
@@ -360,7 +362,7 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                             backgroundLinearGradient(
                                 Direction.TO_TOP,
                                 ColorStop(colors().specificSidebarFill, 0f),
-                                ColorStop(Color.TRANSPARENT, 1f),
+                                ColorStop(colors().specificSidebarFill.opacity(0f), 1f),
                             )
                         }
                     }
