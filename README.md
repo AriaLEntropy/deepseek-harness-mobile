@@ -170,6 +170,22 @@ PUBLIC_RELAY_URL=http://<电脑 LAN IP>:8787 npx @deepseek-ai/dsh web
 
 App 里「扫码连接」扫电脑二维码即可；异地用 SSH 端口转发直连，不需要 Relay。
 
+### iOS 模拟器构建（可选）
+
+真机部署（arm64）不受影响；模拟器统一构建 x86_64（Apple Silicon 经 Rosetta 2 翻译运行）：
+
+```bash
+cd iosApp && pod install
+xcodebuild -workspace iosApp.xcworkspace -scheme iosApp \
+  -configuration Debug -destination 'generic/platform=iOS Simulator' build
+```
+
+原因：`NMSSH 2.3.1` 预编译库（libcrypto / libssl / libssh2）只带真机 arm64 切片、没有 arm64 模拟器切片，链接进 arm64 模拟器会报 `built for 'iOS'` 错误。Podfile 通过 `EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64 i386` 让模拟器统一走 x86_64。
+
+- **Apple Silicon（M1–M4）**：模拟器以 Rosetta 2 翻译运行；首次使用需确认已安装 Rosetta 2（`softwareupdate --install-rosetta`）。
+- **Intel**：模拟器原生 x86_64，无额外步骤；注意 Xcode 27 / macOS 27 起仅支持 Apple Silicon，Intel 请停留在 Xcode 26 及以下。
+- **真机**：`iphoneos` 构建不受 `EXCLUDED_ARCHS[sdk=iphonesimulator*]` 影响，始终为 arm64 原生。
+
 ---
 
 ## 仓库结构
