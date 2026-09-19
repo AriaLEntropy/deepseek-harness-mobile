@@ -37,8 +37,12 @@ internal fun DshHomePage.showRunningTool(event: DshRawSessionEvent) {
     if (ui.messages.any { it.id == id }) return
     splitStreamingAssistantBeforeTool()
     ui.messages.add(model.toRemoteMessage(id).copy(sourceSeq = event.seq))
-    refreshSessionRenderTree(ui.activeSessionId)
-    scrollMessagesToEnd()
+    // 直接 setContentOffset 到底部，绕过 vforLazy scrollToPosition 的 dirty 检查。
+    // reasoning 持续 markDirty 时 scrollToPosition 会一直推迟创建新 item，
+    // setContentOffset 触发 onContentOffsetDidChanged → createItemByOffset 立即创建。
+    addTaskWhenPagerUpdateLayoutFinish {
+        scrollMessagesToEndAfterLayout()
+    }
 }
 
 internal fun DshHomePage.showContextInjection(event: DshRawSessionEvent) {
