@@ -37,15 +37,8 @@ internal fun DshHomePage.showRunningTool(event: DshRawSessionEvent) {
     if (ui.messages.any { it.id == id }) return
     splitStreamingAssistantBeforeTool()
     ui.messages.add(model.toRemoteMessage(id).copy(sourceSeq = event.seq))
-    // reasoning 持续 markDirty 会打断 scrollMessagesToEnd 的 settle，
-    // 这里直接 markDirty + 创建可见 cell，不依赖 settle 机制。
-    realizeVisibleMessages()
     refreshSessionRenderTree(ui.activeSessionId)
-    // layout 完成后再刷新一次，确保新工具卡片 cell 被创建并定位。
-    addTaskWhenPagerUpdateLayoutFinish {
-        refreshSessionRenderTree(ui.activeSessionId)
-        scrollMessagesToEnd()
-    }
+    scrollMessagesToEnd()
 }
 
 internal fun DshHomePage.showContextInjection(event: DshRawSessionEvent) {
