@@ -645,22 +645,23 @@ internal fun ViewContainer<*, *>.DshConversation(
         }
 
                 // Hero glow：空白会话时输入卡后方的蓝色光晕（对齐 DSH Web HeroGlow）。
-                // 放在根容器内（消息视口容器之外），absolute bottom 直接对齐输入卡。
-                // 元素背景透明，仅靠大 blur boxShadow 产生柔和扩散光晕。
+                // 元素尺寸按 web 版实际椭圆等比缩放（rx=425.5 ry=134, blur=50@1051宽）。
                 vif({ isBlankConversation() }) {
                     View {
                         attr {
                             positionAbsolute()
                             val glowWidth = (availableWidth - 24f) * 1051f / 776f
-                            val glowHeight = glowWidth * 468f / 1051f
+                            // web 版实际椭圆高 268(ry=134×2)，按 1051→glowWidth 等比缩放
+                            val glowHeight = glowWidth * 268f / 1051f
                             left((availableWidth - glowWidth) / 2f)
-                            // 根容器 paddingBottom 20 + 输入卡高 ~108，中心距底部约 74dp
+                            // 中心对齐输入卡中心（距根容器底部约 74dp）
                             bottom(74f - glowHeight / 2f)
                             width(glowWidth)
                             height(glowHeight)
                             borderRadius(glowHeight / 2f)
                             backgroundColor(Color.TRANSPARENT)
-                            boxShadow(BoxShadow(0f, 0f, 60f, if (colors().isDark) Color(0x1A679EFE) else Color(0x1A4176E6)))
+                            // blur 按 50@1051宽 等比缩放到 glowWidth 宽 ≈ 22dp
+                            boxShadow(BoxShadow(0f, 0f, 22f, if (colors().isDark) Color(0x22679EFE) else Color(0x224176E6)))
                             touchEnable(false)
                         }
                     }
