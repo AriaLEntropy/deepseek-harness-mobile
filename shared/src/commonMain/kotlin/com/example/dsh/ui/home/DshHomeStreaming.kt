@@ -347,18 +347,24 @@ internal fun DshHomePage.queueAssistantDelta(id: String, delta: String) {
 internal fun DshHomePage.queueReasoningDelta(id: String, delta: String) {
     if (delta.isEmpty() || streamingReasoningId != id) return
     streamingReasoningContent += delta
-    val index = ui.messages.indexOfFirst { it.id == id }
-    if (index >= 0) {
-        ui.messages[index] = ui.messages[index].copy(
-            content = streamingReasoningContent,
-            streaming = true,
-            isReasoning = true,
-        )
-    } else {
-        ui.messages.add(DshMessage(id, DshMessageRole.ASSISTANT, streamingReasoningContent, streaming = true, isReasoning = true, sourceSeq = streamingSourceSeq))
+    // reasoning token 高频到达，UI 刷新节流到 ~50ms 一次，避免每 token 都 markDirty + scroll。
+    if (reasoningFlushScheduled) return
+    reasoningFlushScheduled = true
+    setTimeout(pagerId, 50) {
+        reasoningFlushScheduled = false
+        val index = ui.messages.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            ui.messages[index] = ui.messages[index].copy(
+                content = streamingReasoningContent,
+                streaming = true,
+                isReasoning = true,
+            )
+        } else {
+            ui.messages.add(DshMessage(id, DshMessageRole.ASSISTANT, streamingReasoningContent, streaming = true, isReasoning = true, sourceSeq = streamingSourceSeq))
+        }
+        realizeVisibleMessages()
+        if (followListTail) scrollMessagesToEnd()
     }
-    realizeVisibleMessages()
-    if (followListTail) scrollMessagesToEnd()
 }
 
 internal fun DshHomePage.flushAssistantDelta() {
@@ -372,7 +378,15 @@ internal fun DshHomePage.flushAssistantDelta() {
     insertLiveAssistantRow()
     ensureLiveMessageCell()
     refreshSessionRenderTree(ui.activeSessionId)
-    scrollMessagesToEnd()
+    // 流式中节流跟随滚动：每 16ms flush 一次但只每 150ms 滚到底，避免 settleScrollToEnd 递归堆积。
+    if (!scrollFollowThrottleScheduled) {
+        scrollMessagesToEnd()
+        scrollFollowThrottleScheduled = true
+        setTimeout(pagerId, 150) {
+            scrollFollowThrottleScheduled = false
+            if (followListTail && ui.streaming) scrollMessagesToEnd()
+        }
+    }
 }
 
 /**

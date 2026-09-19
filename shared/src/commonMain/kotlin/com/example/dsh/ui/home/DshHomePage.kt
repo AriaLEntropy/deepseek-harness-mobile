@@ -196,6 +196,8 @@ internal class DshHomePage : BasePager() {
     internal var streamingReasoningContent = ""
     internal val pendingAssistantDelta = StringBuilder()
     internal var assistantFlushScheduled = false
+    internal var scrollFollowThrottleScheduled = false
+    internal var reasoningFlushScheduled = false
     internal var scrollSettleGeneration = 0
     internal var followListTail = true
     internal val connectionCoordinator = DshConnectionCoordinator()

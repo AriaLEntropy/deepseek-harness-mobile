@@ -55,6 +55,9 @@ class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
     private var pendingContent = ""
     private var pendingStreaming = false
     private var flushScheduled = false
+    private var treeEpochDebounceScheduled = false
+    /** 流式中 block 数量变化时，vfor 重挂载间隔（ms）。避免每个新段落都销毁重建所有 block view。 */
+    private val TREE_EPOCH_DEBOUNCE_MS = 160
 
     override fun createAttr(): DshMarkdownAttr = DshMarkdownAttr()
 
@@ -194,8 +197,20 @@ class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
         if (liveKey != newLiveKey) {
             liveKey = newLiveKey
         }
-        if (countChanged || endingStream) {
+        if (endingStream) {
+            // 流式结束：立即重挂载一次，确保所有 block 都渲染到位。
+            treeEpochDebounceScheduled = false
             treeEpoch += 1
+        } else if (countChanged && !streaming) {
+            // 非流式（force）：立即重挂载。
+            treeEpoch += 1
+        } else if (countChanged && streaming && !treeEpochDebounceScheduled) {
+            // 流式中 block 数量变化：debounce 重挂载，避免每个新段落都销毁重建所有 block view。
+            treeEpochDebounceScheduled = true
+            setTimeout(pagerId, TREE_EPOCH_DEBOUNCE_MS) {
+                treeEpochDebounceScheduled = false
+                treeEpoch += 1
+            }
         }
         flexNode.markDirty()
     }
