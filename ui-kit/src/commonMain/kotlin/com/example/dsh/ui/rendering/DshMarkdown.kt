@@ -113,6 +113,13 @@ class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
                                                 DefaultComponentsBridge.paragraph(model, container)
                                             }
                                         },
+                                        table = { model, container ->
+                                            container.dshMarkdownTable(
+                                                model = model,
+                                                contentWidth = ctx.attr.contentWidth,
+                                                dark = ctx.attr.darkMode,
+                                            )
+                                        },
                                     ),
                                 )
                             }
