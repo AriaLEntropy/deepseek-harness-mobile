@@ -412,7 +412,6 @@ internal fun DshHomePage.messageActionsItems(): ObservableList<DshMessageActionI
     val result = ObservableList<DshMessageActionItem>()
     result.addAll(listOf(
         DshMessageActionItem("复制", "copy.svg", { copyMessageActionsText() }),
-        DshMessageActionItem("选择文本", "text-select.svg", { selectMessageActionsText() }),
         DshMessageActionItem("好的回答", "like.svg", { closeMessageActions() }),
         DshMessageActionItem("有问题的回答", "dislike.svg", { closeMessageActions() }),
         DshMessageActionItem("在新对话中分支", "branch.svg", { ui.messageActionsMessage?.let(::forkMessage) }),

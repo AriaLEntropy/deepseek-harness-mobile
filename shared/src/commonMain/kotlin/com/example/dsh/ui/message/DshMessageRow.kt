@@ -345,13 +345,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                     selectable(SelectableOption.ENABLE)
                 }
             }
-            event {
-                if (!isUser && !isError) {
-                    longPress {
-                        onLongPress(message, renderedContent, it.pageX, it.pageY)
-                    }
-                }
-            }
+            // 长按手势已交给原生文本选择（selectable ENABLE），不再弹 context menu。
+            // 复制/分享/反馈等操作走 footer 按钮。
             if (isUser || isError) {
                 vif({ visibleUserText.isNotEmpty() || !userHasFiles }) {
                     Text {
