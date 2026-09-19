@@ -57,7 +57,7 @@ class DshMarkdownView : ComposeView<DshMarkdownAttr, ComposeEvent>() {
     private var flushScheduled = false
     private var treeEpochDebounceScheduled = false
     /** 流式中 block 数量变化时，vfor 重挂载间隔（ms）。避免每个新段落都销毁重建所有 block view。 */
-    private val TREE_EPOCH_DEBOUNCE_MS = 160
+    private val TREE_EPOCH_DEBOUNCE_MS = 50
 
     override fun createAttr(): DshMarkdownAttr = DshMarkdownAttr()
 

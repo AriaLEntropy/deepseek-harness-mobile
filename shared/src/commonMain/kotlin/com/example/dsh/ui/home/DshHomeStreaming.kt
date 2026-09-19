@@ -378,11 +378,11 @@ internal fun DshHomePage.flushAssistantDelta() {
     insertLiveAssistantRow()
     ensureLiveMessageCell()
     refreshSessionRenderTree(ui.activeSessionId)
-    // 流式中节流跟随滚动：每 16ms flush 一次但只每 150ms 滚到底，避免 settleScrollToEnd 递归堆积。
+    // 流式中节流跟随滚动：每 16ms flush 一次但只每 80ms 滚到底，避免 settleScrollToEnd 递归堆积。
     if (!scrollFollowThrottleScheduled) {
         scrollMessagesToEnd()
         scrollFollowThrottleScheduled = true
-        setTimeout(pagerId, 150) {
+        setTimeout(pagerId, 80) {
             scrollFollowThrottleScheduled = false
             if (followListTail && ui.streaming) scrollMessagesToEnd()
         }
