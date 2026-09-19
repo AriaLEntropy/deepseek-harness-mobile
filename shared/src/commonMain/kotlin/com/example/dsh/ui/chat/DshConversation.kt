@@ -508,6 +508,29 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                 }
             }
+            // Hero glow：空白会话时输入框后方的蓝色椭圆光晕（对齐 DSH Web HeroGlow）。
+            // 元素本身用低透明度业务蓝胶囊形，叠加 50px 模糊阴影向外扩散，
+            // 模拟 web 版 SVG feGaussianBlur(stdDeviation=50) 的柔和蓝色光晕。
+            vif({ isBlankConversation() }) {
+                View {
+                    attr {
+                        positionAbsolute()
+                        // 光晕宽高比与 web 版一致（1051:468），宽度按输入卡 776→1051 比例放大
+                        val glowWidth = (availableWidth - 24f) * 1051f / 776f
+                        val glowHeight = glowWidth * 468f / 1051f
+                        left((availableWidth - glowWidth) / 2f)
+                        // 输入卡高约 108f，中心距容器底部约 54f，让光晕中心对齐输入卡中心
+                        bottom(54f - glowHeight / 2f)
+                        width(glowWidth)
+                        height(glowHeight)
+                        borderRadius(glowHeight / 2f)
+                        backgroundColor(if (colors().isDark) Color(0x14679EFE) else Color(0x144176E6))
+                        // 大半径模糊阴影：从胶囊边缘向外扩散，模拟高斯模糊光晕
+                        boxShadow(BoxShadow(0f, 0f, 50f, if (colors().isDark) Color(0x14679EFE) else Color(0x144176E6)))
+                        touchEnable(false)
+                    }
+                }
+            }
             // 空白会话引导：无消息且非运行中时展示 DshNewSessionHome
             vif({
                 conversationListEpoch(activeConversationId())
