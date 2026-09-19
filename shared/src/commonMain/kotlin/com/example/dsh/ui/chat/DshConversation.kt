@@ -321,6 +321,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                                                     activeConversationId() == sessionId &&
                                                     streamingMessageId() == target.id
                                             },
+                                            streamingActive = {
+                                                streaming() && activeConversationId() == sessionId
+                                            },
                                             isWebTimeline = isWebTimeline(),
                                             isExpanded = { isDisclosureExpanded(target.id) },
                                             onToggle = { onToggleDisclosure(target.id) },
