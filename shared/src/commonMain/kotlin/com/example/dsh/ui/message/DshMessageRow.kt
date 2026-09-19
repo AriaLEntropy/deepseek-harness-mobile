@@ -28,6 +28,7 @@ import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.tencent.kuikly.core.views.SelectableOption
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.host.toolCardType
@@ -339,6 +340,10 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                         isError -> Color(0xFFFFEEEE)
                         else -> Color(0x00FFFFFF)
                     })
+                // 已结算的助手消息开启原生文本选择
+                if (!isUser && !isError && !pageStreaming()) {
+                    selectable(SelectableOption.ENABLE)
+                }
             }
             event {
                 if (!isUser && !isError) {

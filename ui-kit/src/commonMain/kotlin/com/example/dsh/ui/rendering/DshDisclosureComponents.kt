@@ -26,6 +26,7 @@ import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.tencent.kuikly.core.views.SelectableOption
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
@@ -44,6 +45,7 @@ class DshDisclosureRowView : ComposeView<DshDisclosureRowAttr, ComposeEvent>() {
                 attr {
                     flex(1f)
                     flexDirectionColumn()
+                    selectable(SelectableOption.DISABLE)
                     if (ctx.attr.chrome) {
                         padding(8f, 10f, 8f, 10f)
                         borderRadius(8f)
