@@ -661,7 +661,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                             borderRadius(glowHeight / 2f)
                             backgroundColor(Color.TRANSPARENT)
                             // blur 按 50@1051宽 等比缩放到 glowWidth 宽 ≈ 22dp
-                            boxShadow(BoxShadow(0f, 0f, 22f, if (colors().isDark) Color(0x22679EFE) else Color(0x224176E6)))
+                            boxShadow(BoxShadow(0f, 0f, 22f, if (colors().isDark) Color(0x1A679EFE) else Color(0x1A4176E6)))
                             touchEnable(false)
                         }
                     }
