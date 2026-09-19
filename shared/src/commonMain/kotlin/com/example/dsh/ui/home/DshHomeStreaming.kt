@@ -200,6 +200,7 @@ internal fun DshHomePage.submitDraft(
     streamingAssistantRootId = assistantId
     streamingAssistantSegment = 0
     streamingReasoningId = reasoningId
+    streamingReasoningSegment = 0
     streamingSourceSeq = null
     streamingReasoningContent = ""
     ui.streamingAssistantContent = ""
@@ -321,6 +322,7 @@ internal fun DshHomePage.cancelStreamingForSessionSwitch() {
     streamingAssistantSegment = 0
     streamingReasoningId = ""
     streamingReasoningContent = ""
+    streamingReasoningSegment = 0
     pendingAssistantDelta.setLength(0)
     ui.streamingAssistantContent = ""
     assistantFlushScheduled = false
@@ -345,9 +347,15 @@ internal fun DshHomePage.queueAssistantDelta(id: String, delta: String) {
 }
 
 internal fun DshHomePage.queueReasoningDelta(id: String, delta: String) {
-    if (delta.isEmpty() || streamingReasoningId != id) return
+    if (delta.isEmpty()) return
+    // After splitStreamingAssistantBeforeTool, streamingReasoningId gets a
+    // -segment-N suffix. The onDelta callback still passes the original id,
+    // so accept both the original id and any segmented variant.
+    val effectiveId = streamingReasoningId.takeIf { it.isNotEmpty() && it != id } ?: id
+    if (streamingReasoningId.isNotEmpty() && streamingReasoningId != id && !streamingReasoningId.startsWith("$id-segment-")) return
     streamingReasoningContent += delta
-    val index = ui.messages.indexOfFirst { it.id == id }
+    val useId = streamingReasoningId.takeIf { it.isNotEmpty() } ?: id
+    val index = ui.messages.indexOfFirst { it.id == useId }
     if (index >= 0) {
         ui.messages[index] = ui.messages[index].copy(
             content = streamingReasoningContent,
@@ -355,7 +363,7 @@ internal fun DshHomePage.queueReasoningDelta(id: String, delta: String) {
             isReasoning = true,
         )
     } else {
-        ui.messages.add(DshMessage(id, DshMessageRole.ASSISTANT, streamingReasoningContent, streaming = true, isReasoning = true, sourceSeq = streamingSourceSeq))
+        ui.messages.add(DshMessage(useId, DshMessageRole.ASSISTANT, streamingReasoningContent, streaming = true, isReasoning = true, sourceSeq = streamingSourceSeq))
     }
     realizeVisibleMessages()
     if (followListTail) scrollMessagesToEnd()
@@ -453,6 +461,22 @@ internal fun DshHomePage.splitStreamingAssistantBeforeTool() {
                 ui.messages[index] = current.copy(content = text, streaming = false)
                 realizeVisibleMessages()
             }
+        }
+    }
+    // Close the current reasoning block too, so the next reasoning chunk
+    // creates a new think card after the tool card instead of updating the
+    // old settled one above it.
+    if (streamingReasoningId.isNotEmpty()) {
+        val rIndex = ui.messages.indexOfFirst { it.id == streamingReasoningId }
+        if (rIndex >= 0) {
+            ui.messages[rIndex] = ui.messages[rIndex].copy(streaming = false, isReasoning = true)
+        }
+        streamingReasoningSegment += 1
+        streamingReasoningContent = ""
+        streamingReasoningId = if (streamingReasoningSegment == 0) {
+            streamingReasoningId
+        } else {
+            "$streamingReasoningId-segment-$streamingReasoningSegment"
         }
     }
     ui.streamingAssistantId = ""
@@ -568,6 +592,7 @@ internal fun DshHomePage.releaseStreamingUi() {
     streamingTurnAnchorAssistantId = ""
     streamingReasoningId = ""
     streamingReasoningContent = ""
+    streamingReasoningSegment = 0
     pendingAssistantDelta.setLength(0)
     ui.streaming = false
     ui.stopButtonVisible = false

@@ -194,6 +194,7 @@ internal class DshHomePage : BasePager() {
     internal var streamingTurnAnchorAssistantId = ""
     internal var streamingReasoningId = ""
     internal var streamingReasoningContent = ""
+    internal var streamingReasoningSegment = 0
     internal val pendingAssistantDelta = StringBuilder()
     internal var assistantFlushScheduled = false
     internal var scrollFollowThrottleScheduled = false
