@@ -16,6 +16,7 @@ import com.example.dsh.ui.rendering.DshMarkdown
 import com.example.dsh.ui.rendering.DshStreamingMarkdown
 import com.example.dsh.ui.rendering.DshToolDetail
 import com.tencent.kuikly.core.base.*
+import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforIndex
@@ -177,24 +178,29 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 width(rowWidth)
                 marginBottom(12f)
             }
-            DshDisclosureRow {
-                attr {
-                    title = "Think"
-                    iconAsset = "think.svg"
-                    this.colors = colors()
-                    summary = message.content.dshReasoningSummary(message.streaming)
-                    body = message.content
-                    open = bodyLocked || isExpanded()
-                    expandable = !bodyLocked && message.content.isNotEmpty()
-                    this.onToggle = onToggle
-                    this.expandInModal = expandInModal()
-                    this.onRequestModal = onRequestModal
-                    plainBody = true
-                    compact = true
-                    bodyChrome = true
-                    connector = showConnectors()
-                    // 长思考限高并提供内部滚动，避免展开后撑爆消息列表。
-                    bodyMaxHeight = 320f
+            // vforLazy 复用 cell 时不会重新执行 DshMessageRow，
+            // 用 vbind 包裹让 reasoning 流式更新时 summary/body 实时刷新。
+            vbind({ contentProvider?.invoke() ?: message.content }) {
+                val liveContent = contentProvider?.invoke() ?: message.content
+                DshDisclosureRow {
+                    attr {
+                        title = "Think"
+                        iconAsset = "think.svg"
+                        this.colors = colors()
+                        summary = liveContent.dshReasoningSummary(message.streaming)
+                        body = liveContent
+                        open = bodyLocked || isExpanded()
+                        expandable = !bodyLocked && liveContent.isNotEmpty()
+                        this.onToggle = onToggle
+                        this.expandInModal = expandInModal()
+                        this.onRequestModal = onRequestModal
+                        plainBody = true
+                        compact = true
+                        bodyChrome = true
+                        connector = showConnectors()
+                        // 长思考限高并提供内部滚动，避免展开后撑爆消息列表。
+                        bodyMaxHeight = 320f
+                    }
                 }
             }
         }
