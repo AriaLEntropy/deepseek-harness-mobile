@@ -24,6 +24,16 @@ DeepSeek Harness 本身是一个插件化 Agent 运行时。本仓库提供 Andr
 - 按连接模式隔离会话列表和消息缓存；
 - 通过扫码 Relay 或 SSH 隧道连接电脑上的 DSH Host。
 
+## Kuikly
+
+本项目的跨平台 UI 基于腾讯 [Kuikly](https://github.com/Tencent-TDS/KuiklyUI)。Kuikly 是基于 Kotlin Multiplatform 的 UI 与逻辑跨端方案，目标是一码多端、原生性能、可动态下发。目前支持 Android、iOS、鸿蒙，以及 Web / 小程序（Beta）和 macOS（Alpha）。
+
+- 官网：[https://framework.tds.qq.com/](https://framework.tds.qq.com/)
+- GitHub：[https://github.com/Tencent-TDS/KuiklyUI](https://github.com/Tencent-TDS/KuiklyUI)
+- 文档：[https://kuikly.tds.qq.com/](https://kuikly.tds.qq.com/)
+
+核心能力：Kotlin 一码六端；产出平台原生 `.aar` / `.framework` / `.so`；原生 UI 渲染与原生工具链；AOT 增量较小（Android 约 300 KB，iOS 约 1.2 MB）；支持动态化产物；同时提供自研 DSL 和 Compose DSL。
+
 ## 连接模式
 
 启动后首页是「连接 DSH」。
@@ -422,7 +432,10 @@ iOS 在 `iosApp` 执行 `pod install` 后，用 Xcode 打开 `iosApp.xcworkspace
 
 ## 许可证和上游项目
 
-本项目是移动端集成和实验性宿主代码。DeepSeek Harness 的许可证、第三方依赖和使用限制请以其上游仓库为准：
+本项目是移动端集成和实验性宿主代码。DeepSeek Harness 与 Kuikly 的许可证、第三方依赖和使用限制请以其上游仓库为准：
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 - [DeepSeek Harness 中文说明](https://github.com/deepseek-ai/deepseek-harness/blob/main/README.zh.md)
+- [KuiklyUI](https://github.com/Tencent-TDS/KuiklyUI)
+- [Kuikly 官网](https://framework.tds.qq.com/)
+- [Kuikly 文档](https://kuikly.tds.qq.com/)
