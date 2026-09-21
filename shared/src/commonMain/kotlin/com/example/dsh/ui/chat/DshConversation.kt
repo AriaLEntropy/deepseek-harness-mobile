@@ -872,7 +872,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                             attr {
                                 marginLeft(16f)
                                 marginRight(12f)
-                                height(50f)
+                                height(46f)
                                 allCenter()
                             }
                             Text {
