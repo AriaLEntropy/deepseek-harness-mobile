@@ -1,6 +1,7 @@
 #import "DshEngineModule.h"
 
 #import <OpenKuiklyIOSRender/NSObject+KR.h>
+#import "KuiklyRenderThreadManager.h"
 #import "DshSshTunnel.h"
 #import "iosApp-Swift.h"
 
@@ -48,7 +49,12 @@
     [_tunnel disconnect];
     _tunnel = [[DshSshTunnel alloc] init];
     _tunnel.onState = ^(NSDictionary *state) {
-        if (callback) callback(state);
+        // NMSSH 回调发生在隧道后台线程；Kotlin 侧的 connectionLabel 等 Kuikly 状态
+        // 只能在 Kuikly context 线程更新（KuiklyRenderThreadManager isContextQueue 断言），
+        // 直接回调会在主页 startSshEngine 更新 UI 时触发断言崩溃。统一派发回 context 队列。
+        [KuiklyRenderThreadManager performOnContextQueueWithBlock:^{
+            if (callback) callback(state);
+        }];
     };
     NSInteger port = [params[@"port"] integerValue];
     if (port <= 0) port = 22;

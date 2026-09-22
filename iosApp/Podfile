@@ -20,7 +20,18 @@ post_install do |installer|
       if deployment < 14.1
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.1'
       end
-      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386 x86_64'
+      # NMSSH 预编译库（libcrypto/libssl/libssh2）没有 arm64 模拟器切片，
+      # 模拟器统一构建 x86_64（Apple Silicon 上经 Rosetta 运行）。
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64 i386'
     end
   end
+
+  # 主工程 iosApp 在模拟器下同样排除 arm64，避免链接/运行时的架构不匹配。
+  user_project = Xcodeproj::Project.open(File.join(__dir__, 'iosApp.xcodeproj'))
+  user_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64 i386'
+    end
+  end
+  user_project.save
 end

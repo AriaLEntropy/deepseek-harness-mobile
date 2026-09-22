@@ -2,13 +2,7 @@
 
 package com.example.dsh.log
 
-import platform.Foundation.NSString
-import platform.Foundation.NSTimeZone
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.writeToFile
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSFileSize
-import platform.Foundation.NSNumber
+import platform.Foundation.*
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.posix.fopen
 import platform.posix.fputs
@@ -55,4 +49,4 @@ actual fun fileSizeBytes(path: String): Long {
 actual fun shareExportFile(path: String) = Unit
 
 actual fun localTimezoneOffsetMillis(): Long =
-    NSTimeZone.defaultTimeZone.secondsFromGMT.toLong() * 1000L
+    NSTimeZone.systemTimeZone.secondsFromGMT.toLong() * 1000L

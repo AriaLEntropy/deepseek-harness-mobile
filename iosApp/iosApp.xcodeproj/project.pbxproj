@@ -518,7 +518,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "iosApp-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "i386 x86_64";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "arm64 i386";
 			};
 			name = Debug;
 		};
@@ -541,7 +541,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "iosApp-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "i386 x86_64";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "arm64 i386";
 			};
 			name = Release;
 		};

@@ -190,26 +190,27 @@ internal class SecureCipher(
     private val receiveKey: ByteArray,
     private val receiveNonceBase: ByteArray,
 ) {
+    private val lock = Any()
     private var sendSequence = 0L
     private var receiveSequence = 0L
 
-    fun seal(value: JSONObject): SealedPayload {
+    fun seal(value: JSONObject): SealedPayload = synchronized(lock) {
         val sequence = sendSequence
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(sendKey, "AES"), GCMParameterSpec(128, nonce(sendNonceBase, sequence)))
         cipher.updateAAD(aad(sendDirection, sequence))
         val ciphertext = cipher.doFinal(value.toString().toByteArray(Charsets.UTF_8))
         sendSequence += 1
-        return SealedPayload(sequence.toString(), SealedTunnelCrypto.encodeBase64Url(ciphertext))
+        SealedPayload(sequence.toString(), SealedTunnelCrypto.encodeBase64Url(ciphertext))
     }
 
-    fun open(payload: SealedPayload): JSONObject {
+    fun open(payload: SealedPayload): JSONObject = synchronized(lock) {
         if (!payload.seq.matches(Regex("^(0|[1-9][0-9]*)$"))) throw E2eeException("invalid sequence")
         val sequence = payload.seq.toLong()
         if (sequence != receiveSequence) throw E2eeException("unexpected sequence")
         val sealed = SealedTunnelCrypto.decodeBase64Url(payload.ciphertextB64)
         if (sealed.size < 16) throw E2eeException("truncated ciphertext")
-        return try {
+        try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(receiveKey, "AES"), GCMParameterSpec(128, nonce(receiveNonceBase, sequence)))
             cipher.updateAAD(aad(receiveDirection, sequence))

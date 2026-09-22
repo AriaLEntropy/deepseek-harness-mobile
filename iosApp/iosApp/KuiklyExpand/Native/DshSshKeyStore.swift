@@ -12,6 +12,18 @@ final class DshSshKeyStore: NSObject, UIDocumentPickerDelegate {
     private var picker: UIDocumentPickerViewController?
 
     @objc func pickKey(from presenter: UIViewController, completion: @escaping (String) -> Void) {
+        // 便捷路径：沙盒 Documents 下存在预置密钥文件（dsh_*/id_*/*_rsa）时直接导入，跳过文件选择器。
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+           let files = try? FileManager.default.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil),
+           let keyFile = files.first(where: {
+               $0.lastPathComponent.hasPrefix("dsh_") || $0.lastPathComponent.hasPrefix("id_") || $0.lastPathComponent.contains("_rsa")
+           }),
+           let data = try? Data(contentsOf: keyFile), !data.isEmpty {
+            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("ssh-pick-\(UUID().uuidString).key")
+            try? data.write(to: dest)
+            completion(dest.absoluteString)
+            return
+        }
         pickerCompletion = completion
         let controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item, .data], asCopy: true)
         controller.delegate = self
