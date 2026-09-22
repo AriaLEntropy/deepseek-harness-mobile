@@ -16,6 +16,7 @@ import com.example.dsh.ui.rendering.DshMarkdown
 import com.example.dsh.ui.rendering.DshStreamingMarkdown
 import com.example.dsh.ui.rendering.DshToolDetail
 import com.tencent.kuikly.core.base.*
+import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforIndex
@@ -45,6 +46,8 @@ import com.example.dsh.message.iconAsset
 internal fun ViewContainer<*, *>.DshMessageRow(
     message: DshMessage,
     pageStreaming: () -> Boolean,
+    /** 整个页面是否正在流式（任一 row/reasoning）。footer 只在回合完全结束后显示。 */
+    streamingActive: () -> Boolean = { false },
     isWebTimeline: Boolean,
     isExpanded: () -> Boolean,
     onToggle: () -> Unit,
@@ -177,24 +180,29 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 width(rowWidth)
                 marginBottom(12f)
             }
-            DshDisclosureRow {
-                attr {
-                    title = "Think"
-                    iconAsset = "think.svg"
-                    this.colors = colors()
-                    summary = message.content.dshReasoningSummary(message.streaming)
-                    body = message.content
-                    open = bodyLocked || isExpanded()
-                    expandable = !bodyLocked && message.content.isNotEmpty()
-                    this.onToggle = onToggle
-                    this.expandInModal = expandInModal()
-                    this.onRequestModal = onRequestModal
-                    plainBody = true
-                    compact = true
-                    bodyChrome = true
-                    connector = showConnectors()
-                    // 长思考限高并提供内部滚动，避免展开后撑爆消息列表。
-                    bodyMaxHeight = 320f
+            // vforLazy 复用 cell 时不会重新执行 DshMessageRow，
+            // 用 vbind 包裹让 reasoning 流式更新时 summary/body 实时刷新。
+            vbind({ contentProvider?.invoke() ?: message.content }) {
+                val liveContent = contentProvider?.invoke() ?: message.content
+                DshDisclosureRow {
+                    attr {
+                        title = "Think"
+                        iconAsset = "think.svg"
+                        this.colors = colors()
+                        summary = liveContent.dshReasoningSummary(message.streaming)
+                        body = liveContent
+                        open = bodyLocked || isExpanded()
+                        expandable = !bodyLocked && liveContent.isNotEmpty()
+                        this.onToggle = onToggle
+                        this.expandInModal = expandInModal()
+                        this.onRequestModal = onRequestModal
+                        plainBody = true
+                        compact = true
+                        bodyChrome = true
+                        connector = showConnectors()
+                        // 长思考限高并提供内部滚动，避免展开后撑爆消息列表。
+                        bodyMaxHeight = 320f
+                    }
                 }
             }
         }
@@ -459,7 +467,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
         // 仅在回答结算（非流式）且为该轮最后一段时出现，避免分段重复渲染。
         // 用 vif 而非普通 if：流式结算发生在 cell 建好之后，只有响应式条件才会在
         // settle 时补挂 footer，否则操作栏（尤其是首次回复）永远不渲染。
-        vif({ message.role == DshMessageRole.ASSISTANT && !pageStreaming() && isTurnTail() }) {
+        vif({ message.role == DshMessageRole.ASSISTANT && !pageStreaming() && !streamingActive() && isTurnTail() }) {
             DshMessageFooter(copied = copied(), colors = colors) { action ->
                 // COPY 复制整个回合的完整正文（跨工具调用的所有正文段），由页面层聚合
                 if (action == DshMessageFooterAction.COPY) {

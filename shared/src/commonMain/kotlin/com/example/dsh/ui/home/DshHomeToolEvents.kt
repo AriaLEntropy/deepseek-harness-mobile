@@ -29,19 +29,23 @@ import com.example.dsh.host.textFromBlocks
 import com.example.dsh.host.toolCardType
 import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.timer.setTimeout
+import com.tencent.kuikly.core.directives.scrollToPosition
 
 internal fun DshHomePage.showRunningTool(event: DshRawSessionEvent) {
     val payload = runCatching { JSONObject(event.raw) }.getOrNull() ?: return
     val model = DshRemoteToolCallModels.fromLiveCall(payload) ?: return
     val id = "tool-${event.seq}"
     if (ui.messages.any { it.id == id }) return
-    // The Host emits tool/call after the assistant block that introduced
-    // it. Seal that block before appending its card so the list follows the
-    // actual event order instead of grouping all cards at the turn end.
     splitStreamingAssistantBeforeTool()
     ui.messages.add(model.toRemoteMessage(id).copy(sourceSeq = event.seq))
-    refreshSessionRenderTree(ui.activeSessionId)
-    scrollMessagesToEnd()
+    // vforLazy 只在 [currentStart, currentEnd) 窗口内创建 cell。add 到末尾的 item
+    // 落在 currentEnd 之外，setContentOffset 不触发 createItemByPosition。
+    // scrollToPosition 强制 vforLazy 扩展窗口并创建 cell（同 ensureLiveMessageCell）。
+    if (!followListTail) return
+    val list = messageScrollerRefs[ui.activeSessionId]?.view ?: return
+    val index = ui.messages.indexOfFirst { it.id == id }
+    if (index < 0) return
+    list.scrollToPosition(index, 0f, false)
 }
 
 internal fun DshHomePage.showContextInjection(event: DshRawSessionEvent) {

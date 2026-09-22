@@ -382,10 +382,21 @@ object DshRemoteToolCallModels {
     private fun inputString(input: String, arguments: JSONObject?, vararg keys: String): String? {
         if (arguments != null) {
             keys.forEach { key -> arguments.optString(key).takeIf { it.isNotEmpty() }?.let { return it.firstLine() } }
-            return null
+            // Fallback: extract first non-empty string value from JSON object
+            return firstJsonStringValue(arguments)
         }
         val root = parseJson(input) as? JSONObject ?: return null
         keys.forEach { key -> root.optString(key).takeIf { it.isNotEmpty() }?.let { return it.firstLine() } }
+        return firstJsonStringValue(root)
+    }
+
+    private fun firstJsonStringValue(obj: JSONObject): String? {
+        obj.keys().forEach { key ->
+            val v = obj.opt(key)
+            if (v is String && v.isNotEmpty() && !v.trimStart().startsWith("{") && !v.trimStart().startsWith("[")) {
+                return v.firstLine()
+            }
+        }
         return null
     }
 

@@ -101,10 +101,29 @@ internal class DshHomePage : BasePager() {
     internal val remoteRepo: DshRemoteRepository? get() = repository as? DshRemoteRepository
 
     /** 下一帧执行：统一 Kuikly 的 setTimeout(pagerId, 0) 写法，明确“稍后执行”意图。
-     *  必须从 Kuikly context / 主线程调用（Kotlin→native 桥有线程断言）；
-     *  后台协程（localReadScope 等）调用时经 mainScope 派发到主队列，避免线程断言崩溃。 */
+     *  Kuikly 的 Kotlin→native 桥 callNative 断言 setTimeout 不能在 Android 主线程调用，
+     *  因此注册和失败重试都走后台调度器（localReadScope）；block 由 Kuikly 上下文线程回调，
+     *  页面销毁后不再执行，重试达上限后在主线程兜底执行避免回调丢失。 */
     internal fun postToUi(block: () -> Unit) {
-        mainScope.launch { setTimeout(pagerId, 0) { block() } }
+        postToUiRetry(block, 0)
+    }
+
+    /** postToUi 的实际执行：native 桥未就绪（冷启动首帧渲染前）或误从主线程调用时，
+     *  setTimeout 会抛 AssertionError；在后台调度器每 33ms 重试直至成功或达到上限，
+     *  上限后回退主线程直接执行 block。 */
+    private fun postToUiRetry(block: () -> Unit, attempt: Int) {
+        if (!pageAlive) return
+        runCatching { setTimeout(pagerId, 0) { block() } }
+            .onFailure {
+                if (attempt < 40) {
+                    localReadScope.launch {
+                        kotlinx.coroutines.delay(33L)
+                        postToUiRetry(block, attempt + 1)
+                    }
+                } else {
+                    mainScope.launch { block() }
+                }
+            }
     }
     internal var localStore: DshLocalStore? = null
     internal var logJumpNotifyRef: CallbackRef? = null
@@ -194,8 +213,11 @@ internal class DshHomePage : BasePager() {
     internal var streamingTurnAnchorAssistantId = ""
     internal var streamingReasoningId = ""
     internal var streamingReasoningContent = ""
+    internal var streamingReasoningSegment = 0
     internal val pendingAssistantDelta = StringBuilder()
     internal var assistantFlushScheduled = false
+    internal var scrollFollowThrottleScheduled = false
+    internal var reasoningFlushScheduled = false
     internal var scrollSettleGeneration = 0
     internal var followListTail = true
     internal val connectionCoordinator = DshConnectionCoordinator()

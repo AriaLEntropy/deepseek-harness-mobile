@@ -79,7 +79,7 @@ internal fun DshConnectionTone.dotColor(): Int = when (this) {
 }
 
 internal const val COMPOSER_HEIGHT = 158f
-internal const val CHAT_INITIAL_RENDER_COUNT = 48
+internal const val CHAT_INITIAL_RENDER_COUNT = 16
 internal const val CHAT_MAX_RENDERED_MESSAGES = 128
 
 /** 输入框「/」候选浮层：单行高、分组标题高与整体高度上限（超出才滚动）。 */
