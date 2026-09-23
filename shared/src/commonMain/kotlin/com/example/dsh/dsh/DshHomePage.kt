@@ -68,6 +68,28 @@ internal class DshHomePage : BasePager() {
     private var sshSettingsBusy by observable(false)
     private var sshSettingsError by observable("")
     private var settingsPageVisible by observable(false)
+    // ===== Host 插件页状态（设置 → 应用 → Host 插件）=====
+    private var pluginPageVisible by observable(false)
+    private var pluginActiveTab by observable(PLUGIN_TAB_CONFIG)
+    private var pluginListLoading by observable(false)
+    private var pluginListError by observable("")
+    private var pluginKeyword by observable("")
+    private var pluginExpandedId by observable("")
+    private var pluginRows by observableList<DshPluginEntry>()
+    private var pluginTotal by observable(0)
+    private var pluginRequestVersion = 0
+    private var pluginSearchInputView: InputView? = null
+    private var pluginAllEntries: List<DshPluginEntry> = emptyList()
+    private var pluginConfigLoading by observable(false)
+    private var pluginConfigError by observable("")
+    private var pluginConfigWritable by observable(true)
+    private var pluginConfigCards by observableList<DshPluginConfigCard>()
+    private var pluginConfigDrafts by observable(emptyMap<String, String>())
+    private var pluginConfigSecretDrafts by observable(emptyMap<String, String>())
+    private var pluginConfigCollapsed by observable(emptySet<String>())
+    private var pluginConfigBusyNamespace by observable("")
+    private var pluginConfigCardError by observable(emptyMap<String, String>())
+    private var pluginConfigCardNotice by observable(emptyMap<String, String>())
     private val sessionScope: DshSessionScope
         get() = DshSessionScope(connectionMode, remoteProfileId)
     private val activeConnectionId: String
@@ -555,6 +577,44 @@ internal class DshHomePage : BasePager() {
                         connectionModeLabel = { if (ctx.sshMode) "SSH" else "扫码" },
                         onClose = { ctx.closeSettingsPage() },
                         onOpenConnection = { ctx.openConnectionSettings() },
+                        onOpenPlugins = { ctx.openPluginPage() },
+                    )
+                }
+                vif({ ctx.pluginPageVisible }) {
+                    DshPluginPage(
+                        activeTab = { ctx.pluginActiveTab },
+                        onSelectTab = { ctx.selectPluginTab(it) },
+                        onClose = { ctx.closePluginPage() },
+                        onRefresh = { ctx.refreshPluginTab() },
+                        listLoading = { ctx.pluginListLoading },
+                        listError = { ctx.pluginListError },
+                        keyword = { ctx.pluginKeyword },
+                        hasKeyword = { ctx.pluginKeyword.isNotEmpty() },
+                        onKeyword = { ctx.onPluginKeyword(it) },
+                        onClearKeyword = { ctx.clearPluginKeyword() },
+                        onSearchInputRef = { ctx.pluginSearchInputView = it.view },
+                        rows = { ctx.pluginRows },
+                        total = { ctx.pluginTotal },
+                        expandedId = { ctx.pluginExpandedId },
+                        onToggleExpand = { entry ->
+                            ctx.pluginExpandedId = if (ctx.pluginExpandedId == entry.id) "" else entry.id
+                        },
+                        configLoading = { ctx.pluginConfigLoading },
+                        configError = { ctx.pluginConfigError },
+                        configWritable = { ctx.pluginConfigWritable },
+                        configCards = { ctx.pluginConfigCards },
+                        configDraft = { ns, key -> ctx.pluginConfigDraft(ns, key) },
+                        configSecretDraft = { ns -> ctx.pluginConfigSecretDraft(ns) },
+                        configCollapsed = { ns -> ctx.isPluginConfigCollapsed(ns) },
+                        configBusyNamespace = { ctx.pluginConfigBusyNamespace },
+                        configCardError = { ns -> ctx.pluginConfigCardError[ns] ?: "" },
+                        configCardNotice = { ns -> ctx.pluginConfigCardNotice[ns] ?: "" },
+                        configHasChanges = { ns -> ctx.hasPluginConfigChanges(ns) },
+                        onConfigDraft = { ns, key, value -> ctx.onPluginConfigDraft(ns, key, value) },
+                        onConfigSecretDraft = { ns, value -> ctx.onPluginConfigSecretDraft(ns, value) },
+                        onConfigToggleCollapse = { ns -> ctx.togglePluginConfigCollapsed(ns) },
+                        onConfigSave = { ns -> ctx.savePluginConfigCard(ns) },
+                        onConfigDiscard = { ns -> ctx.discardPluginConfigCard(ns) },
                     )
                 }
                 vif({ ctx.sshSettingsVisible }) {
@@ -862,6 +922,7 @@ internal class DshHomePage : BasePager() {
                     (repository as? DshRemoteRepository)?.stop()
                     repository = null
                     connectionLabel = "扫码连接重试中"
+                    if (pluginPageVisible) closePluginPage()
                     syncTurnStatusTicker()
                 }
                 DshRelayPhase.STOPPED -> {
@@ -870,6 +931,7 @@ internal class DshHomePage : BasePager() {
                     (repository as? DshRemoteRepository)?.stop()
                     repository = null
                     connectionLabel = "扫码连接已断开"
+                    if (pluginPageVisible) closePluginPage()
                 }
                 else -> {
                     if (state.localPort <= 0) relayEngineEndpoint = ""
@@ -920,6 +982,7 @@ internal class DshHomePage : BasePager() {
                     engineReady = false
                     repository = null
                     connectionLabel = "SSH 已断开"
+                    if (pluginPageVisible) closePluginPage()
                 }
                 else -> connectionLabel = state.message.ifEmpty { "正在连接 SSH" }
             }
@@ -1130,6 +1193,202 @@ internal class DshHomePage : BasePager() {
         if (pageData.isAndroid || pageData.isIOS) {
             bridgeModule.setSystemBarsDimmed(false)
         }
+    }
+
+    // ===== Host 插件页 =====
+    private fun openPluginPage() {
+        dismissKeyboard()
+        pluginPageVisible = true
+        pluginActiveTab = PLUGIN_TAB_CONFIG
+        if (pluginConfigCards.isEmpty() && !pluginConfigLoading) loadPluginConfig()
+    }
+
+    private fun closePluginPage() {
+        pluginRequestVersion++
+        pluginPageVisible = false
+        pluginListLoading = false
+        pluginExpandedId = ""
+        pluginKeyword = ""
+        pluginSearchInputView?.setText("")
+    }
+
+    private fun selectPluginTab(tab: String) {
+        pluginActiveTab = tab
+        if (tab == PLUGIN_TAB_CONFIG && pluginConfigCards.isEmpty() && !pluginConfigLoading) loadPluginConfig()
+        if (tab == PLUGIN_TAB_LIST && pluginAllEntries.isEmpty() && !pluginListLoading) refreshPluginList()
+    }
+
+    private fun refreshPluginTab() {
+        if (pluginActiveTab == PLUGIN_TAB_LIST) refreshPluginList() else loadPluginConfig()
+    }
+
+    private fun onPluginKeyword(value: String) {
+        pluginKeyword = value
+        applyPluginFilter()
+    }
+
+    private fun clearPluginKeyword() {
+        pluginKeyword = ""
+        pluginSearchInputView?.setText("")
+        applyPluginFilter()
+    }
+
+    private fun applyPluginFilter() {
+        pluginTotal = pluginAllEntries.size
+        pluginRows.diffUpdate(filterDshPlugins(pluginAllEntries, pluginKeyword, "")) { old, new -> old.id == new.id }
+    }
+
+    private fun refreshPluginList() {
+        val remote = repository as? DshRemoteRepository ?: run {
+            pluginListLoading = false
+            pluginListError = "请先连接 Host"
+            return
+        }
+        val version = ++pluginRequestVersion
+        pluginListLoading = true
+        pluginListError = ""
+        remote.loadOfficialPluginInventory({ entries ->
+            if (!pluginPageVisible || version != pluginRequestVersion) return@loadOfficialPluginInventory
+            pluginListLoading = false
+            pluginAllEntries = entries
+            if (pluginExpandedId.isNotEmpty() && entries.none { it.id == pluginExpandedId }) pluginExpandedId = ""
+            applyPluginFilter()
+        }, { error ->
+            if (!pluginPageVisible || version != pluginRequestVersion) return@loadOfficialPluginInventory
+            pluginListLoading = false
+            pluginListError = error
+        })
+    }
+
+    private fun loadPluginConfig() {
+        val remote = repository as? DshRemoteRepository ?: run {
+            pluginConfigLoading = false
+            pluginConfigError = "请先连接 Host"
+            return
+        }
+        pluginConfigLoading = true
+        pluginConfigError = ""
+        remote.loadPluginConfig({ state ->
+            if (!pluginPageVisible) return@loadPluginConfig
+            pluginConfigLoading = false
+            pluginConfigWritable = state.writable
+            val firstLoad = pluginConfigCards.isEmpty()
+            pluginConfigCards.clear()
+            pluginConfigCards.addAll(state.cards)
+            if (firstLoad) pluginConfigCollapsed = state.cards.map { it.namespace }.toSet()
+            pluginConfigDrafts = emptyMap()
+            pluginConfigSecretDrafts = emptyMap()
+            pluginConfigCardError = emptyMap()
+        }, { error ->
+            if (!pluginPageVisible) return@loadPluginConfig
+            pluginConfigLoading = false
+            pluginConfigError = error
+        })
+    }
+
+    private fun pluginConfigDraft(namespace: String, key: String): String {
+        val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return ""
+        val fallback = card.fields.firstOrNull { it.key == key }?.value ?: ""
+        return pluginConfigDrafts["$namespace::$key"] ?: fallback
+    }
+
+    private fun pluginConfigSecretDraft(namespace: String): String = pluginConfigSecretDrafts[namespace] ?: ""
+
+    private fun isPluginConfigCollapsed(namespace: String): Boolean = namespace in pluginConfigCollapsed
+
+    private fun hasPluginConfigChanges(namespace: String): Boolean {
+        val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return false
+        if ((pluginConfigSecretDrafts[namespace] ?: "").isNotEmpty()) return true
+        return card.fields.any { it.kind != DshPluginFieldKind.SECRET && pluginConfigDraft(namespace, it.key) != it.value }
+    }
+
+    private fun onPluginConfigDraft(namespace: String, key: String, value: String) {
+        pluginConfigDrafts = pluginConfigDrafts + ("$namespace::$key" to value)
+    }
+
+    private fun onPluginConfigSecretDraft(namespace: String, value: String) {
+        pluginConfigSecretDrafts = pluginConfigSecretDrafts + (namespace to value)
+    }
+
+    private fun togglePluginConfigCollapsed(namespace: String) {
+        pluginConfigCollapsed = if (namespace in pluginConfigCollapsed) {
+            pluginConfigCollapsed - namespace
+        } else {
+            pluginConfigCollapsed + namespace
+        }
+    }
+
+    private fun discardPluginConfigCard(namespace: String) {
+        clearPluginConfigDrafts(namespace)
+        pluginConfigCardNotice = pluginConfigCardNotice - namespace
+    }
+
+    private fun clearPluginConfigDrafts(namespace: String) {
+        val prefix = "$namespace::"
+        pluginConfigDrafts = pluginConfigDrafts.filterKeys { !it.startsWith(prefix) }
+        pluginConfigSecretDrafts = pluginConfigSecretDrafts - namespace
+        pluginConfigCardError = pluginConfigCardError - namespace
+    }
+
+    private fun savePluginConfigCard(namespace: String) {
+        val card = pluginConfigCards.firstOrNull { it.namespace == namespace } ?: return
+        if (pluginConfigBusyNamespace.isNotEmpty()) return
+        val remote = repository as? DshRemoteRepository ?: run {
+            pluginConfigCardError = pluginConfigCardError + (namespace to "请先连接 Host")
+            return
+        }
+        val ops = JSONArray()
+        var invalid = ""
+        for (field in card.fields) {
+            if (field.kind == DshPluginFieldKind.SECRET) continue
+            val draft = pluginConfigDraft(namespace, field.key)
+            if (draft == field.value) continue
+            val path = JSONArray().apply { put(field.key) }
+            if (field.kind == DshPluginFieldKind.NUMBER) {
+                val text = draft.trim()
+                if (text.isEmpty()) {
+                    ops.put(JSONObject().apply { put("op", "unset"); put("path", path) })
+                } else {
+                    val parsed = text.toIntOrNull()
+                    if (parsed == null) {
+                        invalid = "「${field.label}」请填数字，或留空使用默认值"
+                        break
+                    }
+                    ops.put(JSONObject().apply { put("op", "set"); put("path", path); put("value", parsed) })
+                }
+            } else {
+                ops.put(JSONObject().apply { put("op", "set"); put("path", path); put("value", draft) })
+            }
+        }
+        if (invalid.isNotEmpty()) {
+            pluginConfigCardError = pluginConfigCardError + (namespace to invalid)
+            return
+        }
+        val secret = pluginConfigSecretDraft(namespace).trim()
+        if (ops.length() == 0 && secret.isEmpty()) return
+        val save = DshPluginConfigSave(
+            namespace = namespace,
+            ops = ops,
+            expectedRevision = card.revision,
+            credentialRef = if (secret.isNotEmpty()) card.secretRef else "",
+            credentialValue = secret,
+        )
+        pluginConfigBusyNamespace = namespace
+        pluginConfigCardError = pluginConfigCardError - namespace
+        pluginConfigCardNotice = pluginConfigCardNotice - namespace
+        remote.savePluginConfig(save, {
+            if (pluginPageVisible) {
+                pluginConfigBusyNamespace = ""
+                clearPluginConfigDrafts(namespace)
+                pluginConfigCardNotice = pluginConfigCardNotice + (namespace to "已保存")
+                loadPluginConfig()
+            }
+        }, { error ->
+            if (pluginPageVisible) {
+                pluginConfigBusyNamespace = ""
+                pluginConfigCardError = pluginConfigCardError + (namespace to error)
+            }
+        })
     }
 
     private fun openConnectionSettings(preserveError: Boolean = false) {

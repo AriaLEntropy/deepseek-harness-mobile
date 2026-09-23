@@ -33,6 +33,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
     connectionModeLabel: () -> String,
     onClose: () -> Unit,
     onOpenConnection: () -> Unit,
+    onOpenPlugins: () -> Unit,
 ) {
     Modal(inWindow = true) {
         attr {
@@ -89,7 +90,7 @@ internal fun ViewContainer<*, *>.DshSettingsPage(
                 DshSettingsRow("personalize.svg", "个性化", { "" }, {}, showDivider = true)
                 DshSettingsRow("icon-agentpreset16.svg", "Agent 预设", { "" }, {}, showDivider = true)
                 DshSettingsRow("log.svg", "日志", { "" }, {}, showDivider = true)
-                DshSettingsRow("icon-plugin16.svg", "Host 插件", { "" }, {}, showDivider = false)
+                DshSettingsRow("icon-plugin16.svg", "Host 插件", { "" }, onOpenPlugins, showDivider = false)
             }
 
             // 关于

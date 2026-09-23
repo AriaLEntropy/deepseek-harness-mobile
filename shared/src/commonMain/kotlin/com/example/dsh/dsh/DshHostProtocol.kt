@@ -31,9 +31,13 @@ internal object DshHostProtocol {
     const val SESSION_ATTACHMENT = "session.attachment"
     const val WORKSPACE_ARCHIVE_SESSION = "workspace.archiveSession"
     const val SETTINGS_DESCRIBE = "settings.describe"
+    const val SETTINGS_MUTATE = "settings.mutate"
     const val CREDENTIALS_DESCRIBE = "credentials.describe"
     const val CREDENTIALS_SET = "credentials.set"
     const val LLM_PROVIDERS = "llm.providers"
+    /** 官方只读插件清单（Typert Remote，基线 rc.2 起可用，不依赖自建 Host 插件）。
+     *  注意：Typert Remote 端点形如 /api/<namespace>/<method>（斜杠），与 legacy apiproxy 的点号方法不同。 */
+    const val PLUGIN_INVENTORY_LIST = "pluginInventory/list"
     const val SKILL_LIST = "skill.list"
     const val AGENT_PRESET_LIST = "agentPreset.list"
     const val GOAL_EDIT = "goal.edit"
@@ -637,6 +641,12 @@ internal class DshHostConnectionRuntime(
                 request.callback(null, DshRpcError("bad-response", "${request.method} 返回了非法 RPC 信封"), request.rpcId)
                 return@httpRequest
             }
+            // Typert Remote（如 pluginInventory/list）的 result 直接承载业务值，没有 {ok,value} 第二层；
+            // legacy apiproxy 方法才有 ok/value 包装。以是否存在 ok 字段区分两种响应。
+            if (!result.has("ok")) {
+                request.callback(result, null, request.rpcId)
+                return@httpRequest
+            }
             if (!result.optBoolean("ok")) {
                 val error = result.optJSONObject("error")
                 request.callback(null, DshRpcError(
@@ -836,6 +846,55 @@ internal class DshRemoteHostRepository(
             put("ref", DEEPSEEK_CREDENTIAL_REF)
             put("value", apiKey)
         }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+    }
+
+    /** 官方只读插件清单：`pluginInventory/list`（Typert，rc.2 起可用，不依赖自建 Host 插件）。 */
+    fun loadOfficialPluginInventory(onSuccess: (List<DshPluginEntry>) -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.PLUGIN_INVENTORY_LIST, JSONObject().apply { put("args", JSONObject()) }) { value, error ->
+            if (error != null || value == null) {
+                onError(error?.message ?: "pluginInventory/list 返回为空")
+                return@call
+            }
+            runCatching { parseDshPluginInventory(value) }
+                .onSuccess(onSuccess)
+                .onFailure { onError(it.message ?: "插件清单解析失败") }
+        }
+    }
+
+    /** 插件配置读取：`settings.describe` 投影为 shell / agent-loop / web-search 三段卡片。 */
+    fun loadPluginConfig(onSuccess: (DshPluginConfigState) -> Unit, onError: (String) -> Unit) {
+        call(DshHostProtocol.SETTINGS_DESCRIBE, JSONObject()) { value, error ->
+            if (error != null || value == null) {
+                onError(error?.message ?: "settings.describe 返回为空")
+                return@call
+            }
+            runCatching { parseDshPluginConfig(value) }
+                .onSuccess(onSuccess)
+                .onFailure { onError(it.message ?: "插件配置解析失败") }
+        }
+    }
+
+    /** 插件配置保存：字段改动走 `settings.mutate`，密钥走 `credentials.set`。 */
+    fun savePluginConfig(save: DshPluginConfigSave, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        fun writeSettings() {
+            if (save.ops.length() == 0) {
+                onSuccess()
+                return
+            }
+            call(DshHostProtocol.SETTINGS_MUTATE, JSONObject().apply {
+                put("ns", save.namespace)
+                put("ops", save.ops)
+                if (save.expectedRevision > 0) put("expectedRevision", save.expectedRevision)
+            }) { _, error -> if (error == null) onSuccess() else onError(error.message) }
+        }
+        if (save.credentialRef.isNotEmpty() && save.credentialValue.isNotEmpty()) {
+            call(DshHostProtocol.CREDENTIALS_SET, JSONObject().apply {
+                put("ref", save.credentialRef)
+                put("value", save.credentialValue)
+            }) { _, error -> if (error == null) writeSettings() else onError(error.message) }
+        } else {
+            writeSettings()
+        }
     }
 
     override fun loadModels(sessionId: String, onSuccess: (DshSessionModels) -> Unit, onError: (String) -> Unit) {

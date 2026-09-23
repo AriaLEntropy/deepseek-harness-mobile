@@ -176,6 +176,15 @@ internal class DshRemoteRepository(
     override fun saveDeepSeekApiKey(apiKey: String, onSuccess: () -> Unit, onError: (String) -> Unit) =
         delegate.saveDeepSeekApiKey(apiKey, onSuccess, onError)
 
+    fun loadOfficialPluginInventory(onSuccess: (List<DshPluginEntry>) -> Unit, onError: (String) -> Unit) =
+        delegate.loadOfficialPluginInventory(onSuccess, onError)
+
+    fun loadPluginConfig(onSuccess: (DshPluginConfigState) -> Unit, onError: (String) -> Unit) =
+        delegate.loadPluginConfig(onSuccess, onError)
+
+    fun savePluginConfig(save: DshPluginConfigSave, onSuccess: () -> Unit, onError: (String) -> Unit) =
+        delegate.savePluginConfig(save, onSuccess, onError)
+
     override fun loadModels(sessionId: String, onSuccess: (DshSessionModels) -> Unit, onError: (String) -> Unit) =
         delegate.loadModels(sessionId, onSuccess, onError)
 
