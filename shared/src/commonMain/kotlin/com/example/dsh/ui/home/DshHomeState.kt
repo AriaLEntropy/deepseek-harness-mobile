@@ -257,6 +257,9 @@ internal class DshHomeState(private val scope: PagerScope) {
     var goalSnapshot by scope.observable<DshGoalSnapshot?>(null)
     var goalActionBusy by scope.observable(false)
     var goalActionError by scope.observable("")
+    // ===== Plan 模式状态条：由 host `plan` 投影驱动，非消息气泡 =====
+    var planModeActive by scope.observable(false)
+    var planModePending by scope.observable(false)
     var queueEditingId by scope.observable("")
     var queueEditingText by scope.observable("")
     var sessionRunning by scope.observable(false)

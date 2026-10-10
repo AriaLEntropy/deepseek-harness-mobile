@@ -100,6 +100,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     onToggleCommandSheet: () -> Unit,
     onPickCommand: (DshCommand) -> Unit,
     onAttachmentTile: (DshCommandSheetTile) -> Unit,
+    /** 命令参数提示（ghost 文本）：写入类命令 "/name" 尚未补参数时展示，对齐 web 命令 claim 态。 */
+    commandHint: () -> String = { "" },
     attachmentEpoch: () -> Int = { 0 },
     attachmentRevision: () -> Int = { 0 },
     pendingImages: () -> ObservableList<DshPendingImage> = { ObservableList() },
@@ -167,6 +169,10 @@ internal fun ViewContainer<*, *>.DshConversation(
     onResumeGoal: () -> Unit,
     onEditGoal: (String, (Boolean) -> Unit) -> Unit,
     onClearGoal: () -> Unit,
+    /** plan 模式状态条：由 host `plan` 投影驱动，非消息气泡。 */
+    planModeActive: () -> Boolean = { false },
+    planModePending: () -> Boolean = { false },
+    onExitPlanMode: () -> Unit = {},
     jobsPanelExpanded: () -> Boolean,
     jobsNow: () -> Long,
     onToggleJobsPanel: () -> Unit,
@@ -576,6 +582,53 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
+        // Plan 模式状态条：进入 plan 模式时贴输入框上方显示（非消息气泡），
+        // 数据来自 host `plan` 投影，点「退出」直接执行 /plan off，对齐 web composer 的 plan chip。
+        vif({ isWebTimeline() && (planModeActive() || planModePending()) }) {
+            View {
+                attr {
+                    marginLeft(4f)
+                    marginRight(4f)
+                    marginBottom(8f)
+                    minHeight(38f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    padding(8f, 10f, 8f, 10f)
+                    borderRadius(8f)
+                    backgroundColor(colors().bgBase)
+                    border(Border(1f, BorderStyle.SOLID, colors().borderL2))
+                }
+                View {
+                    attr {
+                        size(8f, 8f)
+                        borderRadius(4f)
+                        backgroundColor(
+                            if (planModeActive()) colors().stateBusinessPrimary else colors().labelTertiary,
+                        )
+                    }
+                }
+                Text {
+                    attr {
+                        text(if (planModeActive()) "计划模式" else "正在进入计划模式")
+                        marginLeft(8f)
+                        flex(1f)
+                        lines(1)
+                        fontSize(12f)
+                        fontWeightMedium()
+                        color(colors().labelSecondary)
+                    }
+                }
+                Text {
+                    attr {
+                        text("退出")
+                        marginLeft(8f)
+                        fontSize(12f)
+                        color(colors().stateBusinessPrimary)
+                    }
+                    event { click { onExitPlanMode() } }
+                }
+            }
+        }
         // 审批面板：Host 请求授权（如执行命令/改文件）时弹出
         vif({ isWebTimeline() && pendingApproval()?.sessionId == activeConversationId() }) {
             DshApprovalPanel {
@@ -840,6 +893,20 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         colors = colors,
                                     )
                                 }
+                            }
+                        }
+                    }
+                    // 写入类命令的参数提示（ghost）：`/feedback`、`/goal`、`/plan` 等尚未补参数时展示，
+                    // 对齐 web 输入框里命令 claim 态的 ghost 提示。
+                    vif({ commandHint().isNotEmpty() }) {
+                        Text {
+                            attr {
+                                text(commandHint())
+                                marginLeft(16f)
+                                marginRight(12f)
+                                marginTop(8f)
+                                fontSize(13f)
+                                color(colors().labelTertiary)
                             }
                         }
                     }
@@ -1243,7 +1310,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 lines(1)
                                 fontSize(14f)
                                 fontWeightMedium()
-                                color(colors().labelPrimary)
+                                // 技能名与描述同为 tertiary，与命令名（primary）形成层级区分，
+                                // 对齐 web token（技能 --dsw-alias-label-tertiary，命令 --dsw-alias-label-primary）。
+                                color(colors().labelTertiary)
                             }
                         }
                         Text {

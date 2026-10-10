@@ -3,6 +3,7 @@ package com.example.dsh.ui.home
 import com.example.dsh.base.setTimeout
 import com.example.dsh.message.isRemoteCatalogInvalidationEvent
 import com.example.dsh.message.parseGoalProjection
+import com.example.dsh.message.parsePlanProjection
 import com.example.dsh.connection.DshEngineModule
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.DshRelayPhase
@@ -290,6 +291,11 @@ internal fun DshHomePage.connectRemoteEngine(baseUrl: String, token: String = ""
             if (sessionId == ui.activeSessionId) {
                 when (key) {
                     "goal" -> ui.goalSnapshot = parseGoalProjection(value)
+                    "plan" -> {
+                        val (active, pending) = parsePlanProjection(value)
+                        ui.planModeActive = active
+                        ui.planModePending = pending
+                    }
                     "imageLimits" -> {
                         val limits = runCatching {
                             DshImageLimits.fromJson(
@@ -579,6 +585,8 @@ internal fun DshHomePage.stopCurrentEngine() {
     ui.goalSnapshot = null
     ui.goalActionBusy = false
     ui.goalActionError = ""
+    ui.planModeActive = false
+    ui.planModePending = false
     streamHandle?.cancel()
     streamHandle = null
     when (mode) {

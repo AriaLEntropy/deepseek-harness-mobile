@@ -2,6 +2,7 @@ package com.example.dsh.ui.home
 
 import com.example.dsh.base.setTimeout
 import com.example.dsh.ui.chat.DshConversation
+import com.example.dsh.ui.chat.dshCommandHintForDraft
 import com.example.dsh.ui.voice.dshVoiceStrings
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.base.*
@@ -135,7 +136,11 @@ internal fun DshHomePage.bodyMainContent(): ViewBuilder {
                         voiceActive = { ctx.ui.voiceUi.active },
                         onOpenModels = { ctx.openModelPicker() },
                         onToggleCommandSheet = { ctx.toggleCommandSheet() },
-                        onPickCommand = { ctx.insertCommand(it) },
+                        onPickCommand = { ctx.pickCommand(it) },
+                        commandHint = { dshCommandHintForDraft(ctx.ui.draft) },
+                        planModeActive = { ctx.ui.planModeActive },
+                        planModePending = { ctx.ui.planModePending },
+                        onExitPlanMode = { ctx.exitPlanMode() },
                         onAttachmentTile = { ctx.onAttachmentTile(it) },
                     attachmentEpoch = { ctx.ui.attachmentEpoch },
                     attachmentRevision = { ctx.ui.attachmentRevision },
@@ -312,7 +317,11 @@ internal fun DshHomePage.bodyMainContent(): ViewBuilder {
                     agentModeLabel = { ctx.ui.agentModeLabel },
                     onOpenAgentModes = { ctx.openAgentModePicker() },
                     onToggleCommandSheet = { ctx.toggleCommandSheet() },
-                    onPickCommand = { ctx.insertCommand(it) },
+                    onPickCommand = { ctx.pickCommand(it) },
+                    commandHint = { dshCommandHintForDraft(ctx.ui.draft) },
+                    planModeActive = { ctx.ui.planModeActive },
+                    planModePending = { ctx.ui.planModePending },
+                    onExitPlanMode = { ctx.exitPlanMode() },
                     onAttachmentTile = { ctx.onAttachmentTile(it) },
                     attachmentEpoch = { ctx.ui.attachmentEpoch },
                     attachmentRevision = { ctx.ui.attachmentRevision },

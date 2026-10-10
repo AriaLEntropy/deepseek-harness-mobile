@@ -95,6 +95,8 @@ internal fun DshHomePage.applyActiveSessionChrome() {
     ui.questionError = ""
     questionDrafts.clear()
     ui.goalSnapshot = null
+    ui.planModeActive = false
+    ui.planModePending = false
     if (!isRemoteHost) {
         ui.queueItems = ObservableList()
         ui.jobItems = ObservableList()

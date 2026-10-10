@@ -16,13 +16,17 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 /**
- * 技能建议：按斜杠前缀（首个空格之前）做不区分大小写的前缀匹配。
+ * 技能建议：按斜杠前缀（首个空格之前）做**大小写敏感**的前缀匹配。
  * 空前缀返回全部，供刚输入单独 "/" 时展示技能组。
+ *
+ * 对齐后端：web 技能源（`packages/client/ui-skill/src/client/index.ts`）使用
+ * `skill.name.startsWith(query)`（不做 lowercase）。移动端原先用 `lowercase().startsWith`
+ * 属于与命令源混淆，这里改为大小写敏感以与后端技能行为一致。
  */
 fun dshSkillsMatching(source: List<DshSkill>, query: String): List<DshSkill> {
-    val q = query.trim().lowercase()
+    val q = query.trim()
     if (q.isEmpty()) return source.toList()
-    return source.filter { it.name.lowercase().startsWith(q) }
+    return source.filter { it.name.startsWith(q) }
 }
 
 fun isRemoteCatalogInvalidationEvent(event: String): Boolean = event in setOf(
@@ -49,6 +53,16 @@ fun parseGoalProjection(raw: String): DshGoalSnapshot? {
         phase = phase,
         blockedReason = goal.optJSONObject("blockedReason")?.optString("message").orEmpty(),
     )
+}
+
+/**
+ * 解析 `plan` 会话投影（`{ active, pending }`），对齐后端
+ * `packages/plan/plan-mode/src/index.ts` 的 projection view：`active` 是已提交的 plan 模式，
+ * `pending` 表示选择尚未在下一步前落地。解析失败返回 `(false, false)`。
+ */
+fun parsePlanProjection(raw: String): Pair<Boolean, Boolean> {
+    val root = runCatching { JSONObject(raw) }.getOrNull() ?: return false to false
+    return root.optBoolean("active") to root.optBoolean("pending")
 }
 
 fun DshToolCardType.iconAsset(): String = when (this) {

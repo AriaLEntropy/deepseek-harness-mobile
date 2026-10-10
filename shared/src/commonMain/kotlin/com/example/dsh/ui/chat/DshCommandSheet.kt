@@ -24,7 +24,7 @@ internal enum class DshCommandSheetTile(val label: String, val iconAsset: String
 /**
  * 点击输入框「+」图标弹出的半屏底部面板（与「选择文本」弹窗同款容器）：
  * 顶部居中标题 + 右上角关闭；下方一排三个附件方块（拍照/相册/文件）；
- * 再下方是原版命令列表，点击命令把 "/command " 写入输入框。
+ * 再下方是原版命令列表，命令点击后按执行类型分派（见 `DshHomePage.pickCommand`）。
  */
 internal fun ViewContainer<*, *>.DshCommandSheet(
     visible: () -> Boolean,
@@ -77,7 +77,7 @@ internal fun ViewContainer<*, *>.DshCommandSheet(
                 View { attr { width(12f) } }
                 DshCommandSheetTileRow(DshCommandSheetTile.FILE, onClick = { onPickTile(it) }, colors = colors)
             }
-            // 命令列表：左命令名 + 右描述，点击写入输入框
+            // 命令列表：左命令名 + 右描述，点击按执行类型分派（写入 / Popup / 直接执行）
             View {
                 attr {
                     flex(1f)
