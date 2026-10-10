@@ -38,6 +38,16 @@ internal fun parseGoalProjection(raw: String): DshGoalSnapshot? {
     )
 }
 
+/**
+ * 解析 `plan` 会话投影（`{ active, pending }`），对齐后端
+ * `packages/plan/plan-mode/src/index.ts` 的 projection view：`active` 是已提交的 plan 模式，
+ * `pending` 表示选择尚未在下一步前落地。解析失败返回 `(false, false)`。
+ */
+internal fun parsePlanProjection(raw: String): Pair<Boolean, Boolean> {
+    val root = runCatching { JSONObject(raw) }.getOrNull() ?: return false to false
+    return root.optBoolean("active") to root.optBoolean("pending")
+}
+
 internal fun DshToolCardType.iconAsset(): String = when (this) {
     DshToolCardType.TERMINAL -> "tool-terminal.svg"
     DshToolCardType.READ -> "tool-read.svg"

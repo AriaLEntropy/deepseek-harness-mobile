@@ -150,6 +150,9 @@ internal class DshHomePage : BasePager() {
     private var goalSnapshot by observable<DshGoalSnapshot?>(null)
     private var goalActionBusy by observable(false)
     private var goalActionError by observable("")
+    // ===== Plan 模式状态条：由 host `plan` 投影驱动，非消息气泡 =====
+    private var planModeActive by observable(false)
+    private var planModePending by observable(false)
     private var queueEditingId by observable("")
     private var queueEditingText by observable("")
     private var sessionRunning by observable(false)
@@ -317,6 +320,8 @@ internal class DshHomePage : BasePager() {
                                 draft = { ctx.draft },
                                 skills = { ctx.skills },
                                 onPickSkill = { ctx.draft = "/$it " },
+                                onPickCommand = { ctx.pickCommand(it) },
+                                commandHint = { dshCommandHintForDraft(ctx.draft) },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
                                 inputRef = { ctx.inputView = it.view },
@@ -361,6 +366,9 @@ internal class DshHomePage : BasePager() {
                                 onResumeGoal = { ctx.resumeGoal() },
                                 onEditGoal = { text, done -> ctx.editGoal(text, done) },
                                 onClearGoal = { ctx.clearGoal() },
+                                planModeActive = { ctx.planModeActive },
+                                planModePending = { ctx.planModePending },
+                                onExitPlanMode = { ctx.exitPlanMode() },
                                 jobsPanelExpanded = { ctx.jobsPanelExpanded },
                                 jobsNow = { ctx.jobsNow },
                                 onToggleJobsPanel = { ctx.toggleJobsPanel() },
@@ -422,6 +430,8 @@ internal class DshHomePage : BasePager() {
                             draft = { ctx.draft },
                             skills = { ctx.skills },
                             onPickSkill = { ctx.draft = "/$it " },
+                            onPickCommand = { ctx.pickCommand(it) },
+                            commandHint = { dshCommandHintForDraft(ctx.draft) },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
                             inputRef = { ctx.inputView = it.view },
@@ -466,6 +476,9 @@ internal class DshHomePage : BasePager() {
                             onResumeGoal = { ctx.resumeGoal() },
                             onEditGoal = { text, done -> ctx.editGoal(text, done) },
                             onClearGoal = { ctx.clearGoal() },
+                            planModeActive = { ctx.planModeActive },
+                            planModePending = { ctx.planModePending },
+                            onExitPlanMode = { ctx.exitPlanMode() },
                             jobsPanelExpanded = { ctx.jobsPanelExpanded },
                             jobsNow = { ctx.jobsNow },
                             onToggleJobsPanel = { ctx.toggleJobsPanel() },
@@ -962,6 +975,11 @@ internal class DshHomePage : BasePager() {
                             if (title.isNotEmpty()) connectionLabel = title
                         }
                         "goal" -> goalSnapshot = parseGoalProjection(value)
+                        "plan" -> {
+                            val (active, pending) = parsePlanProjection(value)
+                            planModeActive = active
+                            planModePending = pending
+                        }
                     }
                 }
             },
@@ -1169,6 +1187,8 @@ internal class DshHomePage : BasePager() {
         goalSnapshot = null
         goalActionBusy = false
         goalActionError = ""
+        planModeActive = false
+        planModePending = false
         streamHandle?.cancel()
         streamHandle = null
         when (mode) {
@@ -1991,6 +2011,98 @@ internal class DshHomePage : BasePager() {
         )
     }
 
+    /**
+     * 点击命令：按命令执行类型分派，对齐 web 命令分发
+     * （`packages/client/ui-commands/src/client/service.ts` · `dispatch`）：
+     * 直接执行类立刻执行，Popup 类弹选择器，写入类写 "/name " 并给出参数提示。
+     */
+    private fun pickCommand(command: DshCommand) {
+        dismissKeyboard()
+        when (command.kind) {
+            DshCommandKind.WRITE_INPUT -> insertCommandText(command)
+            DshCommandKind.DIRECT_EXECUTE -> when (command.name) {
+                "export" -> exportActiveSession()
+                "compact" -> runDetachedCommand("/compact")
+                else -> Unit
+            }
+            DshCommandKind.POPUP -> when (command.popup) {
+                DshCommandPopup.MODEL -> openModelPicker()
+                // 上游客户端暂无权限预设选择器：回退为写入参数形式（/permission <preset>），
+                // 与 host 命令的 argued path 一致。
+                DshCommandPopup.PERMISSION -> insertCommandText(command)
+                DshCommandPopup.NONE -> Unit
+            }
+        }
+    }
+
+    /** 写入类命令：把 "/命令 " 写入输入框并聚焦，等用户补全参数（参数提示由 commandHint 显示）。 */
+    private fun insertCommandText(command: DshCommand) {
+        val text = "/${command.name} "
+        draft = text
+        inputView?.setText(text)
+        inputView?.focus()
+        inputFocused = true
+    }
+
+    /**
+     * 在输入框之外直接执行一条 host 命令（`/compact`、`/plan off`）：
+     * 通过 session.prompt 下发命令行（host 识别为命令并直接执行，返回 command 结果，而非普通模型回合），
+     * 不占用输入框，也不产生本地用户气泡。命令结果作为一条助手消息落屏。
+     */
+    private fun runDetachedCommand(line: String) {
+        val hostRepository = repository ?: run {
+            connectionLabel = "本地内核尚未连接"
+            return
+        }
+        if (!hostRepository.isProductReady()) {
+            connectionLabel = syncBusyLabel()
+            return
+        }
+        if (sessions.isEmpty()) {
+            hostRepository.createSession(null, { sessionId ->
+                sessions.add(DshSession(sessionId, "新会话", "Host", "", blank = true))
+                refreshVisibleSessions()
+                runCatching { localStore?.replaceSessions(activeConnectionId, sessions.toList()) }
+                activeSessionId = sessionId
+                loadModels(sessionId)
+                runDetachedCommand(line)
+            }, { error ->
+                messages.add(DshMessage(
+                    "command-session-error-${messages.size}",
+                    DshMessageRole.ERROR,
+                    "无法创建会话：$error",
+                ))
+            })
+            return
+        }
+        val sessionId = activeSessionId
+        hostRepository.streamReply(
+            pagerId = pagerId,
+            sessionId = sessionId,
+            prompt = line,
+            onDelta = { _, _ -> },
+            onComplete = { result ->
+                if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
+                if (result.isNotEmpty()) {
+                    messages.add(DshMessage("command-${messages.size}", DshMessageRole.ASSISTANT, result))
+                    realizeVisibleMessages()
+                    persistMessages(sessionId)
+                }
+            },
+            onError = { error ->
+                if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
+                messages.add(DshMessage("command-error-${messages.size}", DshMessageRole.ERROR, error))
+                realizeVisibleMessages()
+                persistMessages(sessionId)
+            },
+        )
+    }
+
+    /** 退出 plan 模式：直接执行 /plan off（对齐 web plan chip 通过 command.execute 退出）。 */
+    private fun exitPlanMode() {
+        runDetachedCommand("/plan off")
+    }
+
     private fun openWorkspaceBrowser() {
         closeSessionDrawer()
         workspaceBrowserVisible = true
@@ -2272,6 +2384,8 @@ internal class DshHomePage : BasePager() {
         questionError = ""
         questionDrafts.clear()
         goalSnapshot = null
+        planModeActive = false
+        planModePending = false
         refreshQueueDock()
         refreshJobsPanel()
         refreshPendingInteractions()

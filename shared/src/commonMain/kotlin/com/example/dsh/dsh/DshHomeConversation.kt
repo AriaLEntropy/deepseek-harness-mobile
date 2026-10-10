@@ -131,6 +131,9 @@ internal fun ViewContainer<*, *>.DshConversation(
     draft: () -> String,
     skills: () -> ObservableList<DshSkill>,
     onPickSkill: (String) -> Unit,
+    onPickCommand: (DshCommand) -> Unit = {},
+    /** 命令参数提示（ghost 文本）：写入类命令 "/name" 尚未补参数时展示，对齐 web 命令 claim 态。 */
+    commandHint: () -> String = { "" },
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
@@ -165,6 +168,10 @@ internal fun ViewContainer<*, *>.DshConversation(
     onResumeGoal: () -> Unit,
     onEditGoal: (String, (Boolean) -> Unit) -> Unit,
     onClearGoal: () -> Unit,
+    /** plan 模式状态条：由 host `plan` 投影驱动，非消息气泡。 */
+    planModeActive: () -> Boolean = { false },
+    planModePending: () -> Boolean = { false },
+    onExitPlanMode: () -> Unit = {},
     jobsPanelExpanded: () -> Boolean,
     jobsNow: () -> Long,
     onToggleJobsPanel: () -> Unit,
@@ -370,6 +377,51 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
             }
         }
+        // Plan 模式状态条：进入 plan 模式时贴输入框上方显示（非消息气泡），
+        // 数据来自 host `plan` 投影，点「退出」直接执行 /plan off，对齐 web composer 的 plan chip。
+        vif({ planModeActive() || planModePending() }) {
+            View {
+                attr {
+                    marginLeft(12f)
+                    marginRight(12f)
+                    marginBottom(6f)
+                    minHeight(34f)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    padding(8f, 10f, 8f, 10f)
+                    borderRadius(8f)
+                    backgroundColor(Color(0xFFF7F9FB))
+                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                }
+                View {
+                    attr {
+                        size(8f, 8f)
+                        borderRadius(4f)
+                        backgroundColor(if (planModeActive()) Color(TURN_STATUS_BLUE) else Color(0xFF91A0AA))
+                    }
+                }
+                Text {
+                    attr {
+                        text(if (planModeActive()) "计划模式" else "正在进入计划模式")
+                        marginLeft(8f)
+                        flex(1f)
+                        lines(1)
+                        fontSize(12f)
+                        fontWeightMedium()
+                        color(Color(0xFF28323C))
+                    }
+                }
+                Text {
+                    attr {
+                        text("退出")
+                        marginLeft(8f)
+                        fontSize(12f)
+                        color(Color(0xFF4176E6))
+                    }
+                    event { click { onExitPlanMode() } }
+                }
+            }
+        }
         vif({ pendingApproval()?.sessionId == activeConversationId() }) {
             DshApprovalPanel {
                 attr {
@@ -412,17 +464,82 @@ internal fun ViewContainer<*, *>.DshConversation(
                     border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E5EE)))
                 }
                 vif({
-                    draft().startsWith("/") &&
-                        visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty()
+                    draft().startsWith("/") && run {
+                        val query = draft().removePrefix("/")
+                        visibleCommandList(query).isNotEmpty() || visibleSkillList(skills(), query).isNotEmpty()
+                    }
                 }) {
                     View {
                         attr {
-                            maxHeight(132f)
+                            maxHeight(220f)
                             marginBottom(6f)
                             flexDirectionColumn()
                             backgroundColor(Color(0xFFF7F9FB))
                             borderRadius(8f)
                             border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
+                        }
+                        // 「命令」分组：命令名用主文本色、描述用次级文本色，命令组在技能组上方。
+                        vif({ visibleCommandList(draft().removePrefix("/")).isNotEmpty() }) {
+                            View {
+                                attr {
+                                    paddingLeft(8f)
+                                    paddingTop(6f)
+                                }
+                                Text {
+                                    attr {
+                                        text("命令")
+                                        fontSize(11f)
+                                        color(Color(0xFF91A0AA))
+                                    }
+                                }
+                            }
+                        }
+                        vfor({ visibleCommandList(draft().removePrefix("/")) }) { command ->
+                            View {
+                                attr {
+                                    height(32f)
+                                    flexDirectionRow()
+                                    alignItemsCenter()
+                                    paddingLeft(8f)
+                                    paddingRight(8f)
+                                }
+                                event { click { onPickCommand(command) } }
+                                Text {
+                                    attr {
+                                        text("/${command.name}")
+                                        width(110f)
+                                        fontSize(13f)
+                                        fontWeightMedium()
+                                        color(Color(0xFF28323C))
+                                    }
+                                }
+                                Text {
+                                    attr {
+                                        text(command.description)
+                                        flex(1f)
+                                        lines(1)
+                                        fontSize(11f)
+                                        color(Color(0xFF727D84))
+                                    }
+                                }
+                            }
+                        }
+                        // 「技能」分组：技能名与描述同为次级文本色，与命令名形成层级区分，
+                        // 对齐 web token（技能 --dsw-alias-label-tertiary，命令 --dsw-alias-label-primary）。
+                        vif({ visibleSkillList(skills(), draft().removePrefix("/")).isNotEmpty() }) {
+                            View {
+                                attr {
+                                    paddingLeft(8f)
+                                    paddingTop(6f)
+                                }
+                                Text {
+                                    attr {
+                                        text("技能")
+                                        fontSize(11f)
+                                        color(Color(0xFF91A0AA))
+                                    }
+                                }
+                            }
                         }
                         vfor({ visibleSkillList(skills(), draft().removePrefix("/")) }) { skill ->
                             View {
@@ -440,7 +557,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         width(110f)
                                         fontSize(13f)
                                         fontWeightMedium()
-                                        color(Color(0xFF2F6F4F))
+                                        color(Color(0xFF727D84))
                                     }
                                 }
                                 Text {
@@ -453,6 +570,18 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+                // 写入类命令的参数提示（ghost）：`/feedback`、`/goal`、`/plan` 等尚未补参数时展示。
+                vif({ commandHint().isNotEmpty() }) {
+                    Text {
+                        attr {
+                            text(commandHint())
+                            marginLeft(8f)
+                            marginBottom(4f)
+                            fontSize(12f)
+                            color(Color(0xFF91A0AA))
                         }
                     }
                 }
