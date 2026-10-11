@@ -10,6 +10,10 @@ import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.layout.FlexAlign
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.InputSpan
+import com.tencent.kuikly.core.views.InputSpans
+import com.tencent.kuikly.core.views.RichText
+import com.tencent.kuikly.core.views.Span
 import com.tencent.kuikly.core.views.TextArea
 import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.KeyboardParams
@@ -134,6 +138,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     onPickCommand: (DshCommand) -> Unit = {},
     /** 命令参数提示（ghost 文本）：写入类命令 "/name" 尚未补参数时展示，对齐 web 命令 claim 态。 */
     commandHint: () -> String = { "" },
+    /** 输入框分段上色 spans：命令 token / 技能引用单独上色，其余主文本色（对齐 web 分段着色）。 */
+    composerSpans: () -> InputSpans = { InputSpans() },
     keyboardHeight: () -> Float,
     stopButtonVisible: () -> Boolean,
     keyboardAnimation: () -> Animation,
@@ -290,6 +296,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             isJsonNodeExpanded = { isJsonNodeExpanded(message.id, it) },
                                             onToggleJsonNode = { onToggleJsonNode(message.id, it) },
                                             onCopyToolContent = { onCopyToolContent(it) },
+                                            skillNames = { skills().map { it.name } },
                                             attachmentDataUrl = { attachmentDataUrl(it) },
                                             contentProvider = {
                                                 val stored = messagesForSession(sessionId)
@@ -374,51 +381,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onResume = onResumeGoal
                     onEdit = onEditGoal
                     onClear = onClearGoal
-                }
-            }
-        }
-        // Plan 模式状态条：进入 plan 模式时贴输入框上方显示（非消息气泡），
-        // 数据来自 host `plan` 投影，点「退出」直接执行 /plan off，对齐 web composer 的 plan chip。
-        vif({ planModeActive() || planModePending() }) {
-            View {
-                attr {
-                    marginLeft(12f)
-                    marginRight(12f)
-                    marginBottom(6f)
-                    minHeight(34f)
-                    flexDirectionRow()
-                    alignItemsCenter()
-                    padding(8f, 10f, 8f, 10f)
-                    borderRadius(8f)
-                    backgroundColor(Color(0xFFF7F9FB))
-                    border(Border(1f, BorderStyle.SOLID, Color(0xFFE1E7ED)))
-                }
-                View {
-                    attr {
-                        size(8f, 8f)
-                        borderRadius(4f)
-                        backgroundColor(if (planModeActive()) Color(TURN_STATUS_BLUE) else Color(0xFF91A0AA))
-                    }
-                }
-                Text {
-                    attr {
-                        text(if (planModeActive()) "计划模式" else "正在进入计划模式")
-                        marginLeft(8f)
-                        flex(1f)
-                        lines(1)
-                        fontSize(12f)
-                        fontWeightMedium()
-                        color(Color(0xFF28323C))
-                    }
-                }
-                Text {
-                    attr {
-                        text("退出")
-                        marginLeft(8f)
-                        fontSize(12f)
-                        color(Color(0xFF4176E6))
-                    }
-                    event { click { onExitPlanMode() } }
                 }
             }
         }
@@ -581,15 +543,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                     maxHeight(120f)
                     backgroundColor(Color(0x00FFFFFF))
                     fontSize(15f)
-                    // claim/引用态文本色（对齐 web）：写入类命令裸 token → warn 色；
-                    // 裸技能引用 → 引用蓝；其余主文本色。
-                    color(
-                        when {
-                            commandHint().isNotEmpty() -> Color(0xFFDD8629)
-                            dshClaimedSkillName(draft(), skills()).isNotEmpty() -> Color(0xFF4176E6)
-                            else -> Color(0xFF28323C)
-                        },
-                    )
+                    // 分段上色由 inputSpans 完成（命令 token / 技能引用单独着色），此处仅兜底主色。
+                    color(Color(0xFF28323C))
+                    inputSpans(composerSpans())
                     placeholder(
                         when {
                             voiceActive() -> "正在聆听..."
@@ -603,7 +559,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                 }
                 event {
                     inputFocus { onInputFocusChange(true) }
-                    textDidChange { onDraftChange(it.text) }
+                    // 富文本 spans（inputSpans）需同步编辑：异步回填会与 IME 组合态冲突导致丢字。
+                    textDidChange(true) { onDraftChange(it.text) }
                     keyboardHeightChange { onKeyboardHeightChange(it) }
                     inputBlur {
                         onInputFocusChange(false)
@@ -611,8 +568,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                 }
             }
-            // 写入类命令 claim 态 ghost 参数提示：草稿为裸命令 token 时，把参数提示内联贴在
-            // token 之后（透明 token 副本用于对齐宽度），随参数输入消失；覆盖层不接收触摸。
+            // 写入类命令 claim 态 ghost 参数提示：透明 token 副本量宽并保证一个空格间距，
+            // 灰字提示内联贴在 token 之后；覆盖层不接收触摸。
             vif({ commandHint().isNotEmpty() }) {
                 View {
                     attr {
@@ -624,7 +581,13 @@ internal fun ViewContainer<*, *>.DshConversation(
                         flexDirectionRow()
                         touchEnable(false)
                     }
-                    Text { attr { text(dshClaimedCommandToken(draft())); fontSize(15f); color(Color(0x00000000)) } }
+                    Text {
+                        attr {
+                            text(if (draft().endsWith(" ")) draft() else draft() + " ")
+                            fontSize(15f)
+                            color(Color(0x00000000))
+                        }
+                    }
                     Text { attr { text(commandHint()); fontSize(15f); color(Color(0xFF91A0AA)) } }
                 }
             }
@@ -698,6 +661,41 @@ internal fun ViewContainer<*, *>.DshConversation(
                     }
                     DshHitButton(onOpenModels)
                 }
+                // plan 模式 chip（对齐 web：输入工具栏里的 Plan 控件，文字 + 关闭 X）：进入时显示，点它退出。
+                vif({ planModeActive() || planModePending() }) {
+                    View {
+                        attr {
+                            marginLeft(8f)
+                            height(28f)
+                            paddingLeft(10f)
+                            paddingRight(6f)
+                            flexDirectionRow()
+                            alignItemsCenter()
+                            borderRadius(20f)
+                            backgroundColor(Color(0xFFF0F1F3))
+                        }
+                        View {
+                            attr {
+                                size(7f, 7f)
+                                borderRadius(3.5f)
+                                backgroundColor(if (planModeActive()) Color(TURN_STATUS_BLUE) else Color(0xFF91A0AA))
+                            }
+                        }
+                        Text {
+                            attr {
+                                text(if (planModeActive()) "计划" else "进入计划")
+                                marginLeft(5f)
+                                lines(1)
+                                fontSize(12f)
+                                color(Color(0xFF31363B))
+                            }
+                        }
+                        Image {
+                            attr { src(ImageUri.commonAssets("x.svg")); size(14f, 14f); marginLeft(4f) }
+                        }
+                        DshHitButton { onExitPlanMode() }
+                    }
+                }
                 View { attr { flex(1f) } }
                 View {
                     attr { size(40f, 40f); allCenter() }
@@ -759,6 +757,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     onCopyToolContent: (String) -> Unit = {},
     attachmentDataUrl: (String) -> String? = { null },
     contentProvider: (() -> String)? = null,
+    /** 当前会话技能名（用于用户消息里识别技能引用并上色）。 */
+    skillNames: () -> List<String> = { emptyList() },
 ) {
     if (message.hidden) return
     val isUser = message.role == DshMessageRole.USER
@@ -988,12 +988,41 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 ))
             }
             if (isUser || isError) {
-                Text {
-                    attr {
-                        text(message.content)
-                        lines(Int.MAX_VALUE)
-                        fontSize(15f)
-                        color(Color(if (isUser) 0xFF34415B else 0xFFB53232))
+                // 用户消息以命令 token / 技能引用开头时保持该 token 的 claim/引用色（对齐 web）。
+                val commandToken = if (isUser) dshClaimedCommandToken(message.content) else ""
+                val skillToken = if (isUser && commandToken.isEmpty()) {
+                    dshClaimedSkillTokenByName(message.content, skillNames())
+                } else {
+                    ""
+                }
+                val claimedToken = commandToken.ifEmpty { skillToken }
+                if (claimedToken.isNotEmpty()) {
+                    RichText {
+                        attr {
+                            fontSize(15f)
+                            lineHeight(20f)
+                        }
+                        Span {
+                            text(claimedToken)
+                            color(if (commandToken.isNotEmpty()) Color(0xFFDD8629) else Color(0xFF4176E6))
+                            fontSize(15f)
+                            lineHeight(20f)
+                        }
+                        Span {
+                            text(message.content.removePrefix(claimedToken))
+                            color(Color(0xFF34415B))
+                            fontSize(15f)
+                            lineHeight(20f)
+                        }
+                    }
+                } else {
+                    Text {
+                        attr {
+                            text(message.content)
+                            lines(Int.MAX_VALUE)
+                            fontSize(15f)
+                            color(Color(if (isUser) 0xFF34415B else 0xFFB53232))
+                        }
                     }
                 }
             } else {

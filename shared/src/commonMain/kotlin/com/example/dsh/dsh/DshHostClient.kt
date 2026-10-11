@@ -740,6 +740,33 @@ internal class DshHostClient(
         }
     }
 
+    /**
+     * commands/execute：Typert 远端 `commands/execute`，参数 { agentId, line, images }。
+     * 直接执行一条 host 命令（不进模型、不落用户消息）。成功回调命令结果文本；命令报错 kind=error 上抛。
+     */
+    fun commandExecute(
+        sessionId: String,
+        line: String,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        runtime.call("commands/execute", JSONObject().apply {
+            put("args", JSONObject().apply {
+                put("agentId", sessionId)
+                put("line", line)
+                put("images", JSONArray())
+            })
+        }) { value, error, _ ->
+            if (error != null) {
+                onError(error.message)
+            } else {
+                val result = value?.optJSONObject("result")
+                val text = result?.optString("text").orEmpty()
+                if (result?.optString("kind") == "error") onError(text.ifEmpty { "命令执行失败" }) else onSuccess(text)
+            }
+        }
+    }
+
     fun adoptLiveStream(
         sessionId: String,
         onDelta: (String, Boolean) -> Unit,

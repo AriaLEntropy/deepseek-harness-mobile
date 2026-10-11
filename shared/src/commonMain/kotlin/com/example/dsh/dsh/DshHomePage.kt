@@ -11,6 +11,8 @@ import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Input
+import com.tencent.kuikly.core.views.InputSpan
+import com.tencent.kuikly.core.views.InputSpans
 import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Text
@@ -153,6 +155,8 @@ internal class DshHomePage : BasePager() {
     // ===== Plan 模式状态条：由 host `plan` 投影驱动，非消息气泡 =====
     private var planModeActive by observable(false)
     private var planModePending by observable(false)
+    /** 输入框分段上色 spans（inputSpans）：命令 token / 技能引用单独着色，其余主文本色。 */
+    private var composerSpans by observable(InputSpans())
     private var queueEditingId by observable("")
     private var queueEditingText by observable("")
     private var sessionRunning by observable(false)
@@ -322,11 +326,12 @@ internal class DshHomePage : BasePager() {
                                 onPickSkill = { ctx.draft = "/$it " },
                                 onPickCommand = { ctx.pickCommand(it) },
                                 commandHint = { dshCommandHintForDraft(ctx.draft, ctx.goalSnapshot != null) },
+                                composerSpans = { ctx.composerSpans },
                                 keyboardHeight = { ctx.keyboardHeight },
                                 stopButtonVisible = { ctx.stopButtonVisible },
                                 inputRef = { ctx.inputView = it.view; ctx.bridgeModule.disableInputSuggestions() },
                                 onInputFocusChange = { ctx.inputFocused = it },
-                                onDraftChange = { ctx.draft = it },
+                                onDraftChange = { ctx.onComposerDraftChange(it) },
                                 keyboardAnimation = { ctx.keyboardAnimation },
                                 onKeyboardHeightChange = { ctx.updateKeyboard(it) },
                                 onSend = { ctx.sendDraft() },
@@ -432,11 +437,12 @@ internal class DshHomePage : BasePager() {
                             onPickSkill = { ctx.draft = "/$it " },
                             onPickCommand = { ctx.pickCommand(it) },
                             commandHint = { dshCommandHintForDraft(ctx.draft, ctx.goalSnapshot != null) },
+                            composerSpans = { ctx.composerSpans },
                             keyboardHeight = { ctx.keyboardHeight },
                             stopButtonVisible = { ctx.stopButtonVisible },
                             inputRef = { ctx.inputView = it.view; ctx.bridgeModule.disableInputSuggestions() },
                             onInputFocusChange = { ctx.inputFocused = it },
-                            onDraftChange = { ctx.draft = it },
+                            onDraftChange = { ctx.onComposerDraftChange(it) },
                             keyboardAnimation = { ctx.keyboardAnimation },
                             onKeyboardHeightChange = { ctx.updateKeyboard(it) },
                             onSend = { ctx.sendDraft() },
@@ -2035,13 +2041,66 @@ internal class DshHomePage : BasePager() {
         }
     }
 
-    /** 写入类命令：把 "/命令 " 写入输入框并聚焦，等用户补全参数（参数提示由 commandHint 显示）。 */
+    /** 写入类命令：把 "/命令 " 写入输入框（带真实尾随空格），聚焦等待补全参数。 */
     private fun insertCommandText(command: DshCommand) {
         val text = "/${command.name} "
         draft = text
         inputView?.setText(text)
         inputView?.focus()
         inputFocused = true
+        refreshComposerSpans(text)
+    }
+
+    /** 输入框文本变化：同步 draft 状态并重建分段上色 spans。 */
+    private fun onComposerDraftChange(text: String) {
+        // 手输/粘贴到“裸命令名”（如 /plan，尚未跟空格或参数）时自动补一个空格，
+        // 否则随后输入参数会紧贴命令、破坏命令识别。
+        val t = text.trimStart()
+        val bareCommandName = t.startsWith("/") && !t.contains(' ') && !t.contains('\n') &&
+            dshCommandNamed(t.removePrefix("/"))?.kind == DshCommandKind.WRITE_INPUT
+        if (bareCommandName) {
+            val next = "$t "
+            draft = next
+            inputView?.setText(next)
+            refreshComposerSpans(next)
+            return
+        }
+        draft = text
+        refreshComposerSpans(text)
+    }
+
+    /** 重建输入框分段上色（inputSpans）：命令 token warn 色、技能引用业务蓝，其余主文本色。 */
+    private fun refreshComposerSpans(text: String) {
+        val commandToken = dshClaimedCommandToken(text)
+        val token = commandToken.ifEmpty { dshClaimedSkillToken(text, skills) }
+        val spans = InputSpans()
+        if (token.isEmpty()) {
+            if (text.isNotEmpty()) {
+                spans.addSpan(InputSpan().apply {
+                    this.text(text)
+                    color(Color(0xFF28323C))
+                    fontSize(15f)
+                    lineHeight(20f)
+                })
+            }
+        } else {
+            spans.addSpan(InputSpan().apply {
+                this.text(token)
+                color(if (commandToken.isNotEmpty()) Color(0xFFDD8629) else Color(0xFF4176E6))
+                fontSize(15f)
+                lineHeight(20f)
+            })
+            val rest = text.substring(token.length)
+            if (rest.isNotEmpty()) {
+                spans.addSpan(InputSpan().apply {
+                    this.text(rest)
+                    color(Color(0xFF28323C))
+                    fontSize(15f)
+                    lineHeight(20f)
+                })
+            }
+        }
+        composerSpans = spans
     }
 
     /**
@@ -2076,25 +2135,11 @@ internal class DshHomePage : BasePager() {
             return
         }
         val sessionId = activeSessionId
-        hostRepository.streamReply(
-            pagerId = pagerId,
+        hostRepository.commandExecute(
             sessionId = sessionId,
-            prompt = line,
-            onDelta = { _, _ -> },
-            onComplete = { result ->
-                if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
-                if (result.isNotEmpty()) {
-                    messages.add(DshMessage("command-${messages.size}", DshMessageRole.ASSISTANT, result))
-                    realizeVisibleMessages()
-                    persistMessages(sessionId)
-                }
-            },
-            onError = { error ->
-                if (!connectionCoordinator.isActive(connectionMode)) return@streamReply
-                messages.add(DshMessage("command-error-${messages.size}", DshMessageRole.ERROR, error))
-                realizeVisibleMessages()
-                persistMessages(sessionId)
-            },
+            line = line,
+            onSuccess = { },
+            onError = { },
         )
     }
 
@@ -2691,6 +2736,20 @@ internal class DshHomePage : BasePager() {
             return
         }
         val sessionId = activeSessionId
+        // 内置命令行走 host 的 commands/execute（对齐 web）：不进模型、不落用户气泡、不启动流式回合。
+        val commandName = dshBuiltinCommandName(prompt)
+        if (commandName.isNotEmpty()) {
+            draft = ""
+            inputView?.setText("")
+            refreshComposerSpans("")
+            hostRepository.commandExecute(
+                sessionId = sessionId,
+                line = prompt,
+                onSuccess = { },
+                onError = { },
+            )
+            return
+        }
         val user = DshMessage("user-${messages.size}", DshMessageRole.USER, prompt)
         val assistantId = "assistant-${messages.size}"
         val reasoningId = "$assistantId-reasoning"

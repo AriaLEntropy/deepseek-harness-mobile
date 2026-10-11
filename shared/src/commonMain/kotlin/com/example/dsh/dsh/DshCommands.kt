@@ -86,17 +86,17 @@ internal fun dshCommandDisplayHint(command: DshCommand, goalActive: Boolean): St
 }
 
 /**
- * 草稿当前所处的命令参数提示：草稿以 `/<name>` 开头、尚未输入参数（`/name` 或 `/name ` 后无正文）时，
- * 返回该写入类命令的展示提示 [dshCommandDisplayHint]；否则返回空串。与 web 命令 claim 态的 ghost 提示对应。
+ * 命令参数提示：仅当输入框处于 claim 态（裸 `/name` 或恰好一个尾随空格 `/name `）时返回展示提示；
+ * 其余任何输入（参数、多余空格）都返回空串（提示消失），删除回到 claim 态时再次出现。
  */
 internal fun dshCommandHintForDraft(draft: String, goalActive: Boolean): String {
-    val trimmed = draft.trim()
-    if (!trimmed.startsWith("/")) return ""
-    val space = trimmed.indexOf(' ')
-    val token = if (space < 0) trimmed else trimmed.substring(0, space)
-    val args = if (space < 0) "" else trimmed.substring(space + 1).trim()
-    if (args.isNotEmpty()) return ""
-    val command = dshCommandNamed(token.removePrefix("/")) ?: return ""
+    val t = draft.trimStart()
+    if (!t.startsWith("/")) return ""
+    val token = t.trimEnd()
+    if (t != token && t != "$token ") return ""
+    val name = token.removePrefix("/")
+    if (name.isEmpty() || name.contains(' ') || name.contains('\n')) return ""
+    val command = dshCommandNamed(name) ?: return ""
     return if (command.kind == DshCommandKind.WRITE_INPUT) dshCommandDisplayHint(command, goalActive) else ""
 }
 
@@ -114,16 +114,27 @@ internal fun dshClaimedCommandToken(draft: String): String {
 }
 
 /**
- * 草稿开头以 `/name` 命中的用户可调用技能名，仅当其为裸引用（无后续正文）时返回非空。
- * 用于把技能引用高亮成 web 的引用色（`--dsw-alias-state-business-primary`）。命令同名时由命令优先。
+ * 草稿开头的技能引用 token（含前导 `/` 与其后的单个空格，形如 `/dsh-xxx `），命中用户可调用技能时
+ * 返回非空（**允许后跟参数**）。用于把技能引用高亮成 web 的引用色（`--dsw-alias-state-business-primary`）。
  */
-internal fun dshClaimedSkillName(draft: String, skills: List<DshSkill>): String {
+internal fun dshClaimedSkillToken(draft: String, skills: List<DshSkill>): String =
+    dshClaimedSkillTokenByName(draft, skills.map { it.name })
+
+/** 同上，但按技能名列表判定（供消息气泡渲染使用）。 */
+internal fun dshClaimedSkillTokenByName(draft: String, skillNames: List<String>): String {
     if (!draft.startsWith("/")) return ""
     val space = draft.indexOf(' ')
     val token = if (space < 0) draft else draft.substring(0, space)
-    val args = if (space < 0) "" else draft.substring(space + 1).trim()
-    if (args.isNotEmpty()) return ""
     val name = token.removePrefix("/")
     if (name.isEmpty()) return ""
-    return skills.firstOrNull { it.name == name }?.name ?: ""
+    if (skillNames.none { it == name }) return ""
+    return if (space < 0) token else draft.substring(0, space + 1)
+}
+
+/** 若整行是一条内置命令（形如 `/name ...`），返回命令名（不含斜杠）；否则空串。 */
+internal fun dshBuiltinCommandName(line: String): String {
+    val trimmed = line.trimStart()
+    if (!trimmed.startsWith("/")) return ""
+    val token = trimmed.removePrefix("/").substringBefore(' ').substringBefore('\n').substringBefore('\t')
+    return if (dshCommandNamed(token) != null) token else ""
 }
