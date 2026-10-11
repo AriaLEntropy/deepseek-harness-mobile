@@ -72,10 +72,24 @@ internal fun visibleCommandList(query: String): ObservableList<DshCommand> {
 internal fun dshCommandNamed(name: String): DshCommand? = dshAllCommands().firstOrNull { it.name == name }
 
 /**
- * 草稿当前所处的命令参数提示：草稿以 `/<name>` 开头、尚未输入参数（`/name` 或 `/name ` 后无正文）时，
- * 返回该写入类命令的 [DshCommand.hint]；否则返回空串。与 web 输入框里命令 claim 态的 ghost 提示对应。
+ * 命令 claim 态参数提示的**展示文案**。对齐 web：`hint.plan` / `hint.goal`(含 active) 由
+ * conversation 字典本地化覆盖后端原始 `input.hint`，其余命令（feedback/permission）沿用后端原始 hint。
  */
-internal fun dshCommandHintForDraft(draft: String): String {
+internal fun dshCommandDisplayHint(command: DshCommand, goalActive: Boolean): String = when (command.name) {
+    "plan" -> "描述你的任务以生成计划"
+    "goal" -> if (goalActive) {
+        "当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除"
+    } else {
+        "输入目标，智能体将持续执行"
+    }
+    else -> command.hint
+}
+
+/**
+ * 草稿当前所处的命令参数提示：草稿以 `/<name>` 开头、尚未输入参数（`/name` 或 `/name ` 后无正文）时，
+ * 返回该写入类命令的展示提示 [dshCommandDisplayHint]；否则返回空串。与 web 命令 claim 态的 ghost 提示对应。
+ */
+internal fun dshCommandHintForDraft(draft: String, goalActive: Boolean): String {
     val trimmed = draft.trim()
     if (!trimmed.startsWith("/")) return ""
     val space = trimmed.indexOf(' ')
@@ -83,5 +97,18 @@ internal fun dshCommandHintForDraft(draft: String): String {
     val args = if (space < 0) "" else trimmed.substring(space + 1).trim()
     if (args.isNotEmpty()) return ""
     val command = dshCommandNamed(token.removePrefix("/")) ?: return ""
-    return if (command.kind == DshCommandKind.WRITE_INPUT) command.hint else ""
+    return if (command.kind == DshCommandKind.WRITE_INPUT) dshCommandDisplayHint(command, goalActive) else ""
+}
+
+/**
+ * 草稿开头被 claim 的命令 token（含其后的单个空格，形如 `/plan `），仅写入类命令返回非空。
+ * 用于把命令 token 高亮成 web 的 claim 态颜色（`--dsw-alias-state-warn-label`）。
+ */
+internal fun dshClaimedCommandToken(draft: String): String {
+    if (!draft.startsWith("/")) return ""
+    val space = draft.indexOf(' ')
+    val token = if (space < 0) draft else draft.substring(0, space)
+    val command = dshCommandNamed(token.removePrefix("/")) ?: return ""
+    if (command.kind != DshCommandKind.WRITE_INPUT) return ""
+    return if (space < 0) token else draft.substring(0, space + 1)
 }

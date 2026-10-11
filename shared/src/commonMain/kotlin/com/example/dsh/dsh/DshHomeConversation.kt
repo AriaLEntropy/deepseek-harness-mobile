@@ -557,7 +557,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                                         width(110f)
                                         fontSize(13f)
                                         fontWeightMedium()
-                                        color(Color(0xFF727D84))
+                                        // 与命令名同色（web 菜单 item name = label-primary），描述为次级色。
+                                        color(Color(0xFF28323C))
                                     }
                                 }
                                 Text {
@@ -580,7 +581,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                     maxHeight(120f)
                     backgroundColor(Color(0x00FFFFFF))
                     fontSize(15f)
-                    color(Color(0xFF28323C))
+                    // 命令 claim 态：裸命令 token 时把原始输入文本染成 web 的 warn 色（无叠加层），
+                    // 补参数后回落主文本色。
+                    color(if (commandHint().isNotEmpty()) Color(0xFFDD8629) else Color(0xFF28323C))
                     placeholder(
                         when {
                             voiceActive() -> "正在聆听..."
@@ -614,7 +617,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                         flexDirectionRow()
                         touchEnable(false)
                     }
-                    Text { attr { text(draft()); fontSize(15f); color(Color(0x00000000)) } }
+                    Text { attr { text(dshClaimedCommandToken(draft())); fontSize(15f); color(Color(0x00000000)) } }
                     Text { attr { text(commandHint()); fontSize(15f); color(Color(0xFF91A0AA)) } }
                 }
             }
