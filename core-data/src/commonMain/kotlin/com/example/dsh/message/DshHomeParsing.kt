@@ -24,9 +24,8 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
  * 属于与命令源混淆，这里改为大小写敏感以与后端技能行为一致。
  */
 fun dshSkillsMatching(source: List<DshSkill>, query: String): List<DshSkill> {
-    val q = query.trim()
-    if (q.isEmpty()) return source.toList()
-    return source.filter { it.name.startsWith(q) }
+    if (query.isEmpty()) return source.toList()
+    return source.filter { it.name.startsWith(query) }
 }
 
 fun isRemoteCatalogInvalidationEvent(event: String): Boolean = event in setOf(

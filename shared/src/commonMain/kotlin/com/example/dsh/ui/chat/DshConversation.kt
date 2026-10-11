@@ -907,7 +907,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            color(colors().labelPrimary)
+                            // 命令 claim 态：裸命令 token 时把**原始输入文本**染成 web 的 warn 色
+                            // （`--dsw-alias-state-warn-label`，无叠加层），补参数后回落到主文本色。
+                            color(if (commandHint().isNotEmpty()) colors().stateWarnLabel else colors().labelPrimary)
                             placeholder(voiceStrings().inputPlaceholder)
                             placeholderColor(colors().labelTertiary)
                         }
@@ -921,10 +923,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                         }
                     }
-                    // 写入类命令 claim 态 ghost 参数提示：仅当草稿是裸命令 token（无参数）时，
-                    // 把提示以内联灰字贴在 token 之后（透明 token 副本用于对齐宽度），
-                    // 位置与字体对齐 web 输入框 backdrop 里的 hint；用户补参数后提示自动消失。
-                    // 覆盖层不接收触摸，命中测试继续落到下方 TextArea。
+                    // 命令 claim 态 ghost 参数提示：透明 token 副本占位对齐 token 宽度，
+                    // 提示以 label-caption 灰字内联贴在 token（含其尾随空格）之后；token 本身的
+                    // claim 变色由上方 TextArea 的文本色完成，因此这里不叠加可见文本、不会出现重影。
                     vif({ commandHint().isNotEmpty() }) {
                         View {
                             attr {
@@ -937,7 +938,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                             Text {
                                 attr {
-                                    text(draft())
+                                    text(dshClaimedCommandToken(draft()))
                                     fontSize(15f)
                                     color(Color(0x00000000))
                                 }
@@ -1206,14 +1207,14 @@ internal fun ViewContainer<*, *>.DshConversation(
         // 命令 / 技能建议浮层：absolute 悬浮在输入框上方，命令在上技能在下，白卡圆角阴影，不参与流式布局
         vif({
             draft().startsWith("/") && run {
-                val query = dshCommandPrefixFromDraft(draft()).removePrefix("/")
+                val query = draft().removePrefix("/")
                 dshCommandsMatching(query).isNotEmpty() || dshSkillsMatching(skills(), query).isNotEmpty()
             }
         }) {
-            // vif 只在整体显隐时重建子树；匹配项仍在时条件持续为真，需用 vbind 按当前前缀重建列表，
+            // vif 只在整体显隐时重建子树；匹配项仍在时条件持续为真，需用 vbind 按当前草稿重建列表，
             // 否则继续输入后候选内容不会跟着筛选变化。
-            vbind({ dshCommandPrefixFromDraft(draft()) }) {
-            val query = dshCommandPrefixFromDraft(draft()).removePrefix("/")
+            vbind({ draft() }) {
+            val query = draft().removePrefix("/")
             val commandList = dshCommandsMatching(query)
             val skillList = dshSkillsMatching(skills(), query)
             // 由内容撑开高度（上限 336）：只有一两条匹配时不留大片空白，超出上限才滚动。
@@ -1326,9 +1327,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 lines(1)
                                 fontSize(14f)
                                 fontWeightMedium()
-                                // 技能名与描述同为 tertiary，与命令名（primary）形成层级区分，
-                                // 对齐 web token（技能 --dsw-alias-label-tertiary，命令 --dsw-alias-label-primary）。
-                                color(colors().labelTertiary)
+                                // 与命令名同为 labelPrimary、描述同为 labelTertiary，
+                                // 对齐 web 菜单（.item name = label-primary，.itemDescription = label-tertiary）。
+                                color(colors().labelPrimary)
                             }
                         }
                         Text {
