@@ -132,19 +132,20 @@ internal fun dshClaimedCommandToken(draft: String): String {
 }
 
 /**
- * 草稿开头以 `/name` 命中的用户可调用技能名，仅当其为裸引用（无后续正文）时返回非空。
- * 用于把技能引用高亮成 web 的引用色（`--dsw-alias-state-business-primary`）。命令同名时由命令优先处理。
+ * 草稿开头的技能引用 token（含前导 `/` 与其后的单个空格，形如 `/dsh-code-review `），
+ * 仅当其为裸引用（无后续正文）且命中用户可调用技能时返回非空。
+ * 用于把技能引用高亮成 web 的引用色（`--dsw-alias-state-business-primary`）；命令同名时命令优先。
  */
-internal fun dshClaimedSkillName(draft: String, skills: List<DshSkill>): String {
-    val trimmed = draft
-    if (!trimmed.startsWith("/")) return ""
-    val space = trimmed.indexOf(' ')
-    val token = if (space < 0) trimmed else trimmed.substring(0, space)
-    val args = if (space < 0) "" else trimmed.substring(space + 1).trim()
+internal fun dshClaimedSkillToken(draft: String, skills: List<DshSkill>): String {
+    if (!draft.startsWith("/")) return ""
+    val space = draft.indexOf(' ')
+    val token = if (space < 0) draft else draft.substring(0, space)
+    val args = if (space < 0) "" else draft.substring(space + 1).trim()
     if (args.isNotEmpty()) return ""
     val name = token.removePrefix("/")
     if (name.isEmpty()) return ""
-    return skills.firstOrNull { it.name == name }?.name ?: ""
+    if (skills.none { it.name == name }) return ""
+    return if (space < 0) token else draft.substring(0, space + 1)
 }
 
 /** 从输入框草稿里取出斜杠前缀段（不含空格后的正文），形如 "/comp"；不以 / 开头返回空串 */

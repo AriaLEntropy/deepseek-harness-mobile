@@ -26,6 +26,8 @@ import com.tencent.kuikly.core.layout.FlexJustifyContent
 import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.RichText
+import com.tencent.kuikly.core.views.Span
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
@@ -33,6 +35,7 @@ import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.host.toolCardType
 import com.example.dsh.ui.chat.DshMessageFooterAction
+import com.example.dsh.ui.chat.dshClaimedCommandToken
 import com.example.dsh.message.boundedContextText
 import com.example.dsh.message.contextCanExpand
 import com.example.dsh.message.contextInstructions
@@ -356,6 +359,29 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 }
             }
             if (isUser || isError) {
+                // 用户消息若以命令 claim token 开头，保持该 token 的 warn 色（对齐 web：命令 token 在
+                // 发出后仍高亮）；其余走普通单色文本。
+                if (isUser && dshClaimedCommandToken(visibleUserText).isNotEmpty()) {
+                    val token = dshClaimedCommandToken(visibleUserText)
+                    RichText {
+                        attr {
+                            fontSize(DSH_CHAT_BODY_FONT)
+                            lineHeight(DSH_CHAT_BODY_LINE)
+                        }
+                        Span {
+                            text(token)
+                            color(colors().stateWarnLabel)
+                            fontSize(DSH_CHAT_BODY_FONT)
+                            lineHeight(DSH_CHAT_BODY_LINE)
+                        }
+                        Span {
+                            text(visibleUserText.removePrefix(token))
+                            color(colors().specificBubbleForeground)
+                            fontSize(DSH_CHAT_BODY_FONT)
+                            lineHeight(DSH_CHAT_BODY_LINE)
+                        }
+                    }
+                } else {
                 vif({ visibleUserText.isNotEmpty() || !userHasFiles }) {
                     Text {
                         attr {
@@ -366,6 +392,7 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                             color(if (isUser) colors().specificBubbleForeground else colors().stateErrorPrimary)
                         }
                     }
+                }
                 }
             // 助手回复内容：Markdown 渲染 + 流式光标
             } else {

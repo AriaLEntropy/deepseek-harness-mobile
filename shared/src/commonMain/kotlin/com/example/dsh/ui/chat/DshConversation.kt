@@ -907,12 +907,12 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            // claim/引用态文本色（对齐 web）：写入类命令裸 token → warn 色；
-                            // 裸技能引用 → 业务蓝（state-business-primary）；其余为主文本色。
+                            // token claim/引用变色：直接给输入框原文上色（不叠加覆盖层，避免叠影）。
+                            // 条件是 claim 态本身（含后跟参数），因此命令后跟文字时也不掉色。
                             color(
                                 when {
-                                    commandHint().isNotEmpty() -> colors().stateWarnLabel
-                                    dshClaimedSkillName(draft(), skills()).isNotEmpty() -> colors().stateBusinessPrimary
+                                    dshClaimedCommandToken(draft()).isNotEmpty() -> colors().stateWarnLabel
+                                    dshClaimedSkillToken(draft(), skills()).isNotEmpty() -> colors().stateBusinessPrimary
                                     else -> colors().labelPrimary
                                 },
                             )
@@ -929,9 +929,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                         }
                     }
-                    // 命令 claim 态 ghost 参数提示：透明 token 副本占位对齐 token 宽度，
-                    // 提示以 label-caption 灰字内联贴在 token（含其尾随空格）之后；token 本身的
-                    // claim 变色由上方 TextArea 的文本色完成，因此这里不叠加可见文本、不会出现重影。
+                    // 参数提示 ghost（label-caption 灰字）：透明 token 副本占位对齐 token 宽度，
+                    // 灰字内联贴在 token（含其尾随空格）之后。token 自身的 claim/引用变色由输入框原文色完成，
+                    // 这里只用透明副本量宽、不叠加可见文本，因此不会出现叠影。
                     vif({ commandHint().isNotEmpty() }) {
                         View {
                             attr {
@@ -946,7 +946,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                             Text {
                                 attr {
-                                    text(dshClaimedCommandToken(draft()))
+                                    text(draft())
                                     fontSize(15f)
                                     color(Color(0x00000000))
                                 }

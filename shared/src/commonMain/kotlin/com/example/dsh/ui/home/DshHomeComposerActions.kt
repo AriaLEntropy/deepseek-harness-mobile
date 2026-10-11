@@ -131,17 +131,12 @@ internal fun DshHomePage.runDetachedCommand(line: String) {
         onDelta = { },
         onComplete = { result ->
             if (!connectionCoordinator.isActive(ui.connectionMode)) return@streamReply
-            if (result.isNotEmpty()) {
-                ui.messages.add(DshMessage("command-${ui.messages.size}", DshMessageRole.ASSISTANT, result))
-                realizeVisibleMessages()
-                persistMessages(sessionId)
-            }
+            // 直接执行类命令不落一条普通消息（对齐 web：命令生命周期不是聊天气泡），仅以 toast 反馈结果。
+            bridgeModule.toast(result.ifEmpty { "已执行 $line" })
         },
         onError = { error ->
             if (!connectionCoordinator.isActive(ui.connectionMode)) return@streamReply
-            ui.messages.add(DshMessage("command-error-${ui.messages.size}", DshMessageRole.ERROR, error))
-            realizeVisibleMessages()
-            persistMessages(sessionId)
+            bridgeModule.toast(error)
         },
     )
 }
