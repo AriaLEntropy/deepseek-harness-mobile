@@ -165,10 +165,18 @@ internal fun DshHomePage.scheduleVoiceDecay(generation: Int) {
 internal fun DshHomePage.onInputViewCreated(view: TextAreaView?) {
     if (view == null) return
     inputView = view
+    // 关闭 IME 联想/拼写检查（去掉系统红色波浪下划线），对齐 web 输入框。
+    bridgeModule.disableInputSuggestions()
     pendingVoiceDraft?.let { text ->
         pendingVoiceDraft = null
         view.setText(text)
     }
+}
+
+/** 输入框聚焦态变化：聚焦时再次关闭 IME 联想/拼写检查（此时原生 EditText 必已就绪）。 */
+internal fun DshHomePage.onComposerFocusChange(focused: Boolean) {
+    inputFocused = focused
+    if (focused) bridgeModule.disableInputSuggestions()
 }
 
 /** 结束录音：取消丢弃，或把最终文本写入输入框并切回文字模式。 */

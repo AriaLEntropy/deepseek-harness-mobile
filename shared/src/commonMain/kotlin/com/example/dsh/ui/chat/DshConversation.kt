@@ -907,9 +907,15 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            // 命令 claim 态：裸命令 token 时把**原始输入文本**染成 web 的 warn 色
-                            // （`--dsw-alias-state-warn-label`，无叠加层），补参数后回落到主文本色。
-                            color(if (commandHint().isNotEmpty()) colors().stateWarnLabel else colors().labelPrimary)
+                            // claim/引用态文本色（对齐 web）：写入类命令裸 token → warn 色；
+                            // 裸技能引用 → 业务蓝（state-business-primary）；其余为主文本色。
+                            color(
+                                when {
+                                    commandHint().isNotEmpty() -> colors().stateWarnLabel
+                                    dshClaimedSkillName(draft(), skills()).isNotEmpty() -> colors().stateBusinessPrimary
+                                    else -> colors().labelPrimary
+                                },
+                            )
                             placeholder(voiceStrings().inputPlaceholder)
                             placeholderColor(colors().labelTertiary)
                         }
@@ -932,7 +938,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 positionType(FlexPositionType.ABSOLUTE)
                                 left(16f)
                                 right(12f)
-                                top(10f)
+                                // 与 TextArea 内文对齐：卡片 paddingTop(10) 之上再加原生输入框
+                                // includeFontPadding 造成的约 4dp 顶部内缩，与 token 基线对齐。
+                                top(14f)
                                 flexDirectionRow()
                                 touchEnable(false)
                             }

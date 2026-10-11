@@ -356,6 +356,14 @@ class BridgeModule : Module() {
         return syncCallNativeMethod(CLOSE_KEYBOARD, data, callbackFn)
     }
 
+    /**
+     * 关闭原生输入框的 IME 联想与拼写检查（去掉系统红色波浪下划线、候选条），
+     * 使输入表现与 web 输入框一致。原生未实现的端为 no-op。
+     */
+    fun disableInputSuggestions() {
+        callNativeMethod("disableInputSuggestions", null, null)
+    }
+
     fun setSystemBarsDimmed(dimmed: Boolean) {
         callNativeMethod(
             SET_SYSTEM_BARS_DIMMED,
