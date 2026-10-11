@@ -938,9 +938,9 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 positionType(FlexPositionType.ABSOLUTE)
                                 left(16f)
                                 right(12f)
-                                // 与 TextArea 内文对齐：卡片 paddingTop(10) 之上再加原生输入框
-                                // includeFontPadding 造成的约 4dp 顶部内缩，与 token 基线对齐。
-                                top(14f)
+                                // 与 TextArea 内文基线对齐：卡片 paddingTop(10) 再加原生输入框
+                                // includeFontPadding 造成的顶部内缩的一半左右，使灰字与 token 同基线。
+                                top(12f)
                                 flexDirectionRow()
                                 touchEnable(false)
                             }
