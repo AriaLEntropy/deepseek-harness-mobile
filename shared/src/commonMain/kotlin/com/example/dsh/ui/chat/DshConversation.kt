@@ -896,20 +896,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                         }
                     }
-                    // 写入类命令的参数提示（ghost）：`/feedback`、`/goal`、`/plan` 等尚未补参数时展示，
-                    // 对齐 web 输入框里命令 claim 态的 ghost 提示。
-                    vif({ commandHint().isNotEmpty() }) {
-                        Text {
-                            attr {
-                                text(commandHint())
-                                marginLeft(16f)
-                                marginRight(12f)
-                                marginTop(8f)
-                                fontSize(13f)
-                                color(colors().labelTertiary)
-                            }
-                        }
-                    }
                     // 主输入框：仅文字模式渲染；语音模式整块卸载，避免残留占位
                     vif({ !voiceActive() }) {
                     TextArea {
@@ -932,6 +918,36 @@ internal fun ViewContainer<*, *>.DshConversation(
                             inputBlur {
                                 onInputFocusChange(false)
                                 onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
+                            }
+                        }
+                    }
+                    // 写入类命令 claim 态 ghost 参数提示：仅当草稿是裸命令 token（无参数）时，
+                    // 把提示以内联灰字贴在 token 之后（透明 token 副本用于对齐宽度），
+                    // 位置与字体对齐 web 输入框 backdrop 里的 hint；用户补参数后提示自动消失。
+                    // 覆盖层不接收触摸，命中测试继续落到下方 TextArea。
+                    vif({ commandHint().isNotEmpty() }) {
+                        View {
+                            attr {
+                                positionType(FlexPositionType.ABSOLUTE)
+                                left(16f)
+                                right(12f)
+                                top(10f)
+                                flexDirectionRow()
+                                touchEnable(false)
+                            }
+                            Text {
+                                attr {
+                                    text(draft())
+                                    fontSize(15f)
+                                    color(Color(0x00000000))
+                                }
+                            }
+                            Text {
+                                attr {
+                                    text(commandHint())
+                                    fontSize(15f)
+                                    color(colors().labelCaption)
+                                }
                             }
                         }
                     }
