@@ -573,18 +573,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                         }
                     }
                 }
-                // 写入类命令的参数提示（ghost）：`/feedback`、`/goal`、`/plan` 等尚未补参数时展示。
-                vif({ commandHint().isNotEmpty() }) {
-                    Text {
-                        attr {
-                            text(commandHint())
-                            marginLeft(8f)
-                            marginBottom(4f)
-                            fontSize(12f)
-                            color(Color(0xFF91A0AA))
-                        }
-                    }
-                }
             TextArea {
                 ref { inputRef(it) }
                 attr {
@@ -612,6 +600,22 @@ internal fun ViewContainer<*, *>.DshConversation(
                         onInputFocusChange(false)
                         onKeyboardHeightChange(KeyboardParams(0f, 0.24f))
                     }
+                }
+            }
+            // 写入类命令 claim 态 ghost 参数提示：草稿为裸命令 token 时，把参数提示内联贴在
+            // token 之后（透明 token 副本用于对齐宽度），随参数输入消失；覆盖层不接收触摸。
+            vif({ commandHint().isNotEmpty() }) {
+                View {
+                    attr {
+                        positionAbsolute()
+                        left(14f)
+                        right(14f)
+                        top(12f)
+                        flexDirectionRow()
+                        touchEnable(false)
+                    }
+                    Text { attr { text(draft()); fontSize(15f); color(Color(0x00000000)) } }
+                    Text { attr { text(commandHint()); fontSize(15f); color(Color(0xFF91A0AA)) } }
                 }
             }
 
