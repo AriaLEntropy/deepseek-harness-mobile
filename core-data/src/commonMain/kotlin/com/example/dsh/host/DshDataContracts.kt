@@ -266,4 +266,17 @@ interface DshRepository {
         onComplete: (String) -> Unit,
         onError: (String) -> Unit,
     ): DshStreamHandle
+
+    /**
+     * `commands/execute`：直接执行一条 host 命令（对齐 web），**不进入模型对话、不产生用户消息**。
+     * 成功回调命令结果文本（可能为空）。不支持的实现默认报错。
+     */
+    fun commandExecute(
+        sessionId: String,
+        line: String,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        onError("当前连接不支持 commands/execute")
+    }
 }

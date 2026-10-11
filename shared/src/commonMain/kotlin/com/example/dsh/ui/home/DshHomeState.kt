@@ -51,6 +51,7 @@ import com.example.dsh.base.BasePager
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
+import com.tencent.kuikly.core.views.InputSpans
 import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.TextAreaView
@@ -228,6 +229,8 @@ internal class DshHomeState(private val scope: PagerScope) {
     var modelsCustomBusy by scope.observable(false)
     var modelsCustomError by scope.observable("")
     var commandSheetVisible by scope.observable(false)
+    /** 输入框富文本样式（inputSpans 分段上色）：命令/技能 token 单独上色，其余主文本色。 */
+    var composerSpans by scope.observable(InputSpans())
     // ===== 语音输入（按住说话 → 原生语音识别 → 转文字填入输入框）=====
     /** 语音输入 UI 状态；聚合原 voiceActive/Recording/CancelArmed/PartialText/WaveformRevision。 */
     var voiceUi by scope.observable(DshVoiceUiState())

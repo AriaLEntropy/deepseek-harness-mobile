@@ -20,6 +20,8 @@ import com.example.dsh.base.setTimeout
 import kotlinx.coroutines.cancel
 import com.example.dsh.attachment.composePromptWithFiles
 import com.example.dsh.message.messageRowKey
+import com.example.dsh.ui.chat.dshBuiltinCommandName
+import com.example.dsh.base.bridgeModule
 import com.example.dsh.ui.rendering.DshProcessDisplayMode
 import com.example.dsh.base.setTimeout
 import com.tencent.kuikly.core.timer.setTimeout
@@ -65,6 +67,20 @@ internal fun DshHomePage.sendDraft() {
         return
     }
     val sessionId = ui.activeSessionId
+    // 内置命令行走 host 的 commands/execute（对齐 web）：不进模型、不落用户气泡、不启动流式回合。
+    val commandName = dshBuiltinCommandName(prompt)
+    if (commandName.isNotEmpty() && sendableImages.isEmpty() && sendableFiles.isEmpty()) {
+        ui.draft = ""
+        inputView?.setText("")
+        refreshComposerSpans("")
+        hostRepository.commandExecute(
+            sessionId = sessionId,
+            line = prompt,
+            onSuccess = { },
+            onError = { },
+        )
+        return
+    }
     // 发送瞬间附件即离开输入区，随用户消息进入对话区并显示上传中状态。
     val userMessage = DshMessage(
         id = "user-${ui.messages.size}",

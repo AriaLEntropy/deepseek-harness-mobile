@@ -3,12 +3,17 @@ package com.example.dsh.ui.home
 import com.example.dsh.ui.chat.DshCommand
 import com.example.dsh.ui.chat.DshCommandKind
 import com.example.dsh.ui.chat.DshCommandPopup
+import com.example.dsh.ui.chat.dshClaimedCommandToken
+import com.example.dsh.ui.chat.dshClaimedSkillToken
+import com.example.dsh.ui.chat.dshCommandNamed
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
 import com.example.dsh.session.DshSession
 import com.example.dsh.base.bridgeModule
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.reactive.handler.*
+import com.tencent.kuikly.core.views.InputSpan
+import com.tencent.kuikly.core.views.InputSpans
 import com.tencent.kuikly.core.views.KeyboardParams
 
 internal fun DshHomePage.dismissKeyboard() {
@@ -69,7 +74,7 @@ internal fun DshHomePage.pickCommand(command: DshCommand) {
     }
 }
 
-/** 写入类命令：把 "/命令 " 写入输入框（补全草稿 + 原生输入框文本），聚焦等待补全参数。 */
+/** 写入类命令：把 "/命令 " 写入输入框（带真实尾随空格，参数可直接接在后面），聚焦等待补全参数。 */
 internal fun DshHomePage.insertCommandText(command: DshCommand) {
     insertDraftText("/${command.name} ")
     inputView?.focus()
@@ -124,20 +129,12 @@ internal fun DshHomePage.runDetachedCommand(line: String) {
     }
     val sessionId = ui.activeSessionId
     touchSessionActivity(sessionId)
-    hostRepository.streamReply(
-        pagerId = pagerId,
+    // 走 host 的 commands/execute（对齐 web）：直接执行命令、不入模型、不落普通消息，仅 toast 反馈。
+    hostRepository.commandExecute(
         sessionId = sessionId,
-        prompt = line,
-        onDelta = { },
-        onComplete = { result ->
-            if (!connectionCoordinator.isActive(ui.connectionMode)) return@streamReply
-            // 直接执行类命令不落一条普通消息（对齐 web：命令生命周期不是聊天气泡），仅以 toast 反馈结果。
-            bridgeModule.toast(result.ifEmpty { "已执行 $line" })
-        },
-        onError = { error ->
-            if (!connectionCoordinator.isActive(ui.connectionMode)) return@streamReply
-            bridgeModule.toast(error)
-        },
+        line = line,
+        onSuccess = { },
+        onError = { },
     )
 }
 
@@ -151,4 +148,61 @@ internal fun DshHomePage.exitPlanMode() {
 internal fun DshHomePage.insertDraftText(text: String) {
     ui.draft = text
     inputView?.setText(text)
+    refreshComposerSpans(text)
+}
+
+/** 输入框文本变化：同步 draft 状态并重建分段上色 spans。 */
+internal fun DshHomePage.onComposerDraftChange(text: String) {
+    // 手输/粘贴到“裸命令名”（如 /plan，尚未跟空格或参数）时自动补一个空格，
+    // 否则随后输入参数会紧贴命令、破坏命令识别。
+    val t = text.trimStart()
+    val bareCommandName = t.startsWith("/") && !t.contains(' ') && !t.contains('\n') &&
+        dshCommandNamed(t.removePrefix("/"))?.kind == DshCommandKind.WRITE_INPUT
+    if (bareCommandName) {
+        val next = "$t "
+        ui.draft = next
+        inputView?.setText(next)
+        refreshComposerSpans(next)
+        return
+    }
+    ui.draft = text
+    refreshComposerSpans(text)
+}
+
+/**
+ * 重建输入框分段上色（inputSpans）：命令 claim token 用 warn 色、技能引用用业务蓝，其余主文本色。
+ * 只给 token 段上色、参数段保持主色（对齐 web 的分段着色）。
+ */
+internal fun DshHomePage.refreshComposerSpans(text: String) {
+    val colors = themeColors
+    val commandToken = dshClaimedCommandToken(text)
+    val token = commandToken.ifEmpty { dshClaimedSkillToken(text, ui.skills) }
+    val spans = InputSpans()
+    if (token.isEmpty()) {
+        if (text.isNotEmpty()) {
+            spans.addSpan(InputSpan().apply {
+                this.text(text)
+                color(colors.labelPrimary)
+                fontSize(15f)
+                lineHeight(20f)
+            })
+        }
+    } else {
+        spans.addSpan(InputSpan().apply {
+            this.text(token)
+            color(if (commandToken.isNotEmpty()) colors.stateWarnLabel else colors.stateBusinessPrimary)
+            fontSize(15f)
+            lineHeight(20f)
+        })
+        val rest = text.substring(token.length)
+        if (rest.isNotEmpty()) {
+            spans.addSpan(InputSpan().apply {
+                this.text(rest)
+                color(colors.labelPrimary)
+                fontSize(15f)
+                lineHeight(20f)
+            })
+        }
+    }
+    ui.composerSpans = spans
 }

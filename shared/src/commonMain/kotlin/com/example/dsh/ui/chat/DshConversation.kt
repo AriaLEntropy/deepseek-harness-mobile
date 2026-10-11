@@ -50,6 +50,7 @@ import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.InputSpans
 import com.tencent.kuikly.core.views.KeyboardParams
 import com.tencent.kuikly.core.views.TextArea
 import com.tencent.kuikly.core.views.TextAreaView
@@ -102,6 +103,8 @@ internal fun ViewContainer<*, *>.DshConversation(
     onAttachmentTile: (DshCommandSheetTile) -> Unit,
     /** 命令参数提示（ghost 文本）：写入类命令 "/name" 尚未补参数时展示，对齐 web 命令 claim 态。 */
     commandHint: () -> String = { "" },
+    /** 输入框分段上色 spans：命令 token / 技能引用单独上色，其余主文本色（对齐 web 分段着色）。 */
+    composerSpans: () -> InputSpans = { InputSpans() },
     attachmentEpoch: () -> Int = { 0 },
     attachmentRevision: () -> Int = { 0 },
     pendingImages: () -> ObservableList<DshPendingImage> = { ObservableList() },
@@ -339,6 +342,7 @@ internal fun ViewContainer<*, *>.DshConversation(
                                             onCopyMessageContent = { onCopyMessageContent(it) },
                                             copied = { copiedMessageId() == target.id },
                                             colors = { colors() },
+                                            skillNames = { skills().map { it.name } },
                                             onLongPress = { msg, content, px, py ->
                                                 onMessageLongPress(msg, content, px, py)
                                             },
@@ -579,53 +583,6 @@ internal fun ViewContainer<*, *>.DshConversation(
                     onEdit = onEditGoal
                     onClear = onClearGoal
                     this.colors = colors()
-                }
-            }
-        }
-        // Plan 模式状态条：进入 plan 模式时贴输入框上方显示（非消息气泡），
-        // 数据来自 host `plan` 投影，点「退出」直接执行 /plan off，对齐 web composer 的 plan chip。
-        vif({ isWebTimeline() && (planModeActive() || planModePending()) }) {
-            View {
-                attr {
-                    marginLeft(4f)
-                    marginRight(4f)
-                    marginBottom(8f)
-                    minHeight(38f)
-                    flexDirectionRow()
-                    alignItemsCenter()
-                    padding(8f, 10f, 8f, 10f)
-                    borderRadius(8f)
-                    backgroundColor(colors().bgBase)
-                    border(Border(1f, BorderStyle.SOLID, colors().borderL2))
-                }
-                View {
-                    attr {
-                        size(8f, 8f)
-                        borderRadius(4f)
-                        backgroundColor(
-                            if (planModeActive()) colors().stateBusinessPrimary else colors().labelTertiary,
-                        )
-                    }
-                }
-                Text {
-                    attr {
-                        text(if (planModeActive()) "计划模式" else "正在进入计划模式")
-                        marginLeft(8f)
-                        flex(1f)
-                        lines(1)
-                        fontSize(12f)
-                        fontWeightMedium()
-                        color(colors().labelSecondary)
-                    }
-                }
-                Text {
-                    attr {
-                        text("退出")
-                        marginLeft(8f)
-                        fontSize(12f)
-                        color(colors().stateBusinessPrimary)
-                    }
-                    event { click { onExitPlanMode() } }
                 }
             }
         }
@@ -907,21 +864,16 @@ internal fun ViewContainer<*, *>.DshConversation(
                             maxHeight(120f) // 约 5 行上限，超出后内部滚动
                             backgroundColor(Color(0x00FFFFFF))
                             fontSize(15f)
-                            // token claim/引用变色：直接给输入框原文上色（不叠加覆盖层，避免叠影）。
-                            // 条件是 claim 态本身（含后跟参数），因此命令后跟文字时也不掉色。
-                            color(
-                                when {
-                                    dshClaimedCommandToken(draft()).isNotEmpty() -> colors().stateWarnLabel
-                                    dshClaimedSkillToken(draft(), skills()).isNotEmpty() -> colors().stateBusinessPrimary
-                                    else -> colors().labelPrimary
-                                },
-                            )
+                            // 分段上色由 inputSpans 完成（命令 token / 技能引用单独着色），此处仅兜底主色。
+                            color(colors().labelPrimary)
+                            inputSpans(composerSpans())
                             placeholder(voiceStrings().inputPlaceholder)
                             placeholderColor(colors().labelTertiary)
                         }
                         event {
                             inputFocus { onInputFocusChange(true) }
-                            textDidChange { onDraftChange(it.text) }
+                            // 富文本 spans（inputSpans）需同步编辑：异步回填会与 IME 组合态冲突导致丢字。
+                            textDidChange(true) { onDraftChange(it.text) }
                             keyboardHeightChange { onKeyboardHeightChange(it) }
                             inputBlur {
                                 onInputFocusChange(false)
@@ -946,7 +898,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                             }
                             Text {
                                 attr {
-                                    text(draft())
+                                    // 透明 token 副本，并保证与灰字提示之间恰好一个空格间距。
+                                    text(if (draft().endsWith(" ")) draft() else draft() + " ")
                                     fontSize(15f)
                                     color(Color(0x00000000))
                                 }
@@ -1054,6 +1007,48 @@ internal fun ViewContainer<*, *>.DshConversation(
                                     DshHitButton(onOpenPermissions)
                                 }
                             }
+                            // plan 模式 chip（对齐 web：工具栏左侧的 Plan 控件，文字 + 关闭 X）：进入 plan 模式时显示，点它退出。
+                            vif({ isWebTimeline() && (planModeActive() || planModePending()) }) {
+                                View {
+                                    attr {
+                                        marginLeft(8f)
+                                        height(28f)
+                                        paddingLeft(10f)
+                                        paddingRight(6f)
+                                        flexDirectionRow()
+                                        alignItemsCenter()
+                                        borderRadius(24f)
+                                        backgroundColor(colors().specificSelector)
+                                    }
+                                    View {
+                                        attr {
+                                            size(7f, 7f)
+                                            borderRadius(3.5f)
+                                            backgroundColor(
+                                                if (planModeActive()) colors().stateBusinessPrimary else colors().labelTertiary,
+                                            )
+                                        }
+                                    }
+                                    Text {
+                                        attr {
+                                            text(if (planModeActive()) "计划" else "进入计划")
+                                            marginLeft(5f)
+                                            lines(1)
+                                            fontSize(12f)
+                                            color(colors().labelSecondary)
+                                        }
+                                    }
+                                    Image {
+                                        attr {
+                                            src(ImageUri.commonAssets("x.svg"))
+                                            size(14f, 14f)
+                                            marginLeft(4f)
+                                            tintColor(colors().labelTertiary)
+                                        }
+                                    }
+                                    DshHitButton { onExitPlanMode() }
+                                }
+                            }
                         }
                         // 右侧功能区：模型 chip + 停止/发送按钮
                         View {
@@ -1061,10 +1056,16 @@ internal fun ViewContainer<*, *>.DshConversation(
                                 flexDirectionRow()
                                 alignItemsCenter()
                             }
-                            // 模型 chip：与 DSH Web 一致的透明药丸样式
+                            // 模型 chip：与 DSH Web 一致的透明药丸样式（plan 模式时收窄，避免工具栏换行）
                             View {
                                 attr {
-                                    maxWidth(220f)
+                                    maxWidth(
+                                        if (isWebTimeline() && (planModeActive() || planModePending())) {
+                                            120f
+                                        } else {
+                                            220f
+                                        },
+                                    )
                                     height(32f)
                                     paddingLeft(8f)
                                     paddingRight(20f)

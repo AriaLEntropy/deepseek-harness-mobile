@@ -946,6 +946,33 @@ class DshRemoteHostRepository(
             "&includeDescendants=${if (includeDescendants) "true" else "false"}"
     }
 
+    /**
+     * commands/execute：Typert 远端 `commands/execute`，参数 { agentId, line, images }。
+     * 成功返回命令结果文本；命令自身报错（kind=error）当作错误上抛。
+     */
+    override fun commandExecute(
+        sessionId: String,
+        line: String,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        call(DshHostProtocol.COMMAND_EXECUTE, JSONObject().apply {
+            put("args", JSONObject().apply {
+                put("agentId", sessionId)
+                put("line", line)
+                put("images", JSONArray())
+            })
+        }) { value, error ->
+            if (error != null) {
+                onError(error.message)
+                return@call
+            }
+            val result = value?.optJSONObject("result")
+            val text = result?.optString("text").orEmpty()
+            if (result?.optString("kind") == "error") onError(text.ifEmpty { "命令执行失败" }) else onSuccess(text)
+        }
+    }
+
     override fun listDirectory(
         path: String?,
         callback: (DshDirectoryListing?, DshRpcError?) -> Unit,

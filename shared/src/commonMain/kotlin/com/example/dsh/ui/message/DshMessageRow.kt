@@ -36,6 +36,7 @@ import com.example.dsh.theme.DshDefaultTheme
 import com.example.dsh.host.toolCardType
 import com.example.dsh.ui.chat.DshMessageFooterAction
 import com.example.dsh.ui.chat.dshClaimedCommandToken
+import com.example.dsh.ui.chat.dshClaimedSkillTokenByName
 import com.example.dsh.message.boundedContextText
 import com.example.dsh.message.contextCanExpand
 import com.example.dsh.message.contextInstructions
@@ -76,6 +77,8 @@ internal fun ViewContainer<*, *>.DshMessageRow(
     showResultCards: () -> Boolean = { true },
     /** 是否给过程行加左侧装饰连接线（经典模式）。 */
     showConnectors: () -> Boolean = { true },
+    /** 当前会话技能名（用于用户消息里识别技能引用并上色）。 */
+    skillNames: () -> List<String> = { emptyList() },
 ) {
     if (message.hidden) return
     val rowWidth = getPager().pageData.pageViewWidth - 36f
@@ -359,23 +362,32 @@ internal fun ViewContainer<*, *>.DshMessageRow(
                 }
             }
             if (isUser || isError) {
-                // 用户消息若以命令 claim token 开头，保持该 token 的 warn 色（对齐 web：命令 token 在
-                // 发出后仍高亮）；其余走普通单色文本。
-                if (isUser && dshClaimedCommandToken(visibleUserText).isNotEmpty()) {
-                    val token = dshClaimedCommandToken(visibleUserText)
+                // 用户消息以命令 token / 技能引用开头时，保持该 token 的 claim/引用色（对齐 web）；
+                // 其余走普通单色文本。
+                val commandToken = if (isUser) dshClaimedCommandToken(visibleUserText) else ""
+                val skillToken = if (isUser && commandToken.isEmpty()) {
+                    dshClaimedSkillTokenByName(visibleUserText, skillNames())
+                } else {
+                    ""
+                }
+                val claimedToken = commandToken.ifEmpty { skillToken }
+                if (claimedToken.isNotEmpty()) {
                     RichText {
                         attr {
                             fontSize(DSH_CHAT_BODY_FONT)
                             lineHeight(DSH_CHAT_BODY_LINE)
                         }
                         Span {
-                            text(token)
-                            color(colors().stateWarnLabel)
+                            text(claimedToken)
+                            color(
+                                if (commandToken.isNotEmpty()) colors().stateWarnLabel
+                                else colors().stateBusinessPrimary,
+                            )
                             fontSize(DSH_CHAT_BODY_FONT)
                             lineHeight(DSH_CHAT_BODY_LINE)
                         }
                         Span {
-                            text(visibleUserText.removePrefix(token))
+                            text(visibleUserText.removePrefix(claimedToken))
                             color(colors().specificBubbleForeground)
                             fontSize(DSH_CHAT_BODY_FONT)
                             lineHeight(DSH_CHAT_BODY_LINE)

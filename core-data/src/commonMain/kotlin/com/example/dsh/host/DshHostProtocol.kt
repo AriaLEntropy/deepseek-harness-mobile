@@ -37,6 +37,7 @@ object DshHostProtocol {
     const val CREDENTIALS_UNSET = "credentials.unset"
     const val LLM_PROVIDERS = "llm.providers"
     const val SKILL_LIST = "skill.list"
+    const val COMMAND_EXECUTE = "commands/execute"
     const val AGENT_PRESET_LIST = "agentPreset.list"
     const val GOAL_EDIT = "goal.edit"
     const val GOAL_PAUSE = "goal.pause"
