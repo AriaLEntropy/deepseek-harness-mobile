@@ -581,9 +581,15 @@ internal fun ViewContainer<*, *>.DshConversation(
                     maxHeight(120f)
                     backgroundColor(Color(0x00FFFFFF))
                     fontSize(15f)
-                    // 命令 claim 态：裸命令 token 时把原始输入文本染成 web 的 warn 色（无叠加层），
-                    // 补参数后回落主文本色。
-                    color(if (commandHint().isNotEmpty()) Color(0xFFDD8629) else Color(0xFF28323C))
+                    // claim/引用态文本色（对齐 web）：写入类命令裸 token → warn 色；
+                    // 裸技能引用 → 引用蓝；其余主文本色。
+                    color(
+                        when {
+                            commandHint().isNotEmpty() -> Color(0xFFDD8629)
+                            dshClaimedSkillName(draft(), skills()).isNotEmpty() -> Color(0xFF4176E6)
+                            else -> Color(0xFF28323C)
+                        },
+                    )
                     placeholder(
                         when {
                             voiceActive() -> "正在聆听..."
@@ -613,7 +619,8 @@ internal fun ViewContainer<*, *>.DshConversation(
                         positionAbsolute()
                         left(14f)
                         right(14f)
-                        top(12f)
+                        // 与 TextArea 内文基线对齐：卡片 paddingTop(12) + 原生 includeFontPadding 的约 4dp 内缩。
+                        top(16f)
                         flexDirectionRow()
                         touchEnable(false)
                     }

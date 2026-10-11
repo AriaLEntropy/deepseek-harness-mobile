@@ -91,6 +91,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 closeKeyboard()
             }
 
+            "disableInputSuggestions" -> {
+                disableInputSuggestions()
+            }
+
             "setSystemBarsDimmed" -> {
                 setSystemBarsDimmed(params)
             }
@@ -205,6 +209,26 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             inputMethodManager?.hideSoftInputFromWindow(focusedView?.windowToken, 0)
         }
         return "true"
+    }
+
+    /**
+     * 关闭本窗口内所有 EditText 的 IME 联想/拼写检查，去掉系统红色波浪下划线，
+     * 对齐 web 输入框（无拼写检查）。遍历 decorView 设置 TYPE_TEXT_FLAG_NO_SUGGESTIONS。
+     */
+    private fun disableInputSuggestions(): String {
+        activity?.runOnUiThread {
+            activity?.window?.decorView?.let { applyNoSuggestions(it) }
+        }
+        return "true"
+    }
+
+    private fun applyNoSuggestions(view: android.view.View) {
+        if (view is android.widget.EditText) {
+            view.inputType = view.inputType or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) applyNoSuggestions(view.getChildAt(index))
+        }
     }
 
     private fun setSystemBarsDimmed(params: String?) {

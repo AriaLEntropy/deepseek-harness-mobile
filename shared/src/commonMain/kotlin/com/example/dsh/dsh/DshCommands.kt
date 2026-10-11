@@ -112,3 +112,18 @@ internal fun dshClaimedCommandToken(draft: String): String {
     if (command.kind != DshCommandKind.WRITE_INPUT) return ""
     return if (space < 0) token else draft.substring(0, space + 1)
 }
+
+/**
+ * 草稿开头以 `/name` 命中的用户可调用技能名，仅当其为裸引用（无后续正文）时返回非空。
+ * 用于把技能引用高亮成 web 的引用色（`--dsw-alias-state-business-primary`）。命令同名时由命令优先。
+ */
+internal fun dshClaimedSkillName(draft: String, skills: List<DshSkill>): String {
+    if (!draft.startsWith("/")) return ""
+    val space = draft.indexOf(' ')
+    val token = if (space < 0) draft else draft.substring(0, space)
+    val args = if (space < 0) "" else draft.substring(space + 1).trim()
+    if (args.isNotEmpty()) return ""
+    val name = token.removePrefix("/")
+    if (name.isEmpty()) return ""
+    return skills.firstOrNull { it.name == name }?.name ?: ""
+}
