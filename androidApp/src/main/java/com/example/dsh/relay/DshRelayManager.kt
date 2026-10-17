@@ -337,6 +337,11 @@ internal object DshRelayManager {
         loopback = server
         Log.i(TAG, "loopback listening port=$port")
         publish(DshRelayNativeState("READY", "扫码隧道已连接", localPort = port, localToken = localToken, hostId = hostId, hostName = hostName, relayOrigin = origin, paired = true, generation = myGeneration))
+        val token = localToken
+        thread(name = "agent-host-bus", isDaemon = true) {
+            runCatching { AgentHostBus.start(port, token) { !stopped && generation.get() == myGeneration } }
+                .onFailure { error -> Log.w(TAG, "agent-host bus stopped", error) }
+        }
     }
 
     private fun loopbackListening(): Boolean {
