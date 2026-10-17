@@ -5,8 +5,7 @@ import com.example.dsh.session.DshLegacyRemoteProfile
 import com.example.dsh.session.DshRelayProfile
 import com.example.dsh.session.DshRemoteProfile
 import com.example.dsh.host.DshRemoteHostRepository
-import com.example.dsh.host.DshRemoteRepository
-import com.example.dsh.host.DshRepository
+import com.example.dsh.host.DshHostClient
 import com.example.dsh.session.DshSessionScope
 import com.example.dsh.ui.connection.DshWordmark
 import com.example.dsh.log.DshLogService
@@ -63,7 +62,7 @@ internal class DshConnectionSetupPage : BasePager() {
     private var fingerprintPending by observable("")
     private var localStore: DshLocalStore? = null
     private var engineModule: DshEngineModule? = null
-    private var probeRepository: DshRepository? = null
+    private var probeRepository: DshHostClient? = null
     private var autoConnectAttempted = false
     private var databaseDir = ""
 
@@ -175,7 +174,7 @@ internal class DshConnectionSetupPage : BasePager() {
             DshStreamLog.log(LogLevel.ERROR, "connect.error", "mode=relay phase=probe $message")
             busy = false
             error = message
-            (probeRepository as? DshRemoteRepository)?.stop()
+            probeRepository?.stop()
             probeRepository = null
             module.disconnect()
         }
@@ -202,7 +201,7 @@ internal class DshConnectionSetupPage : BasePager() {
                         setTimeout(pagerId, 0) {
                             busy = false
                             error = ""
-                            (probeRepository as? DshRemoteRepository)?.stop()
+                            probeRepository?.stop()
                             probeRepository = null
                             module.disconnect()
                             openHome()
@@ -465,7 +464,7 @@ internal class DshConnectionSetupPage : BasePager() {
                             setTimeout(pagerId, 0) {
                                 busy = false
                                 error = ""
-                                (probeRepository as? DshRemoteRepository)?.stop()
+                                probeRepository?.stop()
                                 // 保留 SSH 隧道交给主页复用，避免拆掉刚建好的连接再重连。
                                 module.detachSsh()
                                 openHome()
@@ -474,7 +473,7 @@ internal class DshConnectionSetupPage : BasePager() {
                             setTimeout(pagerId, 0) {
                                 busy = false
                                 error = "远程 DSH 不可用：$message"
-                                (probeRepository as? DshRemoteRepository)?.stop()
+                                probeRepository?.stop()
                                 module.stopSsh()
                             }
                     })

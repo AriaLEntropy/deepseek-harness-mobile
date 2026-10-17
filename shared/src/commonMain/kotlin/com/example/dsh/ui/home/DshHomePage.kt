@@ -22,8 +22,7 @@ import com.example.dsh.models.DshProviderConfig
 import com.example.dsh.models.DshProviderModel
 import com.example.dsh.interaction.DshQuestionDraft
 import com.example.dsh.session.DshQueueItem
-import com.example.dsh.host.DshRemoteRepository
-import com.example.dsh.host.DshRepository
+import com.example.dsh.host.DshHostClient
 import com.example.dsh.session.DshSession
 import com.example.dsh.session.DshSessionCacheState
 import com.example.dsh.session.DshSessionScope
@@ -96,9 +95,9 @@ internal class DshHomePage : BasePager() {
 
     /** Page UI state lives in a dedicated state holder; the page only orchestrates and renders. */
     internal val ui = DshHomeState(this)
-    internal var repository: DshRepository? = null
-    /** 仅远程模式可用的能力面；本地模式为 null。 */
-    internal val remoteRepo: DshRemoteRepository? get() = repository as? DshRemoteRepository
+    internal var repository: DshHostClient? = null
+    /** 页面直接持有远程 Host 客户端。 */
+    internal val remoteRepo: DshHostClient? get() = repository
 
     /** 下一帧执行：统一 Kuikly 的 setTimeout(pagerId, 0) 写法，明确“稍后执行”意图。
      *  Kuikly 的 Kotlin→native 桥 callNative 断言 setTimeout 不能在 Android 主线程调用，

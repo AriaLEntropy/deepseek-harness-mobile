@@ -55,11 +55,19 @@ class BusProtocolTest {
         )
         assertIs<DescribeDecision.AgentHost>(decision)
         assertEquals("host-1", decision.agentId)
+        assertEquals("3.9", decision.protocolVersion)
+        assertEquals(false, decision.forwardsDsh)
+        assertTrue(busVersionAtLeast("3.9"))
+        assertTrue(busVersionAtLeast("3.10"))
+        assertTrue(!busVersionAtLeast("3.8"))
         assertEquals(DescribeDecision.Plugin, DescribeAttempts().onHttp(404, ""))
     }
 
     @Test
     fun socketFallsBackToLongPollAndComesBackAfterAMinute() {
+        val resumed = BusSync()
+        resumed.resume(4)
+        assertEquals("/bus/ws?since=4", resumed.socketPath())
         val sync = BusSync()
         assertEquals("/bus/ws?since=-1", sync.socketPath())
         sync.onSocketFrame(

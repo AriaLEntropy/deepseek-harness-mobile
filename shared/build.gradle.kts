@@ -71,7 +71,6 @@ kotlin {
                 api(project(":ui-export"))
                 api(project(":ui-settings"))
                 api(project(":ui-web"))
-                api(project(":ui-dev"))
                 implementation("com.tencent.kuikly-open:core:${Version.getKuiklyVersion()}")
                 implementation("com.tencent.kuikly-open:core-annotations:${Version.getKuiklyVersion()}")
                 implementation("com.tencent.kuiklybase:KuiklyMarkdown:1.0.6-2.1.21")

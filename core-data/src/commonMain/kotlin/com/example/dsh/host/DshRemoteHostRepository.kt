@@ -66,6 +66,9 @@ import com.example.dsh.session.DshSessionCatalog
 import com.example.dsh.session.DshSessionCatalogLoader
 import com.tencent.kuikly.core.timer.setTimeout
 
+/** 页面直接持有的远程 Host 客户端。上游名叫 DshHostClient。 */
+typealias DshHostClient = DshRemoteHostRepository
+
 class DshRemoteHostRepository(
     network: NetworkModule,
     webSocket: DshWebSocketModule,

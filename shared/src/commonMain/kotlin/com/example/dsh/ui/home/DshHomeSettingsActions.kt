@@ -25,7 +25,7 @@ internal fun DshHomePage.openCredentialSettings() {
     dismissKeyboard()
     ui.commandSheetVisible = false
     //closeSessionDrawer()
-    ui.credentialSetupTitle = if (sshMode) "修改电脑端 DSH 的 API Key" else "设置 DeepSeek API Key"
+    ui.credentialSetupTitle = if (isRemoteHost) "修改电脑端 DSH 的 API Key" else "设置 DeepSeek API Key"
     ui.credentialSetupError = ""
     ui.apiKeyDraft = pendingApiKey
     updateCredentialSetupVisibility(true)
@@ -308,8 +308,8 @@ internal fun DshHomePage.loadApiKeyAsync() {
             pendingApiKey = apiKey
             if (apiKey.isEmpty()) {
                 showCredentialSetupIfNeeded(apiKey)
-            } else if (engineReady && repository == null && ui.connectionMode == DshConnectionMode.LOCAL) {
-                connectLocalEngine(apiKey)
+            } else if (ui.connectionMode == DshConnectionMode.LOCAL) {
+                connectionLabel = "本地模式已独立为 DSH Local App"
             }
         }
     }

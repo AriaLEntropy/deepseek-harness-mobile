@@ -196,7 +196,7 @@ fun toolOutputSummary(value: Any?): String = when (value) {
     else -> value.toString()
 }
 
-fun toolCardType(view: JSONObject): DshToolCardType = when (view.optString("card")) {
+fun toolCardType(view: JSONObject?): DshToolCardType = when (view?.optString("card")) {
     "terminal" -> DshToolCardType.TERMINAL
     "read" -> DshToolCardType.READ
     "diff" -> DshToolCardType.DIFF

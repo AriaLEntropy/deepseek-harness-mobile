@@ -5,6 +5,10 @@ import com.example.dsh.bus.BusChannel
 import com.example.dsh.bus.BusSync
 import com.example.dsh.bus.DescribeAttempts
 import com.example.dsh.bus.DescribeDecision
+import com.example.dsh.bus.SnapshotReceipt
+import com.example.dsh.bus.busVersionAtLeast
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -20,25 +24,85 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal object AgentHostBus {
     private const val TAG = "AgentHostBus"
 
-    fun start(port: Int, token: String, stillCurrent: () -> Boolean) {
+    fun start(port: Int, token: String, notes: DshRelaySecrets, stillCurrent: () -> Boolean) {
         val describeClient = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()
         val pollClient = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
         val socketClient = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
-        val decision = identify(describeClient, port, token, stillCurrent)
+        val saved = notes.readBus()
+        val remembered = saved?.takeIf { it.kind == "agent-host" && busVersionAtLeast(it.protocolVersion) }
+        val decision = remembered?.let {
+            DescribeDecision.AgentHost(it.agentId, it.protocolVersion, it.forwardsDsh)
+        } ?: identify(describeClient, port, token, stillCurrent)
+        if (decision is DescribeDecision.Plugin) {
+            notes.saveBus(BusNote("dsh-plugin", "", "", false, -1))
+        }
         if (decision !is DescribeDecision.AgentHost || !stillCurrent()) return
+        if (!busVersionAtLeast(decision.protocolVersion)) {
+            Log.w(TAG, "请升级电脑端程序 protocolVersion=${decision.protocolVersion}")
+            notes.saveBus(BusNote("agent-host", decision.agentId, decision.protocolVersion, decision.forwardsDsh, saved?.seq ?: -1))
+            return
+        }
+        val note = AtomicReference(
+            BusNote("agent-host", decision.agentId, decision.protocolVersion, decision.forwardsDsh, remembered?.seq ?: -1),
+        )
+        notes.saveBus(note.get())
         Log.i(TAG, "host is agent-host agentId=${decision.agentId}")
         val sync = BusSync()
         sync.bind(decision.agentId)
-        while (stillCurrent()) {
+        remembered?.let { sync.resume(it.seq) }
+        val retired = AtomicBoolean(false)
+        val current = { stillCurrent() && !retired.get() }
+        if (remembered != null) {
+            thread(name = "agent-host-describe", isDaemon = true) {
+                refresh(describeClient, port, token, notes, note, sync, retired, current)
+            }
+        }
+        while (current()) {
             if (sync.channel == BusChannel.WebSocket) {
-                if (!readSocket(socketClient, port, token, sync, stillCurrent)) sync.onHandshakeFailure()
+                if (!readSocket(socketClient, port, token, sync, notes, note, current)) sync.onHandshakeFailure()
             } else {
                 val body = get(pollClient, port, token, sync.pollPath())
-                if (body != null) sync.onSnapshotResponse(body)
-                if (!stillCurrent()) return
+                if (body != null) logSnapshot(notes, note, sync.onSnapshotResponse(body))
+                if (!current()) return
                 Thread.sleep(1_000)
                 sync.onPollTick(1_000)
             }
+        }
+    }
+
+    private fun refresh(
+        client: OkHttpClient,
+        port: Int,
+        token: String,
+        notes: DshRelaySecrets,
+        note: AtomicReference<BusNote>,
+        sync: BusSync,
+        retired: AtomicBoolean,
+        stillCurrent: () -> Boolean,
+    ) {
+        when (val fresh = describeOnce(client, port, token, stillCurrent)) {
+            is DescribeDecision.Plugin -> {
+                notes.saveBus(BusNote("dsh-plugin", "", "", false, -1))
+                retired.set(true)
+            }
+            is DescribeDecision.AgentHost -> {
+                if (!busVersionAtLeast(fresh.protocolVersion)) {
+                    Log.w(TAG, "请升级电脑端程序 protocolVersion=${fresh.protocolVersion}")
+                    notes.saveBus(BusNote("agent-host", fresh.agentId, fresh.protocolVersion, fresh.forwardsDsh, sync.seq))
+                    retired.set(true)
+                    return
+                }
+                sync.bind(fresh.agentId)
+                val updated = note.get().copy(
+                    agentId = fresh.agentId,
+                    protocolVersion = fresh.protocolVersion,
+                    forwardsDsh = fresh.forwardsDsh,
+                    seq = sync.seq,
+                )
+                note.set(updated)
+                notes.saveBus(updated)
+            }
+            else -> Unit
         }
     }
 
@@ -56,11 +120,20 @@ internal object AgentHostBus {
         return DescribeDecision.Unknown
     }
 
+    private fun describeOnce(client: OkHttpClient, port: Int, token: String, stillCurrent: () -> Boolean): DescribeDecision {
+        if (!stillCurrent()) return DescribeDecision.Unknown
+        val response = runCatching { getResponse(client, port, token, "/bus/describe") }.getOrNull()
+            ?: return DescribeDecision.Unknown
+        return DescribeAttempts().onHttp(response.code, response.body?.string().orEmpty()) ?: DescribeDecision.Unknown
+    }
+
     private fun readSocket(
         client: OkHttpClient,
         port: Int,
         token: String,
         sync: BusSync,
+        notes: DshRelaySecrets,
+        note: AtomicReference<BusNote>,
         stillCurrent: () -> Boolean,
     ): Boolean {
         val request = Request.Builder()
@@ -76,7 +149,7 @@ internal object AgentHostBus {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                sync.onSocketFrame(text)
+                logSnapshot(notes, note, sync.onSocketFrame(text))
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -97,6 +170,14 @@ internal object AgentHostBus {
         }
         socket.cancel()
         return opened.get() && !failed.get()
+    }
+
+    private fun logSnapshot(notes: DshRelaySecrets, note: AtomicReference<BusNote>, receipt: SnapshotReceipt?) {
+        if (receipt == null) return
+        Log.i(TAG, "snapshot seq=${receipt.seq} tasks=${receipt.taskCount}")
+        val next = note.get().copy(seq = receipt.seq)
+        note.set(next)
+        notes.saveBus(next)
     }
 
     private fun get(client: OkHttpClient, port: Int, token: String, path: String): String? {

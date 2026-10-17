@@ -7,12 +7,10 @@ import com.example.dsh.message.parsePlanProjection
 import com.example.dsh.connection.DshEngineModule
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.DshRelayPhase
-import com.example.dsh.connection.DshSseModule
 import com.example.dsh.connection.DshSshConfig
 import com.example.dsh.connection.DshSshPhase
 import com.example.dsh.connection.supportsRelayBridge
 import com.example.dsh.host.DshConnectionMode
-import com.example.dsh.host.DshHostRepository
 import com.example.dsh.host.DshRemoteHostRepository
 import com.example.dsh.host.DshHostRuntimePhase
 import com.example.dsh.host.DshHostRuntimeState
@@ -381,40 +379,6 @@ internal fun DshHomePage.handleHostRuntimeState(state: DshHostRuntimeState) {
     syncTurnStatusTicker()
 }
 
-internal fun DshHomePage.connectLocalEngine(apiKey: String) {
-    connectionLabel = "本地内核启动中"
-    repository = DshHostRepository(
-        network = acquireModule<NetworkModule>(NetworkModule.MODULE_NAME),
-        sse = acquireModule<DshSseModule>(DshSseModule.MODULE_NAME),
-        connection = DshHostConnection(DshHomePage.LOCAL_ENGINE_URL),
-        pagerId = pagerId,
-    )
-    syncLocalCredential(apiKey, 0)
-}
-
-internal fun DshHomePage.syncLocalCredential(apiKey: String, attempt: Int) {
-    val hostRepository = repository ?: return
-    hostRepository.saveDeepSeekApiKey(apiKey, {
-        connectionLabel = "已连接"
-        loadRepository()
-    }, { error ->
-        if (attempt < DshHomePage.ENGINE_CONNECT_RETRIES) {
-            connectionLabel = "本地内核启动中"
-            setTimeout(pagerId, DshHomePage.ENGINE_RETRY_DELAY_MS) {
-                syncLocalCredential(apiKey, attempt + 1)
-            }
-        } else {
-            connectionLabel = "内核启动失败"
-            ui.messages.clear()
-            ui.messages.add(DshMessage(
-                "engine-start-error",
-                DshMessageRole.ERROR,
-                "本地 DeepSeek Harness 内核暂未就绪：$error",
-            ))
-        }
-    })
-}
-
 internal fun DshHomePage.saveDeepSeekApiKey() {
     val key = ui.apiKeyDraft.trim()
     when {
@@ -429,7 +393,7 @@ internal fun DshHomePage.saveDeepSeekApiKey() {
     }
     ui.credentialSetupBusy = true
     ui.credentialSetupError = ""
-    if (sshMode) {
+    if (isRemoteHost) {
         val hostRepository = repository
         if (hostRepository == null) {
             ui.credentialSetupBusy = false
@@ -454,24 +418,8 @@ internal fun DshHomePage.saveDeepSeekApiKey() {
         })
         return
     }
-    val saved = runCatching { localStore?.saveApiKey(key) }
-    if (saved.isFailure || localStore == null) {
-        ui.credentialSetupBusy = false
-        ui.credentialSetupError = saved.exceptionOrNull()?.message ?: "本地数据库不可用"
-        return
-    }
-    ui.apiKeyDraft = ""
-    apiKeyInputView?.setText("")
     ui.credentialSetupBusy = false
-    ui.credentialSetupError = ""
-    updateCredentialSetupVisibility(false)
-    dismissKeyboard()
-    pendingApiKey = key
-    if (engineReady) {
-        connectLocalEngine(key)
-    } else {
-        connectionLabel = "等待本地内核启动"
-    }
+    ui.credentialSetupError = "本地模式已独立为 DSH Local App"
 }
 
 internal fun DshHomePage.connectionModeLabel(): String = dshConnectionModeLabel(ui.connectionMode)

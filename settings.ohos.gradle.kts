@@ -65,8 +65,5 @@ project(":ui-settings").buildFileName = buildFileName
 include(":ui-web")
 project(":ui-web").buildFileName = buildFileName
 
-include(":ui-dev")
-project(":ui-dev").buildFileName = buildFileName
-
 include(":shared")
 project(":shared").buildFileName = buildFileName

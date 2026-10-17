@@ -78,9 +78,27 @@ private fun busCleanAgent(element: JsonElement): JsonObject? {
 }
 
 sealed class DescribeDecision {
-    data class AgentHost(val agentId: String) : DescribeDecision()
+    data class AgentHost(
+        val agentId: String,
+        val protocolVersion: String,
+        val forwardsDsh: Boolean,
+    ) : DescribeDecision()
     data object Plugin : DescribeDecision()
     data object Unknown : DescribeDecision()
+}
+
+/** Baseline required by the phone is 3.9. A blank or non-numeric version is too old. */
+fun busVersionAtLeast(version: String, minimum: String = "3.9"): Boolean {
+    if (version.isBlank()) return false
+    val left = version.split('.')
+    val right = minimum.split('.')
+    val count = maxOf(left.size, right.size)
+    for (index in 0 until count) {
+        val part = left.getOrNull(index)?.toIntOrNull() ?: if (index < left.size) return false else 0
+        val floor = right.getOrNull(index)?.toIntOrNull() ?: if (index < right.size) return false else 0
+        if (part != floor) return part > floor
+    }
+    return true
 }
 
 class DescribeAttempts {
@@ -90,12 +108,20 @@ class DescribeAttempts {
     fun onHttp(status: Int, body: String): DescribeDecision? {
         if (status == 404) return DescribeDecision.Plugin
         if (status == 200) {
-            val agentId = runCatching {
-                busParse(body).jsonObject.string("hostKind")?.let { kind ->
-                    if (kind == "agent-host") busParse(body).jsonObject.string("agentId") else null
+            val host = runCatching {
+                val root = busParse(body).jsonObject
+                val agentId = root.string("agentId")
+                if (root.string("hostKind") == "agent-host" && !agentId.isNullOrEmpty()) {
+                    DescribeDecision.AgentHost(
+                        agentId,
+                        root.string("protocolVersion").orEmpty(),
+                        root.string("forwardsDsh") == "true",
+                    )
+                } else {
+                    null
                 }
             }.getOrNull()
-            if (!agentId.isNullOrEmpty()) return DescribeDecision.AgentHost(agentId)
+            if (host != null) return host
         }
         return fail()
     }
@@ -109,6 +135,9 @@ class DescribeAttempts {
 }
 
 enum class BusChannel { WebSocket, LongPoll }
+
+/** A snapshot the phone accepted. `taskCount` can be 0. */
+class SnapshotReceipt(val seq: Long, val taskCount: Int)
 
 class BusSync {
     var seq: Long = -1
@@ -125,6 +154,11 @@ class BusSync {
 
     fun bind(agentId: String) {
         this.agentId = agentId
+    }
+
+    /** Keep the last snapshot sequence across a tunnel reconnect. */
+    fun resume(seq: Long) {
+        if (seq >= 0) this.seq = seq
     }
 
     fun socketPath(): String = "/bus/ws?since=${if (seq < 0) -1 else seq}"
@@ -153,41 +187,48 @@ class BusSync {
         return true
     }
 
-    fun onSocketFrame(text: String) {
-        val frame = runCatching { busParse(text).jsonObject }.getOrNull() ?: return
-        when (frame.string("type")) {
+    fun onSocketFrame(text: String): SnapshotReceipt? {
+        val frame = runCatching { busParse(text).jsonObject }.getOrNull() ?: return null
+        return when (frame.string("type")) {
             "snapshot" -> frame["snapshot"]?.let { replaceSnapshot(it) }
             "event" -> frame["event"]?.let { applyEvent(it) }
+            else -> null
         }
     }
 
-    fun onSnapshotResponse(text: String) {
-        runCatching { replaceSnapshot(busParse(text)) }
+    fun onSnapshotResponse(text: String): SnapshotReceipt? {
+        return runCatching { replaceSnapshot(busParse(text)) }.getOrNull()
     }
 
-    private fun replaceSnapshot(element: JsonElement) {
-        val snapshot = busCleanSnapshot(element) ?: return
+    private fun replaceSnapshot(element: JsonElement): SnapshotReceipt? {
+        val snapshot = busCleanSnapshot(element) ?: return null
         val seqValue = snapshot["seq"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
         if (seqValue != null) seq = seqValue
         tasks.clear()
-        val list = snapshot["tasks"] as? JsonArray ?: return
+        val list = snapshot["tasks"] as? JsonArray ?: return null
         list.forEach { item ->
             val task = item as? JsonObject ?: return@forEach
             val id = task.string("id") ?: return@forEach
             tasks[id] = task
         }
+        return SnapshotReceipt(seq, tasks.size)
     }
 
-    private fun applyEvent(element: JsonElement) {
-        val event = element as? JsonObject ?: return
-        when (event.string("kind")) {
+    private fun applyEvent(element: JsonElement): SnapshotReceipt? {
+        val event = element as? JsonObject ?: return null
+        return when (event.string("kind")) {
             "taskUpdated" -> {
-                val task = event["task"]?.let { busTaskOrNull(it) } ?: return
-                val id = task.string("id") ?: return
+                val task = event["task"]?.let { busTaskOrNull(it) } ?: return null
+                val id = task.string("id") ?: return null
                 tasks[id] = task
+                null
             }
-            "taskRemoved" -> event.string("taskId")?.let { tasks.remove(it) }
+            "taskRemoved" -> {
+                event.string("taskId")?.let { tasks.remove(it) }
+                null
+            }
             "snapshot" -> event["snapshot"]?.let { replaceSnapshot(it) }
+            else -> null
         }
     }
 }

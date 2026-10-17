@@ -3,7 +3,6 @@ package com.example.dsh.ui.home
 import com.example.dsh.base.setTimeout
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
-import com.example.dsh.host.DshRemoteRepository
 import com.example.dsh.session.DshSession
 import com.example.dsh.log.DshStreamLog
 import com.example.dsh.log.LogLevel
@@ -229,18 +228,15 @@ internal fun DshHomePage.createSession() {
         if (isRemoteHost) {
             closeSessionDrawer()
             bridgeModule.toast("未连接到远程 DSH")
-        } else if (pendingApiKey.isEmpty()) {
-            connectionLabel = "请先配置 API Key"
-            openCredentialSettings()
         } else {
             closeSessionDrawer()
-            connectionLabel = "本地 DSH 尚未就绪"
+            connectionLabel = "本地模式已独立为 DSH Local App"
         }
         return
     }
     dismissKeyboard()
     closeSessionDrawer()
-    val remoteRepository = hostRepository as? DshRemoteRepository
+    val remoteRepository = hostRepository
     // 当前工作区：优先当前会话所在的工作区分组，其次用会话 cwd 反查工作区路径，
     // 最后回退 Host 工作区基线。保证「新会话」留在当前工作区；
     // 只有工作区选择器里的「添加文件夹」才会创建新工作区。

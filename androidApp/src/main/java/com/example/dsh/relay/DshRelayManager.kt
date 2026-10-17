@@ -339,7 +339,8 @@ internal object DshRelayManager {
         publish(DshRelayNativeState("READY", "扫码隧道已连接", localPort = port, localToken = localToken, hostId = hostId, hostName = hostName, relayOrigin = origin, paired = true, generation = myGeneration))
         val token = localToken
         thread(name = "agent-host-bus", isDaemon = true) {
-            runCatching { AgentHostBus.start(port, token) { !stopped && generation.get() == myGeneration } }
+            val stored = secrets ?: return@thread
+            runCatching { AgentHostBus.start(port, token, stored) { !stopped && generation.get() == myGeneration } }
                 .onFailure { error -> Log.w(TAG, "agent-host bus stopped", error) }
         }
     }

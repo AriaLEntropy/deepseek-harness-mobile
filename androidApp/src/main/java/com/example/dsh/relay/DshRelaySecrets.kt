@@ -11,6 +11,14 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+internal data class BusNote(
+    val kind: String,
+    val agentId: String,
+    val protocolVersion: String,
+    val forwardsDsh: Boolean,
+    val seq: Long,
+)
+
 /** Wraps Relay pairing secrets with Android Keystore AES-GCM. SQLite never stores tokens. */
 internal class DshRelaySecrets(context: Context) {
     private val root = File(context.filesDir, "relay-secrets").apply { mkdirs() }
@@ -37,8 +45,31 @@ internal class DshRelaySecrets(context: Context) {
     fun relayOrigin(): String? = read("origin.bin")?.toString(Charsets.UTF_8)
     fun hasPairing(): Boolean = masterKey()?.isNotBlank() == true && clientToken()?.isNotBlank() == true
 
+    fun saveBus(note: BusNote) {
+        val text = listOf(
+            note.kind,
+            note.agentId,
+            note.protocolVersion,
+            note.forwardsDsh.toString(),
+            note.seq.toString(),
+        ).joinToString("\n")
+        write("bus.bin", text.toByteArray())
+    }
+
+    fun readBus(): BusNote? {
+        val lines = read("bus.bin")?.toString(Charsets.UTF_8)?.split('\n') ?: return null
+        if (lines.size < 5) return null
+        return BusNote(
+            kind = lines[0],
+            agentId = lines[1],
+            protocolVersion = lines[2],
+            forwardsDsh = lines[3] == "true",
+            seq = lines[4].toLongOrNull() ?: -1L,
+        )
+    }
+
     fun clear() {
-        listOf("master.bin", "client.bin", "host.bin", "name.bin", "origin.bin").forEach { File(root, it).delete() }
+        listOf("master.bin", "client.bin", "host.bin", "name.bin", "origin.bin", "bus.bin").forEach { File(root, it).delete() }
     }
 
     private fun write(name: String, bytes: ByteArray) {
