@@ -151,13 +151,13 @@ KuiklyMarkdown 解析器认识 `$...$` / `$$...$$` 节点，但渲染器不画�
 
 ## 怎么跑起来
 
-需要两个插件：外部的 `dsh-scan-remote`（扫码 Relay）+ 本仓库的 `host-plugin`（能力桥接）。
+需要两个插件：外部的 `dsh-scan-remote`（扫码 Relay）+ 本仓库的 `host-plugin`（能力桥接）。如果电脑端跑的是 Agent-host，不需要这两个插件，见下面的说明。
 
 ```bash
 # 1. 电脑起 Relay
 git clone https://github.com/yukiykchen/dsh-scan-remote.git
 cd dsh-scan-remote/relay && npm ci && npm run build
-HOST=127.0.0.1 PORT=8787 npm start
+HOST=0.0.0.0 PORT=8787 npm start
 
 # 2. 装外部扫码插件 + 本仓库桥接插件，起 DSH
 npx @deepseek-ai/dsh plugin --profile web add "github:yukiykchen/dsh-scan-remote#v0.0.1"
@@ -168,7 +168,9 @@ PUBLIC_RELAY_URL=http://<电脑 LAN IP>:8787 npx @deepseek-ai/dsh web
 ./gradlew :androidApp:installDebug
 ```
 
-App 里「扫码连接」扫电脑二维码即可；异地用 SSH 端口转发直连，不需要 Relay。
+App 里「连接设置」→「扫码连接」→「扫描电脑二维码」；不要用浏览器打开二维码里的链接。异地用 SSH 端口转发直连，不需要 Relay。
+
+> 如果电脑端跑的是 Agent-host（不是 dsh 插件）：不要装上面的 `dsh-scan-remote` 插件；按 Agent-host 仓库 README 的「扫码连接手机」起 `npx tsx src/cli.ts up`，二维码由它打印。手机端操作相同。
 
 ### iOS 模拟器构建（可选）
 
