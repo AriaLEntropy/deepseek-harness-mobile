@@ -68,6 +68,7 @@ internal object DshRelayManager {
     @Volatile private var stopped = true
     @Volatile private var droppingSocket = false
     @Volatile private var state = DshRelayNativeState("IDLE")
+    @Volatile private var pairStartedAt = 0L
     private var connectivity: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -95,6 +96,9 @@ internal object DshRelayManager {
     }
 
     fun pairFromQr(context: Context, qr: String): Map<String, Any> {
+        val scanStartedAt = System.currentTimeMillis()
+        pairStartedAt = scanStartedAt
+        Log.i(TAG, "PAIR_TIMING scan_started_at=$scanStartedAt")
         attach(context)
         publish(DshRelayNativeState("PAIRING", "正在配对"))
         return try {
@@ -127,6 +131,7 @@ internal object DshRelayManager {
             hostName = name
             relayOrigin = link.origin
             publish(DshRelayNativeState("IDLE", "已配对", hostId = newHostId, hostName = name, relayOrigin = link.origin, paired = true))
+            Log.i(TAG, "PAIR_TIMING scan_to_claim_ms=${System.currentTimeMillis() - scanStartedAt}")
             mapOf("ok" to true, "hostId" to newHostId, "hostName" to name, "relayOrigin" to link.origin, "pairedAt" to System.currentTimeMillis())
         } catch (error: Exception) {
             Log.e(TAG, "pair failed", error)
@@ -337,6 +342,11 @@ internal object DshRelayManager {
         loopback = server
         Log.i(TAG, "loopback listening port=$port")
         publish(DshRelayNativeState("READY", "扫码隧道已连接", localPort = port, localToken = localToken, hostId = hostId, hostName = hostName, relayOrigin = origin, paired = true, generation = myGeneration))
+        val scanStartedAt = pairStartedAt
+        pairStartedAt = 0L
+        if (scanStartedAt > 0) {
+            Log.i(TAG, "PAIR_TIMING scan_to_tunnel_ready_ms=${System.currentTimeMillis() - scanStartedAt}")
+        }
         val token = localToken
         thread(name = "agent-host-bus", isDaemon = true) {
             val stored = secrets ?: return@thread
