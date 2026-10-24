@@ -35,6 +35,9 @@ class BusStore {
         private set
     var recentResults: List<JsonObject> = emptyList()
         private set
+    var messagesByTask: Map<String, List<JsonObject>> = emptyMap()
+        private set
+    private var hasMoreByTask: Map<String, Boolean> = emptyMap()
 
     fun bindDescribe(decision: DescribeDecision) {
         when (decision) {
@@ -83,6 +86,20 @@ class BusStore {
             "taskRemoved" -> {
                 val id = event.string("taskId") ?: return null
                 tasks = tasks.filter { it.string("id") != id }
+                messagesByTask = messagesByTask - id
+                hasMoreByTask = hasMoreByTask - id
+                null
+            }
+            "taskMessages" -> {
+                val payload = event["taskMessages"] as? JsonObject ?: return null
+                val taskId = payload.string("taskId") ?: return null
+                val agentId = payload.string("agentId") ?: return null
+                val task = taskById(taskId) ?: return null
+                if (task.string("agentId") != agentId) return null
+                messagesByTask = messagesByTask + (taskId to payload.objects("messages"))
+                hasMoreByTask = hasMoreByTask + (
+                    taskId to ((payload["hasMore"] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull() == true)
+                    )
                 null
             }
             "commandResult" -> {
@@ -98,6 +115,10 @@ class BusStore {
     }
 
     fun taskById(id: String): JsonObject? = tasks.firstOrNull { it.string("id") == id }
+
+    fun messages(taskId: String): List<JsonObject> = messagesByTask[taskId].orEmpty()
+
+    fun messagesHasMore(taskId: String): Boolean = hasMoreByTask[taskId] == true
 
     private fun JsonObject.objects(key: String): List<JsonObject> =
         (this[key] as? JsonArray)?.mapNotNull { it as? JsonObject } ?: emptyList()

@@ -84,4 +84,29 @@ class BusStoreTest {
         assertNull(store.host)
         assertEquals(1, store.agents.size)
     }
+
+    @Test
+    fun taskMessagesAreCachedOnlyForTheMatchingTask() {
+        val store = BusStore()
+        store.applySnapshot(busParse(snapshot))
+
+        val matching = """
+            {"kind":"taskMessages","taskMessages":{"taskId":"acp:claude-code:s1","agentId":"host-1","messages":[{"id":"m1","role":"user","text":"hi"},{"id":"m2","role":"agent","text":"ok"}],"hasMore":false,"fetchedAt":"2026-10-24T00:04:00Z"}}
+        """.trimIndent()
+        store.applyEvent(busParse(matching))
+        assertEquals(2, store.messages("acp:claude-code:s1").size)
+        assertTrue(!store.messagesHasMore("acp:claude-code:s1"))
+
+        val wrongAgent = """
+            {"kind":"taskMessages","taskMessages":{"taskId":"acp:claude-code:s1","agentId":"other","messages":[{"id":"m3","role":"agent","text":"no"}],"hasMore":false,"fetchedAt":"2026-10-24T00:05:00Z"}}
+        """.trimIndent()
+        store.applyEvent(busParse(wrongAgent))
+        assertEquals(2, store.messages("acp:claude-code:s1").size)
+
+        val unknownTask = """
+            {"kind":"taskMessages","taskMessages":{"taskId":"unknown:1","agentId":"host-1","messages":[{"id":"m4","role":"agent","text":"no"}],"hasMore":false,"fetchedAt":"2026-10-24T00:06:00Z"}}
+        """.trimIndent()
+        store.applyEvent(busParse(unknownTask))
+        assertTrue(store.messages("unknown:1").isEmpty())
+    }
 }
