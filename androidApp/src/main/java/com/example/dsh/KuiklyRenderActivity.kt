@@ -50,6 +50,14 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Debug-only hook used by emulator/CI to seed a pairing without the camera.
+        if (BuildConfig.DEBUG) {
+            intent.getStringExtra("pair_qr")?.let { qr ->
+                intent.removeExtra("pair_qr")
+                Thread { com.example.dsh.relay.DshRelayManager.pairFromQr(applicationContext, qr) }.start()
+            }
+        }
+
         setContentView(R.layout.activity_hr)
         setupImmersiveMode()
         hrContainerView = findViewById(R.id.hr_container)
