@@ -90,6 +90,19 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
 
     override fun clearRelayProfile() = execute("DELETE FROM dsh_relay_profiles", emptyList())
 
+    override fun loadBusCache(scopeId: String): String? = queryOne(
+        "SELECT value FROM dsh_bus_cache WHERE scope_id = ?", listOf(scopeId),
+    ) { it.getColumnString(0) }
+
+    override fun saveBusCache(scopeId: String, value: String) = execute(
+        "INSERT OR REPLACE INTO dsh_bus_cache (scope_id, value) VALUES (?, ?)",
+        listOf(scopeId, value),
+    )
+
+    override fun clearBusCache(scopeId: String) = execute(
+        "DELETE FROM dsh_bus_cache WHERE scope_id = ?", listOf(scopeId),
+    )
+
     override fun migrateLegacyRemoteProfile(profile: DshLegacyRemoteProfile): Boolean {
         if (queryOne("SELECT value FROM dsh_settings WHERE key = ?", listOf("remote_profile_migration_done")) { it.getColumnString(0) } == "true") return false
         driver.transaction {
@@ -180,7 +193,7 @@ private class DshSqliteStore(path: String, legacyProfile: DshLegacyRemoteProfile
 }
 
 private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : SqlSchema {
-    override val version: Int = 7
+    override val version: Int = 8
 
     override fun create(driver: SqlDriver) {
         driver.execute("CREATE TABLE IF NOT EXISTS dsh_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -188,6 +201,7 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
         createProfileTable(driver)
         createRelayTable(driver)
         createLogTable(driver)
+        createBusCacheTable(driver)
         writeLegacyProfile(driver)
     }
 
@@ -204,6 +218,7 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
         if (oldVersion < 5) migrateToV5(driver)
         if (oldVersion < 6) migrateToV6(driver)
         if (oldVersion < 7) createLogTable(driver)
+        if (oldVersion < 8) createBusCacheTable(driver)
     }
 
     private fun migrateToV6(driver: SqlDriver) {
@@ -274,5 +289,9 @@ private class DshSchema(private val legacyProfile: DshLegacyRemoteProfile?) : Sq
         driver.execute("CREATE TABLE IF NOT EXISTS dsh_log_events (seq INTEGER PRIMARY KEY, time INTEGER NOT NULL, level INTEGER NOT NULL, type TEXT NOT NULL, session_id TEXT, rpc_id TEXT, message TEXT NOT NULL, size INTEGER NOT NULL)")
         driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_log_time ON dsh_log_events(time)")
         driver.execute("CREATE INDEX IF NOT EXISTS idx_dsh_log_type ON dsh_log_events(type)")
+    }
+
+    private fun createBusCacheTable(driver: SqlDriver) {
+        driver.execute("CREATE TABLE IF NOT EXISTS dsh_bus_cache (scope_id TEXT PRIMARY KEY, value TEXT NOT NULL)")
     }
 }
