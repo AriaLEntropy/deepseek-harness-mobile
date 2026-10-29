@@ -33,7 +33,7 @@ struct Index {
   build() {
     Stack() {
         Kuikly({
-        pagerName: this.pageName ?? 'connection_setup',
+        pagerName: this.pageName ?? 'welcome',
         pagerData: this.pageData ?? {},
         delegate: this.kuiklyViewDelegate,
         nativeManager: globalNativeManager,

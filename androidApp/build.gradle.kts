@@ -21,7 +21,7 @@ android {
         }
     }
     defaultConfig {
-        applicationId = "com.example.dsh"
+        applicationId = "com.example.dsh.ours"
         minSdk = 24
         targetSdk = 28
         versionCode = 5

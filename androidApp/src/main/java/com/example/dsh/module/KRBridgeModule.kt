@@ -20,6 +20,7 @@ import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
 import android.view.RoundedCorner
+import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
@@ -129,6 +130,8 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             "setSystemBarsDimmed" -> {
                 setSystemBarsDimmed(params)
             }
+
+            "setNavigationBarColor" -> setNavigationBarColor(params)
 
             "pickImage" -> pickImage(params, callback)
             "pickFile" -> pickFile(callback)
@@ -423,6 +426,27 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
         if (view is android.view.ViewGroup) {
             for (index in 0 until view.childCount) applyNoSuggestions(view.getChildAt(index))
+        }
+    }
+
+    private fun setNavigationBarColor(params: String?) {
+        val json = JSONObject(params ?: "{}")
+        val color = json.optLong("color").toInt()
+        val isDark = json.optBoolean("isDark")
+        activity?.runOnUiThread {
+            val window = activity?.window ?: return@runOnUiThread
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
+            window.navigationBarColor = color
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val flags = window.decorView.systemUiVisibility
+                window.decorView.systemUiVisibility = if (isDark) {
+                    flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+                } else {
+                    flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                }
+            }
         }
     }
 

@@ -43,7 +43,7 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
             return if (pn.isNotEmpty()) {
                 return pn
             } else {
-                "connection_setup"
+                "welcome"
             }
         }
 

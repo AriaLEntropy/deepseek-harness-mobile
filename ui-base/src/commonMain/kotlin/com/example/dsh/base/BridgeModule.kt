@@ -372,6 +372,18 @@ class BridgeModule : Module() {
         )
     }
 
+    /** 设置系统导航栏底色（ARGB）与图标明暗，用于让全屏页面与底部导航栏无缝衔接。 */
+    fun setNavigationBarColor(colorArgb: Long, isDark: Boolean) {
+        callNativeMethod(
+            SET_NAVIGATION_BAR_COLOR,
+            JSONObject().apply {
+                put("color", colorArgb)
+                put("isDark", isDark)
+            },
+            null,
+        )
+    }
+
     fun pickSshKey(callback: (String) -> Unit) {
         callNativeMethod("pickSshKey", null) { value ->
             callback(value?.optString("uri").orEmpty())
@@ -529,6 +541,7 @@ class BridgeModule : Module() {
         const val SIGN_ALERT = "signAlert"
         const val CLOSE_KEYBOARD = "closeKeyboard"
         const val SET_SYSTEM_BARS_DIMMED = "setSystemBarsDimmed"
+        const val SET_NAVIGATION_BAR_COLOR = "setNavigationBarColor"
         const val URL_ENCODE = "urlEncode"
         const val URL_DECODE = "urlDecode"
         const val SHOW_PHOTO_BROWSER = "showPhotoBrowser"

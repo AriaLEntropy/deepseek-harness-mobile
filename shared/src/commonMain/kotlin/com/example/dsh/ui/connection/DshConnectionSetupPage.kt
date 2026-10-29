@@ -125,6 +125,11 @@ internal class DshConnectionSetupPage : BasePager() {
         keyId = profile?.keyId.orEmpty()
         sshFingerprint = profile?.hostFingerprint.orEmpty()
         keyLabel = if (keyId.isEmpty()) "未导入 SSH 私钥" else "已导入 SSH 私钥"
+        // 从欢迎页进入时显式指定模式；覆盖本地保存的上次模式。
+        when (pageData.params.optString("initialMode")) {
+            "ssh" -> connectionMode = DshConnectionMode.SSH
+            "relay" -> connectionMode = DshConnectionMode.RELAY
+        }
         // 冷启动自动尝试一次连接：连得上直接进主页，连不上停留在此页。
         // 从主页返回本页（改设置 / 断开）时带 skipAutoConnect，避免刚断开又被弹回主页。
         if (!pageData.params.optBoolean(SKIP_AUTO_CONNECT_KEY) && !autoConnectAttempted) {
