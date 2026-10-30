@@ -6,12 +6,12 @@ import com.example.dsh.bus.BUS_DELETE_TASK_CONFIRM_TITLE
 import com.example.dsh.bus.busCanDeleteTask
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.message.DshMessage
-import com.example.dsh.message.DshMessageRole
 import com.example.dsh.platform.currentTimeMillis
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.ui.home.BusHomeModelOption
 import com.example.dsh.ui.home.taskStatusLabel
 import com.example.dsh.ui.message.DshMessageRow
+import com.example.dsh.ui.rendering.DshDisclosureRow
 import com.example.dsh.ui.rendering.DshPromptInput
 import com.example.dsh.ui.session.DshSessionConfirmDialog
 import com.tencent.kuikly.core.annotations.Page
@@ -21,6 +21,7 @@ import com.tencent.kuikly.core.directives.vbind
 import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.module.RouterModule
+import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.timer.setTimeout
@@ -64,6 +65,8 @@ internal class BusChatPage : BasePager() {
     private var hasMore by observable(false)
     private var lastMessage by observable("")
     private var keyboardHeight by observable(0f)
+    /** 已展开的工具组 key；默认全部收起。 */
+    private var expandedToolGroups by observable(emptySet<String>())
     private val messages by observableList<DshMessage>()
     private val models by observableList<BusHomeModelOption>()
 
@@ -165,6 +168,12 @@ internal class BusChatPage : BasePager() {
     private fun modelLabel(): String {
         val model = models.firstOrNull { it.id == modelId }
         return model?.displayName?.ifBlank { model.id } ?: modelId.ifBlank { "默认模型" }
+    }
+
+    private fun isToolGroupExpanded(key: String): Boolean = key in expandedToolGroups
+
+    private fun toggleToolGroup(key: String) {
+        expandedToolGroups = toggleBusToolGroup(expandedToolGroups, key)
     }
 
     private fun send() {
@@ -329,18 +338,27 @@ internal class BusChatPage : BasePager() {
                                     }
                                 }
                             }
-                            vfor({ this@BusChatPage.messages }) { message ->
-                                if (message.role == DshMessageRole.TOOL) {
-                                    ChatToolRow(message.content, c)
-                                } else {
-                                    DshMessageRow(
-                                        message = message,
+                            // vfor 需要 ObservableList：把分组结果包一层，仍是纯函数计算。
+                            vfor({
+                                ObservableList<BusChatRow>().apply {
+                                    addAll(busChatRows(this@BusChatPage.messages.toList()))
+                                }
+                            }) { row ->
+                                when (row) {
+                                    is BusChatRow.Message -> DshMessageRow(
+                                        message = row.message,
                                         pageStreaming = { false },
                                         isWebTimeline = false,
                                         isExpanded = { true },
                                         onToggle = {},
                                         colors = { c },
                                         isTurnTail = { true },
+                                    )
+                                    is BusChatRow.ToolGroup -> BusToolGroupRow(
+                                        group = row,
+                                        expanded = { this@BusChatPage.isToolGroupExpanded(row.key) },
+                                        onToggle = { this@BusChatPage.toggleToolGroup(row.key) },
+                                        colors = c,
                                     )
                                 }
                             }
@@ -523,6 +541,49 @@ private fun ViewContainer<*, *>.ChatHeader(
                         fontWeightMedium()
                         color(colors.stateErrorPrimary)
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 连续 tool 消息的折叠行：组头复用旧版 DSH 的 [DshDisclosureRow]（紧凑表头样式），
+ * 默认收起；展开后每条工具仍是一行灰色摘要。
+ */
+private fun ViewContainer<*, *>.BusToolGroupRow(
+    group: BusChatRow.ToolGroup,
+    expanded: () -> Boolean,
+    onToggle: () -> Unit,
+    colors: DshColorTokens,
+) {
+    View {
+        attr {
+            flexDirectionColumn()
+            marginTop(6f)
+            marginBottom(6f)
+        }
+        // open 需要跟随页面展开状态，用 vbind 让表头箭头在收起/展开时同步。
+        vbind({ expanded() }) {
+            DshDisclosureRow {
+                attr {
+                    title = busToolGroupLabel(group.tools.size)
+                    iconAsset = "think.svg"
+                    this.colors = colors
+                    open = expanded()
+                    expandable = true
+                    this.onToggle = onToggle
+                    compact = true
+                    chrome = true
+                    headerOnly = true
+                }
+            }
+        }
+        vif({ expanded() }) {
+            View {
+                attr { flexDirectionColumn() }
+                group.tools.forEach { tool ->
+                    ChatToolRow(tool.content, colors)
                 }
             }
         }

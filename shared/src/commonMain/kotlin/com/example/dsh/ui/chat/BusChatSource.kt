@@ -1,6 +1,11 @@
 package com.example.dsh.ui.chat
 
+import com.example.dsh.bus.BusCommand
+import com.example.dsh.bus.BusCommandAck
+import com.example.dsh.bus.BusCommandSender
+import com.example.dsh.bus.BusCommandTransport
 import com.example.dsh.bus.BusCommands
+import com.example.dsh.bus.BusSendResult
 import com.example.dsh.bus.BusStore
 import com.example.dsh.bus.busParse
 import com.example.dsh.connection.DshRelayModule
@@ -81,6 +86,14 @@ internal class BusChatSource(
     private val relay: DshRelayModule,
     private val pagerId: String,
 ) : ConversationSource {
+    private val commandSender = BusCommandSender(RelayCommandTransport(relay, pagerId))
+
+    /**
+     * 上一次发送没有拿到电脑确认（网络失败 / 60 秒未确认）的命令。
+     * 同一操作再次点击时原样复用，保证 id 与 createdAt 不变、电脑按 id 去重。
+     */
+    private val retryCommands = mutableMapOf<String, BusCommand>()
+
     fun homeView(): BusHomeView? = runCatching {
         val json = relay.busHomeJson() ?: return null
         val store = BusStore()
@@ -147,30 +160,39 @@ internal class BusChatSource(
     }
 
     override fun startTask(request: BusChatStartRequest, onDone: (taskId: String?, error: String?) -> Unit) {
-        val commandId = BusCommands.newCommandId()
-        val json = BusCommands.startTask(
-            commandId = commandId,
-            createdAt = BusCommands.createdAt(),
-            agentId = request.agentId,
-            source = request.source,
-            connectorId = request.connectorId,
-            projectPath = request.projectPath,
-            prompt = request.prompt,
-            model = request.model,
-            effort = request.effort,
-        )
-        relay.busCommand(json) { ack ->
-            if (ack.status != 200 && ack.status != 202) {
-                onDone(null, if (ack.body.isBlank()) "创建失败（${ack.status}）" else "创建失败：${ack.body}")
-                return@busCommand
-            }
-            awaitCommand(commandId) { outcome ->
-                when {
-                    outcome == null -> onDone(null, "电脑没有确认，请回首页查看任务")
-                    !outcome.ok -> onDone(null, outcome.error.ifBlank { "创建失败" })
-                    outcome.taskId.isBlank() -> onDone(null, "电脑没有返回任务 id")
-                    else -> onDone(outcome.taskId, null)
+        sendCommand(
+            retryKey = listOf(
+                "startTask",
+                request.agentId,
+                request.source,
+                request.connectorId.orEmpty(),
+                request.projectPath,
+                request.prompt,
+                request.model,
+                request.effort,
+            ).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.startTask(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = request.agentId,
+                    source = request.source,
+                    connectorId = request.connectorId,
+                    projectPath = request.projectPath,
+                    prompt = request.prompt,
+                    model = request.model,
+                    effort = request.effort,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> when {
+                    !result.ok -> onDone(null, result.error.ifBlank { "创建失败" })
+                    result.taskId.isBlank() -> onDone(null, "电脑没有返回任务 id")
+                    else -> onDone(result.taskId, null)
                 }
+                is BusSendResult.Unconfirmed -> onDone(null, "电脑没有确认，请回首页查看任务")
+                else -> onDone(null, result.message)
             }
         }
     }
@@ -183,44 +205,44 @@ internal class BusChatSource(
         effort: String,
         onDone: (ok: Boolean, error: String) -> Unit,
     ) {
-        val commandId = BusCommands.newCommandId()
-        val json = BusCommands.followUp(
-            commandId = commandId,
-            createdAt = BusCommands.createdAt(),
-            agentId = agentId,
-            taskId = taskId,
-            prompt = prompt,
-            model = model,
-            effort = effort,
-        )
-        relay.busCommand(json) { ack ->
-            if (ack.status != 200 && ack.status != 202) {
-                onDone(false, if (ack.body.isBlank()) "发送失败（${ack.status}）" else ack.body)
-                return@busCommand
-            }
-            awaitCommand(commandId) { outcome ->
-                if (outcome == null) onDone(false, "电脑没有确认，请稍后重试")
-                else onDone(outcome.ok, outcome.error)
+        sendCommand(
+            retryKey = listOf("followUp", agentId, taskId, prompt, model, effort).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.followUp(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = agentId,
+                    taskId = taskId,
+                    prompt = prompt,
+                    model = model,
+                    effort = effort,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> onDone(result.ok, result.error)
+                is BusSendResult.Failed -> onDone(false, operationFailure(result, "发送失败"))
+                else -> onDone(false, result.message)
             }
         }
     }
 
     override fun interrupt(agentId: String, taskId: String, onDone: (ok: Boolean, error: String) -> Unit) {
-        val commandId = BusCommands.newCommandId()
-        val json = BusCommands.interrupt(
-            commandId = commandId,
-            createdAt = BusCommands.createdAt(),
-            agentId = agentId,
-            taskId = taskId,
-        )
-        relay.busCommand(json) { ack ->
-            if (ack.status != 200 && ack.status != 202) {
-                onDone(false, if (ack.body.isBlank()) "停止失败（${ack.status}）" else ack.body)
-                return@busCommand
-            }
-            awaitCommand(commandId) { outcome ->
-                if (outcome == null) onDone(false, "电脑没有确认，请稍后重试")
-                else onDone(outcome.ok, outcome.error)
+        sendCommand(
+            retryKey = listOf("interrupt", agentId, taskId).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.interrupt(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = agentId,
+                    taskId = taskId,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> onDone(result.ok, result.error)
+                is BusSendResult.Failed -> onDone(false, operationFailure(result, "停止失败"))
+                else -> onDone(false, result.message)
             }
         }
     }
@@ -230,68 +252,63 @@ internal class BusChatSource(
             onDone(false, "缺少任务 id")
             return
         }
-        val commandId = BusCommands.newCommandId()
-        val json = BusCommands.deleteTask(
-            commandId = commandId,
-            createdAt = BusCommands.createdAt(),
-            agentId = agentId,
-            taskId = taskId,
-        )
-        relay.busCommand(json) { ack ->
-            if (ack.status != 200 && ack.status != 202) {
-                onDone(false, if (ack.body.isBlank()) "删除失败（${ack.status}）" else ack.body)
-                return@busCommand
-            }
-            awaitCommand(commandId) { outcome ->
-                when {
-                    outcome == null -> onDone(false, "电脑没有确认，请稍后重试")
-                    !outcome.ok -> onDone(false, outcome.error.ifBlank { "删除失败" })
-                    else -> onDone(true, "")
+        sendCommand(
+            retryKey = listOf("deleteTask", agentId, taskId).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.deleteTask(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = agentId,
+                    taskId = taskId,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> {
+                    if (result.ok) onDone(true, "") else onDone(false, result.error.ifBlank { "删除失败" })
                 }
+                is BusSendResult.Failed -> onDone(false, operationFailure(result, "删除失败"))
+                else -> onDone(false, result.message)
             }
         }
     }
-
-    private data class CommandOutcome(val ok: Boolean, val taskId: String, val error: String)
 
     /**
-     * 202 只表示电脑收下命令；真正的 ok / taskId 在后续快照的 recentResults 里。
-     * 300ms 轮询快照，最多约 15 秒。
+     * 统一发送入口：先取该操作上一次可重试的命令（复用 id + createdAt），
+     * 否则生成一次；结果可重试时留到下一次点击继续复用。
      */
-    private fun awaitCommand(
-        commandId: String,
-        attempt: Int = 0,
-        onDone: (CommandOutcome?) -> Unit,
+    private fun sendCommand(
+        retryKey: String,
+        build: (id: String, createdAt: String) -> String,
+        onDone: (BusSendResult) -> Unit,
     ) {
-        val outcome = commandOutcome(commandId)
-        if (outcome != null) {
-            onDone(outcome)
-            return
+        val command = retryCommands[retryKey] ?: commandSender.prepare(build)
+        commandSender.send(command) { result ->
+            if (result.retryable) retryCommands[retryKey] = command else retryCommands.remove(retryKey)
+            onDone(result)
         }
-        if (attempt >= 50) {
-            onDone(null)
-            return
-        }
-        setTimeout(pagerId, 300) { awaitCommand(commandId, attempt + 1, onDone) }
     }
 
-    private fun commandOutcome(commandId: String): CommandOutcome? {
-        val root = runCatching {
-            val json = relay.busHomeJson() ?: return null
-            busParse(json).jsonObject
-        }.getOrNull() ?: return null
-        val results = root["recentResults"] as? JsonArray ?: return null
-        for (item in results) {
-            val objectItem = item as? JsonObject ?: continue
-            if (objectItem.string("commandId") != commandId) continue
-            if (objectItem.string("error") == "pending") return null
-            return CommandOutcome(
-                ok = (objectItem["ok"] as? JsonPrimitive)?.booleanOrNull == true,
-                taskId = objectItem.string("taskId"),
-                error = objectItem.string("error"),
-            )
-        }
-        return null
+    private fun operationFailure(result: BusSendResult.Failed, fallback: String): String = when {
+        result.body.isNotBlank() -> result.body
+        result.status == 0 -> result.message
+        else -> "$fallback（${result.status}）"
+    }
+}
+
+/** 把 Kuikly relay 适配成与 UI/平台无关的发送边界，便于 commonTest 用假 transport 覆盖。 */
+private class RelayCommandTransport(
+    private val relay: DshRelayModule,
+    private val pagerId: String,
+) : BusCommandTransport {
+    override fun send(json: String, onAck: (BusCommandAck) -> Unit) {
+        relay.busCommand(json) { ack -> onAck(BusCommandAck(ack.status, ack.body)) }
+    }
+
+    override fun snapshotJson(): String? = runCatching { relay.busHomeJson() }.getOrNull()
+
+    override fun schedule(delayMs: Long, action: () -> Unit) {
+        setTimeout(pagerId, delayMs.toInt()) { action() }
     }
 }
 

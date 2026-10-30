@@ -4,16 +4,23 @@ import com.example.dsh.base.BasePager
 import com.example.dsh.base.BridgeModule
 import com.example.dsh.bus.BUS_REMOVE_PROJECT_CONFIRM_MESSAGE
 import com.example.dsh.bus.BUS_REMOVE_PROJECT_CONFIRM_TITLE
-import com.example.dsh.bus.BusCommandOutcome
+import com.example.dsh.bus.BusCache
+import com.example.dsh.bus.BusCacheScope
+import com.example.dsh.bus.BusCommand
+import com.example.dsh.bus.BusCommandAck
+import com.example.dsh.bus.BusCommandSender
+import com.example.dsh.bus.BusCommandTransport
 import com.example.dsh.bus.BusCommands
+import com.example.dsh.bus.BusSendResult
 import com.example.dsh.bus.BusStore
-import com.example.dsh.bus.busCommandOutcome
+import com.example.dsh.bus.DshLocalBusSnapshotCache
 import com.example.dsh.bus.busParse
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.supportsRelayBridge
 import com.example.dsh.host.DshConnectionMode
 import com.example.dsh.models.DshSettingsChoice
 import com.example.dsh.session.DshRelayProfile
+import com.example.dsh.session.DshSessionScope
 import com.example.dsh.storage.DshLocalStore
 import com.example.dsh.storage.createDshLocalStore
 import com.example.dsh.theme.DshColorTokens
@@ -40,6 +47,7 @@ import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import kotlinx.serialization.json.JsonElement
 
 /**
  * 统一首页（静态版）。
@@ -92,8 +100,24 @@ internal class DshBusHomePage : BasePager() {
     private var connectionMode = ""
     private var databaseDir = ""
     private var store: DshLocalStore? = null
+    /** Bus 快照缓存：冷启动先读，收到网络快照后再覆盖。 */
+    private var busCache: BusCache? = null
+    private var localBusCache: DshLocalBusSnapshotCache? = null
+    private var hostId = ""
+    private var lastCachedSnapshot = ""
     private var projectsInitialized = false
     private var alive = true
+
+    /** 首页的 startTask / removeProject 也走统一发送入口（16 KiB、同 id 重试、60 秒未确认）。 */
+    private val commandSender: BusCommandSender by lazy {
+        BusCommandSender(
+            transport = HomeRelayCommandTransport(
+                relay = acquireModule(DshRelayModule.MODULE_NAME),
+                pagerId = pagerId,
+            ),
+        )
+    }
+    private val retryCommands = mutableMapOf<String, BusCommand>()
 
     private fun openAgentSheet() {
         showAgentSheet = true
@@ -415,33 +439,46 @@ internal class DshBusHomePage : BasePager() {
         }
         newTaskBusy = true
         newTaskError = ""
-        val json = BusCommands.startTask(
-            commandId = BusCommands.newCommandId(),
-            createdAt = BusCommands.createdAt(),
-            agentId = device.agentId,
-            source = agent.source,
-            connectorId = agent.connectorId,
-            projectPath = newTaskProjectPath,
-            prompt = prompt,
-            model = newTaskModelId,
-            effort = newTaskEffort,
-        )
-        acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busCommand(json) { ack ->
+        sendCommand(
+            retryKey = listOf(
+                "startTask",
+                device.agentId,
+                agent.source,
+                agent.connectorId.orEmpty(),
+                newTaskProjectPath,
+                prompt,
+                newTaskModelId,
+                newTaskEffort,
+            ).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.startTask(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = device.agentId,
+                    source = agent.source,
+                    connectorId = agent.connectorId,
+                    projectPath = newTaskProjectPath,
+                    prompt = prompt,
+                    model = newTaskModelId,
+                    effort = newTaskEffort,
+                )
+            },
+        ) { result ->
             setTimeout(pagerId, 0) {
                 newTaskBusy = false
-                if (ack.status == 200 || ack.status == 202) {
-                    showNewTaskSheet = false
-                    showNewTaskModels = false
-                    newTaskPrompt = ""
-                    newTaskKeyboardHeight = 0f
-                    setTimeout(pagerId, 800) { refreshBusHome() }
-                    setTimeout(pagerId, 2_500) { refreshBusHome() }
-                } else {
-                    newTaskError = if (ack.body.isNotBlank()) {
-                        "创建失败：${ack.body}"
+                when (result) {
+                    is BusSendResult.Confirmed -> if (result.ok) {
+                        showNewTaskSheet = false
+                        showNewTaskModels = false
+                        newTaskPrompt = ""
+                        newTaskKeyboardHeight = 0f
+                        setTimeout(pagerId, 800) { refreshBusHome() }
+                        setTimeout(pagerId, 2_500) { refreshBusHome() }
                     } else {
-                        "创建失败（${ack.status}）"
+                        newTaskError = result.error.ifBlank { "创建失败" }
                     }
+                    is BusSendResult.Failed -> newTaskError = failedCommandMessage(result, "创建失败")
+                    else -> newTaskError = result.message
                 }
             }
         }
@@ -449,6 +486,8 @@ internal class DshBusHomePage : BasePager() {
 
     private fun removeCurrentComputer() {
         if (removeBusy) return
+        // 先记下 hostId：配对档案清掉之后就查不到它了。
+        val removedHostId = knownHostId()
         removeBusy = true
         removeError = ""
         runCatching {
@@ -460,6 +499,7 @@ internal class DshBusHomePage : BasePager() {
                         return@setTimeout
                     }
                     runCatching { store?.clearRelayProfile() }
+                    clearHostCache(removedHostId)
                     localHostName = ""
                     showRemoveComputer = false
                     showSettings = false
@@ -472,6 +512,20 @@ internal class DshBusHomePage : BasePager() {
         }.onFailure {
             removeBusy = false
             removeError = it.message ?: "移除失败"
+        }
+    }
+
+    /** bus:<hostId> 与 DSH 原生 relay:<hostId> 一起清；其他电脑/SSH 配置不动。 */
+    private fun clearHostCache(hostId: String) {
+        if (hostId.isBlank()) return
+        val cleared = localBusCache?.let { runCatching { it.clearHost(hostId) }.isSuccess } == true
+        if (!cleared) {
+            runCatching { store?.clearBusCache(BusCacheScope.bus(hostId)) }
+            runCatching { store?.clearScope(BusCacheScope.relay(hostId)) }
+        }
+        if (this.hostId == hostId) {
+            this.hostId = ""
+            lastCachedSnapshot = ""
         }
     }
 
@@ -505,64 +559,55 @@ internal class DshBusHomePage : BasePager() {
         }
         removeProjectBusy = true
         removeProjectError = ""
-        val commandId = BusCommands.newCommandId()
-        val json = BusCommands.removeProject(
-            commandId = commandId,
-            createdAt = BusCommands.createdAt(),
-            agentId = device.agentId,
-            projectPath = path,
-        )
-        acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busCommand(json) { ack ->
+        sendCommand(
+            retryKey = listOf("removeProject", device.agentId, path).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.removeProject(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = device.agentId,
+                    projectPath = path,
+                )
+            },
+        ) { result ->
             setTimeout(pagerId, 0) {
-                if (ack.status != 200 && ack.status != 202) {
-                    removeProjectBusy = false
-                    removeProjectError = if (ack.body.isBlank()) {
-                        "移除失败（${ack.status}）"
+                removeProjectBusy = false
+                when (result) {
+                    is BusSendResult.Confirmed -> if (result.ok) {
+                        showRemoveProject = false
+                        removeProjectPath = ""
+                        // 先刷新一次，再等下一轮轮询收尾；重复移除已隐藏项目电脑回成功。
+                        refreshBusHome()
+                        setTimeout(pagerId, 800) { refreshBusHome() }
                     } else {
-                        "移除失败：${ack.body}"
+                        removeProjectError = result.error.ifBlank { "移除失败" }
                     }
-                    return@setTimeout
-                }
-                awaitBusCommand(commandId) { outcome ->
-                    removeProjectBusy = false
-                    when (outcome) {
-                        is BusCommandOutcome.Success -> {
-                            showRemoveProject = false
-                            removeProjectPath = ""
-                            // 先刷新一次，再等下一轮轮询收尾；重复移除已隐藏项目电脑回成功。
-                            refreshBusHome()
-                            setTimeout(pagerId, 800) { refreshBusHome() }
-                        }
-                        is BusCommandOutcome.Failure -> {
-                            removeProjectError = outcome.error.ifBlank { "移除失败" }
-                        }
-                        BusCommandOutcome.Pending -> Unit
-                    }
+                    is BusSendResult.Failed -> removeProjectError = failedCommandMessage(result, "移除失败")
+                    else -> removeProjectError = result.message
                 }
             }
         }
     }
 
-    private fun awaitBusCommand(
-        commandId: String,
-        attempt: Int = 0,
-        onDone: (BusCommandOutcome) -> Unit,
+    /**
+     * 统一发送入口：可重试的结果保留命令对象，下一次点击复用同一 id + createdAt。
+     */
+    private fun sendCommand(
+        retryKey: String,
+        build: (id: String, createdAt: String) -> String,
+        onDone: (BusSendResult) -> Unit,
     ) {
-        val json = runCatching {
-            acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busHomeJson()
-        }.getOrNull()
-        val outcome = json?.let { busCommandOutcome(it, commandId) } ?: BusCommandOutcome.Pending
-        if (outcome is BusCommandOutcome.Pending && attempt < 50) {
-            setTimeout(pagerId, 300) { awaitBusCommand(commandId, attempt + 1, onDone) }
-            return
+        val command = retryCommands[retryKey] ?: commandSender.prepare(build)
+        commandSender.send(command) { result ->
+            if (result.retryable) retryCommands[retryKey] = command else retryCommands.remove(retryKey)
+            onDone(result)
         }
-        onDone(
-            if (outcome is BusCommandOutcome.Pending) {
-                BusCommandOutcome.Failure("电脑没有确认，请稍后重试")
-            } else {
-                outcome
-            },
-        )
+    }
+
+    private fun failedCommandMessage(result: BusSendResult.Failed, fallback: String): String = when {
+        result.body.isNotBlank() -> "$fallback：${result.body}"
+        result.status == 0 -> result.message
+        else -> "$fallback（${result.status}）"
     }
 
     override fun created() {
@@ -592,13 +637,15 @@ internal class DshBusHomePage : BasePager() {
         } else {
             runCatching { createDshLocalStore("$databaseDir/dsh.db", null) }.getOrNull()
         }
+        localBusCache = store?.let { runCatching { DshLocalBusSnapshotCache(it) }.getOrNull() }
+        busCache = localBusCache?.let {
+            runCatching { BusCache(it, nowIso = { BusCommands.createdAt() }) }.getOrNull()
+        }
+        hostId = knownHostId()
         localHostName = runCatching { store?.loadRelayProfile()?.hostName }
             .getOrNull()
             .orEmpty()
         hasConnection = connectionMode.isNotEmpty()
-        if (!hasConnection) {
-            homeView = previewBusHomeView()
-        }
         val savedView = runCatching {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .getItem(BUS_VIEW_MODE_KEY)
@@ -614,6 +661,8 @@ internal class DshBusHomePage : BasePager() {
             ),
         )
         setTimeout(pagerId, 50) { syncNavigationBarColor() }
+        // 冷启动：先用本地缓存渲染，再等网络快照覆盖。
+        restoreCachedHome()
         refreshBusHome()
         pollBusHome()
         connectIfNeeded()
@@ -636,12 +685,21 @@ internal class DshBusHomePage : BasePager() {
         val json = runCatching {
             acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busHomeJson()
         }.getOrNull() ?: return
-        val next = runCatching {
-            val store = BusStore()
-            if (store.applySnapshot(busParse(json)) == null) return@runCatching null
-            store.toHomeView()
-        }.getOrNull() ?: return
-        if (next.device == null) return
+        val element = runCatching { busParse(json) }.getOrNull() ?: return
+        val next = buildHomeView(element) ?: return
+        resolveHostId(next)
+        applyHomeView(next)
+        cacheSnapshot(json)
+    }
+
+    /** 协议校验和映射都走 BusStore；坏快照返回 null，页面保持原状态。 */
+    private fun buildHomeView(element: JsonElement): BusHomeView? = runCatching {
+        val busStore = BusStore()
+        if (busStore.applySnapshot(element) == null) return@runCatching null
+        busStore.toHomeView().takeIf { it.device != null }
+    }.getOrNull()
+
+    private fun applyHomeView(next: BusHomeView) {
         everLoaded = true
         waitingTooLong = false
         if (selectedAgentKey.isNotEmpty() && next.agents.none { it.key == selectedAgentKey }) {
@@ -649,6 +707,45 @@ internal class DshBusHomePage : BasePager() {
         }
         if (next != homeView) homeView = next
         initProjectCollapseIfNeeded()
+    }
+
+    /** 当前电脑的稳定 id：优先用配对档案，其次路由参数；都不行才退回快照 agentId。 */
+    private fun knownHostId(): String {
+        val fromProfile = runCatching { store?.loadRelayProfile()?.hostId }
+            .getOrNull()
+            .orEmpty()
+        if (fromProfile.isNotEmpty()) return fromProfile
+        val fromParams = pageData.params.optString("profileId")
+        return if (fromParams.isNotEmpty() && fromParams != DshSessionScope.DEFAULT_REMOTE_PROFILE_ID) {
+            fromParams
+        } else {
+            ""
+        }
+    }
+
+    private fun resolveHostId(view: BusHomeView) {
+        hostId = knownHostId().ifEmpty { view.device?.agentId.orEmpty() }
+    }
+
+    private fun restoreCachedHome() {
+        val cache = busCache ?: return
+        val ids = linkedSetOf<String>()
+        knownHostId().takeIf { it.isNotEmpty() }?.let { ids += it }
+        hostId.takeIf { it.isNotEmpty() }?.let { ids += it }
+        for (id in ids) {
+            val entry = runCatching { cache.load(id) }.getOrNull() ?: continue
+            val restored = buildHomeView(entry.snapshot) ?: continue
+            hostId = id
+            applyHomeView(restored)
+            return
+        }
+    }
+
+    private fun cacheSnapshot(json: String) {
+        val cache = busCache ?: return
+        val id = hostId
+        if (id.isEmpty() || json == lastCachedSnapshot) return
+        if (runCatching { cache.save(id, json) }.isSuccess) lastCachedSnapshot = json
     }
 
     private fun pollBusHome() {
@@ -707,9 +804,15 @@ internal class DshBusHomePage : BasePager() {
                 val runningCount = visibleTasks.count { it.status == "running" }
                 val selectedAgentName = home.agents.firstOrNull { it.key == selectedKey }?.name
                     ?: "全部 Agent"
+                // 真正没有配对电脑时才用禁用态卡片；连接中的状态仍保留。
+                val noComputer = device == null && !this@DshBusHomePage.hasConnection
+                val bodyState = busHomeBodyState(
+                    hasDevice = device != null,
+                    visibleTaskCount = visibleTasks.size,
+                )
                 val deviceTitle = when {
                     device != null -> this@DshBusHomePage.localHostName.ifBlank { device.name }
-                    !this@DshBusHomePage.hasConnection -> "未连接电脑"
+                    noComputer -> "没有电脑"
                     this@DshBusHomePage.waitingTooLong -> "电脑未响应"
                     this@DshBusHomePage.everLoaded -> "电脑已离线"
                     else -> "正在连接电脑…"
@@ -747,14 +850,15 @@ internal class DshBusHomePage : BasePager() {
                             paddingTop(9f)
                             paddingBottom(9f)
                             borderRadius(16f)
-                            backgroundColor(c.bgLayer1)
+                            backgroundColor(if (noComputer) homeSurface(c) else c.bgLayer1)
                             border(Border(1f, BorderStyle.SOLID, c.borderL1))
+                            if (noComputer) opacity(0.85f)
                         }
                         Image {
                             attr {
                                 src(ImageUri.commonAssets(device?.platformAsset ?: "computer.svg"))
                                 size(24f, 24f)
-                                tintColor(c.labelSecondary)
+                                tintColor(if (noComputer) c.labelTertiary else c.labelSecondary)
                             }
                         }
                         View {
@@ -772,7 +876,11 @@ internal class DshBusHomePage : BasePager() {
                                         size(6f, 6f)
                                         borderRadius(3f)
                                         backgroundColor(
-                                            if (device?.online == true) c.stateSuccessPrimary else c.labelTertiary,
+                                            when {
+                                                noComputer -> c.labelCaption
+                                                device?.online == true -> c.stateSuccessPrimary
+                                                else -> c.labelTertiary
+                                            },
                                         )
                                     }
                                 }
@@ -781,7 +889,7 @@ internal class DshBusHomePage : BasePager() {
                                         text(deviceTitle)
                                         fontSize(13f)
                                         fontWeightBold()
-                                        color(c.labelPrimary)
+                                        color(if (noComputer) c.labelTertiary else c.labelPrimary)
                                         marginLeft(5f)
                                     }
                                 }
@@ -790,20 +898,22 @@ internal class DshBusHomePage : BasePager() {
                                 attr {
                                     text(deviceSubtitle)
                                     fontSize(11f)
-                                    color(c.labelTertiary)
+                                    color(if (noComputer) c.labelCaption else c.labelTertiary)
                                     marginTop(3f)
                                 }
                             }
                         }
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets("chevron-down.svg"))
-                                size(10f, 10f)
-                                tintColor(c.labelTertiary)
-                                marginLeft(8f)
+                        if (!noComputer) {
+                            Image {
+                                attr {
+                                    src(ImageUri.commonAssets("chevron-down.svg"))
+                                    size(10f, 10f)
+                                    tintColor(c.labelTertiary)
+                                    marginLeft(8f)
+                                }
                             }
+                            event { click { this@DshBusHomePage.openDeviceSheet() } }
                         }
-                        event { click { this@DshBusHomePage.openDeviceSheet() } }
                     }
                     View { attr { flex(1f) } }
                     View {
@@ -941,7 +1051,7 @@ internal class DshBusHomePage : BasePager() {
                         flex(1f)
                         flexDirectionColumn()
                     }
-                    vif({ visibleTasks.isEmpty() }) {
+                    vif({ bodyState == BusHomeBodyState.NoTasks }) {
                         View {
                             attr {
                                 flex(1f)
@@ -983,7 +1093,7 @@ internal class DshBusHomePage : BasePager() {
                         }
                     }
                     vif({
-                        visibleTasks.isNotEmpty() &&
+                        bodyState == BusHomeBodyState.Content &&
                             this@DshBusHomePage.viewMode == VIEW_RECENT
                     }) {
                         Scroller {
@@ -1007,7 +1117,7 @@ internal class DshBusHomePage : BasePager() {
                         }
                     }
                     vif({
-                        visibleTasks.isNotEmpty() &&
+                        bodyState == BusHomeBodyState.Content &&
                             this@DshBusHomePage.viewMode == VIEW_PROJECTS
                     }) {
                         Scroller {
@@ -1064,12 +1174,17 @@ internal class DshBusHomePage : BasePager() {
                         attr {
                             size(52f, 52f)
                             borderRadius(17f)
-                            backgroundLinearGradient(
-                                Direction.TO_BOTTOM_RIGHT,
-                                ColorStop(Color(0xFF3B6BFF), 0f),
-                                ColorStop(Color(0xFF9B5CFF), 1f),
-                            )
-                            boxShadow(BoxShadow(0f, 4f, 12f, Color(0x593B6BFF)))
+                            if (device != null) {
+                                backgroundLinearGradient(
+                                    Direction.TO_BOTTOM_RIGHT,
+                                    ColorStop(Color(0xFF3B6BFF), 0f),
+                                    ColorStop(Color(0xFF9B5CFF), 1f),
+                                )
+                                boxShadow(BoxShadow(0f, 4f, 12f, Color(0x593B6BFF)))
+                            } else {
+                                // 没有电脑时新建入口禁用（对齐原型灰态），不制造可点错觉。
+                                backgroundColor(homeSurface(c))
+                            }
                             alignItemsCenter()
                             justifyContentCenter()
                             opacity(
@@ -1085,12 +1200,16 @@ internal class DshBusHomePage : BasePager() {
                                 ) 0f else 1f,
                             )
                         }
-                        event { click { this@DshBusHomePage.openDraftChat() } }
+                        event {
+                            click {
+                                if (device != null) this@DshBusHomePage.openDraftChat()
+                            }
+                        }
                         Image {
                             attr {
                                 src(ImageUri.commonAssets("new-session.svg"))
                                 size(23f, 23f)
-                                tintColor(Color(0xFFFFFFFF))
+                                tintColor(if (device != null) Color(0xFFFFFFFF) else c.labelTertiary)
                             }
                         }
                     }
@@ -1501,50 +1620,93 @@ private fun ViewContainer<*, *>.AgentFilterSheet(
                 }
             }
         }
-        Scroller {
-            attr {
-                flex(1f)
-                marginTop(6f)
-                paddingLeft(20f)
-                paddingRight(20f)
-            }
+        if (busHomeAgentsEmpty(agents)) {
             View {
                 attr {
+                    flex(1f)
                     width(contentWidth)
                     flexDirectionColumn()
+                    alignItemsCenter()
+                    justifyContentCenter()
+                    paddingBottom(28f)
                 }
-                AgentFilterRow(
-                    name = "全部 Agent",
-                    selected = selectedKey.isEmpty(),
-                    badge = if (selectedKey.isEmpty()) "当前" else "",
-                    badgeKind = if (selectedKey.isEmpty()) "current" else "",
-                    c = c,
-                    onClick = { onSelect("") },
-                )
-                agents.forEach { agent ->
-                    val selected = selectedKey == agent.key
-                    val badge = when {
-                        selected -> "当前"
-                        !agent.available -> "未安装"
-                        !agent.enabled -> "已停用"
-                        agent.status == "degraded" -> "需确认"
-                        agent.status == "error" -> "异常"
-                        else -> ""
+                Image {
+                    attr {
+                        src(
+                            ImageUri.commonAssets(
+                                if (c.isDark) "empty-no-agent-dark.svg" else "empty-no-agent.svg",
+                            ),
+                        )
+                        size(92f, 92f)
                     }
-                    val kind = when {
-                        selected -> "current"
-                        !agent.available || !agent.enabled -> "muted"
-                        agent.status == "degraded" || agent.status == "error" -> "attention"
-                        else -> ""
+                }
+                Text {
+                    attr {
+                        text("还没有 Agent")
+                        fontSize(16f)
+                        fontWeightBold()
+                        color(c.labelSecondary)
+                        marginTop(24f)
+                        textAlignCenter()
+                    }
+                }
+                Text {
+                    attr {
+                        text("Agent 在电脑上运行\n连接后自动出现")
+                        fontSize(13f)
+                        color(c.labelTertiary)
+                        lineHeight(21f)
+                        marginTop(8f)
+                        textAlignCenter()
+                    }
+                }
+            }
+        } else {
+            Scroller {
+                attr {
+                    flex(1f)
+                    marginTop(6f)
+                    paddingLeft(20f)
+                    paddingRight(20f)
+                }
+                View {
+                    attr {
+                        width(contentWidth)
+                        flexDirectionColumn()
                     }
                     AgentFilterRow(
-                        name = agent.name,
-                        selected = selected,
-                        badge = badge,
-                        badgeKind = kind,
+                        name = "全部 Agent",
+                        selected = selectedKey.isEmpty(),
+                        badge = if (selectedKey.isEmpty()) "当前" else "",
+                        badgeKind = if (selectedKey.isEmpty()) "current" else "",
                         c = c,
-                        onClick = { onSelect(agent.key) },
+                        onClick = { onSelect("") },
                     )
+                    agents.forEach { agent ->
+                        val selected = selectedKey == agent.key
+                        val badge = when {
+                            selected -> "当前"
+                            !agent.available -> "未安装"
+                            !agent.enabled -> "已停用"
+                            agent.status == "degraded" -> "需确认"
+                            agent.status == "error" -> "异常"
+                            else -> ""
+                        }
+                        val kind = when {
+                            selected -> "current"
+                            !agent.available || !agent.enabled -> "muted"
+                            agent.status == "degraded" || agent.status == "error" -> "attention"
+                            else -> ""
+                        }
+                        AgentFilterRow(
+                            name = agent.name,
+                            selected = selected,
+                            badge = badge,
+                            badgeKind = kind,
+                            c = c,
+                            onClick = { onSelect(agent.key) },
+                        )
+                    }
                 }
             }
         }
@@ -1752,3 +1914,19 @@ private fun homePinned(c: DshColorTokens): Color =
     if (c.isDark) Color(0xFF2A2A31) else Color(0xFFECECEC)
 
 
+
+/** 把 Kuikly relay / timer 适配成 BusCommandSender 的平台无关边界。 */
+private class HomeRelayCommandTransport(
+    private val relay: DshRelayModule,
+    private val pagerId: String,
+) : BusCommandTransport {
+    override fun send(json: String, onAck: (BusCommandAck) -> Unit) {
+        relay.busCommand(json) { ack -> onAck(BusCommandAck(ack.status, ack.body)) }
+    }
+
+    override fun snapshotJson(): String? = runCatching { relay.busHomeJson() }.getOrNull()
+
+    override fun schedule(delayMs: Long, action: () -> Unit) {
+        setTimeout(pagerId, delayMs.toInt()) { action() }
+    }
+}

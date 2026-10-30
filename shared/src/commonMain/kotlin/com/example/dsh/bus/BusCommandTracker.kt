@@ -18,6 +18,9 @@ class BusCommandTracker(
         startedAt.remove(commandId)
     }
 
+    /** True while the id is in flight; used by tests and by the sender to prove cleanup. */
+    fun isTracking(commandId: String): Boolean = startedAt.containsKey(commandId)
+
     fun isExpired(commandId: String): Boolean {
         val started = startedAt[commandId] ?: return false
         return nowMs() - started >= timeoutMs

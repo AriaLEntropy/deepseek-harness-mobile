@@ -23,6 +23,23 @@ internal data class BusHomeView(
     val runningCount: Int = tasks.count { it.status == "running" }
 }
 
+/**
+ * 首页主区状态。
+ * - 没有电脑：顶部显示禁用态电脑卡片，主区不再渲染空态插画；
+ * - 有电脑但没有可见任务：唯一的“没有任务”空态；
+ * - 其余情况渲染任务列表。
+ */
+internal enum class BusHomeBodyState { DisabledComputer, NoTasks, Content }
+
+internal fun busHomeBodyState(hasDevice: Boolean, visibleTaskCount: Int): BusHomeBodyState = when {
+    !hasDevice -> BusHomeBodyState.DisabledComputer
+    visibleTaskCount == 0 -> BusHomeBodyState.NoTasks
+    else -> BusHomeBodyState.Content
+}
+
+/** Agent 选择弹窗里没有可展示 Agent 时显示空态。 */
+internal fun busHomeAgentsEmpty(agents: List<BusHomeAgent>): Boolean = agents.isEmpty()
+
 internal data class BusHomeProject(
     val key: String,
     val name: String,

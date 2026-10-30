@@ -111,4 +111,19 @@ class BusHomeModelTest {
         assertEquals("session.svg", TaskIconRegistry.iconFor("unknown"))
         assertEquals("session.svg", TaskIconRegistry.iconFor(null))
     }
+
+    @Test
+    fun bodyStateUsesDisabledComputerCardInsteadOfEmptyArt() {
+        // 没有电脑时即使没有任务，也不进入“没有任务”空态。
+        assertEquals(BusHomeBodyState.DisabledComputer, busHomeBodyState(hasDevice = false, visibleTaskCount = 0))
+        assertEquals(BusHomeBodyState.DisabledComputer, busHomeBodyState(hasDevice = false, visibleTaskCount = 5))
+        assertEquals(BusHomeBodyState.NoTasks, busHomeBodyState(hasDevice = true, visibleTaskCount = 0))
+        assertEquals(BusHomeBodyState.Content, busHomeBodyState(hasDevice = true, visibleTaskCount = 2))
+    }
+
+    @Test
+    fun agentEmptyStateOnlyWhenListIsEmpty() {
+        assertTrue(busHomeAgentsEmpty(emptyList()))
+        assertFalse(busHomeAgentsEmpty(previewBusHomeView().agents))
+    }
 }
