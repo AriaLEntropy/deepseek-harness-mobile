@@ -19,6 +19,11 @@ data class DshRelayState(
     val generation: Long = 0,
 )
 
+data class DshBusCommandAck(
+    val status: Int,
+    val body: String = "",
+)
+
 data class DshRelayPairResult(
     val ok: Boolean,
     val message: String = "",
@@ -63,6 +68,44 @@ class DshRelayModule : Module() {
     fun status(): DshRelayState {
         val raw = toNative(false, "status", null, null, true).toString()
         return runCatching { JSONObject(raw).toRelayState() }.getOrDefault(DshRelayState())
+    }
+
+    /** 当前 agent-host 快照；没有连接或还没收到快照时返回 null。 */
+    fun busHomeJson(): String? {
+        val raw = toNative(false, "busHome", null, null, true).toString()
+        return runCatching { JSONObject(raw).optString("json") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /** "agent-host" / "dsh-plugin" / "unknown"；还没探测完时返回 null。 */
+    fun busHostKind(): String? {
+        val raw = toNative(false, "busHostKind", null, null, true).toString()
+        return runCatching { JSONObject(raw).optString("kind") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /** POST /bus/commands；202 表示电脑已接收，结果通过快照的 recentResults 返回。 */
+    fun busCommand(json: String, onResult: (DshBusCommandAck) -> Unit) {
+        val params = JSONObject().apply { put("json", json) }
+        toNative(true, "busCommand", params.toString(), { value ->
+            onResult(
+                DshBusCommandAck(
+                    status = value?.optInt("status") ?: 0,
+                    body = value?.optString("body").orEmpty(),
+                ),
+            )
+        }, false)
+    }
+
+    /** 读取某任务通过 `taskMessages` 事件缓存下来的消息 JSON。 */
+    fun busTaskMessages(taskId: String): String? {
+        val params = JSONObject().apply { put("taskId", taskId) }
+        val raw = toNative(false, "busTaskMessages", params.toString(), null, true).toString()
+        return runCatching { JSONObject(raw).optString("json") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
     }
 
     fun subscribe(onState: (DshRelayState) -> Unit) {

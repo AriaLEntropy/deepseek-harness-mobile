@@ -281,6 +281,8 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
     onSave: () -> Unit,
     pageViewWidth: Float,
     colors: () -> com.example.dsh.theme.DshColorTokens = { com.example.dsh.theme.DshDefaultTheme.light },
+    title: String = "重命名对话",
+    placeholder: String = "会话名称",
 ) {
     vif({ visible() }) {
         Modal(inWindow = true) {
@@ -300,7 +302,7 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
                 }
                 Text {
                     attr {
-                        text("重命名对话")
+                        text(title)
                         marginTop(22f)
                         alignSelfCenter()
                         fontSize(18f)
@@ -326,7 +328,7 @@ internal fun ViewContainer<*, *>.DshSessionRenameDialog(
                         attr {
                             flex(1f)
                             fontSize(15f)
-                            placeholder("会话名称")
+                            placeholder(placeholder)
                             placeholderColor(colors().labelTertiary)
                             editable(!busy())
                             color(colors().labelPrimary)

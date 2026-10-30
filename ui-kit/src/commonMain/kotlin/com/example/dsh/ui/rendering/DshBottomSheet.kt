@@ -40,6 +40,9 @@ private const val SHEET_PROJECT_MS = 140f
 /** 关闭动画时长（ms），结束后才真正回调关闭。 */
 private const val SHEET_DISMISS_ANIM_MS = 300
 
+/** 键盘抬起/收起时面板跟手的时长（秒），与聊天输入条保持一致。 */
+private const val SHEET_KEYBOARD_ANIM_S = 0.24f
+
 /** 读取不到设备屏幕圆角时的兜底半径（dp）。 */
 private const val SHEET_FALLBACK_RADIUS = 16f
 
@@ -163,6 +166,13 @@ class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent>() {
                                     ctx.offset,
                                 )
                             }
+                            // 键盘高度是分帧上报的；不做补间时面板会一帧跳到最终位置，
+                            // 而系统键盘还在上升，中间就露出一段空隙。跟聊天输入条一样
+                            // 用同一段缓动把 bottom / 高度 / 展开位移一起带过去。
+                            animation(
+                                Animation.easeInOut(SHEET_KEYBOARD_ANIM_S),
+                                ctx.attr.keyboardHeight,
+                            )
                         }
                         // 面板整体可拖拽：点按由子控件处理，竖向滑动把面板拉上/拉下；
                         // 空白点击在此消费，避免穿透到全屏遮罩导致误关闭。
@@ -235,7 +245,9 @@ class DshBottomSheetView : ComposeView<DshBottomSheetAttr, ComposeEvent>() {
         } else {
             offsetForDetent(currentDetent)
         }
-        return resolvedPanelHeight() * layoutOffset + maxOf(0f, pagerData.safeAreaInsets.bottom)
+        // 页面本身已经在系统安全区之上；这里再叠加 safeAreaInsets.bottom
+        // 会在无导航栏的设备上凭空多出一块白色，盖住最后一个 item。
+        return resolvedPanelHeight() * layoutOffset
     }
 
     private fun cornerRadius(): Float = DshDeviceCorner.screenRadiusDp()

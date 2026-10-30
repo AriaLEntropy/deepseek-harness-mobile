@@ -34,6 +34,7 @@ import com.tencent.kuikly.core.timer.setTimeout
 import com.example.dsh.connection.DshEngineModule
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.DshRelayPhase
+import com.example.dsh.connection.DshRelayState
 import com.example.dsh.connection.DshSshConfig
 import com.example.dsh.connection.DshSshPhase
 import com.example.dsh.connection.supportsRelayBridge
@@ -60,6 +61,7 @@ internal class DshConnectionSetupPage : BasePager() {
     private var busy by observable(false)
     private var error by observable("")
     private var fingerprintPending by observable("")
+    private var routingHome = false
     private var localStore: DshLocalStore? = null
     private var engineModule: DshEngineModule? = null
     private var probeRepository: DshHostClient? = null
@@ -171,6 +173,7 @@ internal class DshConnectionSetupPage : BasePager() {
         if (!pageData.supportsRelayBridge) return
         val module = acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME)
         var settled = false
+        var hostCheckStarted = false
         busy = true
         error = "正在连接已配对电脑"
         fun fail(message: String) {
@@ -183,8 +186,56 @@ internal class DshConnectionSetupPage : BasePager() {
             probeRepository = null
             module.disconnect()
         }
+
+        fun openAgentHostHome() {
+            if (settled) return
+            settled = true
+            setTimeout(pagerId, 0) {
+                busy = false
+                error = ""
+                openHome()
+            }
+        }
+
+        fun startDshProbe(state: DshRelayState) {
+            if (settled || probeRepository != null) return
+            val repository = DshRemoteHostRepository(
+                network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
+                webSocket = acquireModule(DshWebSocketModule.MODULE_NAME),
+                connection = DshHostConnection("http://127.0.0.1:${state.localPort}", state.localToken),
+                pagerId = pagerId,
+            )
+            probeRepository = repository
+            repository.loadSessions({
+                if (settled) return@loadSessions
+                settled = true
+                setTimeout(pagerId, 0) {
+                    busy = false
+                    error = ""
+                    probeRepository?.stop()
+                    probeRepository = null
+                    module.disconnect()
+                    openHome()
+                }
+            }, { message ->
+                fail("远程 DSH 不可用：$message")
+            })
+        }
+
+        fun awaitHostKind(state: DshRelayState, attempt: Int) {
+            if (settled) return
+            when (module.busHostKind()) {
+                "agent-host" -> openAgentHostHome()
+                "dsh-plugin", "unknown" -> startDshProbe(state)
+                else -> {
+                    if (attempt >= 15) startDshProbe(state)
+                    else setTimeout(pagerId, 200) { awaitHostKind(state, attempt + 1) }
+                }
+            }
+        }
+
         setTimeout(pagerId, RELAY_PROBE_TIMEOUT_MS) {
-            fail("无法连接到已配对电脑，请确认电脑端 Relay 与 DSH 已启动")
+            fail("无法连接到已配对电脑，请确认电脑端 Relay 已启动")
         }
         module.connect { state ->
             if (settled) return@connect
@@ -192,28 +243,9 @@ internal class DshConnectionSetupPage : BasePager() {
             when (state.phase) {
                 DshRelayPhase.READY -> {
                     if (state.localPort <= 0 || state.localToken.isEmpty()) return@connect
-                    if (probeRepository != null) return@connect
-                    val repository = DshRemoteHostRepository(
-                        network = acquireModule(com.tencent.kuikly.core.module.NetworkModule.MODULE_NAME),
-                        webSocket = acquireModule(DshWebSocketModule.MODULE_NAME),
-                        connection = DshHostConnection("http://127.0.0.1:${state.localPort}", state.localToken),
-                        pagerId = pagerId,
-                    )
-                    probeRepository = repository
-                    repository.loadSessions({
-                        if (settled) return@loadSessions
-                        settled = true
-                        setTimeout(pagerId, 0) {
-                            busy = false
-                            error = ""
-                            probeRepository?.stop()
-                            probeRepository = null
-                            module.disconnect()
-                            openHome()
-                        }
-                    }, { message ->
-                        fail("远程 DSH 不可用：$message")
-                    })
+                    if (probeRepository != null || hostCheckStarted) return@connect
+                    hostCheckStarted = true
+                    awaitHostKind(state, 0)
                 }
                 DshRelayPhase.ERROR, DshRelayPhase.STOPPED ->
                     fail(state.message.ifEmpty { "无法连接到已配对电脑" })
@@ -531,8 +563,33 @@ internal class DshConnectionSetupPage : BasePager() {
     }
 
     private fun openHome() {
-        acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("home", JSONObject().apply {
-            put("pageName", "home")
+        if (routingHome) return
+        routingHome = true
+        if (connectionMode != DshConnectionMode.RELAY) {
+            openHomePage("home")
+            return
+        }
+        resolveHomeRoute(0)
+    }
+
+    /** agent-host 用统一首页；旧 dsh 插件、探测失败或超时继续走旧 Home。 */
+    private fun resolveHomeRoute(attempt: Int) {
+        val kind = runCatching {
+            acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busHostKind()
+        }.getOrNull().orEmpty()
+        when (kind) {
+            "agent-host" -> openHomePage("bus_home")
+            "dsh-plugin", "unknown" -> openHomePage("home")
+            else -> {
+                if (attempt >= 15) openHomePage("home")
+                else setTimeout(pagerId, 200) { resolveHomeRoute(attempt + 1) }
+            }
+        }
+    }
+
+    private fun openHomePage(pageName: String) {
+        acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(pageName, JSONObject().apply {
+            put("pageName", pageName)
             put("connectionMode", when (connectionMode) {
                 DshConnectionMode.LOCAL -> "local"
                 DshConnectionMode.RELAY -> "relay"

@@ -1,22 +1,18 @@
 package com.example.dsh.relay
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -26,6 +22,7 @@ import com.example.dsh.R
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -47,13 +44,19 @@ class DshQrScanActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlayView: DshQrScanOverlayView
     private lateinit var flashlightRow: LinearLayout
-    private lateinit var flashlightButton: ImageButton
+    private lateinit var flashlightButton: FrameLayout
+    private lateinit var flashlightOffIcon: ImageView
+    private lateinit var flashlightOnIcon: ImageView
     private lateinit var flashlightLabel: TextView
     private var camera: Camera? = null
     private var torchOn = false
-    private var lastLux = -1f
-    private lateinit var sensorManager: SensorManager
-    private var lightSensor: Sensor? = null
+    private var previewLuma = -1f
+    private var lumaDark = false
+    private var lumaDarkSince = 0L
+    private var lumaStartAt = 0L
+    private val hideFlashlightRunnable = Runnable {
+        if (!torchOn) hideFlashlight()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,14 +87,39 @@ class DshQrScanActivity : AppCompatActivity() {
         root.addView(previewView)
         root.addView(overlayView)
 
-        flashlightButton = ImageButton(this).apply {
+        flashlightButton = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(dp(7), dp(7), dp(7), dp(7))
-            setImageResource(R.drawable.ic_flashlight_off)
+            clipChildren = false
+            isClickable = true
             contentDescription = "轻触照亮"
             setOnClickListener { toggleTorch() }
         }
+        val flashlightIconBox = FrameLayout(this).apply { clipChildren = false }
+        flashlightOffIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_flashlight_off)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        flashlightOnIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_flashlight_on)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            visibility = View.GONE
+        }
+        flashlightIconBox.addView(
+            flashlightOffIcon,
+            FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER),
+        )
+        flashlightIconBox.addView(
+            flashlightOnIcon,
+            FrameLayout.LayoutParams(
+                dp(30),
+                dpFloat(36.25f).toInt(),
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+            ).apply { topMargin = -dpFloat(6.25f).toInt() },
+        )
+        flashlightButton.addView(
+            flashlightIconBox,
+            FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER),
+        )
         flashlightLabel = TextView(this).apply {
             text = "轻触照亮"
             setTextColor(Color.WHITE)
@@ -123,13 +151,6 @@ class DshQrScanActivity : AppCompatActivity() {
 
         flashlightRow.alpha = 0f
         flashlightRow.visibility = View.GONE
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
-        if (lightSensor == null) {
-            // 没有光线传感器时无法判断明暗，退化为一直显示。
-            flashlightRow.alpha = 1f
-            flashlightRow.visibility = View.VISIBLE
-        }
         setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(
@@ -152,14 +173,20 @@ class DshQrScanActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         overlayView.start()
-        lightSensor?.let {
-            sensorManager.registerListener(lightListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+        flashlightRow.removeCallbacks(hideFlashlightRunnable)
+        if (!torchOn) {
+            flashlightRow.animate().cancel()
+            flashlightRow.alpha = 0f
+            flashlightRow.visibility = View.GONE
         }
+        lumaDark = false
+        lumaDarkSince = 0L
+        lumaStartAt = 0L
     }
 
     override fun onPause() {
         overlayView.stop()
-        sensorManager.unregisterListener(lightListener)
+        flashlightRow.removeCallbacks(hideFlashlightRunnable)
         if (torchOn) {
             camera?.cameraControl?.enableTorch(false)
             torchOn = false
@@ -208,6 +235,8 @@ class DshQrScanActivity : AppCompatActivity() {
                     proxy.close()
                     return@setAnalyzer
                 }
+                val luma = averageLuma(proxy)
+                if (luma >= 0f) onPreviewLuma(luma)
                 val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
                 scanner.process(image)
                     .addOnSuccessListener { barcodes ->
@@ -224,21 +253,70 @@ class DshQrScanActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private val lightListener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) {
-            if (event.sensor.type != Sensor.TYPE_LIGHT) return
-            val lux = event.values.firstOrNull() ?: return
-            lastLux = lux
-            when {
-                lux < LIGHT_SHOW_LUX -> showFlashlight()
-                lux > LIGHT_HIDE_LUX -> hideFlashlight()
+    /** 用相机 Y 平面平均亮度判断环境，不依赖部分机型会恒为 0 的环境光传感器。 */
+    private fun averageLuma(proxy: ImageProxy): Float {
+        val plane = proxy.planes.firstOrNull() ?: return -1f
+        val buffer = plane.buffer
+        val width = proxy.width
+        val height = proxy.height
+        if (width <= 0 || height <= 0 || buffer.limit() <= 0) return -1f
+        val rowStride = plane.rowStride
+        val pixelStride = plane.pixelStride
+        val step = 8
+        var sum = 0L
+        var count = 0
+        var y = 0
+        while (y < height) {
+            val rowStart = y * rowStride
+            var x = 0
+            while (x < width) {
+                val index = rowStart + x * pixelStride
+                if (index < buffer.limit()) {
+                    sum += buffer.get(index).toInt() and 0xFF
+                    count++
+                }
+                x += step
             }
+            y += step
         }
+        return if (count == 0) -1f else sum.toFloat() / count
+    }
 
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    private fun onPreviewLuma(luma: Float) {
+        previewLuma = luma
+        val now = SystemClock.elapsedRealtime()
+        if (lumaStartAt == 0L) lumaStartAt = now
+        when {
+            luma < LUMA_SHOW -> {
+                if (lumaDarkSince == 0L) lumaDarkSince = now
+                if (!lumaDark &&
+                    now - lumaStartAt >= LUMA_SETTLE_MS &&
+                    now - lumaDarkSince >= LUMA_CONFIRM_MS
+                ) {
+                    lumaDark = true
+                    Log.d(TAG, "preview dark luma=$luma -> show")
+                    runOnUiThread { if (!isFinishing) showFlashlight() }
+                }
+            }
+            luma > LUMA_HIDE -> {
+                lumaDarkSince = 0L
+                if (lumaDark) {
+                    lumaDark = false
+                    Log.d(TAG, "preview bright luma=$luma -> hide later")
+                    scheduleHideFlashlight()
+                }
+            }
+            else -> lumaDarkSince = 0L
+        }
+    }
+
+    private fun scheduleHideFlashlight() {
+        flashlightRow.removeCallbacks(hideFlashlightRunnable)
+        flashlightRow.postDelayed(hideFlashlightRunnable, HIDE_DELAY_MS)
     }
 
     private fun showFlashlight() {
+        flashlightRow.removeCallbacks(hideFlashlightRunnable)
         if (flashlightRow.visibility == View.VISIBLE && flashlightRow.alpha == 1f) return
         flashlightRow.animate().cancel()
         flashlightRow.visibility = View.VISIBLE
@@ -271,18 +349,25 @@ class DshQrScanActivity : AppCompatActivity() {
         torchOn = !torchOn
         cam.cameraControl.enableTorch(torchOn)
         updateFlashlightUi()
-        if (!torchOn && lastLux > LIGHT_HIDE_LUX) hideFlashlight()
+        if (torchOn) {
+            flashlightRow.animate().cancel()
+            flashlightRow.visibility = View.VISIBLE
+            flashlightRow.alpha = 1f
+        } else if (previewLuma > LUMA_HIDE) {
+            scheduleHideFlashlight()
+        }
     }
 
     private fun updateFlashlightUi() {
-        flashlightButton.setImageResource(
-            if (torchOn) R.drawable.ic_flashlight_on else R.drawable.ic_flashlight_off,
-        )
+        flashlightOffIcon.visibility = if (torchOn) View.GONE else View.VISIBLE
+        flashlightOnIcon.visibility = if (torchOn) View.VISIBLE else View.GONE
         flashlightLabel.text = if (torchOn) "轻触关闭" else "轻触照亮"
         flashlightButton.contentDescription = flashlightLabel.text
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun dpFloat(value: Float): Float = value * resources.displayMetrics.density
 
     override fun onDestroy() {
         overlayView.stop()
@@ -293,8 +378,12 @@ class DshQrScanActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_QR = "qr"
-        private const val LIGHT_SHOW_LUX = 20f
-        private const val LIGHT_HIDE_LUX = 50f
+        private const val TAG = "DshQrScan"
+        private const val LUMA_SHOW = 25f
+        private const val LUMA_HIDE = 55f
+        private const val LUMA_SETTLE_MS = 700L
+        private const val LUMA_CONFIRM_MS = 300L
+        private const val HIDE_DELAY_MS = 1_800L
         private const val FADE_IN_MS = 200L
         private const val FADE_OUT_MS = 300L
     }

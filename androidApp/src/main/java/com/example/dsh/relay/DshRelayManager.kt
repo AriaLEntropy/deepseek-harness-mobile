@@ -178,6 +178,7 @@ internal object DshRelayManager {
         dropSocket()
         cipher = null
         dropLoopback("disconnect")
+        AgentHostBus.clear()
         stopForeground()
         publish(DshRelayNativeState("STOPPED", "扫码连接已断开", hostId = hostId, hostName = hostName, relayOrigin = relayOrigin, paired = secrets?.hasPairing() == true))
     }

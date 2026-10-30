@@ -59,13 +59,23 @@ abstract class BasePager : Pager() {
         DshThemeManager.notifyChanged()
     }
 
+    /** 页面重新可见时兜底同步一次全局主题：页面在后台期间主题可能已变化。 */
+    override fun pageDidAppear() {
+        super.pageDidAppear()
+        syncThemeColors()
+    }
+
     /** 把全局主题色写入页面级 observable（值未变则跳过，避免无谓重绘）。 */
     protected fun syncThemeColors() {
         val next = DshThemeManager.currentColors
         if (themeColors !== next) themeColors = next
         if (themeMode !== DshThemeManager.mode) themeMode = DshThemeManager.mode
         ensureSunriseSunsetTimer()
+        onThemeSynced()
     }
+
+    /** 主题同步后的附加动作（如系统导航栏颜色）；子类按需覆盖。 */
+    protected open fun onThemeSynced() {}
 
     /**
      * 日出日落主题：在下一个切换时刻（06:00 / 18:00）重算主题并继续排程。

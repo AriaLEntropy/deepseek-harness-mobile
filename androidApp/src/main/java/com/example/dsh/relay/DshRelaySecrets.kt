@@ -45,6 +45,11 @@ internal class DshRelaySecrets(context: Context) {
     fun relayOrigin(): String? = read("origin.bin")?.toString(Charsets.UTF_8)
     fun hasPairing(): Boolean = masterKey()?.isNotBlank() == true && clientToken()?.isNotBlank() == true
 
+    /**
+     * bus note 只是 Host 类型/序号的缓存，写失败不能影响已建立的隧道；
+     * 采用临时文件 + rename，避免和读线程/其他写入撞出半截密文。
+     */
+    @Synchronized
     fun saveBus(note: BusNote) {
         val text = listOf(
             note.kind,
@@ -53,9 +58,11 @@ internal class DshRelaySecrets(context: Context) {
             note.forwardsDsh.toString(),
             note.seq.toString(),
         ).joinToString("\n")
-        write("bus.bin", text.toByteArray())
+        runCatching { write("bus.bin", text.toByteArray()) }
     }
 
+    /** 读到损坏/旧 KeyStore 加密的缓存时返回 null，让上层回退到 /bus/describe。 */
+    @Synchronized
     fun readBus(): BusNote? {
         val lines = read("bus.bin")?.toString(Charsets.UTF_8)?.split('\n') ?: return null
         if (lines.size < 5) return null
@@ -72,29 +79,44 @@ internal class DshRelaySecrets(context: Context) {
         listOf("master.bin", "client.bin", "host.bin", "name.bin", "origin.bin", "bus.bin").forEach { File(root, it).delete() }
     }
 
+    @Synchronized
     private fun write(name: String, bytes: ByteArray) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        File(root, name).outputStream().use { output ->
-            output.write(cipher.iv.size)
-            output.write(cipher.iv)
-            output.write(cipher.doFinal(bytes))
+        val target = File(root, name)
+        val temp = File(root, "$name.tmp")
+        try {
+            temp.outputStream().use { output ->
+                output.write(cipher.iv.size)
+                output.write(cipher.iv)
+                output.write(cipher.doFinal(bytes))
+                output.flush()
+            }
+            if (!temp.renameTo(target)) {
+                target.delete()
+                check(temp.renameTo(target)) { "cannot replace $name" }
+            }
+        } finally {
+            if (temp.isFile) temp.delete()
+            bytes.fill(0)
         }
-        bytes.fill(0)
     }
 
+    @Synchronized
     private fun read(name: String): ByteArray? {
         val file = File(root, name)
         if (!file.isFile) return null
-        return file.inputStream().use { input ->
-            val ivLength = input.read()
-            require(ivLength in 12..32)
-            val iv = ByteArray(ivLength)
-            input.readFully(iv)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-            cipher.doFinal(input.readBytes())
-        }
+        return runCatching {
+            file.inputStream().use { input ->
+                val ivLength = input.read()
+                require(ivLength in 12..32)
+                val iv = ByteArray(ivLength)
+                input.readFully(iv)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+                cipher.doFinal(input.readBytes())
+            }
+        }.getOrNull()
     }
 
     private fun secretKey(): SecretKey {

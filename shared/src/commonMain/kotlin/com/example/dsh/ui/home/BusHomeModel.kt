@@ -1,0 +1,308 @@
+package com.example.dsh.ui.home
+
+import com.example.dsh.bus.BusStore
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
+/**
+ * 首页页面模型：只保留 UI 需要的字段，页面不直接读 JSON。
+ *
+ * BusStore 负责协议校验和事件合并，这里负责把协议字段翻译成
+ * 设备卡片、计数、任务行和项目分组。后续接真实快照时，
+ * 页面代码不需要再改。
+ */
+internal data class BusHomeView(
+    val device: BusHomeDevice?,
+    val agents: List<BusHomeAgent>,
+    val tasks: List<BusHomeTask>,
+    val projects: List<BusHomeProject> = emptyList(),
+) {
+    val pendingCount: Int = tasks.count { it.pending }
+    val runningCount: Int = tasks.count { it.status == "running" }
+}
+
+internal data class BusHomeProject(
+    val key: String,
+    val name: String,
+    val path: String,
+    val lastUsedAt: String,
+    val pinned: Boolean,
+)
+
+/** 按项目视图里的一个分组；tasks 已按待处理/更新时间排好序。 */
+internal data class BusHomeProjectGroup(
+    val key: String,
+    val name: String,
+    val tasks: List<BusHomeTask>,
+)
+
+internal data class BusHomeModelOption(
+    val id: String,
+    val displayName: String,
+    val efforts: List<String> = emptyList(),
+    val defaultEffort: String = "",
+)
+
+internal data class BusHomeAgent(
+    val key: String,
+    val name: String,
+    val available: Boolean,
+    val enabled: Boolean,
+    val status: String,
+    val source: String = "",
+    val connectorId: String? = null,
+    val taskCount: Int = 0,
+    val lastError: String = "",
+    val models: List<BusHomeModelOption> = emptyList(),
+)
+
+internal data class BusHomeDevice(
+    val agentId: String,
+    val name: String,
+    val platform: String,
+    val online: Boolean,
+    val platformAsset: String,
+    val lastSeenAt: String = "",
+    val appVersion: String = "",
+)
+
+internal data class BusHomeTask(
+    val id: String,
+    val title: String,
+    val status: String,
+    val statusLabel: String,
+    val agent: String,
+    val agentKey: String,
+    val project: String,
+    val time: String,
+    val taskType: String?,
+    val pending: Boolean,
+    val projectPath: String = "",
+    val projectKey: String = "",
+    val origin: String = "",
+    val controllable: Boolean = false,
+    val imported: Boolean = false,
+    val source: String = "",
+    val connectorId: String? = null,
+    val updatedAt: String = "",
+    val model: String = "",
+    val effort: String = "",
+    val lastMessage: String = "",
+)
+
+internal fun BusStore.toHomeView(): BusHomeView {
+    val agent = agents.firstOrNull()
+    val deviceId = agent?.string("agentId")
+    val connectors = agent?.objects("connectors").orEmpty()
+    val agents = connectors.map { connector ->
+        val kind = connector.string("kind").orEmpty()
+        val connectorId = connector.string("connectorId")
+        BusHomeAgent(
+            key = connectorKey(kind, connectorId),
+            name = connector.string("displayName").orEmpty()
+                .ifBlank { agentLabel(kind, connectorId) },
+            available = connector.string("available")?.toBooleanStrictOrNull() == true,
+            enabled = connector.string("enabled")?.toBooleanStrictOrNull() != false,
+            status = connector.string("status").orEmpty(),
+            source = kind,
+            connectorId = connectorId,
+            taskCount = connector.string("taskCount")?.toIntOrNull() ?: 0,
+            lastError = connector.string("lastError").orEmpty(),
+            models = connector.objects("models").mapNotNull { model ->
+                val id = model.string("id").orEmpty()
+                if (id.isEmpty()) {
+                    null
+                } else {
+                    BusHomeModelOption(
+                        id = id,
+                        displayName = model.string("displayName").orEmpty().ifBlank { id },
+                        efforts = (model["efforts"] as? JsonArray)
+                            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                            .orEmpty(),
+                        defaultEffort = model.string("defaultEffort").orEmpty(),
+                    )
+                }
+            },
+        )
+    }
+    val projects = projects.mapNotNull { project ->
+        val path = project.string("path").orEmpty()
+        val name = project.string("name").orEmpty()
+        val key = path.ifBlank { name }
+        if (key.isBlank()) {
+            null
+        } else {
+            BusHomeProject(
+                key = key,
+                name = name.ifBlank { path },
+                path = path,
+                lastUsedAt = project.string("lastUsedAt").orEmpty(),
+                pinned = project.string("pinned")?.toBooleanStrictOrNull() == true,
+            )
+        }
+    }
+    val device = agent?.let {
+        BusHomeDevice(
+            agentId = deviceId.orEmpty(),
+            name = it.string("name").orEmpty().ifBlank { "我的电脑" },
+            platform = it.string("platform").orEmpty(),
+            online = it.string("online")?.toBooleanStrictOrNull() == true,
+            platformAsset = platformAsset(it.string("platform").orEmpty()),
+            lastSeenAt = it.string("lastSeenAt").orEmpty(),
+            appVersion = it.string("appVersion").orEmpty(),
+        )
+    }
+    val tasks = tasks.asSequence()
+        .filter { deviceId == null || it.string("agentId") == deviceId }
+        .sortedWith(
+            compareByDescending<JsonObject> { if (it.string("status").isPendingStatus()) 1 else 0 }
+                .thenByDescending { it.string("updatedAt").orEmpty() },
+        )
+        .map { task ->
+            val source = task.string("source").orEmpty()
+            val connectorId = task.string("connectorId")
+            val connector = connectors.firstOrNull { candidate ->
+                if (source == "acp") {
+                    candidate.string("kind") == "acp" &&
+                        candidate.string("connectorId") == connectorId
+                } else {
+                    candidate.string("kind") == source
+                }
+            }
+            val status = task.string("status").orEmpty()
+            val projectPath = task.string("projectPath").orEmpty()
+            val projectName = task.string("projectName").orEmpty()
+            val outsideProject = task.string("outsideProject")?.toBooleanStrictOrNull() == true
+            val projectKey = projectPath.ifBlank {
+                projectName.ifBlank {
+                    if (outsideProject) OUTSIDE_PROJECT_KEY else UNKNOWN_PROJECT_KEY
+                }
+            }
+            BusHomeTask(
+                id = task.string("id").orEmpty(),
+                title = task.string("title").orEmpty().ifBlank { "未命名会话" },
+                status = status,
+                statusLabel = taskStatusLabel(status),
+                agent = connector?.string("displayName").orEmpty()
+                    .ifBlank { agentLabel(source, connectorId) },
+                agentKey = connectorKey(source, connectorId),
+                project = projectLabel(task),
+                time = displayTime(task.string("updatedAt").orEmpty()),
+                taskType = task.string("taskType").orEmpty().ifBlank { null },
+                pending = status.isPendingStatus(),
+                projectPath = projectPath,
+                projectKey = projectKey,
+                origin = task.string("origin").orEmpty(),
+                controllable = task.string("controllable")?.toBooleanStrictOrNull() == true,
+                imported = task.string("id").orEmpty().startsWith(IMPORTED_TASK_PREFIX),
+                source = source,
+                connectorId = connectorId,
+                updatedAt = task.string("updatedAt").orEmpty(),
+                model = task.string("model").orEmpty(),
+                effort = task.string("effort").orEmpty(),
+                lastMessage = task.string("lastMessage").orEmpty(),
+            )
+        }
+        .toList()
+    return BusHomeView(device = device, agents = agents, tasks = tasks, projects = projects)
+}
+
+internal fun List<BusHomeTask>.forAgent(agentKey: String): List<BusHomeTask> =
+    if (agentKey.isEmpty()) this else filter { it.agentKey == agentKey }
+
+/**
+ * 按项目分组：
+ * - 已登记项目按 pinned、lastUsedAt 排序；
+ * - 只在任务里出现的项目按最近更新时间排序；
+ * - “不在项目中/未命名项目”放最后。
+ */
+internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGroup> {
+    val filtered = tasks.forAgent(agentKey)
+    if (filtered.isEmpty()) return emptyList()
+    val grouped = filtered.groupBy { it.projectKey.ifBlank { UNKNOWN_PROJECT_KEY } }
+    val projectKeys = projects.map { it.key }.toSet()
+    val groups = mutableListOf<BusHomeProjectGroup>()
+    projects.sortedWith(
+        compareByDescending<BusHomeProject> { it.pinned }
+            .thenByDescending { it.lastUsedAt },
+    ).forEach { project ->
+        grouped[project.key]?.let { list ->
+            groups += BusHomeProjectGroup(project.key, project.name.ifBlank { project.path }, list)
+        }
+    }
+    grouped.filterKeys { it !in projectKeys }
+        .toList()
+        .sortedByDescending { (_, list) -> list.firstOrNull()?.updatedAt.orEmpty() }
+        .forEach { (key, list) ->
+            val name = when (key) {
+                OUTSIDE_PROJECT_KEY -> "不在项目中"
+                UNKNOWN_PROJECT_KEY -> "未命名项目"
+                else -> list.firstOrNull()?.project?.takeIf { it.isNotBlank() } ?: key
+            }
+            groups += BusHomeProjectGroup(key, name, list)
+        }
+    return groups
+}
+
+private const val IMPORTED_TASK_PREFIX = "import:"
+private const val OUTSIDE_PROJECT_KEY = "outside:"
+private const val UNKNOWN_PROJECT_KEY = "unknown:"
+
+private fun connectorKey(source: String, connectorId: String?): String =
+    if (source == "acp") "acp:${connectorId.orEmpty()}" else source
+
+private fun JsonObject.objects(key: String): List<JsonObject> =
+    (this[key] as? JsonArray)?.mapNotNull { it as? JsonObject } ?: emptyList()
+
+private fun JsonObject.string(key: String): String? =
+    (this[key] as? JsonPrimitive)?.contentOrNull
+
+private fun String?.isPendingStatus(): Boolean =
+    this == "waitingApproval" || this == "waitingInput"
+
+internal fun taskStatusLabel(status: String): String = when (status) {
+    "running" -> "运行中"
+    "waitingApproval" -> "待审批"
+    "waitingInput" -> "等待输入"
+    "completed" -> "已完成"
+    "failed" -> "失败"
+    "interrupted" -> "已中断"
+    "idle" -> "空闲"
+    else -> "未知"
+}
+
+internal fun platformAsset(platform: String): String = when (platform.lowercase()) {
+    "macos", "mac", "darwin" -> "platform-apple.svg"
+    "windows", "win32" -> "platform-windows.svg"
+    "linux" -> "platform-linux.svg"
+    "harmonyos", "ohos" -> "platform-harmonyos.svg"
+    else -> "computer.svg"
+}
+
+private fun agentLabel(source: String, connectorId: String?): String = when (source) {
+    "acp" -> connectorId ?: "ACP"
+    "codex" -> "Codex"
+    "claude" -> "Claude Code"
+    "dsh" -> "DeepSeek Harness"
+    "hermes" -> "Hermes"
+    "pi" -> "Pi"
+    "openclaw" -> "OpenClaw"
+    else -> source.ifBlank { "Agent" }
+}
+
+/** 优先显示项目名；不在项目里的会话给一个明确占位。 */
+private fun projectLabel(task: JsonObject): String {
+    val name = task.string("projectName").orEmpty().ifBlank {
+        task.string("projectPath").orEmpty().substringAfterLast('/')
+    }
+    if (name.isNotBlank()) return name
+    return if (task.string("outsideProject")?.toBooleanStrictOrNull() == true) "不在项目中" else "未命名项目"
+}
+
+/** 协议时间是 ISO-8601；先做足够稳定的小展示，后面再换本地相对时间。 */
+internal fun displayTime(iso: String): String {
+    if (iso.length < 16 || iso[10] != 'T') return iso.ifBlank { "—" }
+    return "${iso.substring(5, 10)} ${iso.substring(11, 16)}"
+}

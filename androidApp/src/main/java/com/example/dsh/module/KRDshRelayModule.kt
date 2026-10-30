@@ -2,11 +2,13 @@ package com.example.dsh.module
 
 import android.app.Activity
 import android.content.Intent
+import com.example.dsh.relay.AgentHostBus
 import com.example.dsh.relay.DshQrScanActivity
 import com.example.dsh.relay.DshRelayManager
 import com.example.dsh.relay.DshRelayNativeState
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
+import org.json.JSONObject
 import kotlin.concurrent.thread
 
 internal class KRDshRelayModule : KuiklyRenderBaseModule() {
@@ -35,6 +37,31 @@ internal class KRDshRelayModule : KuiklyRenderBaseModule() {
             null
         }
         "status" -> DshRelayManager.current().toMap()
+        "busHome" -> mapOf("json" to (AgentHostBus.busHomeJson() ?: ""))
+        "busHostKind" -> mapOf("kind" to AgentHostBus.busHostKind())
+        "busTaskMessages" -> {
+            val taskId = runCatching { JSONObject(params ?: "{}").optString("taskId") }.getOrDefault("")
+            mapOf("json" to (AgentHostBus.taskMessagesJson(taskId) ?: ""))
+        }
+        "busCommand" -> {
+            val json = runCatching { JSONObject(params ?: "{}").optString("json") }.getOrDefault("")
+            if (json.isBlank()) {
+                callback?.invoke(mapOf("status" to 0, "body" to ""))
+            } else {
+                thread(name = "agent-host-command") {
+                    val ack = AgentHostBus.command(json)
+                    activity?.runOnUiThread {
+                        callback?.invoke(
+                            mapOf(
+                                "status" to (ack?.status ?: 0),
+                                "body" to (ack?.body.orEmpty()),
+                            ),
+                        )
+                    }
+                }
+            }
+            null
+        }
         "subscribe" -> {
             listen(callback)
             null

@@ -38,6 +38,7 @@ class BusStore {
     var messagesByTask: Map<String, List<JsonObject>> = emptyMap()
         private set
     private var hasMoreByTask: Map<String, Boolean> = emptyMap()
+    private var generatedAt: String = ""
 
     fun bindDescribe(decision: DescribeDecision) {
         when (decision) {
@@ -66,6 +67,7 @@ class BusStore {
         val snapshot = busCleanSnapshot(element) ?: return null
         val nextSeq = snapshot.string("seq")?.toLongOrNull() ?: return null
         seq = nextSeq
+        generatedAt = snapshot.string("generatedAt").orEmpty()
         agents = snapshot.objects("agents")
         tasks = snapshot.objects("tasks")
         projects = snapshot.objects("projects")
@@ -119,6 +121,20 @@ class BusStore {
     fun messages(taskId: String): List<JsonObject> = messagesByTask[taskId].orEmpty()
 
     fun messagesHasMore(taskId: String): Boolean = hasMoreByTask[taskId] == true
+
+    /**
+     * 导出当前完整状态，供 Android 侧跨线程缓存后交给页面。
+     * 页面重新解析时仍走 applySnapshot，协议校验不会绕过。
+     */
+    fun snapshotJson(): String = buildJsonObject {
+        put("agents", JsonArray(agents))
+        put("tasks", JsonArray(tasks))
+        put("projects", JsonArray(projects))
+        put("recentResults", JsonArray(recentResults))
+        put("recentMessages", buildJsonArray { })
+        put("seq", JsonPrimitive(seq))
+        put("generatedAt", JsonPrimitive(generatedAt))
+    }.toString()
 
     private fun JsonObject.objects(key: String): List<JsonObject> =
         (this[key] as? JsonArray)?.mapNotNull { it as? JsonObject } ?: emptyList()
