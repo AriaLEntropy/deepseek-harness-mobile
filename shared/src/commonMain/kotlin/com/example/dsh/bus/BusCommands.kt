@@ -91,6 +91,38 @@ object BusCommands {
         })
     }.toString()
 
+    /** 协议 3.8：永久删除一条已停止的会话。 */
+    fun deleteTask(
+        commandId: String,
+        createdAt: String,
+        agentId: String,
+        taskId: String,
+    ): String = buildJsonObject {
+        put("id", JsonPrimitive(commandId))
+        put("createdAt", JsonPrimitive(createdAt))
+        put("agentId", JsonPrimitive(agentId))
+        put("kind", JsonPrimitive("deleteTask"))
+        put("deleteTask", buildJsonObject {
+            put("taskId", JsonPrimitive(taskId))
+        })
+    }.toString()
+
+    /** 协议 3.8：把项目从电脑端 BotBus 列表移出；不删除目录或会话记录。 */
+    fun removeProject(
+        commandId: String,
+        createdAt: String,
+        agentId: String,
+        projectPath: String,
+    ): String = buildJsonObject {
+        put("id", JsonPrimitive(commandId))
+        put("createdAt", JsonPrimitive(createdAt))
+        put("agentId", JsonPrimitive(agentId))
+        put("kind", JsonPrimitive("removeProject"))
+        put("removeProject", buildJsonObject {
+            put("projectPath", JsonPrimitive(projectPath))
+        })
+    }.toString()
+
     fun fetchMessages(
         commandId: String,
         createdAt: String,

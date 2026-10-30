@@ -1,6 +1,9 @@
 package com.example.dsh.ui.chat
 
 import com.example.dsh.base.BasePager
+import com.example.dsh.bus.BUS_DELETE_TASK_CONFIRM_MESSAGE
+import com.example.dsh.bus.BUS_DELETE_TASK_CONFIRM_TITLE
+import com.example.dsh.bus.busCanDeleteTask
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
@@ -10,6 +13,7 @@ import com.example.dsh.ui.home.BusHomeModelOption
 import com.example.dsh.ui.home.taskStatusLabel
 import com.example.dsh.ui.message.DshMessageRow
 import com.example.dsh.ui.rendering.DshPromptInput
+import com.example.dsh.ui.session.DshSessionConfirmDialog
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
@@ -49,6 +53,10 @@ internal class BusChatPage : BasePager() {
     private var status by observable("")
     private var statusLabel by observable("")
     private var controllable by observable(true)
+    private var canDeleteTasks by observable(false)
+    private var showDeleteConfirm by observable(false)
+    private var deleteBusy by observable(false)
+    private var deleteError by observable("")
     private var draft by observable("")
     private var sending by observable(false)
     private var error by observable("")
@@ -140,6 +148,7 @@ internal class BusChatPage : BasePager() {
                 if (info.model.isNotBlank()) modelId = info.model
                 if (info.effort.isNotBlank()) effort = info.effort
                 controllable = info.controllable
+                canDeleteTasks = info.canDeleteTasks
                 lastMessage = info.lastMessage
                 status = info.status
                 statusLabel = info.statusLabel.ifBlank { taskStatusLabel(info.status) }
@@ -229,6 +238,32 @@ internal class BusChatPage : BasePager() {
         }
     }
 
+    /** 会话已停止且连接器声明 canDeleteTasks 时才允许永久删除。 */
+    private fun canDelete(): Boolean =
+        taskId.isNotEmpty() && busCanDeleteTask(status, canDeleteTasks)
+
+    private fun requestDelete() {
+        if (!canDelete() || deleteBusy) return
+        deleteError = ""
+        showDeleteConfirm = true
+    }
+
+    private fun deleteTask() {
+        if (!canDelete() || deleteBusy) return
+        deleteBusy = true
+        deleteError = ""
+        chatSource?.deleteTask(computerAgentId, taskId) { ok, message ->
+            deleteBusy = false
+            if (!ok) {
+                deleteError = message.ifBlank { "删除失败" }
+                return@deleteTask
+            }
+            showDeleteConfirm = false
+            // 电脑确认后发 taskRemoved；任务已永久隐藏，回到列表即可。
+            setTimeout(pagerId, 300) { close() }
+        }
+    }
+
     private fun close() {
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
     }
@@ -253,9 +288,12 @@ internal class BusChatPage : BasePager() {
                                 this@BusChatPage.status == "running" &&
                                 this@BusChatPage.controllable
                         },
+                        showDelete = { this@BusChatPage.canDelete() },
+                        deleteBusy = { this@BusChatPage.deleteBusy },
                         colors = c,
                         onBack = { this@BusChatPage.close() },
                         onStop = { this@BusChatPage.stop() },
+                        onDelete = { this@BusChatPage.requestDelete() },
                     )
                     Scroller {
                         attr { flex(1f) }
@@ -340,6 +378,23 @@ internal class BusChatPage : BasePager() {
                 }
             }
         }
+        DshSessionConfirmDialog(
+            visible = { this@BusChatPage.showDeleteConfirm },
+            title = BUS_DELETE_TASK_CONFIRM_TITLE,
+            message = BUS_DELETE_TASK_CONFIRM_MESSAGE,
+            busyLabel = "删除中...",
+            confirmLabel = "永久删除",
+            confirmColor = { this@BusChatPage.themeColors.stateErrorPrimary },
+            busy = { this@BusChatPage.deleteBusy },
+            error = { this@BusChatPage.deleteError },
+            onCancel = {
+                this@BusChatPage.showDeleteConfirm = false
+                this@BusChatPage.deleteError = ""
+            },
+            onConfirm = { this@BusChatPage.deleteTask() },
+            pageViewWidth = this@BusChatPage.pagerData.pageViewWidth,
+            colors = { this@BusChatPage.themeColors },
+        )
     }
 
     private fun subtitle(): String {
@@ -358,9 +413,12 @@ private fun ViewContainer<*, *>.ChatHeader(
     subtitle: () -> String,
     statusLabel: () -> String,
     showStop: () -> Boolean,
+    showDelete: () -> Boolean,
+    deleteBusy: () -> Boolean,
     colors: DshColorTokens,
     onBack: () -> Unit,
     onStop: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     View {
         attr {
@@ -440,6 +498,30 @@ private fun ViewContainer<*, *>.ChatHeader(
                         fontSize(12f)
                         fontWeightMedium()
                         color(colors.labelPrimary)
+                    }
+                }
+            }
+        }
+        vif({ showDelete() }) {
+            View {
+                attr {
+                    height(32f)
+                    marginLeft(10f)
+                    paddingLeft(12f)
+                    paddingRight(12f)
+                    borderRadius(16f)
+                    backgroundColor(colors.specificSelector)
+                    alignItemsCenter()
+                    justifyContentCenter()
+                    opacity(if (deleteBusy()) 0.5f else 1f)
+                }
+                event { click { if (!deleteBusy()) onDelete() } }
+                Text {
+                    attr {
+                        text(if (deleteBusy()) "删除中…" else "删除")
+                        fontSize(12f)
+                        fontWeightMedium()
+                        color(colors.stateErrorPrimary)
                     }
                 }
             }

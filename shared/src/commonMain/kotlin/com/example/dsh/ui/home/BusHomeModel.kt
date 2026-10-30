@@ -36,6 +36,8 @@ internal data class BusHomeProjectGroup(
     val key: String,
     val name: String,
     val tasks: List<BusHomeTask>,
+    /** 真正可发 removeProject 的项目路径；派生/占位分组为空串。 */
+    val path: String = "",
 )
 
 internal data class BusHomeModelOption(
@@ -56,6 +58,8 @@ internal data class BusHomeAgent(
     val taskCount: Int = 0,
     val lastError: String = "",
     val models: List<BusHomeModelOption> = emptyList(),
+    /** 协议 3.8 起：连接器声明能永久删除原生会话记录。 */
+    val canDeleteTasks: Boolean = false,
 )
 
 internal data class BusHomeDevice(
@@ -66,6 +70,8 @@ internal data class BusHomeDevice(
     val platformAsset: String,
     val lastSeenAt: String = "",
     val appVersion: String = "",
+    /** 协议 3.8 起：这台电脑声明能把项目移出 BotBus 电脑端列表。 */
+    val canRemoveProjects: Boolean = false,
 )
 
 internal data class BusHomeTask(
@@ -125,6 +131,8 @@ internal fun BusStore.toHomeView(): BusHomeView {
                     )
                 }
             },
+            canDeleteTasks = connector.string("canDeleteTasks")
+                ?.toBooleanStrictOrNull() == true,
         )
     }
     val projects = projects.mapNotNull { project ->
@@ -152,6 +160,8 @@ internal fun BusStore.toHomeView(): BusHomeView {
             platformAsset = platformAsset(it.string("platform").orEmpty()),
             lastSeenAt = it.string("lastSeenAt").orEmpty(),
             appVersion = it.string("appVersion").orEmpty(),
+            canRemoveProjects = it.string("canRemoveProjects")
+                ?.toBooleanStrictOrNull() == true,
         )
     }
     val tasks = tasks.asSequence()
@@ -229,7 +239,12 @@ internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGro
             .thenByDescending { it.lastUsedAt },
     ).forEach { project ->
         grouped[project.key]?.let { list ->
-            groups += BusHomeProjectGroup(project.key, project.name.ifBlank { project.path }, list)
+            groups += BusHomeProjectGroup(
+                key = project.key,
+                name = project.name.ifBlank { project.path },
+                tasks = list,
+                path = project.path,
+            )
         }
     }
     grouped.filterKeys { it !in projectKeys }
@@ -241,7 +256,12 @@ internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGro
                 UNKNOWN_PROJECT_KEY -> "未命名项目"
                 else -> list.firstOrNull()?.project?.takeIf { it.isNotBlank() } ?: key
             }
-            groups += BusHomeProjectGroup(key, name, list)
+            // 只由任务派生的项目 key 就是 projectPath；占位分组不可移除。
+            val path = when (key) {
+                OUTSIDE_PROJECT_KEY, UNKNOWN_PROJECT_KEY -> ""
+                else -> list.firstOrNull()?.projectPath.orEmpty()
+            }
+            groups += BusHomeProjectGroup(key, name, list, path)
         }
     return groups
 }

@@ -24,6 +24,34 @@ class BusCommandTest {
     }
 
     @Test
+    fun deleteTaskMatchesTheProtocolFixtureKeyForKey() {
+        val fixture = """
+            {"id":"cmd-delete-1","createdAt":"2026-09-20T15:40:00Z","agentId":"hV3nQ7pLxK2mR8sTfW4bZQ","kind":"deleteTask","deleteTask":{"taskId":"codex:thr_01JB8M0Q4R"}}
+        """.trimIndent()
+        val built = BusCommands.deleteTask(
+            commandId = "cmd-delete-1",
+            createdAt = "2026-09-20T15:40:00Z",
+            agentId = "hV3nQ7pLxK2mR8sTfW4bZQ",
+            taskId = "codex:thr_01JB8M0Q4R",
+        )
+        assertEquals(busParse(fixture).jsonObject, busParse(built).jsonObject)
+    }
+
+    @Test
+    fun removeProjectMatchesTheProtocolFixtureKeyForKey() {
+        val fixture = """
+            {"id":"cmd-remove-1","createdAt":"2026-09-20T15:40:00Z","agentId":"hV3nQ7pLxK2mR8sTfW4bZQ","kind":"removeProject","removeProject":{"projectPath":"/Users/me/Projects/agentbus"}}
+        """.trimIndent()
+        val built = BusCommands.removeProject(
+            commandId = "cmd-remove-1",
+            createdAt = "2026-09-20T15:40:00Z",
+            agentId = "hV3nQ7pLxK2mR8sTfW4bZQ",
+            projectPath = "/Users/me/Projects/agentbus",
+        )
+        assertEquals(busParse(fixture).jsonObject, busParse(built).jsonObject)
+    }
+
+    @Test
     fun trackerExpiresAndRetriesWithTheSameId() {
         var now = 0L
         val tracker = BusCommandTracker(nowMs = { now }, timeoutMs = 1_000)

@@ -2,8 +2,12 @@ package com.example.dsh.ui.home
 
 import com.example.dsh.base.BasePager
 import com.example.dsh.base.BridgeModule
+import com.example.dsh.bus.BUS_REMOVE_PROJECT_CONFIRM_MESSAGE
+import com.example.dsh.bus.BUS_REMOVE_PROJECT_CONFIRM_TITLE
+import com.example.dsh.bus.BusCommandOutcome
 import com.example.dsh.bus.BusCommands
 import com.example.dsh.bus.BusStore
+import com.example.dsh.bus.busCommandOutcome
 import com.example.dsh.bus.busParse
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.supportsRelayBridge
@@ -71,6 +75,12 @@ internal class DshBusHomePage : BasePager() {
     private var renameError by observable("")
     private var removeBusy by observable(false)
     private var removeError by observable("")
+    private var projectMenuPath by observable("")
+    private var projectMenuName by observable("")
+    private var showRemoveProject by observable(false)
+    private var removeProjectBusy by observable(false)
+    private var removeProjectError by observable("")
+    private var removeProjectPath by observable("")
     private var localHostName by observable("")
     private var selectedAgentKey by observable("")
     private var viewMode by observable(VIEW_RECENT)
@@ -465,12 +475,104 @@ internal class DshBusHomePage : BasePager() {
         }
     }
 
+    private fun openProjectMenu(name: String, path: String) {
+        if (path.isBlank() || homeView.device?.canRemoveProjects != true) return
+        projectMenuName = name
+        projectMenuPath = path
+    }
+
+    private fun closeProjectMenu() {
+        projectMenuPath = ""
+        projectMenuName = ""
+    }
+
+    private fun requestRemoveProject() {
+        if (projectMenuPath.isBlank()) return
+        removeProjectPath = projectMenuPath
+        removeProjectError = ""
+        closeProjectMenu()
+        showRemoveProject = true
+    }
+
+    /** 协议 3.8：把项目从电脑端列表移出，成功后电脑发全量快照。 */
+    private fun removeProject() {
+        if (removeProjectBusy) return
+        val path = removeProjectPath
+        if (path.isBlank()) return
+        val device = homeView.device ?: run {
+            removeProjectError = "电脑未连接"
+            return
+        }
+        removeProjectBusy = true
+        removeProjectError = ""
+        val commandId = BusCommands.newCommandId()
+        val json = BusCommands.removeProject(
+            commandId = commandId,
+            createdAt = BusCommands.createdAt(),
+            agentId = device.agentId,
+            projectPath = path,
+        )
+        acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busCommand(json) { ack ->
+            setTimeout(pagerId, 0) {
+                if (ack.status != 200 && ack.status != 202) {
+                    removeProjectBusy = false
+                    removeProjectError = if (ack.body.isBlank()) {
+                        "移除失败（${ack.status}）"
+                    } else {
+                        "移除失败：${ack.body}"
+                    }
+                    return@setTimeout
+                }
+                awaitBusCommand(commandId) { outcome ->
+                    removeProjectBusy = false
+                    when (outcome) {
+                        is BusCommandOutcome.Success -> {
+                            showRemoveProject = false
+                            removeProjectPath = ""
+                            // 先刷新一次，再等下一轮轮询收尾；重复移除已隐藏项目电脑回成功。
+                            refreshBusHome()
+                            setTimeout(pagerId, 800) { refreshBusHome() }
+                        }
+                        is BusCommandOutcome.Failure -> {
+                            removeProjectError = outcome.error.ifBlank { "移除失败" }
+                        }
+                        BusCommandOutcome.Pending -> Unit
+                    }
+                }
+            }
+        }
+    }
+
+    private fun awaitBusCommand(
+        commandId: String,
+        attempt: Int = 0,
+        onDone: (BusCommandOutcome) -> Unit,
+    ) {
+        val json = runCatching {
+            acquireModule<DshRelayModule>(DshRelayModule.MODULE_NAME).busHomeJson()
+        }.getOrNull()
+        val outcome = json?.let { busCommandOutcome(it, commandId) } ?: BusCommandOutcome.Pending
+        if (outcome is BusCommandOutcome.Pending && attempt < 50) {
+            setTimeout(pagerId, 300) { awaitBusCommand(commandId, attempt + 1, onDone) }
+            return
+        }
+        onDone(
+            if (outcome is BusCommandOutcome.Pending) {
+                BusCommandOutcome.Failure("电脑没有确认，请稍后重试")
+            } else {
+                outcome
+            },
+        )
+    }
+
     override fun created() {
         super.created()
         getBackPressHandler().addCallback(object : BackPressCallback() {
             override fun handleOnBackPressed() {
                 when {
                     showThemePicker -> showThemePicker = false
+                    showRemoveProject -> showRemoveProject = false
+                    projectMenuPath.isNotEmpty() -> closeProjectMenu()
                     showRenameComputer -> showRenameComputer = false
                     showRemoveComputer -> showRemoveComputer = false
                     showNewTaskModels -> showNewTaskModels = false
@@ -920,8 +1022,14 @@ internal class DshBusHomePage : BasePager() {
                                     BusProjectHeader(
                                         name = group.name,
                                         expanded = expanded,
+                                        showMenu = home.device?.canRemoveProjects == true &&
+                                            group.path.isNotBlank(),
                                         c = c,
-                                    ) { this@DshBusHomePage.toggleProject(group.key) }
+                                        onClick = { this@DshBusHomePage.toggleProject(group.key) },
+                                        onMenu = {
+                                            this@DshBusHomePage.openProjectMenu(group.name, group.path)
+                                        },
+                                    )
                                     vif({ !this@DshBusHomePage.collapsedProjects.contains(group.key) }) {
                                         group.tasks.forEachIndexed { index, task ->
                                             BusTaskRow(
@@ -1091,6 +1199,32 @@ internal class DshBusHomePage : BasePager() {
                     colors = { this@DshBusHomePage.themeColors },
                 )
             }
+            vif({ this@DshBusHomePage.projectMenuPath.isNotEmpty() }) {
+                BusProjectMenuSheet(
+                    name = this@DshBusHomePage.projectMenuName,
+                    c = this@DshBusHomePage.themeColors,
+                    onClose = { this@DshBusHomePage.closeProjectMenu() },
+                    onRemove = { this@DshBusHomePage.requestRemoveProject() },
+                )
+            }
+            DshSessionConfirmDialog(
+                visible = { this@DshBusHomePage.showRemoveProject },
+                title = BUS_REMOVE_PROJECT_CONFIRM_TITLE,
+                message = BUS_REMOVE_PROJECT_CONFIRM_MESSAGE,
+                busyLabel = "移除中...",
+                confirmLabel = "从列表移除",
+                confirmColor = { this@DshBusHomePage.themeColors.stateErrorPrimary },
+                busy = { this@DshBusHomePage.removeProjectBusy },
+                error = { this@DshBusHomePage.removeProjectError },
+                onCancel = {
+                    this@DshBusHomePage.showRemoveProject = false
+                    this@DshBusHomePage.removeProjectError = ""
+                    this@DshBusHomePage.removeProjectPath = ""
+                },
+                onConfirm = { this@DshBusHomePage.removeProject() },
+                pageViewWidth = this@DshBusHomePage.pagerData.pageViewWidth,
+                colors = { this@DshBusHomePage.themeColors },
+            )
             DshSessionRenameDialog(
                 visible = { this@DshBusHomePage.showRenameComputer },
                 draft = { this@DshBusHomePage.renameDraft },
@@ -1145,8 +1279,10 @@ private data class BusHomeBindKey(
 private fun ViewContainer<*, *>.BusProjectHeader(
     name: String,
     expanded: Boolean,
+    showMenu: Boolean,
     c: DshColorTokens,
     onClick: () -> Unit,
+    onMenu: () -> Unit,
 ) {
     View {
         attr {
@@ -1158,22 +1294,49 @@ private fun ViewContainer<*, *>.BusProjectHeader(
             backgroundColor(c.bgBase)
             borderBottom(Border(1f, BorderStyle.SOLID, c.borderL1))
         }
-        event { click { onClick() } }
-        Text {
+        // 标题区单独可点，避免「⋯」菜单和折叠点击互相触发。
+        View {
             attr {
-                text(name)
-                fontSize(14f)
-                fontWeightBold()
-                color(c.labelPrimary)
                 flex(1f)
+                height(44f)
+                flexDirectionRow()
+                alignItemsCenter()
+            }
+            event { click { onClick() } }
+            Text {
+                attr {
+                    text(name)
+                    fontSize(14f)
+                    fontWeightBold()
+                    color(c.labelPrimary)
+                    flex(1f)
+                }
+            }
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("chevron-down.svg"))
+                    size(12f, 12f)
+                    tintColor(c.labelTertiary)
+                    transform(Rotate(if (expanded) 180f else 0f))
+                }
             }
         }
-        Image {
-            attr {
-                src(ImageUri.commonAssets("chevron-down.svg"))
-                size(12f, 12f)
-                tintColor(c.labelTertiary)
-                transform(Rotate(if (expanded) 180f else 0f))
+        if (showMenu) {
+            View {
+                attr {
+                    size(32f, 32f)
+                    marginLeft(4f)
+                    alignItemsCenter()
+                    justifyContentCenter()
+                }
+                event { click { onMenu() } }
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets("menu.svg"))
+                        size(16f, 16f)
+                        tintColor(c.labelSecondary)
+                    }
+                }
             }
         }
     }
@@ -1454,6 +1617,81 @@ private fun ViewContainer<*, *>.AgentFilterRow(
             }
         }
         event { click { onClick() } }
+    }
+}
+
+/** 「按项目」组标题菜单；目前只有协议 3.8 的移出列表一项。 */
+private fun ViewContainer<*, *>.BusProjectMenuSheet(
+    name: String,
+    c: DshColorTokens,
+    onClose: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    DshBottomSheet(
+        colors = { c },
+        onClose = onClose,
+        initialDetent = DshSheetDetent.MEDIUM,
+        panelHeight = 220f,
+        panelBackground = { c.bgBase },
+    ) {
+        View {
+            attr {
+                height(42f)
+                flexDirectionRow()
+                alignItemsCenter()
+                paddingLeft(20f)
+                paddingRight(20f)
+                marginTop(6f)
+            }
+            Text {
+                attr {
+                    text(name.ifBlank { "项目" })
+                    fontSize(15f)
+                    fontWeightBold()
+                    color(c.labelPrimary)
+                    flex(1f)
+                    lines(1)
+                }
+            }
+            View {
+                attr {
+                    size(30f, 30f)
+                    borderRadius(15f)
+                    backgroundColor(homeSurface(c))
+                    alignItemsCenter()
+                    justifyContentCenter()
+                }
+                event { click { onClose() } }
+                Image {
+                    attr {
+                        src(ImageUri.commonAssets("x.svg"))
+                        size(13f, 13f)
+                        tintColor(c.labelSecondary)
+                    }
+                }
+            }
+        }
+        View {
+            attr {
+                marginTop(8f)
+                marginLeft(20f)
+                marginRight(20f)
+                height(52f)
+                borderRadius(14f)
+                backgroundColor(homeSurface(c))
+                alignItemsCenter()
+                paddingLeft(16f)
+            }
+            event { click { onRemove() } }
+            Text {
+                attr {
+                    text("从列表移除项目")
+                    fontSize(15f)
+                    fontWeightMedium()
+                    color(c.stateErrorPrimary)
+                }
+            }
+        }
     }
 }
 

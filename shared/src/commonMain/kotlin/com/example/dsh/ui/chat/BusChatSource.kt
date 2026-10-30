@@ -42,6 +42,8 @@ internal data class BusChatTaskInfo(
     val controllable: Boolean,
     val projectName: String,
     val lastMessage: String,
+    /** 协议 3.8：对应连接器声明能永久删除会话记录。 */
+    val canDeleteTasks: Boolean = false,
 )
 
 /**
@@ -63,6 +65,9 @@ internal interface ConversationSource {
         onDone: (ok: Boolean, error: String) -> Unit,
     )
     fun interrupt(agentId: String, taskId: String, onDone: (ok: Boolean, error: String) -> Unit)
+
+    /** 协议 3.8：永久删除一条已停止的会话；成功后电脑发 taskRemoved。 */
+    fun deleteTask(agentId: String, taskId: String, onDone: (ok: Boolean, error: String) -> Unit)
 }
 
 /**
@@ -84,7 +89,9 @@ internal class BusChatSource(
     }.getOrNull()
 
     override fun taskInfo(taskId: String): BusChatTaskInfo? {
-        val task = homeView()?.tasks?.firstOrNull { it.id == taskId } ?: return null
+        val view = homeView() ?: return null
+        val task = view.tasks.firstOrNull { it.id == taskId } ?: return null
+        val connector = view.agents.firstOrNull { it.key == task.agentKey }
         return BusChatTaskInfo(
             title = task.title,
             status = task.status,
@@ -95,6 +102,7 @@ internal class BusChatSource(
             controllable = task.controllable,
             projectName = task.project,
             lastMessage = task.lastMessage,
+            canDeleteTasks = connector?.canDeleteTasks == true,
         )
     }
 
@@ -213,6 +221,33 @@ internal class BusChatSource(
             awaitCommand(commandId) { outcome ->
                 if (outcome == null) onDone(false, "电脑没有确认，请稍后重试")
                 else onDone(outcome.ok, outcome.error)
+            }
+        }
+    }
+
+    override fun deleteTask(agentId: String, taskId: String, onDone: (ok: Boolean, error: String) -> Unit) {
+        if (taskId.isBlank()) {
+            onDone(false, "缺少任务 id")
+            return
+        }
+        val commandId = BusCommands.newCommandId()
+        val json = BusCommands.deleteTask(
+            commandId = commandId,
+            createdAt = BusCommands.createdAt(),
+            agentId = agentId,
+            taskId = taskId,
+        )
+        relay.busCommand(json) { ack ->
+            if (ack.status != 200 && ack.status != 202) {
+                onDone(false, if (ack.body.isBlank()) "删除失败（${ack.status}）" else ack.body)
+                return@busCommand
+            }
+            awaitCommand(commandId) { outcome ->
+                when {
+                    outcome == null -> onDone(false, "电脑没有确认，请稍后重试")
+                    !outcome.ok -> onDone(false, outcome.error.ifBlank { "删除失败" })
+                    else -> onDone(true, "")
+                }
             }
         }
     }

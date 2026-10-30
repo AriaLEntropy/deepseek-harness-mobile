@@ -43,6 +43,17 @@ class BusProtocolTest {
     }
 
     @Test
+    fun snapshotCleaningKeeps3_8CapabilityFields() {
+        val snapshot = """
+            {"agents":[{"agentId":"host-1","name":"pc","platform":"windows","online":true,"lastSeenAt":"2026-10-16T00:00:00Z","appVersion":"1.0.0","canRemoveProjects":true,"connectors":[{"kind":"codex","displayName":"Codex","available":true,"enabled":true,"status":"ok","taskCount":0,"canDeleteTasks":true}]}],"tasks":[],"seq":3,"generatedAt":"2026-10-16T00:00:00Z"}
+        """.trimIndent()
+        val cleaned = busCleanSnapshot(busParse(snapshot))!!
+        val agent = (cleaned["agents"] as JsonArray).first().toString()
+        assertTrue(agent.contains("\"canRemoveProjects\":true"))
+        assertTrue(agent.contains("\"canDeleteTasks\":true"))
+    }
+
+    @Test
     fun describeRetriesThenStopsGuessing() {
         val attempts = DescribeAttempts()
         assertNull(attempts.onTransportFailure())

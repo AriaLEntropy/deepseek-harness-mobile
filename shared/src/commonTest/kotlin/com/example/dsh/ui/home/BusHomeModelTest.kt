@@ -4,6 +4,7 @@ import com.example.dsh.bus.BusStore
 import com.example.dsh.bus.busParse
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -52,6 +53,41 @@ class BusHomeModelTest {
         assertEquals(2, view.pendingCount)
         assertEquals(1, view.runningCount)
         assertEquals(5, view.tasks.size)
+    }
+
+    @Test
+    fun actionCapabilitiesMapAndSurviveSnapshotRoundTrip() {
+        val view = previewBusHomeView()
+        assertTrue(view.device?.canRemoveProjects == true)
+        assertTrue(view.agents.first { it.key == "codex" }.canDeleteTasks)
+        assertTrue(view.agents.first { it.key == "acp:claude-code" }.canDeleteTasks)
+        assertFalse(view.agents.first { it.key == "dsh" }.canDeleteTasks)
+        assertEquals(
+            "/Users/me/Projects/agentbus",
+            view.projectGroups("").first { it.name == "agentbus" }.path,
+        )
+
+        val store = BusStore()
+        store.applySnapshot(busParse(BUS_HOME_FIXTURE_JSON))
+        val second = BusStore()
+        assertNotNull(second.applySnapshot(busParse(store.snapshotJson())))
+        val roundTripped = second.toHomeView()
+        assertTrue(roundTripped.device?.canRemoveProjects == true)
+        assertTrue(roundTripped.agents.first { it.key == "codex" }.canDeleteTasks)
+    }
+
+    @Test
+    fun placeholderProjectGroupsAreNotRemovable() {
+        val snapshot = """
+            {"agents":[{"agentId":"host-1","name":"pc","platform":"windows","online":true,"lastSeenAt":"","appVersion":"","connectors":[]}],
+             "tasks":[{"id":"codex:s1","agentId":"host-1","source":"codex","title":"t","outsideProject":true,"projectName":"","status":"completed","origin":"watch","controllable":true,"startedAt":"","updatedAt":""}],
+             "projects":[],"recentResults":[],"seq":1,"generatedAt":""}
+        """.trimIndent()
+        val store = BusStore()
+        assertNotNull(store.applySnapshot(busParse(snapshot)))
+        val groups = store.toHomeView().projectGroups("")
+        assertEquals(1, groups.size)
+        assertEquals("", groups.single().path)
     }
 
     @Test
