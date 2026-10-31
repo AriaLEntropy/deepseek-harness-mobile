@@ -283,6 +283,37 @@ internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGro
     return groups
 }
 
+/**
+ * 项目视图的扁平行：`vforLazy` 只能吃一维列表，所以把「项目头 + 展开的任务」
+ * 摊平后交给懒加载列表；折叠状态变化时重新生成即可。
+ */
+internal sealed class BusHomeProjectRow {
+    abstract val key: String
+
+    data class Header(val group: BusHomeProjectGroup) : BusHomeProjectRow() {
+        override val key: String = "project-${group.key}"
+    }
+
+    data class Task(val task: BusHomeTask, val showDivider: Boolean) : BusHomeProjectRow() {
+        override val key: String = "task-${task.id}"
+    }
+}
+
+internal fun busHomeProjectRows(
+    groups: List<BusHomeProjectGroup>,
+    collapsed: Set<String>,
+): List<BusHomeProjectRow> {
+    val rows = ArrayList<BusHomeProjectRow>(groups.size * 2)
+    for (group in groups) {
+        rows += BusHomeProjectRow.Header(group)
+        if (group.key in collapsed) continue
+        group.tasks.forEachIndexed { index, task ->
+            rows += BusHomeProjectRow.Task(task, showDivider = index < group.tasks.lastIndex)
+        }
+    }
+    return rows
+}
+
 private const val IMPORTED_TASK_PREFIX = "import:"
 private const val OUTSIDE_PROJECT_KEY = "outside:"
 private const val UNKNOWN_PROJECT_KEY = "unknown:"

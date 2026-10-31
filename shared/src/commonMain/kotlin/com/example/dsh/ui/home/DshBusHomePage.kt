@@ -36,6 +36,7 @@ import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vbind
+import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.module.SharedPreferencesModule
@@ -43,7 +44,9 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.timer.setTimeout
+import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
@@ -1096,23 +1099,28 @@ internal class DshBusHomePage : BasePager() {
                         bodyState == BusHomeBodyState.Content &&
                             this@DshBusHomePage.viewMode == VIEW_RECENT
                     }) {
-                        Scroller {
-                            attr { flex(1f) }
-                            View {
-                                attr {
-                                    width(this@DshBusHomePage.pagerData.pageViewWidth)
-                                    flexDirectionColumn()
-                                }
-                                visibleTasks.forEachIndexed { index, task ->
-                                    val next = visibleTasks.getOrNull(index + 1)
-                                    BusTaskRow(
-                                        task = task,
-                                        c = c,
-                                        topRounded = index == 0,
-                                        showDivider = next != null && !(task.pending && next.pending),
-                                        onClick = { this@DshBusHomePage.openBusChat(task) },
-                                    )
-                                }
+                        // 400 个任务只创建可见行；滚动时按需补行。
+                        val rows = ObservableList<BusHomeTask>().apply { addAll(visibleTasks) }
+                        List {
+                            attr {
+                                flex(1f)
+                                firstContentLoadMaxIndex(BUS_HOME_INITIAL_RENDER_ROWS)
+                                preloadViewDistance(pagerData.pageViewHeight)
+                            }
+                            vforLazy(
+                                { rows },
+                                maxLoadItem = BUS_HOME_MAX_RENDERED_ROWS,
+                            ) { task, index, count ->
+                                val next = rows.getOrNull(index + 1)
+                                BusTaskRow(
+                                    task = task,
+                                    c = c,
+                                    topRounded = index == 0,
+                                    showDivider = index < count - 1 &&
+                                        next != null &&
+                                        !(task.pending && next.pending),
+                                    onClick = { this@DshBusHomePage.openBusChat(task) },
+                                )
                             }
                         }
                     }
@@ -1120,37 +1128,53 @@ internal class DshBusHomePage : BasePager() {
                         bodyState == BusHomeBodyState.Content &&
                             this@DshBusHomePage.viewMode == VIEW_PROJECTS
                     }) {
-                        Scroller {
-                            attr { flex(1f) }
-                            View {
+                        // 项目头 + 任务摊成一维行，交给同一个懒加载列表；
+                        // 折叠状态变化时 vbind 会重新生成行。
+                        vbind({ this@DshBusHomePage.collapsedProjects.toList() }) {
+                            val collapsed = this@DshBusHomePage.collapsedProjects.toSet()
+                            val rows = ObservableList<BusHomeProjectRow>().apply {
+                                addAll(
+                                    busHomeProjectRows(
+                                        home.projectGroups(selectedKey),
+                                        collapsed,
+                                    ),
+                                )
+                            }
+                            List {
                                 attr {
-                                    width(this@DshBusHomePage.pagerData.pageViewWidth)
-                                    flexDirectionColumn()
+                                    flex(1f)
+                                    firstContentLoadMaxIndex(BUS_HOME_INITIAL_RENDER_ROWS)
+                                    preloadViewDistance(pagerData.pageViewHeight)
                                 }
-                                home.projectGroups(selectedKey).forEach { group ->
-                                    val expanded = !this@DshBusHomePage.collapsedProjects.contains(group.key)
-                                    BusProjectHeader(
-                                        name = group.name,
-                                        expanded = expanded,
-                                        showMenu = home.device?.canRemoveProjects == true &&
-                                            group.path.isNotBlank(),
-                                        c = c,
-                                        onClick = { this@DshBusHomePage.toggleProject(group.key) },
-                                        onMenu = {
-                                            this@DshBusHomePage.openProjectMenu(group.name, group.path)
-                                        },
-                                    )
-                                    vif({ !this@DshBusHomePage.collapsedProjects.contains(group.key) }) {
-                                        group.tasks.forEachIndexed { index, task ->
-                                            BusTaskRow(
-                                                task = task,
-                                                c = c,
-                                                topRounded = false,
-                                                showDivider = index < group.tasks.lastIndex,
-                                                dense = true,
-                                                onClick = { this@DshBusHomePage.openBusChat(task) },
-                                            )
-                                        }
+                                vforLazy(
+                                    { rows },
+                                    maxLoadItem = BUS_HOME_MAX_RENDERED_ROWS,
+                                ) { row, _, _ ->
+                                    when (row) {
+                                        is BusHomeProjectRow.Header -> BusProjectHeader(
+                                            name = row.group.name,
+                                            expanded = row.group.key !in collapsed,
+                                            showMenu = home.device?.canRemoveProjects == true &&
+                                                row.group.path.isNotBlank(),
+                                            c = c,
+                                            onClick = {
+                                                this@DshBusHomePage.toggleProject(row.group.key)
+                                            },
+                                            onMenu = {
+                                                this@DshBusHomePage.openProjectMenu(
+                                                    row.group.name,
+                                                    row.group.path,
+                                                )
+                                            },
+                                        )
+                                        is BusHomeProjectRow.Task -> BusTaskRow(
+                                            task = row.task,
+                                            c = c,
+                                            topRounded = false,
+                                            showDivider = row.showDivider,
+                                            dense = true,
+                                            onClick = { this@DshBusHomePage.openBusChat(row.task) },
+                                        )
                                     }
                                 }
                             }
@@ -1381,6 +1405,10 @@ internal class DshBusHomePage : BasePager() {
         private const val VIEW_RECENT = "recent"
         private const val VIEW_PROJECTS = "projects"
         private const val BUS_VIEW_MODE_KEY = "bus_home_view_mode"
+        /** 首屏最多先建多少行；400 个任务的其余行按滚动创建。 */
+        private const val BUS_HOME_INITIAL_RENDER_ROWS = 20
+        /** 列表里最多保留多少行节点。 */
+        private const val BUS_HOME_MAX_RENDERED_ROWS = 60
     }
 }
 

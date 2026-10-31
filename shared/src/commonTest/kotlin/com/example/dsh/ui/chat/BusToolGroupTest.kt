@@ -2,6 +2,7 @@ package com.example.dsh.ui.chat
 
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
+import kotlin.system.measureTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -108,5 +109,20 @@ class BusToolGroupTest {
     @Test
     fun emptyConversationHasNoRows() {
         assertTrue(busChatRows(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun twoHundredMessagesBuildRowsWithinBudget() {
+        // 200 条消息 + 连续 tool 折叠：M2-11 的规模，只测纯模型，不依赖设备。
+        val messages = List(200) { index ->
+            if (index % 4 == 2 || index % 4 == 3) tool("t$index") else user("u$index")
+        }
+        var rows = emptyList<BusChatRow>()
+        val elapsed = measureTimeMillis {
+            repeat(10) { rows = busChatRows(messages) }
+        }
+        // 50 个工具组 + 100 个普通消息（每 4 条里 2 条 tool）。
+        assertEquals(150, rows.size)
+        assertTrue(elapsed < 2_000, "busChatRows(200) took ${elapsed}ms")
     }
 }

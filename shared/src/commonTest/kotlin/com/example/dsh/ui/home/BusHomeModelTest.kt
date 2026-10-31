@@ -2,9 +2,11 @@ package com.example.dsh.ui.home
 
 import com.example.dsh.bus.BusStore
 import com.example.dsh.bus.busParse
+import kotlin.system.measureTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -125,5 +127,55 @@ class BusHomeModelTest {
     fun agentEmptyStateOnlyWhenListIsEmpty() {
         assertTrue(busHomeAgentsEmpty(emptyList()))
         assertFalse(busHomeAgentsEmpty(previewBusHomeView().agents))
+    }
+
+    @Test
+    fun projectRowsFlattenHeadersAndRespectCollapse() {
+        val groups = previewBusHomeView().projectGroups("")
+        val rows = busHomeProjectRows(groups, collapsed = emptySet())
+        assertEquals(groups.size + groups.sumOf { it.tasks.size }, rows.size)
+        assertIs<BusHomeProjectRow.Header>(rows.first())
+        assertEquals(rows.map { it.key }.distinct().size, rows.size)
+
+        val collapsed = setOf(groups.first().key)
+        val folded = busHomeProjectRows(groups, collapsed)
+        assertEquals(
+            rows.size - groups.first().tasks.size,
+            folded.size,
+        )
+        assertTrue(folded.none { it is BusHomeProjectRow.Task && it.task in groups.first().tasks })
+    }
+
+    @Test
+    fun fourHundredTasksMapAndGroupWithinBudget() {
+        // M2-11 规模：400 个任务、20 个项目。只测纯模型转换，渲染由列表懒加载兜底。
+        val tasks = (0 until 400).joinToString(",") { index ->
+            val project = index % 20
+            """{"id":"codex:s$index","agentId":"host-1","source":"codex","title":"task $index",
+               "projectPath":"C:/work/p$project","projectName":"p$project","status":"completed",
+               "origin":"watch","controllable":true,"startedAt":"2026-10-31T10:00:00Z",
+               "updatedAt":"2026-10-31T${(10 + project % 10).toString().padStart(2, '0')}:00:00Z"}"""
+        }
+        val snapshot = """
+            {"agents":[{"agentId":"host-1","name":"pc","platform":"windows","online":true,
+             "lastSeenAt":"","appVersion":"","connectors":[]}],
+             "tasks":[$tasks],"projects":[],"recentResults":[],"seq":1,"generatedAt":""}
+        """.trimIndent()
+        val store = BusStore()
+        assertNotNull(store.applySnapshot(busParse(snapshot)))
+
+        var groups = emptyList<BusHomeProjectGroup>()
+        var rows = emptyList<BusHomeProjectRow>()
+        val elapsed = measureTimeMillis {
+            repeat(5) {
+                val view = store.toHomeView()
+                groups = view.projectGroups("")
+                rows = busHomeProjectRows(groups, collapsed = emptySet())
+            }
+        }
+        assertEquals(400, groups.sumOf { it.tasks.size })
+        assertEquals(20, groups.size)
+        assertEquals(400 + 20, rows.size)
+        assertTrue(elapsed < 2_000, "400 tasks mapping/grouping took ${elapsed}ms")
     }
 }

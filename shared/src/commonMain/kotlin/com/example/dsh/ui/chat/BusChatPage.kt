@@ -18,15 +18,14 @@ import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vbind
-import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.module.RouterModule
-import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.timer.setTimeout
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Scroller
+import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.TextAreaView
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
@@ -37,6 +36,11 @@ import com.tencent.kuikly.core.views.View
  * UI 只依赖 [BusChatSource] 暴露的数据与命令，不直接碰 Bus 命令编码或快照 JSON；
  * 以后接旧 DSH 数据源时，换一个 source 实现即可，页面不需要改。
  */
+/** 首屏最多先建多少行；其余在滚动时按需创建。 */
+private const val BUS_CHAT_INITIAL_RENDER_ROWS = 30
+/** 列表里最多保留多少行节点；200 条消息也不会一次全建出来。 */
+private const val BUS_CHAT_MAX_RENDERED_ROWS = 80
+
 @Page("bus_chat")
 internal class BusChatPage : BasePager() {
     private var taskId by observable("")
@@ -68,6 +72,8 @@ internal class BusChatPage : BasePager() {
     /** 已展开的工具组 key；默认全部收起。 */
     private var expandedToolGroups by observable(emptySet<String>())
     private val messages by observableList<DshMessage>()
+    /** `vforLazy` 的数据源：消息与工具组合并后的渲染行，用 diffUpdate 增量更新。 */
+    private val chatRows by observableList<BusChatRow>()
     private val models by observableList<BusHomeModelOption>()
 
     private var chatSource: ConversationSource? = null
@@ -118,7 +124,16 @@ internal class BusChatPage : BasePager() {
         if (history.messages == messages.toList()) return
         messages.clear()
         messages.addAll(history.messages)
+        refreshChatRows()
         loading = false
+    }
+
+    /**
+     * 消息变化后重算渲染行。`diffUpdate` 按行内容比较：轮询拿到同样的 200 条消息
+     * 不会重建节点，只有新增/变化的行才替换。
+     */
+    private fun refreshChatRows() {
+        chatRows.diffUpdate(busChatRows(messages.toList())) { old, new -> old == new }
     }
 
     private fun fetchMessages(force: Boolean) {
@@ -304,46 +319,54 @@ internal class BusChatPage : BasePager() {
                         onStop = { this@BusChatPage.stop() },
                         onDelete = { this@BusChatPage.requestDelete() },
                     )
-                    Scroller {
-                        attr { flex(1f) }
+                    // 行数据为空时先挂空态；有行时才挂 List，避免 LazyLoop 在
+                    // 「空列表先挂载、后 addAll」时把增量当成可见范围之后而不建 cell。
+                    vif({ this@BusChatPage.chatRows.isEmpty() }) {
                         View {
                             attr {
-                                flexDirectionColumn()
                                 paddingLeft(18f)
                                 paddingRight(18f)
-                                paddingTop(12f)
-                                paddingBottom(12f)
+                                paddingTop(30f)
                             }
-                            vif({ this@BusChatPage.hasMore }) {
-                                Text {
-                                    attr {
-                                        text("更早的记录在电脑上")
-                                        fontSize(11f)
-                                        color(c.labelTertiary)
-                                        marginBottom(10f)
+                            Text {
+                                attr {
+                                    text(
+                                        if (this@BusChatPage.loading) "正在加载记录…"
+                                        else if (this@BusChatPage.taskId.isEmpty()) "说点什么，开始一个新任务"
+                                        else "还没有对话记录",
+                                    )
+                                    fontSize(13f)
+                                    color(c.labelTertiary)
+                                }
+                            }
+                        }
+                    }
+                    vif({ this@BusChatPage.chatRows.isNotEmpty() }) {
+                        // 200 条消息也只创建可见行；工具组展开状态由行内闭包读取。
+                        List {
+                            attr {
+                                flex(1f)
+                                padding(12f, 18f, 12f, 18f)
+                                firstContentLoadMaxIndex(BUS_CHAT_INITIAL_RENDER_ROWS)
+                                preloadViewDistance(pagerData.pageViewHeight)
+                            }
+                            View {
+                                attr { flexDirectionColumn() }
+                                vif({ this@BusChatPage.hasMore }) {
+                                    Text {
+                                        attr {
+                                            text("更早的记录在电脑上")
+                                            fontSize(11f)
+                                            color(c.labelTertiary)
+                                            marginBottom(10f)
+                                        }
                                     }
                                 }
                             }
-                            vif({ this@BusChatPage.messages.isEmpty() }) {
-                                Text {
-                                    attr {
-                                        text(
-                                            if (this@BusChatPage.loading) "正在加载记录…"
-                                            else if (this@BusChatPage.taskId.isEmpty()) "说点什么，开始一个新任务"
-                                            else "还没有对话记录",
-                                        )
-                                        fontSize(13f)
-                                        color(c.labelTertiary)
-                                        marginTop(30f)
-                                    }
-                                }
-                            }
-                            // vfor 需要 ObservableList：把分组结果包一层，仍是纯函数计算。
-                            vfor({
-                                ObservableList<BusChatRow>().apply {
-                                    addAll(busChatRows(this@BusChatPage.messages.toList()))
-                                }
-                            }) { row ->
+                            vforLazy(
+                                { this@BusChatPage.chatRows },
+                                maxLoadItem = BUS_CHAT_MAX_RENDERED_ROWS,
+                            ) { row, _, _ ->
                                 when (row) {
                                     is BusChatRow.Message -> DshMessageRow(
                                         message = row.message,
@@ -362,16 +385,19 @@ internal class BusChatPage : BasePager() {
                                     )
                                 }
                             }
-                            vif({
-                                this@BusChatPage.status == "failed" &&
-                                    this@BusChatPage.lastMessage.isNotBlank()
-                            }) {
-                                Text {
-                                    attr {
-                                        text("失败：${this@BusChatPage.lastMessage}")
-                                        fontSize(12f)
-                                        color(c.stateErrorPrimary)
-                                        marginTop(12f)
+                            View {
+                                attr { flexDirectionColumn() }
+                                vif({
+                                    this@BusChatPage.status == "failed" &&
+                                        this@BusChatPage.lastMessage.isNotBlank()
+                                }) {
+                                    Text {
+                                        attr {
+                                            text("失败：${this@BusChatPage.lastMessage}")
+                                            fontSize(12f)
+                                            color(c.stateErrorPrimary)
+                                            marginTop(12f)
+                                        }
                                     }
                                 }
                             }
