@@ -6,10 +6,13 @@ import com.example.dsh.ui.settings.DshSettingsCardGroupTitle
 import com.example.dsh.ui.settings.DshSettingsRow
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
+import com.tencent.kuikly.core.base.BoxShadow
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.base.attr.ImageUri
+import com.tencent.kuikly.core.layout.FlexPositionType
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.Modal
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
@@ -322,4 +325,275 @@ private fun platformLabel(platform: String): String = when (platform.lowercase()
     "linux" -> "Linux"
     "harmonyos", "ohos" -> "HarmonyOS"
     else -> "未知"
+}
+
+// ===========================================================================
+// 面板共用外壳（Agent 选择面板 + 设备面板）
+//
+// 两个面板同构：同一套遮罩、起点、圆角、拖拽条、标题行与滚动区，
+// 所以共用外壳放在这里（B 号只拥有 BusAgentSheet / BusDeviceSheet / 本文件）。
+// 没复用 ui-kit 的 DshBottomSheet：它把抓握条 40×5、遮罩 50% 黑、
+// 设备屏幕圆角、0 -4 16 阴影都写死了，而设计基线逐条给定了不同的值。
+// ===========================================================================
+
+/**
+ * 面板共用的尺寸与颜色（视觉规范 16.8）。
+ *
+ * 只放 [BusV86Tokens] 里没收录、又确实两个面板都要用的值；
+ * 已经有的语义色（sheet/scrim/sheetBorder/sheetShadow/cardFill/field/chipFill…）
+ * 一律直接用 [BusV86Tokens]，这里不重复定义。
+ */
+internal object BusSheetTokens {
+    /** 行卡圆角 14 */
+    const val rowRadius: Float = 14f
+
+    /** 行卡描边宽度（基线 1px） */
+    const val rowBorderWidth: Float = 1f
+
+    /** 强调描边宽度（当前设备 / 报错行 1.5px） */
+    const val rowBorderWidthStrong: Float = 1.5f
+
+    /** 行卡内边距 8 */
+    const val rowPaddingVertical: Float = 8f
+
+    /** 行卡内边距 14 */
+    const val rowPaddingHorizontal: Float = 14f
+
+    /** 禁用行内边距纵向收为 4 */
+    const val rowPaddingDisabledVertical: Float = 4f
+
+    /** 禁用行内边距横向收为 12 */
+    const val rowPaddingDisabledHorizontal: Float = 12f
+
+    /** 禁用行透明度 .55 */
+    const val rowDisabledOpacity: Float = 0.55f
+
+    /** 行卡下间距 5 */
+    const val rowGap: Float = 5f
+
+    /** 行内图标底盘 36 圆 */
+    const val rowIconSize: Float = 36f
+
+    /** 行内元素间距 10（对应 CSS gap:10） */
+    const val rowGapInner: Float = 10f
+
+    /** 拖拽条所在区域高 6 */
+    const val grabberZoneHeight: Float = 6f
+
+    /** 拖拽条 36×4，圆角 2 */
+    const val grabberWidth: Float = 36f
+    const val grabberHeight: Float = 4f
+    const val grabberRadius: Float = 2f
+
+    /** 标题行高 27 */
+    const val titleRowHeight: Float = 27f
+
+    /** 标题行左右内边距 20（= [BusV86Tokens.spacePage]，这里单独具名便于阅读） */
+    const val titleRowPaddingHorizontal: Float = 20f
+
+    /** 面板右上角关闭按钮 28×28，内 16×16 ✕ */
+    const val closeSize: Float = 28f
+    const val closeIconSize: Float = 16f
+
+    /** 滚动区左右 padding 16 */
+    const val scrollPadding: Float = 16f
+
+    /** 面板上抛阴影：offsetY -12、blur 36 */
+    const val shadowOffsetY: Float = -12f
+    const val shadowRadius: Float = 36f
+
+    /** 浮层阴影 0 8 24 rgba(17,17,26,.16) */
+    const val popupOffsetY: Float = 8f
+    const val popupRadius: Float = 14f
+    val popupShadow: Color = Color(0x2911111A)
+
+    /** 浮层相对面板的位置：拖拽条 6 + 标题行 27 + 设计稿内 70 */
+    const val popupTop: Float = 103f
+
+    /** 浮层左右内边距 12/14 */
+    const val popupPaddingVertical: Float = 12f
+    const val popupPaddingHorizontal: Float = 14f
+
+    /** 报错行与浮层的红描边 #E5484D / #FDE2E2（BusV86Tokens 只有 #D92D20 文字红） */
+    val errorBorder: Color = Color(0xFFE5484D)
+    val popupBorder: Color = Color(0xFFFDE2E2)
+
+    /** 拖拽条 #D8D8DE */
+    val handle: Color = Color(0xFFD8D8DE)
+
+    /** 展开区分隔线 #F0F0F2（比 [BusV86Tokens.hairline] 更实，设计稿给的是不透明值） */
+    val rowDivider: Color = Color(0xFFF0F0F2)
+
+    /** 能力矩阵行高 18 */
+    const val capabilityRowHeight: Float = 18f
+}
+
+/**
+ * 面板高度：设计稿 812 - 起点 432 = 380。
+ * 矮屏（横屏/小窗）时按 45% 页高兜底，并且永远不超过页高。
+ */
+internal fun busSheetHeight(pageHeight: Float): Float {
+    val minimum = pageHeight * 0.45f
+    return (pageHeight - BusV86Tokens.sheetTop)
+        .coerceAtLeast(minimum)
+        .coerceAtMost(pageHeight)
+        .coerceAtLeast(0f)
+}
+
+/** 行卡宽度 = 页宽 - 滚动区左右 padding（设计稿 375 - 32 = 343）。 */
+internal fun busSheetRowWidth(pageWidth: Float): Float =
+    (pageWidth - BusSheetTokens.scrollPadding * 2f).coerceAtLeast(0f)
+
+/**
+ * 行卡底色。
+ *
+ * v86 基线只有浅色（行卡就是 #FFFFFF），深色只把底色换成面板 `surface`，
+ * 免得在深色面板上贴一片纯白；深色对比度复核是后续任务。
+ */
+internal fun busSheetRowFill(palette: BusV86Palette): Color =
+    if (palette.isDark) palette.surface else BusV86Tokens.cardFill
+
+/** 行内 36 圆图标底盘底色，同上只做深浅色切换。 */
+internal fun busSheetIconDiscFill(palette: BusV86Palette): Color =
+    if (palette.isDark) palette.chipFill else BusV86Tokens.field
+
+/**
+ * v86 面板外壳：遮罩 + 贴底面板（拖拽条、标题行、右上角 ✕、隐藏滚动条的滚动区）。
+ *
+ * 面板贴底摆放，高度取 [busSheetHeight]；在设计画布（812）上正好落在 top 432。
+ * 状态与副作用都由调用方持有：这里只在关闭（遮罩点击 / ✕）时回调 [onClose]。
+ *
+ * @param title 标题行文案
+ * @param palette 面板配色（[BusV86Tokens.light] 或深色映射）
+ * @param pageWidth 页面宽度，用于算面板宽度与行宽
+ * @param pageHeight 页面高度，用于算面板高度
+ * @param onClose 关闭回调
+ * @param floating 浮在面板上的层（长按 lastError 浮层），绝对定位、盖在内容之上
+ * @param content 滚动区内容（行卡按 [busSheetRowWidth] 宽度排版）
+ */
+internal fun ViewContainer<*, *>.BusSheetPanel(
+    title: String,
+    palette: BusV86Palette,
+    pageWidth: Float,
+    pageHeight: Float,
+    onClose: () -> Unit,
+    floating: ViewContainer<*, *>.() -> Unit = {},
+    content: ViewContainer<*, *>.() -> Unit,
+) {
+    val rowWidth = busSheetRowWidth(pageWidth)
+    Modal(inWindow = true) {
+        attr {
+            absolutePositionAllZero()
+            backgroundColor(palette.scrim)
+        }
+        // 整屏点击捕获层：点遮罩关闭；面板挂在它之后，点面板不会走到这里
+        View {
+            attr { absolutePositionAllZero() }
+            event { click { onClose() } }
+        }
+        View {
+            attr {
+                positionType(FlexPositionType.ABSOLUTE)
+                left(0f)
+                bottom(0f)
+                width(pageWidth)
+                height(busSheetHeight(pageHeight))
+                flexDirectionColumn()
+                borderRadius(
+                    BusV86Tokens.radiusSheet,
+                    BusV86Tokens.radiusSheet,
+                    0f,
+                    0f,
+                )
+                backgroundColor(palette.sheet)
+                boxShadow(
+                    BoxShadow(
+                        0f,
+                        BusSheetTokens.shadowOffsetY,
+                        BusSheetTokens.shadowRadius,
+                        BusV86Tokens.sheetShadow,
+                    ),
+                )
+            }
+            // 面板空白处的点击在这里消费掉，避免穿透到遮罩引起误关闭
+            event { click { } }
+            // border-top 1px rgba(255,255,255,.85)：左右各内缩一个圆角半径，
+            // 否则 1px 高光线会戳出 24 的圆角之外（Kuikly 的 Border 只能四边同值）。
+            View {
+                attr {
+                    alignSelfCenter()
+                    width((pageWidth - BusV86Tokens.radiusSheet * 2f).coerceAtLeast(0f))
+                    height(1f)
+                    backgroundColor(BusV86Tokens.sheetBorder)
+                }
+            }
+            // 拖拽条：6 高区域内居中 36×4
+            View {
+                attr {
+                    height(BusSheetTokens.grabberZoneHeight)
+                    alignItemsCenter()
+                    justifyContentCenter()
+                }
+                View {
+                    attr {
+                        size(BusSheetTokens.grabberWidth, BusSheetTokens.grabberHeight)
+                        borderRadius(BusSheetTokens.grabberRadius)
+                        backgroundColor(BusSheetTokens.handle)
+                    }
+                }
+            }
+            // 标题行：高 27，左标题 15/600，右 28×28 关闭按钮（面板保留 ✕，与审批卡不同）
+            View {
+                attr {
+                    height(BusSheetTokens.titleRowHeight)
+                    flexDirectionRow()
+                    alignItemsCenter()
+                    paddingLeft(BusSheetTokens.titleRowPaddingHorizontal)
+                    paddingRight(BusSheetTokens.titleRowPaddingHorizontal)
+                }
+                Text {
+                    attr {
+                        text(title)
+                        fontSize(BusV86Tokens.fontSizeTitle)
+                        fontWeightBold()
+                        color(palette.textPrimary)
+                        flex(1f)
+                        lines(1)
+                        textOverFlowTail()
+                    }
+                }
+                View {
+                    attr {
+                        size(BusSheetTokens.closeSize, BusSheetTokens.closeSize)
+                        alignItemsCenter()
+                        justifyContentCenter()
+                    }
+                    event { click { onClose() } }
+                    Image {
+                        attr {
+                            src(ImageUri.commonAssets("x.svg"))
+                            size(BusSheetTokens.closeIconSize, BusSheetTokens.closeIconSize)
+                            tintColor(BusV86Tokens.textTertiary)
+                        }
+                    }
+                }
+            }
+            // 滚动区：padding 0 16，滚动条必须隐藏，否则展开时整行会左移
+            Scroller {
+                attr {
+                    flex(1f)
+                    showScrollerIndicator(false)
+                }
+                View {
+                    attr {
+                        width(rowWidth)
+                        marginLeft(BusSheetTokens.scrollPadding)
+                        flexDirectionColumn()
+                    }
+                    content.invoke(this)
+                }
+            }
+            floating.invoke(this)
+        }
+    }
 }

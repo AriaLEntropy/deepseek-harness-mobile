@@ -31,6 +31,33 @@ const val BUS_REMOVE_PROJECT_CONFIRM_TITLE = "从列表移除项目？"
 const val BUS_REMOVE_PROJECT_CONFIRM_MESSAGE =
     "只是从列表里隐藏，不删除目录、代码和会话记录；之后有新活动时会重新出现。"
 
+/**
+ * 协议 3.9 的 Agent 控制能力。
+ *
+ * - 「停止 / 启动」发 `setConnectorEnabled`，任何电脑都收；
+ * - 「重启」发 `restartConnector`，只发给报了 `AgentInfo.canRestartConnectors` 的电脑，
+ *   且会中断在跑 / 等审批 / 等回答的会话，手机要先确认。
+ *
+ * 判定和文案同样是纯函数/常量，页面与单测共用。
+ */
+fun busCanRestartConnector(canRestartConnectors: Boolean): Boolean = canRestartConnectors
+
+/**
+ * 把 [BusHomeAgent] 的 key（`acp:gemini` / `codex`）拆成协议要的两个字段：
+ * `connector` kind 与 `connectorId`。协议规定 `connector = acp` 时 connectorId 必填、
+ * 其余 kind 必须省略，所以这里只在 `acp:` 前缀上给出 id。
+ */
+fun busConnectorTarget(agentKey: String): Pair<String, String?> {
+    if (!agentKey.startsWith(ACP_AGENT_KEY_PREFIX)) return agentKey to null
+    return "acp" to agentKey.removePrefix(ACP_AGENT_KEY_PREFIX).ifBlank { null }
+}
+
+const val BUS_RESTART_CONNECTOR_CONFIRM_TITLE = "重启这个 Agent？"
+const val BUS_RESTART_CONNECTOR_CONFIRM_MESSAGE =
+    "电脑会收掉它的连接和后台进程，在跑、等审批、等回答的会话都会停，收尾完自动重新启用。"
+
+private const val ACP_AGENT_KEY_PREFIX = "acp:"
+
 /** recentResults 里的一条命令结果；[Pending] 表示电脑还没回。 */
 sealed class BusCommandOutcome {
     data object Pending : BusCommandOutcome()

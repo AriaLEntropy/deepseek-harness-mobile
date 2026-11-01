@@ -77,7 +77,20 @@ internal data class BusHomeAgent(
     val models: List<BusHomeModelOption> = emptyList(),
     /** 协议 3.8 起：连接器声明能永久删除原生会话记录。 */
     val canDeleteTasks: Boolean = false,
-)
+    /** 协议 3.3 起：连接器声明这台电脑上有「自动批准」开关可用。 */
+    val canAutoApprove: Boolean = false,
+) {
+    /**
+     * 能不能在这个 Agent 上直接发起任务。wire 上没有这个字段，按页面既有判断派生：
+     * 可用 + 已启用 + 来源是 acp 或 dsh（codex / claude 等只在电脑上启动）。
+     */
+    val canStartTask: Boolean
+        get() = busAgentCanStartTask(available, enabled, source)
+}
+
+/** [BusHomeAgent.canStartTask] 的纯函数版本，页面与单测共用。 */
+internal fun busAgentCanStartTask(available: Boolean, enabled: Boolean, source: String): Boolean =
+    available && enabled && (source == "acp" || source == "dsh")
 
 internal data class BusHomeDevice(
     val agentId: String,
@@ -89,6 +102,8 @@ internal data class BusHomeDevice(
     val appVersion: String = "",
     /** 协议 3.8 起：这台电脑声明能把项目移出 BotBus 电脑端列表。 */
     val canRemoveProjects: Boolean = false,
+    /** 协议 3.9 起：这台电脑接受 `restartConnector`（手机上的「重启」）。 */
+    val canRestartConnectors: Boolean = false,
 )
 
 internal data class BusHomeTask(
@@ -113,6 +128,32 @@ internal data class BusHomeTask(
     val model: String = "",
     val effort: String = "",
     val lastMessage: String = "",
+    /** 协议 2.14 起：`pendingRequest.id`；空串 = 这台电脑没在任务上挂请求。 */
+    val requestId: String = "",
+    /** `pendingRequest.kind`：command / fileChange / permission / input。 */
+    val kind: String = "",
+    /** `pendingRequest.summary`：一句话说清要批什么（命令、改动、提问）。 */
+    val summary: String = "",
+    /** `pendingRequest.detail`：可选的展开细节（长命令、diff 摘要等）。 */
+    val detail: String = "",
+    /** `pendingRequest.questions`：审批范围选项或带选项的提问；没有则为空。 */
+    val questions: List<BusApprovalQuestion> = emptyList(),
+) {
+    /** 任务上是否带着一个等待回答/审批的挂起请求。 */
+    val hasPendingRequest: Boolean
+        get() = requestId.isNotBlank()
+}
+
+/**
+ * `PendingRequest.questions` 的一项。协议里单选会整个省略 `multiSelect`，
+ * 因此这里收敛成布尔值（缺省 = 单选）；`options` 是 label 到 description 的
+ * 有序对，description 可能为空串，回答时只回 label。
+ */
+internal data class BusApprovalQuestion(
+    val id: String,
+    val question: String,
+    val options: List<Pair<String, String>>,
+    val multiSelect: Boolean,
 )
 
 internal fun BusStore.toHomeView(): BusHomeView {
@@ -150,6 +191,8 @@ internal fun BusStore.toHomeView(): BusHomeView {
             },
             canDeleteTasks = connector.string("canDeleteTasks")
                 ?.toBooleanStrictOrNull() == true,
+            canAutoApprove = connector.string("canAutoApprove")
+                ?.toBooleanStrictOrNull() == true,
         )
     }
     val projects = projects.mapNotNull { project ->
@@ -179,6 +222,8 @@ internal fun BusStore.toHomeView(): BusHomeView {
             appVersion = it.string("appVersion").orEmpty(),
             canRemoveProjects = it.string("canRemoveProjects")
                 ?.toBooleanStrictOrNull() == true,
+            canRestartConnectors = it.string("canRestartConnectors")
+                ?.toBooleanStrictOrNull() == true,
         )
     }
     val tasks = tasks.asSequence()
@@ -207,6 +252,7 @@ internal fun BusStore.toHomeView(): BusHomeView {
                     if (outsideProject) OUTSIDE_PROJECT_KEY else UNKNOWN_PROJECT_KEY
                 }
             }
+            val request = busPendingRequest(task)
             BusHomeTask(
                 id = task.string("id").orEmpty(),
                 title = task.string("title").orEmpty().ifBlank { "未命名会话" },
@@ -230,23 +276,128 @@ internal fun BusStore.toHomeView(): BusHomeView {
                 model = task.string("model").orEmpty(),
                 effort = task.string("effort").orEmpty(),
                 lastMessage = task.string("lastMessage").orEmpty(),
+                requestId = request.string("id").orEmpty(),
+                kind = request.string("kind").orEmpty(),
+                summary = request.string("summary").orEmpty(),
+                detail = request.string("detail").orEmpty(),
+                questions = busPendingQuestions(request),
             )
         }
         .toList()
     return BusHomeView(device = device, agents = agents, tasks = tasks, projects = projects)
 }
 
+/** 任务上的 `pendingRequest`；缺失或形状不对时给空对象，读字段处不必再判空。 */
+private fun busPendingRequest(task: JsonObject): JsonObject =
+    task["pendingRequest"] as? JsonObject ?: JsonObject(emptyMap())
+
+/**
+ * `pendingRequest.questions`。协议里单选会整个省略 `multiSelect`（线格式是字面量 true），
+ * 这里统一收敛成布尔值；一个可选项都没有的提问在审批卡上没法点选，直接丢掉。
+ */
+private fun busPendingQuestions(request: JsonObject): List<BusApprovalQuestion> =
+    request.objects("questions").mapNotNull { question ->
+        val id = question.string("id").orEmpty()
+        val options = question.objects("options").mapNotNull { option ->
+            val label = option.string("label").orEmpty()
+            if (label.isBlank()) null else label to option.string("description").orEmpty()
+        }
+        if (id.isBlank() || options.isEmpty()) {
+            null
+        } else {
+            BusApprovalQuestion(
+                id = id,
+                question = question.string("question").orEmpty(),
+                options = options,
+                multiSelect = question.string("multiSelect")?.toBooleanStrictOrNull() == true,
+            )
+        }
+    }
+
+/** 单选筛选（旧页面还在用）：空串 = 不过滤。 */
 internal fun List<BusHomeTask>.forAgent(agentKey: String): List<BusHomeTask> =
     if (agentKey.isEmpty()) this else filter { it.agentKey == agentKey }
 
+/** Agent 面板的多选筛选：空集合 = 不过滤（等价「全部 Agent」）。 */
+internal fun List<BusHomeTask>.forAgents(agentKeys: Set<String>): List<BusHomeTask> =
+    if (agentKeys.isEmpty()) this else filter { it.agentKey in agentKeys }
+
+/** 单选 key 转多选集合：空串（全部）转成空集合。 */
+internal fun busAgentFilterSet(agentKey: String): Set<String> =
+    if (agentKey.isEmpty()) emptySet() else setOf(agentKey)
+
+/** 多选面板点一下：已选则取消，未选则加入；空 key（全部）忽略。 */
+internal fun busToggleAgentFilter(selected: Set<String>, agentKey: String): Set<String> = when {
+    agentKey.isEmpty() -> emptySet()
+    agentKey in selected -> selected - agentKey
+    else -> selected + agentKey
+}
+
+/** 列表页顶部的可见任务数：多选语义，空集合 = 全部。 */
+internal fun BusHomeView.visibleTaskCount(agentKeys: Set<String>): Int =
+    tasks.forAgents(agentKeys).size
+
+/** 只有这三类挂起请求走「批准 / 拒绝」；其余（`input`、旧数据）只能回复。 */
+internal val busApprovalDecisionKinds = setOf("command", "fileChange", "permission")
+
 /**
- * 按项目分组：
- * - 已登记项目按 pinned、lastUsedAt 排序；
- * - 只在任务里出现的项目按最近更新时间排序；
- * - “不在项目中/未命名项目”放最后。
+ * 审批队列的一张卡片（给审批面板用的投影契约）。
+ *
+ * `key` = `"taskId|requestId"`：同一条挂起请求刷新多次也只占一行；
+ * `replyOnly` = true 时不渲染「批准 / 拒绝」，只渲染回复入口；
+ * `questions` 非空时，「批准」要把点选结果按 questionId -> label 列表回给 `approve.answers`；
+ * `summary` 是协议里的一句话标题，命令块要显示的是 `detail`（命令原文 / diff 摘要），
+ * 电脑端没带 `detail` 的旧数据才退回 `summary`
  */
-internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGroup> {
-    val filtered = tasks.forAgent(agentKey)
+internal data class BusApprovalItem(
+    val key: String,
+    val taskId: String,
+    val requestId: String,
+    val kind: String,
+    val title: String,
+    val project: String,
+    val agentName: String,
+    val time: String,
+    val summary: String,
+    val detail: String = "",
+    val questions: List<BusApprovalQuestion>,
+    val replyOnly: Boolean,
+)
+
+/**
+ * 审批投影：一条挂起请求一张卡片。
+ *
+ * `replyOnly` 只给「批准 / 拒绝」三类请求为 false；`input`（等回答）以及
+ * 电脑没带 `pendingRequest` 的旧数据只能回复，不发起 `approve` 决定。
+ * 顺序沿用 [toHomeView] 的「待处理优先 + 更新时间倒序」，同一请求只出一条。
+ */
+internal fun BusHomeView.approvalItems(agentKeys: Set<String>): List<BusApprovalItem> =
+    tasks.forAgents(agentKeys)
+        .filter { it.pending }
+        .map { task ->
+            BusApprovalItem(
+                key = "${task.id}|${task.requestId}",
+                taskId = task.id,
+                requestId = task.requestId,
+                kind = task.kind,
+                title = task.title,
+                project = task.project,
+                agentName = task.agent,
+                time = task.time,
+                summary = task.summary.ifBlank { task.lastMessage },
+                detail = task.detail,
+                questions = task.questions,
+                replyOnly = task.kind !in busApprovalDecisionKinds,
+            )
+        }
+        .distinctBy { it.key }
+
+/**
+ * 按项目分组（多选）：与 [projectGroups] 单选版同一套排序规则，
+ * 空集合 = 全部 Agent。
+ */
+internal fun BusHomeView.projectGroups(agentKeys: Set<String>): List<BusHomeProjectGroup> {
+    val filtered = tasks.forAgents(agentKeys)
     if (filtered.isEmpty()) return emptyList()
     val grouped = filtered.groupBy { it.projectKey.ifBlank { UNKNOWN_PROJECT_KEY } }
     val projectKeys = projects.map { it.key }.toSet()
@@ -282,6 +433,15 @@ internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGro
         }
     return groups
 }
+
+/**
+ * 按项目分组（单选，旧页面还在用）：空串 = 不过滤。
+ * - 已登记项目按 pinned、lastUsedAt 排序；
+ * - 只在任务里出现的项目按最近更新时间排序；
+ * - “不在项目中/未命名项目”放最后。
+ */
+internal fun BusHomeView.projectGroups(agentKey: String): List<BusHomeProjectGroup> =
+    projectGroups(busAgentFilterSet(agentKey))
 
 /**
  * 项目视图的扁平行：`vforLazy` 只能吃一维列表，所以把「项目头 + 展开的任务」

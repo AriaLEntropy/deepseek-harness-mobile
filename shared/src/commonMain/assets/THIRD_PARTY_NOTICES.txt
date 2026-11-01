@@ -25,3 +25,26 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+---------------------------------------------------------------------------
+capsule-messages-outline.svg / capsule-messages-filled.svg
+Project: Tabler Icons (https://tabler.io/icons/icon/messages)
+Source: https://github.com/tabler/tabler-icons/blob/main/icons/outline/messages.svg
+License: MIT (https://github.com/tabler/tabler-icons/blob/main/LICENSE)
+Retrieved: 2026-10-31 via the project design reference. Geometry unchanged; colors
+normalized to currentColor so the page can tint active/inactive states.
+
+capsule-terminal-outline.svg / capsule-terminal-filled.svg
+Project: Heroicons (https://heroicons.com, "command-line")
+Source: https://github.com/tailwindlabs/heroicons/blob/master/src/24/solid/command-line.svg
+License: MIT (https://github.com/tailwindlabs/heroicons/blob/master/LICENSE)
+Retrieved: 2026-10-31 via the project design reference. Geometry unchanged; colors
+normalized to currentColor so the page can tint active/inactive states.
+
+agent-codex.jpg / agent-claude.jpg / agent-deepseek.png / agent-opencode.svg /
+agent-hermes.svg / agent-pi.svg / agent-openclaw.svg / agent-default.svg
+Project: agent brand marks, copied unchanged from the project design reference
+(Agent-host-docs/docs/design/reference/m2-v71/agent-icons).
+These marks are trademarks of their respective owners and are used only to
+identify the corresponding agent. agent-default.svg is an original terminal
+mark (no third-party geometry), provided as the unknown-connector fallback.

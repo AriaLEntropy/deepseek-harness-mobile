@@ -28,8 +28,9 @@ internal val BUS_HOME_FIXTURE_JSON = """
           "lastSeenAt": "2026-10-29T08:30:00Z",
           "appVersion": "1.2.0",
           "canRemoveProjects": true,
+          "canRestartConnectors": true,
           "connectors": [
-            {"kind":"acp","connectorId":"claude-code","displayName":"Claude Code","available":true,"enabled":true,"status":"ok","taskCount":1,"canDeleteTasks":true},
+            {"kind":"acp","connectorId":"claude-code","displayName":"Claude Code","available":true,"enabled":true,"status":"ok","taskCount":1,"canDeleteTasks":true,"canAutoApprove":true},
             {"kind":"codex","displayName":"Codex","available":true,"enabled":true,"status":"ok","taskCount":1,"canDeleteTasks":true},
             {"kind":"dsh","displayName":"DeepSeek Harness","available":true,"enabled":true,"status":"ok","taskCount":2},
             {"kind":"acp","connectorId":"opencode","displayName":"OpenCode","available":true,"enabled":true,"status":"ok","taskCount":1}
@@ -47,6 +48,22 @@ internal val BUS_HOME_FIXTURE_JSON = """
           "projectName": "agentbus",
           "status": "waitingApproval",
           "lastMessage": "请求：合并 PR #42",
+          "pendingRequest": {
+            "id": "toolu_01MergePr",
+            "kind": "permission",
+            "summary": "请求执行：git merge pr-42",
+            "detail": "git merge --no-ff origin/feature/packaging",
+            "questions": [
+              {
+                "id": "scope",
+                "question": "批准范围",
+                "options": [
+                  {"label": "只这一次", "description": "仅放行本次命令"},
+                  {"label": "以后都允许", "description": "写进这台电脑的白名单"}
+                ]
+              }
+            ]
+          },
           "origin": "desktop",
           "controllable": true,
           "startedAt": "2026-10-29T08:20:00Z",
@@ -77,6 +94,23 @@ internal val BUS_HOME_FIXTURE_JSON = """
           "projectName": "agentbus",
           "status": "waitingInput",
           "lastMessage": "提问：先看哪份日志？",
+          "pendingRequest": {
+            "id": "ask-01",
+            "kind": "input",
+            "summary": "先看哪份日志？",
+            "detail": "relay.log 是本次超时的握手记录，tunnel.log 还是上一轮那份",
+            "questions": [
+              {
+                "id": "0",
+                "question": "先看哪份日志？",
+                "multiSelect": true,
+                "options": [
+                  {"label": "relay.log"},
+                  {"label": "tunnel.log"}
+                ]
+              }
+            ]
+          },
           "origin": "watch",
           "controllable": true,
           "startedAt": "2026-10-29T07:40:00Z",
