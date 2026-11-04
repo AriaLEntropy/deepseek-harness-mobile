@@ -10,11 +10,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 审批回答与 Agent 开关/重启命令的序列化断言。
+ * 审批回答与 Agent 开关/重启命令的序列化断言
  * 对得上的目标是 botbus-protocol/protocol-fixtures/plain 里的明文 fixture：
- * 键一个不多、一个不少，可选字段该省略时必须省略。
+ * 键一个不多、一个不少，可选字段该省略时必须省略
  */
-class BusV86CommandTest {
+class BusApprovalCommandsTest {
 
     @Test
     fun approveWithAnswersMatchesThePlainFixture() {
@@ -151,7 +151,7 @@ class BusV86CommandTest {
         assertEquals("acp" to "gemini", busConnectorTarget("acp:gemini"))
         assertEquals("codex" to null, busConnectorTarget("codex"))
         assertEquals("dsh" to null, busConnectorTarget("dsh"))
-        // acp 前缀但没有 id：kind 仍为 acp，id 为空（协议会拒绝，交给调用方兜底）。
+        // acp 前缀但没有 id：kind 仍为 acp，id 为空（协议会拒绝，交给调用方兜底）
         assertEquals("acp" to null, busConnectorTarget("acp:"))
         assertNull(busConnectorTarget("hermes").second)
     }

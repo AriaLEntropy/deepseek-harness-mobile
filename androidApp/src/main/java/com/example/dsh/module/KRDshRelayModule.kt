@@ -43,6 +43,14 @@ internal class KRDshRelayModule : KuiklyRenderBaseModule() {
             val taskId = runCatching { JSONObject(params ?: "{}").optString("taskId") }.getOrDefault("")
             mapOf("json" to (AgentHostBus.taskMessagesJson(taskId) ?: ""))
         }
+        "busSkillList" -> {
+            val key = runCatching { JSONObject(params ?: "{}").optString("key") }.getOrDefault("")
+            mapOf("json" to (AgentHostBus.skillListJson(key) ?: ""))
+        }
+        "busSkillContent" -> {
+            val skillId = runCatching { JSONObject(params ?: "{}").optString("skillId") }.getOrDefault("")
+            mapOf("json" to (AgentHostBus.skillContentJson(skillId) ?: ""))
+        }
         "busCommand" -> {
             val json = runCatching { JSONObject(params ?: "{}").optString("json") }.getOrDefault("")
             if (json.isBlank()) {

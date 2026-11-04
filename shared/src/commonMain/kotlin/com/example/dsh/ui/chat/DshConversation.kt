@@ -250,9 +250,8 @@ internal fun ViewContainer<*, *>.DshConversation(
             // 底部预留在输入卡之下渲染工具调用轮次状态区的高度（移动端该状态区暂不常驻
             // 渲染，但需要预留其高度让输入条不贴底、与原版对齐）。
             // 取值= 状态区单行高 26f 偏大，视觉仍显远，收敛到紧凑间距 20f。
-            // 页面是 immersive（LAYOUT_FULLSCREEN + STABLE，无 LAYOUT_HIDE_NAVIGATION），
-            // 系统已将内容区停在虚拟导航栏上方、pageViewHeight 已扣除导航栏高度，
-            // 此时 safeAreaInsets.bottom 仍返回导航栏高度，若再加会双重 padding 把输入条抬高一个导航栏。
+            // 页面整屏沉浸，内容画到物理底边；导航栏那一条由输入条自己的 paddingBottom
+            // 让出（见 BusChatComposer），这里不再叠加 safeAreaInsets.bottom。
             paddingBottom(20f)
         }
         // 消息视口容器：消息列表区域，随键盘高度向上收缩，输入条自然浮在键盘上方

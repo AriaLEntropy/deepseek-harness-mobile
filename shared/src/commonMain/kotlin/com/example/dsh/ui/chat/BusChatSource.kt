@@ -8,10 +8,14 @@ import com.example.dsh.bus.BusCommands
 import com.example.dsh.bus.BusSendResult
 import com.example.dsh.bus.BusStore
 import com.example.dsh.bus.busParse
+import com.example.dsh.bus.busSkillListKey
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.message.DshMessage
 import com.example.dsh.message.DshMessageRole
+import com.example.dsh.ui.home.BusApprovalQuestion
+import com.example.dsh.ui.home.BusHomeAgent
 import com.example.dsh.ui.home.BusHomeModelOption
+import com.example.dsh.ui.home.busAgentAsset
 import com.example.dsh.ui.home.BusHomeView
 import com.example.dsh.ui.home.toHomeView
 import com.tencent.kuikly.core.timer.setTimeout
@@ -35,6 +39,65 @@ internal data class BusChatStartRequest(
     val prompt: String,
     val model: String,
     val effort: String,
+    /** 协议 3.3：随首轮 startTask 发出；null = 不动电脑上的项目设置 */
+    val autoApprove: Boolean? = null,
+)
+
+/** 一条挂起的审批/提问：标题、细节与命令 id 都从任务快照投影 */
+internal data class BusChatPendingRequest(
+    val requestId: String,
+    val kind: String,
+    val summary: String,
+    val detail: String,
+    val questions: List<BusApprovalQuestion> = emptyList(),
+)
+
+/** 任务级产物（协议 2.3）；快照没给时为空 */
+internal data class BusChatArtifact(
+    val id: String,
+    val kind: String,
+    val title: String,
+    val size: Long,
+    val contentType: String,
+    val url: String,
+)
+
+/** 技能列表的一行：id 由电脑生成，name 是插入草稿的斜杠命令 */
+internal data class BusChatSkill(
+    val id: String,
+    val name: String,
+    val description: String,
+    val hint: String = "",
+    val kind: String = "skill",
+    val source: String = "",
+    val hasBody: Boolean = false,
+)
+
+/** readSkill 的正文 */
+internal data class BusChatSkillContent(
+    val skillId: String,
+    val name: String,
+    val body: String,
+    val truncated: Boolean,
+)
+
+/** 草稿态可选的 Agent：名称、来源、头像与模型清单 */
+internal data class BusChatAgentOption(
+    val key: String,
+    val name: String,
+    val source: String,
+    val connectorId: String?,
+    val avatarAsset: String,
+    val subtitle: String,
+    val models: List<BusHomeModelOption>,
+    val canAutoApprove: Boolean,
+    val canListSkills: Boolean = false,
+)
+
+/** 可切换的工作区（项目） */
+internal data class BusChatWorkspace(
+    val path: String,
+    val name: String,
 )
 
 internal data class BusChatTaskInfo(
@@ -49,6 +112,12 @@ internal data class BusChatTaskInfo(
     val lastMessage: String,
     /** 协议 3.8：对应连接器声明能永久删除会话记录。 */
     val canDeleteTasks: Boolean = false,
+    /** 协议 3.3：项目当前是否开着自动批准 */
+    val autoApprove: Boolean = false,
+    /** 协议 3.3：连接器声明支持自动批准 */
+    val canAutoApprove: Boolean = false,
+    /** 挂着的审批/提问；空串表示没有 */
+    val request: BusChatPendingRequest? = null,
 )
 
 /**
@@ -58,6 +127,24 @@ internal data class BusChatTaskInfo(
 internal interface ConversationSource {
     fun taskInfo(taskId: String): BusChatTaskInfo?
     fun models(agentKey: String): List<BusHomeModelOption>
+    fun agents(): List<BusChatAgentOption>
+    /** null = 还没收到这台电脑的 skillList；空列表 = 电脑明确返回没有技能 */
+    fun skills(agentKey: String, projectPath: String, taskId: String): List<BusChatSkill>?
+    fun refreshSkills(
+        agentKey: String,
+        projectPath: String,
+        taskId: String,
+        onDone: (ok: Boolean, error: String) -> Unit,
+    )
+    fun readSkill(
+        agentKey: String,
+        projectPath: String,
+        taskId: String,
+        skillId: String,
+        onDone: (content: BusChatSkillContent?, error: String?) -> Unit,
+    )
+    fun workspaces(): List<BusChatWorkspace>
+    fun artifacts(taskId: String): List<BusChatArtifact>
     fun history(taskId: String): BusChatHistory?
     fun fetchMessages(agentId: String, taskId: String)
     fun startTask(request: BusChatStartRequest, onDone: (taskId: String?, error: String?) -> Unit)
@@ -67,9 +154,20 @@ internal interface ConversationSource {
         prompt: String,
         model: String,
         effort: String,
+        autoApprove: Boolean?,
         onDone: (ok: Boolean, error: String) -> Unit,
     )
     fun interrupt(agentId: String, taskId: String, onDone: (ok: Boolean, error: String) -> Unit)
+
+    /** 协议 2.14：批准或拒绝一条挂起请求，可带选项答案 */
+    fun approve(
+        agentId: String,
+        taskId: String,
+        requestId: String,
+        allow: Boolean,
+        answers: Map<String, List<String>>,
+        onDone: (ok: Boolean, error: String) -> Unit,
+    )
 
     /** 协议 3.8：永久删除一条已停止的会话；成功后电脑发 taskRemoved。 */
     fun deleteTask(agentId: String, taskId: String, onDone: (ok: Boolean, error: String) -> Unit)
@@ -116,11 +214,222 @@ internal class BusChatSource(
             projectName = task.project,
             lastMessage = task.lastMessage,
             canDeleteTasks = connector?.canDeleteTasks == true,
+            autoApprove = task.autoApprove,
+            canAutoApprove = connector?.canAutoApprove == true,
+            request = task.requestId.takeIf { it.isNotBlank() }?.let {
+                BusChatPendingRequest(
+                    requestId = task.requestId,
+                    kind = task.kind,
+                    summary = task.summary,
+                    detail = task.detail,
+                    questions = task.questions,
+                )
+            },
         )
     }
 
     override fun models(agentKey: String): List<BusHomeModelOption> =
         homeView()?.agents?.firstOrNull { it.key == agentKey }?.models.orEmpty()
+
+    override fun agents(): List<BusChatAgentOption> =
+        homeView()?.agents.orEmpty()
+            .filter { it.canStartTask }
+            .map { agent ->
+                BusChatAgentOption(
+                    key = agent.key,
+                    name = agent.name,
+                    source = agent.source,
+                    connectorId = agent.connectorId,
+                    avatarAsset = busAgentAsset(
+                        source = agent.source,
+                        connectorId = agent.connectorId,
+                        agentKey = agent.key,
+                        agentName = agent.name,
+                    ),
+                    subtitle = busChatAgentSubtitle(agent.source),
+                    models = agent.models,
+                    canAutoApprove = agent.canAutoApprove,
+                    canListSkills = agent.canListSkills,
+                )
+            }
+
+    private fun agentFor(agentKey: String): BusHomeAgent? =
+        homeView()?.agents?.firstOrNull { it.key == agentKey }
+
+    override fun skills(
+        agentKey: String,
+        projectPath: String,
+        taskId: String,
+    ): List<BusChatSkill>? {
+        val agent = agentFor(agentKey) ?: return emptyList()
+        if (!agent.canListSkills) return emptyList()
+        val key = busSkillListKey(agent.source, agent.connectorId, projectPath, taskId)
+        val raw = runCatching { relay.busSkillList(key) }.getOrNull() ?: return null
+        val root = runCatching { busParse(raw).jsonObject }.getOrNull() ?: return null
+        val items = root["skills"] as? JsonArray ?: return emptyList()
+        return items.mapNotNull { item ->
+            val obj = item as? JsonObject ?: return@mapNotNull null
+            val id = obj.string("id")
+            val name = obj.string("name")
+            if (id.isBlank() || name.isBlank()) {
+                null
+            } else {
+                BusChatSkill(
+                    id = id,
+                    name = name,
+                    description = obj.string("description"),
+                    hint = obj.string("hint"),
+                    kind = obj.string("kind").ifBlank { "skill" },
+                    source = obj.string("source"),
+                    hasBody = obj.string("hasBody").toBooleanStrictOrNull() == true,
+                )
+            }
+        }
+    }
+
+    override fun refreshSkills(
+        agentKey: String,
+        projectPath: String,
+        taskId: String,
+        onDone: (ok: Boolean, error: String) -> Unit,
+    ) {
+        val agent = agentFor(agentKey)
+        if (agent == null) {
+            onDone(false, "这个 Agent 不可用")
+            return
+        }
+        if (!agent.canListSkills) {
+            onDone(false, "这个 Agent 不支持技能")
+            return
+        }
+        val hostAgentId = homeView()?.device?.agentId.orEmpty()
+        if (hostAgentId.isBlank()) {
+            onDone(false, "电脑未连接")
+            return
+        }
+        sendCommand(
+            retryKey = listOf("fetchSkills", agent.key, projectPath, taskId).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.fetchSkills(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = hostAgentId,
+                    connector = agent.source,
+                    connectorId = agent.connectorId,
+                    projectPath = projectPath,
+                    taskId = taskId,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> onDone(result.ok, result.error)
+                is BusSendResult.Failed -> onDone(false, operationFailure(result, "技能读取失败"))
+                else -> onDone(false, result.message)
+            }
+        }
+    }
+
+    override fun readSkill(
+        agentKey: String,
+        projectPath: String,
+        taskId: String,
+        skillId: String,
+        onDone: (content: BusChatSkillContent?, error: String?) -> Unit,
+    ) {
+        val agent = agentFor(agentKey)
+        if (agent == null) {
+            onDone(null, "这个 Agent 不可用")
+            return
+        }
+        if (!agent.canListSkills) {
+            onDone(null, "这个 Agent 不支持技能")
+            return
+        }
+        val hostAgentId = homeView()?.device?.agentId.orEmpty()
+        if (hostAgentId.isBlank()) {
+            onDone(null, "电脑未连接")
+            return
+        }
+        sendCommand(
+            retryKey = listOf("readSkill", agent.key, projectPath, taskId, skillId).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.readSkill(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = hostAgentId,
+                    connector = agent.source,
+                    connectorId = agent.connectorId,
+                    projectPath = projectPath,
+                    taskId = taskId,
+                    skillId = skillId,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> {
+                    if (result.ok) {
+                        pollSkillContent(skillId, 0, onDone)
+                    } else {
+                        onDone(null, result.error.ifBlank { "读取失败" })
+                    }
+                }
+                is BusSendResult.Failed -> onDone(null, operationFailure(result, "读取失败"))
+                else -> onDone(null, result.message)
+            }
+        }
+    }
+
+    private fun pollSkillContent(
+        skillId: String,
+        attempt: Int,
+        onDone: (content: BusChatSkillContent?, error: String?) -> Unit,
+    ) {
+        val raw = runCatching { relay.busSkillContent(skillId) }.getOrNull()
+        val root = raw?.let { runCatching { busParse(it).jsonObject }.getOrNull() }
+        if (root != null) {
+            onDone(
+                BusChatSkillContent(
+                    skillId = root.string("skillId"),
+                    name = root.string("name"),
+                    body = root.string("body"),
+                    truncated = root.string("truncated").toBooleanStrictOrNull() == true,
+                ),
+                null,
+            )
+            return
+        }
+        if (attempt >= 20) {
+            onDone(null, "电脑没有返回技能正文")
+            return
+        }
+        setTimeout(pagerId, 250) { pollSkillContent(skillId, attempt + 1, onDone) }
+    }
+
+    override fun workspaces(): List<BusChatWorkspace> =
+        homeView()?.projects.orEmpty().map { BusChatWorkspace(path = it.path, name = it.name) }
+
+    override fun artifacts(taskId: String): List<BusChatArtifact> {
+        val raw = runCatching { relay.busHomeJson() }.getOrNull() ?: return emptyList()
+        val root = runCatching { busParse(raw).jsonObject }.getOrNull() ?: return emptyList()
+        val task = (root["tasks"] as? JsonArray)
+            ?.mapNotNull { it as? JsonObject }
+            ?.firstOrNull { it.string("id") == taskId }
+            ?: return emptyList()
+        val artifacts = task["artifacts"] as? JsonArray ?: return emptyList()
+        return artifacts.mapNotNull { item ->
+            val objectItem = item as? JsonObject ?: return@mapNotNull null
+            val id = objectItem.string("id")
+            if (id.isEmpty()) return@mapNotNull null
+            BusChatArtifact(
+                id = id,
+                kind = objectItem.string("kind"),
+                title = objectItem.string("title"),
+                size = objectItem.string("size").toLongOrNull() ?: 0L,
+                contentType = objectItem.string("contentType"),
+                url = objectItem.string("url"),
+            )
+        }
+    }
 
     override fun history(taskId: String): BusChatHistory? {
         val raw = relay.busTaskMessages(taskId) ?: return null
@@ -170,6 +479,7 @@ internal class BusChatSource(
                 request.prompt,
                 request.model,
                 request.effort,
+                request.autoApprove?.toString().orEmpty(),
             ).joinToString("|"),
             build = { id, createdAt ->
                 BusCommands.startTask(
@@ -182,6 +492,7 @@ internal class BusChatSource(
                     prompt = request.prompt,
                     model = request.model,
                     effort = request.effort,
+                    autoApprove = request.autoApprove,
                 )
             },
         ) { result ->
@@ -203,10 +514,19 @@ internal class BusChatSource(
         prompt: String,
         model: String,
         effort: String,
+        autoApprove: Boolean?,
         onDone: (ok: Boolean, error: String) -> Unit,
     ) {
         sendCommand(
-            retryKey = listOf("followUp", agentId, taskId, prompt, model, effort).joinToString("|"),
+            retryKey = listOf(
+                "followUp",
+                agentId,
+                taskId,
+                prompt,
+                model,
+                effort,
+                autoApprove?.toString().orEmpty(),
+            ).joinToString("|"),
             build = { id, createdAt ->
                 BusCommands.followUp(
                     commandId = id,
@@ -216,6 +536,44 @@ internal class BusChatSource(
                     prompt = prompt,
                     model = model,
                     effort = effort,
+                    autoApprove = autoApprove,
+                )
+            },
+        ) { result ->
+            when (result) {
+                is BusSendResult.Confirmed -> onDone(result.ok, result.error)
+                is BusSendResult.Failed -> onDone(false, operationFailure(result, "发送失败"))
+                else -> onDone(false, result.message)
+            }
+        }
+    }
+
+    override fun approve(
+        agentId: String,
+        taskId: String,
+        requestId: String,
+        allow: Boolean,
+        answers: Map<String, List<String>>,
+        onDone: (ok: Boolean, error: String) -> Unit,
+    ) {
+        sendCommand(
+            retryKey = listOf(
+                "approve",
+                agentId,
+                taskId,
+                requestId,
+                allow.toString(),
+                answers.entries.joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
+            ).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.approve(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = agentId,
+                    taskId = taskId,
+                    requestId = requestId,
+                    allow = allow,
+                    answers = answers,
                 )
             },
         ) { result ->

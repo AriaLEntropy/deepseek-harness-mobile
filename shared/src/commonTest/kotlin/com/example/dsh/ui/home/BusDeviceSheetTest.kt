@@ -5,39 +5,43 @@ import com.example.dsh.theme.DshDefaultLightTokens
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
- * 面板外壳与设备面板的几何/文案判定单测。
+ * 面板外壳与设备面板的几何/文案判定单测
  *
- * 面板高度、行宽、标签种类与副行文案都在设计基线里写死了数值，
- * 这里把它们钉住，避免改样式时把 432 起点、343 行宽、标签语义顺手改掉。
+ * 面板顶边按设计稿 432/812 的比例换算，行宽、标签种类与副行文案也在设计基线里写死，
+ * 这里把它们钉住，避免改样式时把面板比例、343 行宽、标签语义顺手改掉
  */
 class BusDeviceSheetTest {
 
     // ---------- 面板几何（视觉规范 16.8） ----------
 
     @Test
-    fun sheetHeightFollowsDesignTopInsetOnFullCanvas() {
-        // 设计画布 812：起点 432 -> 面板高 380。
-        assertEquals(380f, busSheetHeight(812f), 0.001f)
-        assertEquals(568f, busSheetHeight(1000f), 0.001f)
+    fun sheetHeightFollowsDesignTopRatio() {
+        // 设计画布 812：顶边 432 -> 面板高 380
+        assertEquals(380f, busSheetHeight(812f), 0.01f)
+        // 更高的屏幕按同一比例下移，而不是固定 432：1000 × (1 - 432/812)
+        assertEquals(467.98f, busSheetHeight(1000f), 0.01f)
+        // 模拟器实际可用高度 890：顶边约 473.5，面板约 416.5
+        assertEquals(416.5f, busSheetHeight(890f), 0.01f)
     }
 
     @Test
     fun sheetHeightFallsBackToRatioOnShortPageAndNeverOverflows() {
-        // 矮屏按 45% 页高兜底，且不超过页高、不会给负数。
-        assertEquals(270f, busSheetHeight(600f), 0.001f)
-        assertEquals(180f, busSheetHeight(400f), 0.001f)
-        assertEquals(0f, busSheetHeight(0f), 0.001f)
+        // 比例高度已高于 45% 兜底；矮屏仍按 45% 页高保底，且不超过页高、不会给负数
+        assertEquals(280.79f, busSheetHeight(600f), 0.01f)
+        assertEquals(187.19f, busSheetHeight(400f), 0.01f)
+        assertEquals(0f, busSheetHeight(0f), 0.01f)
         assertTrue(busSheetHeight(300f) <= 300f)
         assertTrue(busSheetHeight(-100f) >= 0f)
     }
 
     @Test
     fun rowWidthKeepsScrollAreaPadding() {
-        // 滚动区左右 padding 16：375 - 32 = 343。
+        // 滚动区左右 padding 16：375 - 32 = 343
         assertEquals(343f, busSheetRowWidth(375f), 0.001f)
         assertEquals(288f, busSheetRowWidth(320f), 0.001f)
         assertEquals(0f, busSheetRowWidth(10f), 0.001f)
@@ -61,10 +65,10 @@ class BusDeviceSheetTest {
 
     @Test
     fun offlineTagIsMutedAndNotEmphasized() {
-        val palette = BusV86Tokens.light
-        // 当前/在线 = 主文字 on #EFEFEA；离线 = 三级文字 on #EFEFF2。
-        assertEquals(palette.textPrimary to BusV86Tokens.tagFill, busDeviceTagColors(BusDeviceTagKind.Current, palette))
-        assertEquals(palette.textPrimary to BusV86Tokens.tagFill, busDeviceTagColors(BusDeviceTagKind.Online, palette))
+        val palette = BusHomeTokens.light
+        // 当前/在线 = 主文字 on #EFEFEA；离线 = 三级文字 on #EFEFF2
+        assertEquals(palette.textPrimary to BusHomeTokens.tagFill, busDeviceTagColors(BusDeviceTagKind.Current, palette))
+        assertEquals(palette.textPrimary to BusHomeTokens.tagFill, busDeviceTagColors(BusDeviceTagKind.Online, palette))
         assertEquals(palette.textTertiary to palette.chipFill, busDeviceTagColors(BusDeviceTagKind.Offline, palette))
         assertTrue(busDeviceTagIsEmphasized(BusDeviceTagKind.Current))
         assertTrue(busDeviceTagIsEmphasized(BusDeviceTagKind.Online))
@@ -93,7 +97,8 @@ class BusDeviceSheetTest {
 
     @Test
     fun lightThemeUsesBaselinePaletteAsIs() {
-        assertSame(BusV86Tokens.light, busSheetPalette(DshDefaultLightTokens))
+        assertSame(BusHomeTokens.light, busSheetPalette(DshDefaultLightTokens))
+        assertEquals(BusHomeTokens.selectedForeground, BusHomeTokens.light.onSelected)
     }
 
     @Test
@@ -102,18 +107,21 @@ class BusDeviceSheetTest {
         assertTrue(dark.isDark)
         assertEquals(DshDefaultDarkTokens.labelPrimary, dark.textPrimary)
         assertEquals(DshDefaultDarkTokens.labelTertiary, dark.textTertiary)
-        // 深色下面板底色取模块底，不会把 v86 的浅色底直接盖上去。
+        // 深色下面板底色取模块底，不会把 v86 的浅色底直接盖上去
         assertEquals(DshDefaultDarkTokens.bgModulePlatform, dark.sheet)
+        // 深色 selectedFill 翻白，前景必须翻黑，避免白底白字
+        assertEquals(DshDefaultDarkTokens.labelPrimaryInverted, dark.onSelected)
+        assertNotEquals(dark.selectedFill, dark.onSelected)
     }
 
     @Test
     fun rowFillSwitchesBetweenBaselineWhiteAndSurface() {
-        val light = BusV86Tokens.light
+        val light = BusHomeTokens.light
         val dark = busSheetPalette(DshDefaultDarkTokens)
-        // 浅色就是基线的纯白行卡；深色退到面板 surface，不贴纯白。
-        assertEquals(BusV86Tokens.cardFill, busSheetRowFill(light))
+        // 浅色就是基线的纯白行卡；深色退到面板 surface，不贴纯白
+        assertEquals(BusHomeTokens.cardFill, busSheetRowFill(light))
         assertEquals(dark.surface, busSheetRowFill(dark))
-        assertEquals(BusV86Tokens.field, busSheetIconDiscFill(light))
+        assertEquals(BusHomeTokens.field, busSheetIconDiscFill(light))
         assertEquals(dark.chipFill, busSheetIconDiscFill(dark))
     }
 

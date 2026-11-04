@@ -8,6 +8,7 @@ import com.example.dsh.bus.DescribeAttempts
 import com.example.dsh.bus.DescribeDecision
 import com.example.dsh.bus.SnapshotReceipt
 import com.example.dsh.bus.busParse
+import com.example.dsh.bus.busSkillListKey
 import com.example.dsh.bus.busVersionAtLeast
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
@@ -48,11 +49,23 @@ internal object AgentHostBus {
     @Volatile
     private var messagesByTask: Map<String, String> = emptyMap()
 
+    /** busSkillListKey -> latest `skillList` payload JSON. */
+    @Volatile
+    private var skillListsByKey: Map<String, String> = emptyMap()
+
+    /** skillId -> latest `skillContent` payload JSON. */
+    @Volatile
+    private var skillContentsById: Map<String, String> = emptyMap()
+
     fun busHomeJson(): String? = latestHomeJson
 
     fun busHostKind(): String = latestHostKind
 
     fun taskMessagesJson(taskId: String): String? = messagesByTask[taskId]
+
+    fun skillListJson(key: String): String? = skillListsByKey[key]
+
+    fun skillContentJson(skillId: String): String? = skillContentsById[skillId]
 
     /** Clear cached snapshot/commands when the relay is disconnected or forgotten. */
     fun clear() {
@@ -61,6 +74,8 @@ internal object AgentHostBus {
         commandPort = 0
         commandToken = ""
         messagesByTask = emptyMap()
+        skillListsByKey = emptyMap()
+        skillContentsById = emptyMap()
     }
 
     fun command(json: String): BusCommandAck? {
@@ -90,6 +105,8 @@ internal object AgentHostBus {
         commandPort = port
         commandToken = token
         messagesByTask = emptyMap()
+        skillListsByKey = emptyMap()
+        skillContentsById = emptyMap()
         val describeClient = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()
         val pollClient = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
         val socketClient = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
@@ -268,11 +285,32 @@ internal object AgentHostBus {
                     val event = frame["event"] as? JsonObject
                     if (event != null) {
                         store.applyEvent(event)
-                        if (event.string("kind") == "taskMessages") {
-                            val payload = event["taskMessages"] as? JsonObject
-                            val taskId = payload?.string("taskId").orEmpty()
-                            if (taskId.isNotEmpty()) {
-                                messagesByTask = messagesByTask + (taskId to payload.toString())
+                        when (event.string("kind")) {
+                            "taskMessages" -> {
+                                val payload = event["taskMessages"] as? JsonObject
+                                val taskId = payload?.string("taskId").orEmpty()
+                                if (taskId.isNotEmpty()) {
+                                    messagesByTask = messagesByTask + (taskId to payload.toString())
+                                }
+                            }
+                            "skillList" -> {
+                                val payload = event["skillList"] as? JsonObject
+                                if (payload != null) {
+                                    val key = busSkillListKey(
+                                        connector = payload.string("connector").orEmpty(),
+                                        connectorId = payload.string("connectorId"),
+                                        projectPath = payload.string("projectPath").orEmpty(),
+                                        taskId = payload.string("taskId").orEmpty(),
+                                    )
+                                    skillListsByKey = skillListsByKey + (key to payload.toString())
+                                }
+                            }
+                            "skillContent" -> {
+                                val payload = event["skillContent"] as? JsonObject
+                                val skillId = payload?.string("skillId").orEmpty()
+                                if (skillId.isNotEmpty()) {
+                                    skillContentsById = skillContentsById + (skillId to payload.toString())
+                                }
                             }
                         }
                     }

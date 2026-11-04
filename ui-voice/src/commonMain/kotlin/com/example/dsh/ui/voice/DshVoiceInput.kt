@@ -132,7 +132,7 @@ fun ViewContainer<*, *>.DshVoiceRecordOverlay(
                     paddingTop(28f)
                     paddingLeft(24f)
                     paddingRight(24f)
-                    paddingBottom(24f + pagerData.safeAreaInsets.bottom)
+                    paddingBottom(maxOf(24f, pagerData.safeAreaInsets.bottom))
                     flexDirectionColumn()
                     alignItemsCenter()
                     backgroundColor(colors().bgLayer1)

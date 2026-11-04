@@ -1,0 +1,37 @@
+<!-- M2 empty-state asset: empty-no-device.svg -> 暂无任务（手机聊天界面 + 电脑文本） -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="280" height="175" style="display:block;flex:none;">
+  <!-- 外框：虚线 -->
+  <rect x="14" y="10" width="292" height="172" rx="20" fill="none" stroke="#C4C0D8" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <!-- 电脑：屏幕（上移） -->
+  <rect x="84" y="26" width="100" height="72" rx="9" fill="#FFFFFF" stroke="#8E93A3" stroke-width="3"/>
+  <!-- 屏内文本行 -->
+  <line x1="104" y1="44" x2="158" y2="44" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="54" x2="138" y2="54" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="64" x2="154" y2="64" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="74" x2="146" y2="74" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- 屏内导航栏：两端缩进 -->
+  <line x1="88" y1="90" x2="180" y2="90" stroke="#B9B8C2" stroke-width="2"/>
+  <!-- 底座：中央支撑 + 底部横线（缩短） -->
+  <line x1="134" y1="98" x2="134" y2="103" stroke="#8E93A3" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="103" x2="166" y2="103" stroke="#8E93A3" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- 斜直线连接，带链路节点 -->
+  <line x1="231" y1="83" x2="136" y2="66" stroke="#6B5BFF" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <circle cx="206" cy="78" r="3" fill="#A79DDE"/>
+  <circle cx="183" cy="74" r="4.5" fill="#6B5BFF"/>
+  <circle cx="160" cy="70" r="3" fill="#A79DDE"/>
+  <!-- 手机（斜置）屏内：刘海 + 聊天界面 -->
+  <g transform="rotate(-12 240 126)">
+    <rect x="216" y="82" width="48" height="88" rx="9" fill="#FFFFFF" stroke="#8E93A3" stroke-width="3"/>
+    <!-- 刘海 -->
+    <line x1="232" y1="87" x2="248" y2="87" stroke="#8E93A3" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- 左气泡（对方，实心浅灰） -->
+    <rect x="224" y="92" width="18" height="9" rx="4.5" fill="#E6E6EE"/>
+    <!-- 右气泡（自己，实心蓝紫） -->
+    <rect x="238" y="109" width="18" height="9" rx="4.5" fill="#57534E"/>
+    <!-- 输入框：空心矩形 -->
+    <rect x="224" y="142" width="34" height="10" rx="5" fill="none" stroke="#B9B8C2" stroke-width="1"/>
+  </g>
+  <circle cx="272" cy="26" r="2.5" fill="#C4C4CC"/>
+  <circle cx="46" cy="150" r="2" fill="#C4C4CC"/>
+  <circle cx="296" cy="158" r="2" fill="#C4C4CC"/>
+</svg>

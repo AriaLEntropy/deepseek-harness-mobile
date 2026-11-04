@@ -26,17 +26,31 @@ internal object BusAgentVisuals {
      * 解析连接器图标资产名。
      *
      * connectorId 优先于 source：acp 连接器只有 connectorId 能区分 opencode/claude-code。
+     * [agentKey] / [agentName] 只在非 acp 时兜底，防止把通用 ACP 连接器误认成专属品牌。
      */
-    fun assetFor(source: String?, connectorId: String? = null): String =
-        busAgentAsset(source, connectorId)
+    fun assetFor(
+        source: String?,
+        connectorId: String? = null,
+        agentKey: String? = null,
+        agentName: String? = null,
+    ): String = busAgentAsset(source, connectorId, agentKey, agentName)
 }
 
 /**
  * 纯函数版本，便于单测；匹配规则见 [BusAgentVisuals]。
  */
-internal fun busAgentAsset(source: String?, connectorId: String?): String {
+internal fun busAgentAsset(
+    source: String?,
+    connectorId: String?,
+    agentKey: String? = null,
+    agentName: String? = null,
+): String {
     busAgentAssetOrNull(connectorId)?.let { return it }
     busAgentAssetOrNull(source)?.let { return it }
+    if (source != "acp") {
+        busAgentAssetOrNull(agentKey)?.let { return it }
+        busAgentAssetOrNull(agentName)?.let { return it }
+    }
     return BusAgentVisuals.FALLBACK
 }
 

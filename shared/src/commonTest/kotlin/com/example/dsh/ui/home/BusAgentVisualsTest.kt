@@ -39,13 +39,29 @@ class BusAgentVisualsTest {
     }
 
     @Test
-    fun unknownConnectorsFallBackToTerminalMark() {
+    fun unknownConnectorsFallBackToNeutralMark() {
         assertEquals(BusAgentVisuals.FALLBACK, BusAgentVisuals.assetFor(null))
         assertEquals(BusAgentVisuals.FALLBACK, BusAgentVisuals.assetFor(""))
         assertEquals(BusAgentVisuals.FALLBACK, BusAgentVisuals.assetFor("acp", null))
         assertEquals(BusAgentVisuals.FALLBACK, BusAgentVisuals.assetFor("acp", "some-manifest-id"))
         assertEquals(BusAgentVisuals.FALLBACK, BusAgentVisuals.assetFor("unknown"))
         assertEquals("agent-default.svg", BusAgentVisuals.FALLBACK)
+    }
+
+    @Test
+    fun genericSourceStillFindsDedicatedMarkByAgentKeyOrName() {
+        assertEquals(BusAgentVisuals.CODEX, BusAgentVisuals.assetFor("builtin", null, "codex"))
+        assertEquals(BusAgentVisuals.CODEX, BusAgentVisuals.assetFor("", null, null, "Codex"))
+        assertEquals(BusAgentVisuals.CLAUDE, BusAgentVisuals.assetFor("builtin", null, "claude"))
+    }
+
+    @Test
+    fun acpDoesNotInferDedicatedMarkFromGenericName() {
+        // 通用 ACP 连接器哪怕显示名带 Codex，也仍然是通用头像
+        assertEquals(
+            BusAgentVisuals.FALLBACK,
+            BusAgentVisuals.assetFor("acp", "some-manifest-id", "acp:some", "Codex"),
+        )
     }
 
     @Test

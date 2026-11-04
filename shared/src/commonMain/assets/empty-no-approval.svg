@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="280" height="175" style="display:block;flex:none;">
+  <!-- 缺省页家族 · 审批中心空态。构思：一叠「还不存在的批准卡片」——
+       虚线卡片轮廓（标题点线 / 代码位 / 拒绝·批准两枚按钮位），后面再露一角表示这里本该是一叠，
+       角上一枚实心对勾表示已经清空。不画设备、不画链路、不画箭头。
+       2026-11-04 几何按家族包络重排：整叠卡片放大 1.35 并下移到视觉中心 y=100，
+       和 empty-no-device / empty-no-tasks 的主体包络（y 25~174、中心 100）对齐，
+       否则同一个舞台框里，这块画得又小又靠上，切页时看着就是没对齐 -->
+  <!-- 家族舞台：虚线外框 -->
+  <rect x="14" y="10" width="292" height="172" rx="20" fill="none" stroke="#C4C0D8" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <!-- 后面那张：只露出上边与左边；上一档淡紫底，和页面底色分开 -->
+  <rect x="70" y="40.6" width="172.8" height="116.1" rx="16.2" fill="#EEEDF1" stroke="#DFDDE7" stroke-width="2.6" stroke-dasharray="8 6.75"/>
+  <!-- 前面这张：白底盖住重叠，再描一次虚线边 -->
+  <rect x="80.8" y="51.4" width="172.8" height="116.1" rx="16.2" fill="#FFFFFF"/>
+  <rect x="80.8" y="51.4" width="172.8" height="116.1" rx="16.2" fill="none" stroke="#C4C0D8" stroke-width="2.6" stroke-dasharray="8 6.75"/>
+  <!-- 卡片内容位：标题两行（点线）、代码块、两枚按钮 -->
+  <line x1="102.4" y1="75.7" x2="188.8" y2="75.7" stroke="#D8D2F0" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 9.5"/>
+  <line x1="102.4" y1="89.2" x2="156.4" y2="89.2" stroke="#D8D2F0" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 9.5"/>
+  <rect x="102.4" y="102.7" width="129.6" height="27" rx="6.75" fill="none" stroke="#D8D2F0" stroke-width="2.6" stroke-dasharray="6.75 6.75"/>
+  <rect x="142.9" y="137.8" width="43.2" height="18.9" rx="9.45" fill="none" stroke="#D8D2F0" stroke-width="2.4" stroke-dasharray="5.5 5.5"/>
+  <rect x="196.9" y="137.8" width="43.2" height="18.9" rx="9.45" fill="none" stroke="#D8D2F0" stroke-width="2.4" stroke-dasharray="5.5 5.5"/>
+  <!-- 已清空徽标：压在卡片右上角，白底遮住虚线 -->
+  <circle cx="253.6" cy="51.4" r="20.25" fill="#FFFFFF" stroke="#8E93A3" stroke-width="3.6"/>
+  <path d="M244.7 51.7l5.9 6.2 11.1-12.4" fill="none" stroke="#6B5BFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 家族散点 -->
+  <circle cx="286" cy="150" r="2.5" fill="#D8D2F0"/>
+  <circle cx="46" cy="150" r="2" fill="#D8D2F0"/>
+  <circle cx="296" cy="26" r="2" fill="#D8D2F0"/>
+</svg>

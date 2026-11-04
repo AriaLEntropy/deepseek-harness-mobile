@@ -364,10 +364,13 @@ class BridgeModule : Module() {
         callNativeMethod("disableInputSuggestions", null, null)
     }
 
-    fun setSystemBarsDimmed(dimmed: Boolean) {
+    fun setSystemBarsDimmed(dimmed: Boolean, colorArgb: Long? = null) {
         callNativeMethod(
             SET_SYSTEM_BARS_DIMMED,
-            JSONObject().apply { put("dimmed", dimmed) },
+            JSONObject().apply {
+                put("dimmed", dimmed)
+                colorArgb?.let { put("color", it) }
+            },
             null,
         )
     }

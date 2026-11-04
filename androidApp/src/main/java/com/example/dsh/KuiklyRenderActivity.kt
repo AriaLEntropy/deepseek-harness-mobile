@@ -187,10 +187,21 @@ class KuiklyRenderActivity : AppCompatActivity(), KuiklyRenderViewBaseDelegatorD
         window?.apply {
             addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
             window?.statusBarColor = Color.TRANSPARENT
-            window?.decorView?.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            // 底部也要沉浸：原来只给了 LAYOUT_FULLSCREEN（内容伸到状态栏底下），没有
+            // LAYOUT_HIDE_NAVIGATION，系统就把内容停在导航栏上方。结果是每个页面和弹层的
+            // 最后一项都在「物理底边上方 24dp」被硬切，下面那一条看着就像一块同色横条
+            // 压住了内容。整屏沉浸后内容画到物理底边，系统图标浮在其上，页面自己按
+            // pagerData.safeAreaInsets.bottom 留白
+            window?.navigationBarColor = Color.TRANSPARENT
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                isStatusBarContrastEnforced = false
+                isNavigationBarContrastEnforced = false
+            }
+            val immersive = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            window?.decorView?.systemUiVisibility = immersive
+            decorView.systemUiVisibility = immersive or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         }
 
     }

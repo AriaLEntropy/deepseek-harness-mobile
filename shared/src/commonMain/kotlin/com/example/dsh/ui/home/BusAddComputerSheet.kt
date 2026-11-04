@@ -34,17 +34,17 @@ internal fun ViewContainer<*, *>.BusAddComputerSheet(
     ) {
         View {
             attr {
-                height(42f)
+                height(busHomePx(42f))
                 flexDirectionRow()
                 alignItemsCenter()
-                paddingLeft(20f)
-                paddingRight(20f)
-                marginTop(6f)
+                paddingLeft(busHomePx(20f))
+                paddingRight(busHomePx(20f))
+                marginTop(busHomePx(6f))
             }
             Text {
                 attr {
                     text("添加电脑")
-                    fontSize(17f)
+                    fontSize(busHomePx(17f))
                     fontWeightBold()
                     color(colors.labelPrimary)
                     flex(1f)
@@ -52,8 +52,8 @@ internal fun ViewContainer<*, *>.BusAddComputerSheet(
             }
             View {
                 attr {
-                    size(30f, 30f)
-                    borderRadius(15f)
+                    size(busHomePx(30f), busHomePx(30f))
+                    borderRadius(busHomePx(15f))
                     backgroundColor(sheetSurface(colors))
                     alignItemsCenter()
                     justifyContentCenter()
@@ -62,7 +62,7 @@ internal fun ViewContainer<*, *>.BusAddComputerSheet(
                 Image {
                     attr {
                         src(ImageUri.commonAssets("x.svg"))
-                        size(13f, 13f)
+                        size(busHomePx(13f), busHomePx(13f))
                         tintColor(colors.labelSecondary)
                     }
                 }
@@ -72,16 +72,16 @@ internal fun ViewContainer<*, *>.BusAddComputerSheet(
             attr {
                 flex(1f)
                 flexDirectionColumn()
-                paddingLeft(20f)
-                paddingRight(20f)
-                paddingTop(4f)
+                paddingLeft(busHomePx(20f))
+                paddingRight(busHomePx(20f))
+                paddingTop(busHomePx(4f))
             }
             Text {
                 attr {
                     text("选择一种方式连接电脑")
-                    fontSize(13f)
+                    fontSize(busHomePx(13f))
                     color(colors.labelTertiary)
-                    marginBottom(14f)
+                    marginBottom(busHomePx(14f))
                 }
             }
             AddComputerOption(
@@ -105,9 +105,9 @@ internal fun ViewContainer<*, *>.BusAddComputerSheet(
                 Text {
                     attr {
                         text(error)
-                        fontSize(12f)
+                        fontSize(busHomePx(12f))
                         color(colors.stateErrorPrimary)
-                        marginTop(10f)
+                        marginTop(busHomePx(10f))
                     }
                 }
             }
@@ -116,10 +116,10 @@ internal fun ViewContainer<*, *>.BusAddComputerSheet(
                 Text {
                     attr {
                         text("当前版本只保存一台电脑，添加新电脑会替换当前连接。")
-                        fontSize(11f)
-                        lineHeight(17f)
+                        fontSize(busHomePx(11f))
+                        lineHeight(busHomePx(17f))
                         color(colors.labelTertiary)
-                        marginBottom(12f)
+                        marginBottom(busHomePx(12f))
                     }
                 }
             }
@@ -138,12 +138,12 @@ private fun ViewContainer<*, *>.AddComputerOption(
 ) {
     View {
         attr {
-            height(76f)
+            height(busHomePx(76f))
             flexDirectionRow()
             alignItemsCenter()
-            paddingLeft(14f)
-            paddingRight(14f)
-            borderRadius(14f)
+            paddingLeft(busHomePx(14f))
+            paddingRight(busHomePx(14f))
+            borderRadius(busHomePx(14f))
             backgroundColor(colors.bgBase)
             border(Border(1f, BorderStyle.SOLID, colors.borderL1))
             opacity(if (enabled) 1f else 0.55f)
@@ -152,8 +152,8 @@ private fun ViewContainer<*, *>.AddComputerOption(
         event { click { if (enabled) onClick() } }
         View {
             attr {
-                size(36f, 36f)
-                borderRadius(18f)
+                size(busHomePx(36f), busHomePx(36f))
+                borderRadius(busHomePx(18f))
                 backgroundColor(sheetSurface(colors))
                 alignItemsCenter()
                 justifyContentCenter()
@@ -161,7 +161,7 @@ private fun ViewContainer<*, *>.AddComputerOption(
             Image {
                 attr {
                     src(ImageUri.commonAssets(icon))
-                    size(19f, 19f)
+                    size(busHomePx(19f), busHomePx(19f))
                     tintColor(colors.labelSecondary)
                 }
             }
@@ -170,12 +170,12 @@ private fun ViewContainer<*, *>.AddComputerOption(
             attr {
                 flex(1f)
                 flexDirectionColumn()
-                marginLeft(12f)
+                marginLeft(busHomePx(12f))
             }
             Text {
                 attr {
                     text(title)
-                    fontSize(14f)
+                    fontSize(busHomePx(14f))
                     fontWeightBold()
                     color(colors.labelPrimary)
                 }
@@ -183,16 +183,16 @@ private fun ViewContainer<*, *>.AddComputerOption(
             Text {
                 attr {
                     text(subtitle)
-                    fontSize(11f)
+                    fontSize(busHomePx(11f))
                     color(colors.labelTertiary)
-                    marginTop(4f)
+                    marginTop(busHomePx(4f))
                 }
             }
         }
         Image {
             attr {
                 src(ImageUri.commonAssets("chevron-right.svg"))
-                size(14f, 14f)
+                size(busHomePx(14f), busHomePx(14f))
                 tintColor(colors.labelTertiary)
             }
         }

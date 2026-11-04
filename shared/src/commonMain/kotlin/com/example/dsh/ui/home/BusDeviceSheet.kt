@@ -11,21 +11,21 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
 /**
- * 电脑选择面板。
+ * 电脑选择面板
  *
  * 当前协议只持久化一台已配对电脑，所以这里就是「当前设备行 + 添加电脑」，
- * 不做多 host 切换；后续多电脑能力直接扩展 [BusDeviceSheet] 的行列表即可。
+ * 不做多 host 切换；后续多电脑能力直接扩展 [BusDeviceSheet] 的行列表即可
  *
  * 视觉对齐共用外壳 `BusSheetPanel` 与视觉规范 16.8：行卡白底 radius 14、
  * padding 8/14、行间距 5；当前设备 1.5px #1D1B20 描边，其余 1px #EFEFF2；
  * 36 圆底 #F5F5F7 放项目已有的 `platform-*.svg` 单色线性图标；
- * 右侧标签只有「当前 / 在线 / 离线」三种。
+ * 右侧标签只有「当前 / 在线 / 离线」三种
  */
 internal fun ViewContainer<*, *>.BusDeviceSheet(
     device: BusHomeDevice?,
     pendingCount: Int,
     runningCount: Int,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     pageWidth: Float,
     pageHeight: Float,
     onClose: () -> Unit,
@@ -53,54 +53,31 @@ internal fun ViewContainer<*, *>.BusDeviceSheet(
 }
 
 /**
- * 旧调用点（DshBusHomePage 还在按 DshColorTokens + contentWidth 传参）的兼容入口。
+ * 把旧主题色映射成面板配色
  *
- * 页面接线换成新签名之后就可以删掉这个重载；这里只做换算，
- * 再把主题色映射成面板配色，渲染走同一套 v86 行卡。
+ * 设计基线只有浅色，所以浅色直接用 [BusHomeTokens.light]；深色沿用同一套结构、
+ * 取旧主题里语义最接近的字段，保证面板在深色下不至于花掉
  */
-internal fun ViewContainer<*, *>.BusDeviceSheet(
-    device: BusHomeDevice?,
-    pendingCount: Int,
-    runningCount: Int,
-    contentWidth: Float,
-    colors: DshColorTokens,
-    onClose: () -> Unit,
-    onAddComputer: () -> Unit,
-) {
-    BusDeviceSheet(
-        device = device,
-        pendingCount = pendingCount,
-        runningCount = runningCount,
-        palette = busSheetPalette(colors),
-        // 旧入口给的是"页宽 - 40"，还原页宽后行宽按面板自己的 16 内边距算
-        pageWidth = contentWidth + BusV86Tokens.spacePage * 2f,
-        pageHeight = BusV86Tokens.designPageHeight,
-        onClose = onClose,
-        onAddComputer = onAddComputer,
-    )
-}
-
-/**
- * 把旧主题色映射成面板配色。
- *
- * 设计基线只有浅色，所以浅色直接用 [BusV86Tokens.light]；深色沿用同一套结构、
- * 取旧主题里语义最接近的字段，保证面板在深色下不至于花掉。
- */
-internal fun busSheetPalette(colors: DshColorTokens): BusV86Palette = if (!colors.isDark) {
-    BusV86Tokens.light
+internal fun busSheetPalette(colors: DshColorTokens): BusHomePalette = if (!colors.isDark) {
+    BusHomeTokens.light
 } else {
-    BusV86Palette(
+    BusHomePalette(
         bgBase = colors.bgCanvas,
         surface = colors.bgModulePlatform,
         sheet = colors.bgModulePlatform,
-        scrim = BusV86Tokens.scrim,
+        scrim = BusHomeTokens.scrim,
         textPrimary = colors.labelPrimary,
         textSecondary = colors.labelSecondary,
         textTertiary = colors.labelTertiary,
         chipFill = colors.borderL1,
         selectedFill = colors.labelPrimary,
+        onSelected = colors.labelPrimaryInverted,
         error = colors.stateErrorPrimary,
         errorFill = colors.stateErrorSecondary,
+        topFadeStart = BusHomeTokens.topFadeStartDark,
+        topFadeMiddle = BusHomeTokens.topFadeMiddleDark,
+        topFadeBody = BusHomeTokens.topFadeBodyDark,
+        topFadeClear = BusHomeTokens.topFadeClearDark,
         isDark = true,
     )
 }
@@ -115,10 +92,10 @@ internal enum class BusDeviceTagKind {
 }
 
 /**
- * 设备行标签：只有「当前 / 在线 / 离线」。
+ * 设备行标签：只有「当前 / 在线 / 离线」
  *
  * 当前设备优先（哪怕离线也标「当前」，副行会说清离线状态）；
- * 不是当前但在线 -> 「在线」；其余 -> 「离线」。
+ * 不是当前但在线 -> 「在线」；其余 -> 「离线」
  */
 internal fun busDeviceRowTag(online: Boolean, isCurrent: Boolean): BusDeviceTagKind = when {
     isCurrent -> BusDeviceTagKind.Current
@@ -135,12 +112,12 @@ internal fun busDeviceTagLabel(kind: BusDeviceTagKind): String = when (kind) {
 
 /**
  * 标签配色：当前与在线 = 11/600 #1D1B20 on #EFEFEA；
- * 离线 = 11/500 #8E8E93 on #EFEFF2。
+ * 离线 = 11/500 #8E8E93 on #EFEFF2
  */
-internal fun busDeviceTagColors(kind: BusDeviceTagKind, palette: BusV86Palette): Pair<Color, Color> =
+internal fun busDeviceTagColors(kind: BusDeviceTagKind, palette: BusHomePalette): Pair<Color, Color> =
     when (kind) {
         BusDeviceTagKind.Current, BusDeviceTagKind.Online ->
-            palette.textPrimary to BusV86Tokens.tagFill
+            palette.textPrimary to BusHomeTokens.tagFill
 
         BusDeviceTagKind.Offline ->
             palette.textTertiary to palette.chipFill
@@ -152,7 +129,7 @@ internal fun busDeviceTagIsEmphasized(kind: BusDeviceTagKind): Boolean =
 
 /**
  * 设备行副文案：离线给"上次同步"时间，在线给待处理/运行中计数；
- * 没有配对电脑时给一句明确指引。
+ * 没有配对电脑时给一句明确指引
  */
 internal fun busDeviceRowSubtitle(
     device: BusHomeDevice?,
@@ -173,7 +150,7 @@ private const val DEVICE_TAG_RADIUS = 9f
 private const val DEVICE_TAG_PADDING_VERTICAL = 2f
 private const val DEVICE_TAG_PADDING_HORIZONTAL = 8f
 
-/** 行名 14/600（[BusV86Tokens] 只有 13 与 15，这里补一个局部常量） */
+/** 行名 14/600（[BusHomeTokens] 只有 13 与 15，这里补一个局部常量） */
 private const val DEVICE_ROW_NAME_FONT_SIZE = 14f
 
 /** 平台图标在 36 圆内的可见尺寸（设计稿 padding 7） */
@@ -184,7 +161,7 @@ private fun ViewContainer<*, *>.BusDeviceRow(
     pendingCount: Int,
     runningCount: Int,
     rowWidth: Float,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onSelect: () -> Unit,
 ) {
     val selectable = busDeviceRowIsSelectable(device)
@@ -263,12 +240,12 @@ private fun ViewContainer<*, *>.BusDeviceRow(
                                 paddingRight(DEVICE_TAG_PADDING_HORIZONTAL)
                                 paddingTop(DEVICE_TAG_PADDING_VERTICAL)
                                 paddingBottom(DEVICE_TAG_PADDING_VERTICAL)
-                                marginLeft(8f)
+                                marginLeft(busHomePx(8f))
                             }
                             Text {
                                 attr {
                                     text(busDeviceTagLabel(tagKind))
-                                    fontSize(BusV86Tokens.fontSizeCaption)
+                                    fontSize(BusHomeTokens.fontSizeCaption)
                                     color(tagColors.first)
                                     if (busDeviceTagIsEmphasized(tagKind)) fontWeightBold() else fontWeightMedium()
                                 }
@@ -279,7 +256,7 @@ private fun ViewContainer<*, *>.BusDeviceRow(
                 Text {
                     attr {
                         text(busDeviceRowSubtitle(device, pendingCount, runningCount))
-                        fontSize(BusV86Tokens.fontSizeCaption)
+                        fontSize(BusHomeTokens.fontSizeCaption)
                         color(palette.textTertiary)
                         marginTop(2f)
                         lines(1)
@@ -292,14 +269,14 @@ private fun ViewContainer<*, *>.BusDeviceRow(
 }
 
 /**
- * 添加电脑入口。
+ * 添加电脑入口
  *
  * 设计稿面板里没有这一行（原型是四台设备），但它要保留 §6.6 的连接入口，
- * 所以按同一套行卡规范补一条虚线描边的入口。
+ * 所以按同一套行卡规范补一条虚线描边的入口
  */
 private fun ViewContainer<*, *>.BusAddComputerRow(
     rowWidth: Float,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onClick: () -> Unit,
 ) {
     View {
@@ -308,7 +285,7 @@ private fun ViewContainer<*, *>.BusAddComputerRow(
             marginBottom(BusSheetTokens.rowGap)
             borderRadius(BusSheetTokens.rowRadius)
             backgroundColor(busSheetRowFill(palette))
-            border(Border(BusSheetTokens.rowBorderWidth, BorderStyle.DASHED, BusV86Tokens.lineDashed))
+            border(Border(BusSheetTokens.rowBorderWidth, BorderStyle.DASHED, BusHomeTokens.lineDashed))
             paddingTop(BusSheetTokens.rowPaddingVertical)
             paddingBottom(BusSheetTokens.rowPaddingVertical)
             paddingLeft(BusSheetTokens.rowPaddingHorizontal)
@@ -331,7 +308,7 @@ private fun ViewContainer<*, *>.BusAddComputerRow(
                 Image {
                     attr {
                         src(ImageUri.commonAssets("plus.svg"))
-                        size(18f, 18f)
+                        size(busHomePx(18f), busHomePx(18f))
                         tintColor(palette.textSecondary)
                     }
                 }

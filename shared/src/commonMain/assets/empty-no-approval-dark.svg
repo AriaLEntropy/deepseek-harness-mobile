@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="280" height="175" style="display:block;flex:none;">
+  <!-- 深色变体：几何与 empty-no-approval.svg 逐元素相同（2026-11-04 按家族主体包络放大 1.35 并下移到中心 y=100）
+       描边层级与 empty-no-tasks-dark 对齐：物件轮廓 #C7C7D0，内容位 #B9B8C2，背卡再降一档 #6E6E7A，
+       舞台虚框留 #4E4E5A。早先整张卡用 #4E4E5A/#6E6E7A/#55515F，在 #151517 的页面底上几乎看不见 -->
+  <rect x="14" y="10" width="292" height="172" rx="20" fill="none" stroke="#4E4E5A" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <rect x="70" y="40.6" width="172.8" height="116.1" rx="16.2" fill="#2E2E37" stroke="#6E6E7A" stroke-width="2.6" stroke-dasharray="8 6.75"/>
+  <rect x="80.8" y="51.4" width="172.8" height="116.1" rx="16.2" fill="#1B1B20"/>
+  <rect x="80.8" y="51.4" width="172.8" height="116.1" rx="16.2" fill="none" stroke="#C7C7D0" stroke-width="2.6" stroke-dasharray="8 6.75"/>
+  <line x1="102.4" y1="75.7" x2="188.8" y2="75.7" stroke="#B9B8C2" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 9.5"/>
+  <line x1="102.4" y1="89.2" x2="156.4" y2="89.2" stroke="#B9B8C2" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 9.5"/>
+  <rect x="102.4" y="102.7" width="129.6" height="27" rx="6.75" fill="none" stroke="#B9B8C2" stroke-width="2.6" stroke-dasharray="6.75 6.75"/>
+  <rect x="142.9" y="137.8" width="43.2" height="18.9" rx="9.45" fill="none" stroke="#B9B8C2" stroke-width="2.4" stroke-dasharray="5.5 5.5"/>
+  <rect x="196.9" y="137.8" width="43.2" height="18.9" rx="9.45" fill="none" stroke="#B9B8C2" stroke-width="2.4" stroke-dasharray="5.5 5.5"/>
+  <circle cx="253.6" cy="51.4" r="20.25" fill="#1B1B20" stroke="#C7C7D0" stroke-width="3.6"/>
+  <path d="M244.7 51.7l5.9 6.2 11.1-12.4" fill="none" stroke="#7D6BFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="286" cy="150" r="2.5" fill="#3A3550"/>
+  <circle cx="46" cy="150" r="2" fill="#3A3550"/>
+  <circle cx="296" cy="26" r="2" fill="#3A3550"/>
+</svg>

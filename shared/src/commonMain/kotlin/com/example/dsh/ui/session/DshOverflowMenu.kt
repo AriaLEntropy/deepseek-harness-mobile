@@ -389,11 +389,14 @@ internal fun ViewContainer<*, *>.DshSessionConfirmDialog(
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
     pageViewWidth: Float,
+    verticalOffset: Float = 0f,
     colors: () -> DshColorTokens = { DshDefaultTheme.light },
 ) {
     vif({ visible() }) {
         Modal(inWindow = true) {
             attr {
+                // 对话页的 Modal 在带 paddingTop 的内层里，锚到父容器内容盒
+                // 才能从页面 y=0 开始，把状态栏一起盖住
                 absolutePositionAllZero()
                 allCenter()
                 paddingLeft(20f)
@@ -404,6 +407,7 @@ internal fun ViewContainer<*, *>.DshSessionConfirmDialog(
                 attr {
                     width(pageViewWidth - 40f)
                     maxWidth(420f)
+                    marginTop(verticalOffset)
                     borderRadius(16f)
                     backgroundColor(colors().bgLayer1)
                 }

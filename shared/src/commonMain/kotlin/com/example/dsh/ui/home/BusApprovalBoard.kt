@@ -1,6 +1,7 @@
 package com.example.dsh.ui.home
 
 import com.example.dsh.ui.message.DshLoadingSpinner
+import com.tencent.kuikly.core.base.Animation
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.BoxShadow
@@ -8,30 +9,32 @@ import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ColorStop
 import com.tencent.kuikly.core.base.Direction
 import com.tencent.kuikly.core.base.ViewContainer
+import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.layout.FlexWrap
 import com.tencent.kuikly.core.reactive.collection.ObservableList
+import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
 /**
- * 统一 Agent 审批中心的渲染层（视觉基线：first-phase-ui.md §16.9 + M2整合v86）。
+ * 统一 Agent 审批中心的渲染层（视觉基线：first-phase-ui.md §16.9 + M2整合v86）
  *
  * 这一层只画东西、只回调，不持有任何状态：卡片列表、当前筛选段由调用方
  * 一次求值后传进来（结构变化要重建），而「已处理记录 / 勾选中的选项 / 正在
  * 发送的卡片 / 错误文案 / 加载中」一律传 `() -> T`，让 attr 闭包在响应式系统里
  * 重新求值——处理完一张卡时它只是就地变灰、标题追加状态字样，整列不重建、
- * 滚动位置不动。
+ * 滚动位置不动
  *
  * 因此调用方（DshBusHomePage）必须把本函数包在 `vbind` 里，绑定值只要覆盖
  * 「卡片 key 序列 + 当前筛选段」即可；不要把 answered / selection 也放进绑定值，
- * 否则每点一次就整列重建。
+ * 否则每点一次就整列重建
  *
  * 与 HTML 的两处已知差异（都受 Kuikly 能力限制，见交付说明）：
  * - `box-shadow` 两层（0 1px 2px + 0 14px 34px）只能取主层；
- * - 按钮 `:active` 的 scale(.97) + opacity .9 没有 CSS 伪类可挂，未做。
+ * - 按钮 `:active` 的 scale(.97) + opacity .9 没有 CSS 伪类可挂，未做
  */
 internal fun ViewContainer<*, *>.BusApprovalBoard(
     items: List<BusApprovalItem>,
@@ -41,8 +44,10 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
     busyKey: () -> String,
     error: () -> String,
     loading: () -> Boolean,
+    emptyTitle: () -> String,
+    emptySub: () -> String,
     topFadeVisible: () -> Boolean,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onFilter: (String) -> Unit,
     onToggleOption: (BusApprovalItem, BusApprovalQuestion, String) -> Unit,
     onAnswer: (BusApprovalItem, Boolean, Map<String, List<String>>) -> Unit,
@@ -61,9 +66,9 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
                 flexDirectionRow()
                 alignItemsCenter()
                 flexWrap(FlexWrap.WRAP)
-                paddingLeft(BusV86Tokens.spacePage)
-                paddingRight(BusV86Tokens.spacePage)
-                marginTop(BusV86Tokens.spaceListTop)
+                paddingLeft(BusHomeTokens.spacePage)
+                paddingRight(BusHomeTokens.spacePage)
+                marginTop(BusHomeTokens.spaceListTop)
                 marginBottom(FILTER_ROW_BOTTOM)
             }
             BUS_APPROVAL_FILTER_IDS.forEach { tabId ->
@@ -78,14 +83,14 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
             }
         }
 
-        // 发送失败提示：快照本身不带错误通道，这里只回显页面记下的最后一次失败。
+        // 发送失败提示：快照本身不带错误通道，这里只回显页面记下的最后一次失败
         vif({ error().isNotBlank() }) {
             View {
                 attr {
-                    marginLeft(BusV86Tokens.spacePage)
-                    marginRight(BusV86Tokens.spacePage)
+                    marginLeft(BusHomeTokens.spacePage)
+                    marginRight(BusHomeTokens.spacePage)
                     marginBottom(FILTER_ROW_BOTTOM)
-                    borderRadius(BusV86Tokens.radiusButton)
+                    borderRadius(BusHomeTokens.radiusButton)
                     backgroundColor(palette.errorFill)
                     paddingLeft(ERROR_ROW_SIDE)
                     paddingRight(ERROR_ROW_SIDE)
@@ -95,8 +100,8 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
                 Text {
                     attr {
                         text(error())
-                        fontSize(BusV86Tokens.fontSizeMeta)
-                        lineHeight(16f)
+                        fontSize(BusHomeTokens.fontSizeMeta)
+                        lineHeight(busHomePx(16f))
                         color(palette.error)
                     }
                 }
@@ -104,7 +109,7 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
         }
 
         // 卡片区 + 顶部 56px 渐隐：渐隐层是 List 的兄弟节点，自己不带事件，
-        // 只在列表滚出顶部后由调用方把 topFadeVisible 置真（对齐 #task-top-fade）。
+        // 只在列表滚出顶部后由调用方把 topFadeVisible 置真（对齐 #task-top-fade）
         View {
             attr {
                 flex(1f)
@@ -113,6 +118,11 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
             val rows = ObservableList<BusApprovalRow>().apply {
                 addAll(busApprovalRows(items, filter))
             }
+            // 没有任何待处理项时，缺省页直接铺满列表区并垂直居中，对齐「暂无任务」
+            vif({ !loading() && busApprovalVisibleItems(items, filter).isEmpty() }) {
+                BusApprovalEmptyState(palette, emptyTitle, emptySub, fill = true)
+            }
+            vif({ loading() || busApprovalVisibleItems(items, filter).isNotEmpty() }) {
             List {
                 attr {
                     flex(1f)
@@ -120,10 +130,13 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
                 }
                 event {
                     scroll { params -> onScrollY(params.offsetY) }
+                    // 橡皮筋回弹时，最后一条 scroll 可能还停在 offset>1 上；落定后再判一次，
+                    // 免得列表已经贴回顶部，56 的渐隐条却一直挂在上面压住第一张卡
+                    scrollEnd { params -> onScrollY(params.offsetY) }
                 }
                 vforLazy({ rows }, maxLoadItem = MAX_RENDERED_CARDS) { row, _, _ ->
                     // 循环指令的闭包必须且只能生成一个根节点，所以空态行与卡片
-                    // 共用这层壳；底部 128 的胶囊/FAB 预留也挂在壳里。
+                    // 共用这层壳；底部 128 的胶囊/FAB 预留也挂在壳里
                     View {
                         attr { flexDirectionColumn() }
                         when (row) {
@@ -143,7 +156,7 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
                                     BusApprovalLoadingRow(palette)
                                 }
                                 vif({ !loading() && !busApprovalHasOpenItems(items, filter, answered()) }) {
-                                    BusApprovalEmptyState(palette)
+                                    BusApprovalEmptyState(palette, emptyTitle, emptySub)
                                 }
                                 View { attr { height(BOTTOM_INSET) } }
                             }
@@ -151,18 +164,24 @@ internal fun ViewContainer<*, *>.BusApprovalBoard(
                     }
                 }
             }
+            }
             View {
                 attr {
                     absolutePosition(top = 0f, left = 0f, right = 0f)
-                    height(BusV86Tokens.topFadeHeight)
+                    height(BusHomeTokens.topFadeHeight)
+                    // 设计稿 `#task-top-fade` 带 pointer-events: none；漏掉这行会让渐隐层
+                    // 吃掉列表顶部 56 的触摸，第一张卡的上半截点不动
+                    touchEnable(false)
                     backgroundLinearGradient(
                         Direction.TO_BOTTOM,
-                        ColorStop(BusV86Tokens.topFadeStart, 0f),
-                        ColorStop(BusV86Tokens.topFadeMiddle, BusV86Tokens.topFadeStopMiddle),
-                        ColorStop(BusV86Tokens.topFadeBody, BusV86Tokens.topFadeStopBody),
-                        ColorStop(BusV86Tokens.topFadeClear, 1f),
+                        ColorStop(palette.topFadeStart, 0f),
+                        ColorStop(palette.topFadeMiddle, BusHomeTokens.topFadeStopMiddle),
+                        ColorStop(palette.topFadeBody, BusHomeTokens.topFadeStopBody),
+                        ColorStop(palette.topFadeClear, 1f),
                     )
+                    // 设计稿是 `transition: opacity .16s ease`；直接改 opacity 会「啪」地刷出一道白条
                     opacity(if (topFadeVisible()) 1f else 0f)
+                    animation(Animation.easeInOut(0.16f), topFadeVisible())
                 }
             }
         }
@@ -182,7 +201,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
     answered: () -> BusApprovalAnswered,
     selection: () -> Map<String, List<String>>,
     busyKey: () -> String,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onToggleOption: (BusApprovalItem, BusApprovalQuestion, String) -> Unit,
     onAnswer: (BusApprovalItem, Boolean, Map<String, List<String>>) -> Unit,
     onOpenTask: (BusApprovalItem) -> Unit,
@@ -193,18 +212,18 @@ private fun ViewContainer<*, *>.BusApprovalCard(
     View {
         attr {
             flexDirectionColumn()
-            borderRadius(BusV86Tokens.radiusCard)
+            borderRadius(BusHomeTokens.radiusCard)
             backgroundColor(palette.surface)
-            border(Border(1f, BorderStyle.SOLID, BusV86Tokens.surfaceBorder))
+            border(Border(1f, BorderStyle.SOLID, BusHomeTokens.surfaceBorder))
             boxShadow(BoxShadow(0f, CARD_SHADOW_Y, CARD_SHADOW_BLUR, CARD_SHADOW_COLOR))
-            marginLeft(BusV86Tokens.spacePage)
-            marginRight(BusV86Tokens.spacePage)
+            marginLeft(BusHomeTokens.spacePage)
+            marginRight(BusHomeTokens.spacePage)
             paddingLeft(CARD_SIDE)
             paddingRight(CARD_SIDE)
             paddingTop(CARD_TOP)
             paddingBottom(CARD_BOTTOM)
             marginBottom(CARD_GAP)
-            // 已处理：留在原位、压暗，不再响应点击（快照还会把它投回来）。
+            // 已处理：留在原位、压暗，不再响应点击（快照还会把它投回来）
             opacity(if (answered()[item.key] != null) ANSWERED_OPACITY else 1f)
         }
         event {
@@ -222,7 +241,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
             Text {
                 attr {
                     text(busApprovalTitle(item, answered()))
-                    fontSize(BusV86Tokens.fontSizeTitle)
+                    fontSize(BusHomeTokens.fontSizeTitle)
                     fontWeightBold()
                     color(palette.textPrimary)
                     flex(1f)
@@ -233,8 +252,8 @@ private fun ViewContainer<*, *>.BusApprovalCard(
             Text {
                 attr {
                     text(item.time)
-                    fontSize(BusV86Tokens.fontSizeCaption)
-                    color(BusV86Tokens.textTertiary)
+                    fontSize(BusHomeTokens.fontSizeCaption)
+                    color(BusHomeTokens.textTertiary)
                     marginLeft(HEADER_TIME_GAP)
                 }
             }
@@ -250,8 +269,8 @@ private fun ViewContainer<*, *>.BusApprovalCard(
             if (item.project.isNotBlank()) {
                 View {
                     attr {
-                        borderRadius(BusV86Tokens.radiusChip)
-                        backgroundColor(BusV86Tokens.tagFill)
+                        borderRadius(BusHomeTokens.radiusChip)
+                        backgroundColor(BusHomeTokens.tagFill)
                         paddingLeft(TAG_SIDE)
                         paddingRight(TAG_SIDE)
                         paddingTop(TAG_VERTICAL)
@@ -260,7 +279,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
                     Text {
                         attr {
                             text(item.project)
-                            fontSize(BusV86Tokens.fontSizeCaption)
+                            fontSize(BusHomeTokens.fontSizeCaption)
                             fontWeightBold()
                             color(palette.textPrimary)
                             lines(1)
@@ -272,8 +291,8 @@ private fun ViewContainer<*, *>.BusApprovalCard(
             Text {
                 attr {
                     text("${item.agentName} · ${busApprovalKindLabel(item.kind)}")
-                    fontSize(BusV86Tokens.fontSizeCaption)
-                    color(BusV86Tokens.textTertiary)
+                    fontSize(BusHomeTokens.fontSizeCaption)
+                    color(BusHomeTokens.textTertiary)
                     marginLeft(META_TEXT_GAP)
                     lines(1)
                     textOverFlowTail()
@@ -287,7 +306,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
                 attr {
                     marginTop(COMMAND_BLOCK_TOP)
                     borderRadius(COMMAND_BLOCK_RADIUS)
-                    backgroundColor(BusV86Tokens.field)
+                    backgroundColor(BusHomeTokens.field)
                     paddingLeft(COMMAND_BLOCK_SIDE)
                     paddingRight(COMMAND_BLOCK_SIDE)
                     paddingTop(COMMAND_BLOCK_VERTICAL)
@@ -296,7 +315,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
                 Text {
                     attr {
                         text(commandText)
-                        fontSize(BusV86Tokens.fontSizeMeta)
+                        fontSize(BusHomeTokens.fontSizeMeta)
                         lineHeight(COMMAND_LINE_HEIGHT)
                         fontFamily("monospace")
                         color(palette.textPrimary)
@@ -364,7 +383,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
                     enabled = { answered()[item.key] == null },
                     busy = { busyKey() == item.key },
                 ) {
-                    // 协议规定 answers 只和 allow 一起出现，拒绝时不带任何勾选。
+                    // 协议规定 answers 只和 allow 一起出现，拒绝时不带任何勾选
                     onAnswer(item, false, emptyMap())
                 }
                 BusApprovalButton(
@@ -394,7 +413,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
                         enabled = { answered()[item.key] == null },
                         busy = { busyKey() == item.key },
                     ) {
-                        // 单选问题的一个选项就是一条完整回答，点一下即发送（HTML 的 relay.log）。
+                        // 单选问题的一个选项就是一条完整回答，点一下即发送（HTML 的 relay.log）
                         onAnswer(item, true, mapOf(item.questions.single().id to listOf(option.first)))
                     }
                 }
@@ -455,7 +474,7 @@ private fun ViewContainer<*, *>.BusApprovalCard(
                     enabled = { answered()[item.key] == null },
                     busy = { busyKey() == item.key },
                 ) {
-                    // 没问题可点 = 要自己组织语言，交给会话页输入框。
+                    // 没问题可点 = 要自己组织语言，交给会话页输入框
                     onOpenTask(item)
                 }
             }
@@ -469,12 +488,12 @@ private fun ViewContainer<*, *>.BusApprovalFilterChip(
     items: List<BusApprovalItem>,
     filter: String,
     answered: () -> BusApprovalAnswered,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onClick: () -> Unit,
 ) {
     View {
         attr {
-            borderRadius(BusV86Tokens.radiusButton)
+            borderRadius(BusHomeTokens.radiusButton)
             backgroundColor(
                 if (filter == tabId) palette.selectedFill else palette.chipFill,
             )
@@ -493,10 +512,10 @@ private fun ViewContainer<*, *>.BusApprovalFilterChip(
                         .let { "${it?.label.orEmpty()} ${it?.count ?: 0}" }
                         .trim(),
                 )
-                fontSize(BusV86Tokens.fontSizeCaption)
+                fontSize(BusHomeTokens.fontSizeCaption)
                 if (filter == tabId) {
                     fontWeightBold()
-                    color(BusV86Tokens.selectedForeground)
+                    color(palette.onSelected)
                 } else {
                     fontWeightMedium()
                     color(palette.textSecondary)
@@ -512,19 +531,26 @@ private fun ViewContainer<*, *>.BusApprovalOptionChip(
     description: String,
     multiSelect: Boolean,
     selected: () -> Boolean,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onClick: () -> Unit,
 ) {
     View {
         attr {
             flexDirectionRow()
             alignItemsCenter()
-            borderRadius(BusV86Tokens.radiusChip)
-            backgroundColor(if (selected()) palette.selectedFill else palette.chipFill)
-            paddingLeft(CHIP_SIDE)
-            paddingRight(CHIP_SIDE)
-            paddingTop(TAG_VERTICAL)
-            paddingBottom(TAG_VERTICAL)
+            borderRadius(OPTION_RADIUS)
+            backgroundColor(if (selected()) palette.selectedFill else Color(0xFFFFFFFF))
+            border(
+                Border(
+                    1f,
+                    BorderStyle.SOLID,
+                    if (selected()) palette.selectedFill else OPTION_BORDER,
+                ),
+            )
+            paddingLeft(OPTION_SIDE)
+            paddingRight(OPTION_SIDE)
+            paddingTop(OPTION_VERTICAL)
+            paddingBottom(OPTION_VERTICAL)
             marginRight(OPTION_GAP)
             marginBottom(OPTION_ROW_GAP)
         }
@@ -538,7 +564,7 @@ private fun ViewContainer<*, *>.BusApprovalOptionChip(
                         Border(
                             1.5f,
                             BorderStyle.SOLID,
-                            if (selected()) BusV86Tokens.selectedForeground else BusV86Tokens.lineDashed,
+                            if (selected()) palette.onSelected else BusHomeTokens.lineDashed,
                         ),
                     )
                     marginRight(OPTION_MARK_GAP)
@@ -548,9 +574,9 @@ private fun ViewContainer<*, *>.BusApprovalOptionChip(
         Text {
             attr {
                 text(label)
-                fontSize(BusV86Tokens.fontSizeCaption)
+                fontSize(BusHomeTokens.fontSizeMeta)
                 fontWeightBold()
-                color(if (selected()) BusV86Tokens.selectedForeground else palette.textSecondary)
+                color(if (selected()) palette.onSelected else palette.textSecondary)
                 lines(1)
                 textOverFlowTail()
             }
@@ -559,8 +585,8 @@ private fun ViewContainer<*, *>.BusApprovalOptionChip(
             Text {
                 attr {
                     text(description)
-                    fontSize(BusV86Tokens.fontSizeCaption)
-                    color(if (selected()) BusV86Tokens.selectedForeground else BusV86Tokens.textTertiary)
+                    fontSize(BusHomeTokens.fontSizeCaption)
+                    color(if (selected()) palette.onSelected else BusHomeTokens.textTertiary)
                     marginLeft(OPTION_MARK_GAP)
                     lines(1)
                     textOverFlowTail()
@@ -580,7 +606,7 @@ private enum class BusApprovalButtonVariant {
 private fun ViewContainer<*, *>.BusApprovalButton(
     label: String,
     variant: BusApprovalButtonVariant,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     enabled: () -> Boolean = { true },
     busy: () -> Boolean = { false },
     horizontalPadding: Float = BUTTON_SIDE,
@@ -592,7 +618,7 @@ private fun ViewContainer<*, *>.BusApprovalButton(
             alignItemsCenter()
             justifyContentCenter()
             minHeight(BUTTON_HEIGHT)
-            borderRadius(BusV86Tokens.radiusButton)
+            borderRadius(BusHomeTokens.radiusButton)
             when (variant) {
                 BusApprovalButtonVariant.PRIMARY -> {
                     backgroundColor(palette.selectedFill)
@@ -600,13 +626,13 @@ private fun ViewContainer<*, *>.BusApprovalButton(
                 }
 
                 BusApprovalButtonVariant.SECONDARY -> {
-                    backgroundColor(BusV86Tokens.cardFill)
-                    border(Border(1f, BorderStyle.SOLID, BusV86Tokens.lineCard))
+                    backgroundColor(BusHomeTokens.cardFill)
+                    border(Border(1f, BorderStyle.SOLID, BusHomeTokens.lineCard))
                 }
 
                 BusApprovalButtonVariant.DASHED -> {
-                    backgroundColor(BusV86Tokens.cardFill)
-                    border(Border(1f, BorderStyle.DASHED, BusV86Tokens.lineDashed))
+                    backgroundColor(BusHomeTokens.cardFill)
+                    border(Border(1f, BorderStyle.DASHED, BusHomeTokens.lineDashed))
                 }
             }
             paddingLeft(horizontalPadding)
@@ -630,7 +656,7 @@ private fun ViewContainer<*, *>.BusApprovalButton(
             DshLoadingSpinner(
                 diameter = SPINNER_SIZE,
                 tint = if (variant == BusApprovalButtonVariant.PRIMARY) {
-                    BusV86Tokens.selectedForeground
+                    palette.onSelected
                 } else {
                     palette.textSecondary
                 },
@@ -640,11 +666,11 @@ private fun ViewContainer<*, *>.BusApprovalButton(
             Text {
                 attr {
                     text(label)
-                    fontSize(BusV86Tokens.fontSizeMeta)
+                    fontSize(BusHomeTokens.fontSizeMeta)
                     fontWeightBold()
                     color(
                         when (variant) {
-                            BusApprovalButtonVariant.PRIMARY -> BusV86Tokens.selectedForeground
+                            BusApprovalButtonVariant.PRIMARY -> palette.onSelected
                             else -> palette.textSecondary
                         },
                     )
@@ -654,48 +680,62 @@ private fun ViewContainer<*, *>.BusApprovalButton(
     }
 }
 
-/** 空态：一条 `.cap-empty` 式短横 + 两行克制文案，不用插画、不用大色块。 */
-private fun ViewContainer<*, *>.BusApprovalEmptyState(palette: BusV86Palette) {
+/**
+ * 空态：缺省页家族的「一叠还不存在的批准卡片」插画 + 两行文案
+ *
+ * [fill] = true 时铺满列表区并垂直居中，和「暂无任务」的缺省页同一套排布
+ * 文案由页面给：电脑在的时候才是「暂无待处理」，电脑没连上/没响应时说「暂无」是假话
+ */
+private fun ViewContainer<*, *>.BusApprovalEmptyState(
+    palette: BusHomePalette,
+    title: () -> String,
+    sub: () -> String,
+    fill: Boolean = false,
+) {
     View {
         attr {
             flexDirectionColumn()
             alignItemsCenter()
-            paddingTop(EMPTY_VERTICAL)
-            paddingBottom(EMPTY_VERTICAL)
-            paddingLeft(BusV86Tokens.spacePage)
-            paddingRight(BusV86Tokens.spacePage)
-        }
-        View {
-            attr {
-                size(EMPTY_MARK_BOX, EMPTY_MARK_BOX)
-                alignItemsCenter()
+            if (fill) {
+                flex(1f)
                 justifyContentCenter()
+                // 居中容器里多加 2 倍底部留白，块就整体上移 1 倍；这里要上移的就是 approvalEmptyLift，
+                // 让审批的缺省页和列表那几个缺省页的插画落在同一条线上
+                paddingBottom(BusHomeSectionTokens.emptyBottomInset + BusHomeSectionTokens.approvalEmptyLift * 2f)
+            } else {
+                paddingTop(EMPTY_VERTICAL)
+                paddingBottom(EMPTY_VERTICAL)
             }
-            View {
-                attr {
-                    width(EMPTY_MARK_WIDTH)
-                    height(EMPTY_MARK_HEIGHT)
-                    borderRadius(EMPTY_MARK_HEIGHT / 2f)
-                    backgroundColor(BusV86Tokens.textQuiet)
-                }
+            paddingLeft(BusHomeTokens.spacePage)
+            paddingRight(BusHomeTokens.spacePage)
+        }
+        Image {
+            attr {
+                src(
+                    ImageUri.commonAssets(
+                        if (palette.isDark) "empty-no-approval-dark.svg" else "empty-no-approval.svg",
+                    ),
+                )
+                size(BusHomeSectionTokens.emptyIconWidth, BusHomeSectionTokens.emptyIconHeight)
             }
         }
         Text {
             attr {
-                text("没有待处理")
-                fontSize(BusV86Tokens.fontSizeTitle)
+                text(title())
+                fontSize(BusHomeSectionTokens.emptyTitleFont)
                 fontWeightBold()
-                color(palette.textPrimary)
-                marginTop(EMPTY_TITLE_TOP)
+                color(palette.textSecondary)
+                marginTop(BusHomeSectionTokens.emptyTitleTop)
                 textAlignCenter()
             }
         }
         Text {
             attr {
-                text("Agent 需要你时，会出现在这里")
-                fontSize(BusV86Tokens.fontSizeMeta)
-                color(BusV86Tokens.textTertiary)
-                marginTop(EMPTY_SUB_TOP)
+                text(sub())
+                fontSize(BusHomeTokens.fontSizeBody)
+                lineHeight(BusHomeSectionTokens.emptySubLineHeight)
+                color(palette.textTertiary)
+                marginTop(BusHomeTokens.gapControl)
                 textAlignCenter()
             }
         }
@@ -703,7 +743,7 @@ private fun ViewContainer<*, *>.BusApprovalEmptyState(palette: BusV86Palette) {
 }
 
 /** 首次快照还没到：只给一个转圈 + 一行说明，不铺骨架屏。 */
-private fun ViewContainer<*, *>.BusApprovalLoadingRow(palette: BusV86Palette) {
+private fun ViewContainer<*, *>.BusApprovalLoadingRow(palette: BusHomePalette) {
     View {
         attr {
             flexDirectionRow()
@@ -712,12 +752,12 @@ private fun ViewContainer<*, *>.BusApprovalLoadingRow(palette: BusV86Palette) {
             paddingTop(EMPTY_VERTICAL)
             paddingBottom(EMPTY_VERTICAL)
         }
-        DshLoadingSpinner(diameter = SPINNER_SIZE, tint = BusV86Tokens.textTertiary)
+        DshLoadingSpinner(diameter = SPINNER_SIZE, tint = palette.textTertiary)
         Text {
             attr {
                 text("正在同步待处理请求")
-                fontSize(BusV86Tokens.fontSizeMeta)
-                color(BusV86Tokens.textTertiary)
+                fontSize(BusHomeTokens.fontSizeMeta)
+                color(palette.textTertiary)
                 marginLeft(BUTTON_GAP)
             }
         }
@@ -771,6 +811,12 @@ private const val OPTION_ROW_GAP = 6f
 private const val OPTION_GAP = 8f
 private const val OPTION_MARK_SIZE = 12f
 private const val OPTION_MARK_GAP = 6f
+
+/** 选项胶囊：白底实描边 radius 10，padding 6 x 14（HTML approve-btn） */
+private const val OPTION_SIDE = 14f
+private const val OPTION_VERTICAL = 6f
+private const val OPTION_RADIUS = 10f
+private val OPTION_BORDER = Color(0xFFE4E4E7)
 private const val ACTION_ROW_TOP = 8f
 
 /** 按钮：12/600、radius 10、padding 6 x 16（快捷选项 6 x 14） */
@@ -788,10 +834,6 @@ private const val ERROR_ROW_VERTICAL = 8f
 
 /** 空态：上下 56、左右 20；短横 8 x 1.5 居中在 16 x 16 里 */
 private const val EMPTY_VERTICAL = 56f
-private const val EMPTY_MARK_BOX = 16f
-private const val EMPTY_MARK_WIDTH = 8f
-private const val EMPTY_MARK_HEIGHT = 1.5f
-private const val EMPTY_TITLE_TOP = 12f
 private const val EMPTY_SUB_TOP = 6f
 
 /** 列表底部给胶囊 + FAB 预留 128 */

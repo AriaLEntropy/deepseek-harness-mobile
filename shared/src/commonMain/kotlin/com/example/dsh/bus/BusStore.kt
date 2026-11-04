@@ -37,6 +37,10 @@ class BusStore {
         private set
     var messagesByTask: Map<String, List<JsonObject>> = emptyMap()
         private set
+    var skillListsByKey: Map<String, JsonObject> = emptyMap()
+        private set
+    var skillContentsById: Map<String, JsonObject> = emptyMap()
+        private set
     private var hasMoreByTask: Map<String, Boolean> = emptyMap()
     private var generatedAt: String = ""
 
@@ -90,6 +94,7 @@ class BusStore {
                 tasks = tasks.filter { it.string("id") != id }
                 messagesByTask = messagesByTask - id
                 hasMoreByTask = hasMoreByTask - id
+                skillListsByKey = skillListsByKey.filterKeys { !it.endsWith("|$id") }
                 null
             }
             "taskMessages" -> {
@@ -112,9 +117,30 @@ class BusStore {
                         .take(MAX_RECENT_RESULTS)
                 null
             }
+            "skillList" -> {
+                val payload = event["skillList"] as? JsonObject ?: return null
+                val key = busSkillListKey(
+                    connector = payload.string("connector").orEmpty(),
+                    connectorId = payload.string("connectorId"),
+                    projectPath = payload.string("projectPath").orEmpty(),
+                    taskId = payload.string("taskId").orEmpty(),
+                )
+                skillListsByKey = skillListsByKey + (key to payload)
+                null
+            }
+            "skillContent" -> {
+                val payload = event["skillContent"] as? JsonObject ?: return null
+                val skillId = payload.string("skillId") ?: return null
+                skillContentsById = skillContentsById + (skillId to payload)
+                null
+            }
             else -> null
         }
     }
+
+    fun skillList(key: String): JsonObject? = skillListsByKey[key]
+
+    fun skillContent(skillId: String): JsonObject? = skillContentsById[skillId]
 
     fun taskById(id: String): JsonObject? = tasks.firstOrNull { it.string("id") == id }
 

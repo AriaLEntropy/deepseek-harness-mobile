@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="280" height="175" style="display:block;flex:none;">
+  <!-- 深色变体：沿用家族暗色 token（框 #4E4E5A / 设备描边 #C7C7D0 / 机身底 #1B1B20 / 内容线 #B9B8C2 / 强调 #7D6BFF / 散点 #3A3550）
+       几何与 empty-no-device.svg 一致，只换色；差异保留在「自己」那枚气泡用中性灰而不是强调紫 -->
+  <!-- 外框：虚线 -->
+  <rect x="14" y="10" width="292" height="172" rx="20" fill="none" stroke="#4E4E5A" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <!-- 电脑：屏幕（上移） -->
+  <rect x="84" y="26" width="100" height="72" rx="9" fill="#1B1B20" stroke="#C7C7D0" stroke-width="3"/>
+  <!-- 屏内文本行 -->
+  <line x1="104" y1="44" x2="158" y2="44" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="54" x2="138" y2="54" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="64" x2="154" y2="64" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="74" x2="146" y2="74" stroke="#B9B8C2" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- 屏内导航栏：两端缩进 -->
+  <line x1="88" y1="90" x2="180" y2="90" stroke="#B9B8C2" stroke-width="2"/>
+  <!-- 底座：中央支撑 + 底部横线（缩短） -->
+  <line x1="134" y1="98" x2="134" y2="103" stroke="#C7C7D0" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="104" y1="103" x2="166" y2="103" stroke="#C7C7D0" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- 斜直线连接，带链路节点 -->
+  <line x1="231" y1="83" x2="136" y2="66" stroke="#7D6BFF" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <circle cx="206" cy="78" r="3" fill="#6A5FA8"/>
+  <circle cx="183" cy="74" r="4.5" fill="#7D6BFF"/>
+  <circle cx="160" cy="70" r="3" fill="#6A5FA8"/>
+  <!-- 手机（斜置）屏内：刘海 + 聊天界面 -->
+  <g transform="rotate(-12 240 126)">
+    <rect x="216" y="82" width="48" height="88" rx="9" fill="#1B1B20" stroke="#C7C7D0" stroke-width="3"/>
+    <!-- 刘海 -->
+    <line x1="232" y1="87" x2="248" y2="87" stroke="#C7C7D0" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- 左气泡（对方，实心浅灰） -->
+    <rect x="224" y="92" width="18" height="9" rx="4.5" fill="#33333C"/>
+    <!-- 右气泡（自己，中性灰：浅色稿这里就不是强调紫，深色同样不抢链路那颗点） -->
+    <rect x="238" y="109" width="18" height="9" rx="4.5" fill="#6E6E7A"/>
+    <!-- 输入框：空心矩形 -->
+    <rect x="224" y="142" width="34" height="10" rx="5" fill="none" stroke="#B9B8C2" stroke-width="1"/>
+  </g>
+  <circle cx="272" cy="26" r="2.5" fill="#3A3550"/>
+  <circle cx="46" cy="150" r="2" fill="#3A3550"/>
+  <circle cx="296" cy="158" r="2" fill="#3A3550"/>
+</svg>

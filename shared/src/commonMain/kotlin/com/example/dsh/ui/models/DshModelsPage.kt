@@ -324,7 +324,7 @@ internal fun ViewContainer<*, *>.DshModelsPage(
                 absolutePositionAllZero()
                 backgroundColor(Color(0x66000000))
                 paddingTop(pagerData.statusBarHeight + 20f)
-                paddingBottom(pagerData.safeAreaInsets.bottom + 20f)
+                paddingBottom(maxOf(20f, pagerData.safeAreaInsets.bottom))
             }
             View {
                 attr {

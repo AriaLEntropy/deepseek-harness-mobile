@@ -79,6 +79,8 @@ internal data class BusHomeAgent(
     val canDeleteTasks: Boolean = false,
     /** 协议 3.3 起：连接器声明这台电脑上有「自动批准」开关可用。 */
     val canAutoApprove: Boolean = false,
+    /** 协议 3.10 起：这台电脑能按连接器 / 项目查技能目录 */
+    val canListSkills: Boolean = false,
 ) {
     /**
      * 能不能在这个 Agent 上直接发起任务。wire 上没有这个字段，按页面既有判断派生：
@@ -138,6 +140,8 @@ internal data class BusHomeTask(
     val detail: String = "",
     /** `pendingRequest.questions`：审批范围选项或带选项的提问；没有则为空。 */
     val questions: List<BusApprovalQuestion> = emptyList(),
+    /** 协议 3.3：这条会话所在项目当前开着自动批准 */
+    val autoApprove: Boolean = false,
 ) {
     /** 任务上是否带着一个等待回答/审批的挂起请求。 */
     val hasPendingRequest: Boolean
@@ -192,6 +196,8 @@ internal fun BusStore.toHomeView(): BusHomeView {
             canDeleteTasks = connector.string("canDeleteTasks")
                 ?.toBooleanStrictOrNull() == true,
             canAutoApprove = connector.string("canAutoApprove")
+                ?.toBooleanStrictOrNull() == true,
+            canListSkills = connector.string("canListSkills")
                 ?.toBooleanStrictOrNull() == true,
         )
     }
@@ -281,6 +287,7 @@ internal fun BusStore.toHomeView(): BusHomeView {
                 summary = request.string("summary").orEmpty(),
                 detail = request.string("detail").orEmpty(),
                 questions = busPendingQuestions(request),
+                autoApprove = task.string("autoApprove")?.toBooleanStrictOrNull() == true,
             )
         }
         .toList()
@@ -326,11 +333,45 @@ internal fun List<BusHomeTask>.forAgents(agentKeys: Set<String>): List<BusHomeTa
 internal fun busAgentFilterSet(agentKey: String): Set<String> =
     if (agentKey.isEmpty()) emptySet() else setOf(agentKey)
 
-/** 多选面板点一下：已选则取消，未选则加入；空 key（全部）忽略。 */
-internal fun busToggleAgentFilter(selected: Set<String>, agentKey: String): Set<String> = when {
-    agentKey.isEmpty() -> emptySet()
-    agentKey in selected -> selected - agentKey
-    else -> selected + agentKey
+/**
+ * 面板里的实际勾选集合：空集合表示「全选」，展开成全部可勾选的 Agent。
+ *
+ * 面板第一次打开时 [selected] 还是空的，但语义上就是全选；
+ * 行卡勾选框必须按展开后的集合渲染，否则会出现「任务列表显示全部、
+ * 面板里却一个都没勾」的错位
+ */
+internal fun busAgentSelectionForDisplay(selected: Set<String>, selectableKeys: Set<String>): Set<String> =
+    if (selected.isEmpty()) selectableKeys else selected
+
+/** 是否全选：空集合是「全部」的归一形态。 */
+internal fun busAgentSelectionIsAll(selected: Set<String>, selectableKeys: Set<String>): Boolean =
+    selected.isEmpty() || selectableKeys.all { it in selected }
+
+/**
+ * 多选面板点一下：已选则取消，未选则加入。
+ *
+ * 移动端约束：
+ * - 至少保留一个可勾选的 Agent，取消最后一个时原样返回；
+ * - 加回到「全选」时归一成空集合，继续沿用「空 = 不过滤」的语义；
+ * - 空 key 与不可勾选的 key 一律忽略
+ */
+internal fun busToggleAgentFilter(
+    selected: Set<String>,
+    agentKey: String,
+    selectableKeys: Set<String>,
+): Set<String> {
+    if (agentKey.isEmpty() || agentKey !in selectableKeys) return selected
+    val current = if (selected.isEmpty()) {
+        selectableKeys
+    } else {
+        selected.filterTo(mutableSetOf()) { it in selectableKeys }
+    }
+    if (agentKey !in current) {
+        val next = current + agentKey
+        return if (next.containsAll(selectableKeys)) emptySet() else next
+    }
+    if (current.size <= 1) return selected
+    return current - agentKey
 }
 
 /** 列表页顶部的可见任务数：多选语义，空集合 = 全部。 */

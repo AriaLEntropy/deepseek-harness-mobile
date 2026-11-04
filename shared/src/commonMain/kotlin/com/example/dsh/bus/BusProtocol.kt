@@ -87,6 +87,18 @@ sealed class DescribeDecision {
     data object Unknown : DescribeDecision()
 }
 
+/** 技能列表缓存键：任务态只看 taskId，草稿态按项目区分 */
+fun busSkillListKey(
+    connector: String,
+    connectorId: String?,
+    projectPath: String,
+    taskId: String,
+): String = if (taskId.isNotBlank()) {
+    "task|$connector|${connectorId.orEmpty()}|$taskId"
+} else {
+    "project|$connector|${connectorId.orEmpty()}|$projectPath"
+}
+
 /** Baseline required by the phone is 3.9. A blank or non-numeric version is too old. */
 fun busVersionAtLeast(version: String, minimum: String = "3.9"): Boolean {
     if (version.isBlank()) return false

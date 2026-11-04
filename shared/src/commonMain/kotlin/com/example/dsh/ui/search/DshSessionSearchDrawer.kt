@@ -359,6 +359,9 @@ internal fun ViewContainer<*, *>.DshSessionDrawer(
                             right(0f)
                             top(-DSH_DRAWER_FOOTER_MASK_HEIGHT)
                             height(DSH_DRAWER_FOOTER_MASK_HEIGHT)
+                            // 纯装饰的淡出遮罩，压在列表底缘上；不吃掉触摸，
+                            // 否则最后半行的滚动/点击会被这层挡掉
+                            touchEnable(false)
                             backgroundLinearGradient(
                                 Direction.TO_TOP,
                                 ColorStop(colors().specificSidebarFill, 0f),

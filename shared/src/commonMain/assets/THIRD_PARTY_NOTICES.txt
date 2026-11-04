@@ -46,5 +46,6 @@ agent-hermes.svg / agent-pi.svg / agent-openclaw.svg / agent-default.svg
 Project: agent brand marks, copied unchanged from the project design reference
 (Agent-host-docs/docs/design/reference/m2-v71/agent-icons).
 These marks are trademarks of their respective owners and are used only to
-identify the corresponding agent. agent-default.svg is an original terminal
-mark (no third-party geometry), provided as the unknown-connector fallback.
+identify the corresponding agent. agent-default.svg is the neutral generic
+agent avatar from the project design sheet (no third-party geometry), provided
+as the unknown-connector fallback.

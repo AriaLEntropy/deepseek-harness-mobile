@@ -1,15 +1,15 @@
 package com.example.dsh.ui.home
 
 /**
- * 统一 Agent 审批中心（v86 审批视图）的纯逻辑。
+ * 统一 Agent 审批中心（v86 审批视图）的纯逻辑
  *
  * 这里只有「输入 -> 输出」的函数，不碰 Kuikly 渲染、也不持有状态：
  * 卡片数据来自 [approvalItems]，筛选段、勾选中的选项、已处理记录都由页面
- * （DshBusHomePage）持有，发命令统一走 `BusCommands.approve`。
+ * （DshBusHomePage）持有，发命令统一走 `BusCommands.approve`
  *
  * 之所以单独成文件：审批视图的卡片不会因处理完就消失（快照 2 秒轮询会把它
  * 原样投回来），所以「这条算不算已处理」「这一屏该渲染哪几行」必须能在
- * commonTest 里逐条断言，不能只靠肉眼看渲染结果。
+ * commonTest 里逐条断言，不能只靠肉眼看渲染结果
  */
 
 /** 审批视图顶部筛选段：全部 / 待审批 / 等待输入（对齐 HTML `approve-filters`）。 */
@@ -21,10 +21,10 @@ internal const val BUS_APPROVAL_FILTER_REPLY = "reply"
 internal data class BusApprovalFilterTab(val id: String, val label: String, val count: Int)
 
 /**
- * 已处理记录：`BusApprovalItem.key` -> 当时点的是批准（true）还是拒绝（false）。
+ * 已处理记录：`BusApprovalItem.key` -> 当时点的是批准（true）还是拒绝（false）
  *
  * 快照不会立刻把请求撤掉，所以「处理过没有」只能由页面本地记；
- * 值用来决定标题后面追加「已批准」还是「已拒绝」（回复类卡片固定「已回复」）。
+ * 值用来决定标题后面追加「已批准」还是「已拒绝」（回复类卡片固定「已回复」）
  */
 internal typealias BusApprovalAnswered = Map<String, Boolean>
 
@@ -33,9 +33,9 @@ internal fun busApprovalFilterId(item: BusApprovalItem): String =
     if (item.replyOnly) BUS_APPROVAL_FILTER_REPLY else BUS_APPROVAL_FILTER_DECISION
 
 /**
- * 三个筛选段及其计数。
+ * 三个筛选段及其计数
  *
- * 已处理的卡片留在原位，但不再计数——HTML 里「全部 3」会随每次点批准递减。
+ * 已处理的卡片留在原位，但不再计数——HTML 里「全部 3」会随每次点批准递减
  */
 internal fun busApprovalFilterTabs(
     items: List<BusApprovalItem>,
@@ -75,10 +75,10 @@ internal fun busApprovalHasOpenItems(
 ): Boolean = busApprovalVisibleItems(items, filter).any { it.key !in answered }
 
 /**
- * `vforLazy` 只能吃一维列表：当前段的卡片，末尾固定挂一个空态行。
+ * `vforLazy` 只能吃一维列表：当前段的卡片，末尾固定挂一个空态行
  *
  * 空态行本身是否显示由渲染层用 `vif` 决定（它读页面的 answered 状态），
- * 这样处理完最后一张卡时只换掉这一块，不会把整列重建、丢滚动位置。
+ * 这样处理完最后一张卡时只换掉这一块，不会把整列重建、丢滚动位置
  */
 internal fun busApprovalRows(
     items: List<BusApprovalItem>,
@@ -118,7 +118,7 @@ internal fun busApprovalTitle(
 }
 
 /**
- * 等宽命令块要显示的内容；只有走「批准 / 拒绝」的卡片才有，回复类卡片为空串。
+ * 等宽命令块要显示的内容；只有走「批准 / 拒绝」的卡片才有，回复类卡片为空串
  *
  * 优先 `detail`（协议里放的是命令原文或 diff 摘要，HTML 那块 `npm test -- --filter settings`
  * 就是它），电脑端没给 `detail` 时才退回 `summary` 这句话标题
@@ -127,11 +127,11 @@ internal fun busApprovalCommandText(item: BusApprovalItem): String =
     if (item.replyOnly) "" else item.detail.ifBlank { item.summary }
 
 /**
- * 14/20 的问题正文行。
+ * 14/20 的问题正文行
  *
  * 回复类卡片优先逐条列出 `questions[].question`（HTML 的「先看哪份日志？」）；
- * 没有问题时按命令块同一口径取文本（先 `detail`，退回 `summary`）。
- * 命令/权限类卡片走命令块，不再重复一遍正文。
+ * 没有问题时按命令块同一口径取文本（先 `detail`，退回 `summary`）；
+ * 命令/权限类卡片走命令块，不再重复一遍正文
  */
 internal fun busApprovalProseLines(item: BusApprovalItem): List<String> {
     if (!item.replyOnly) return emptyList()
@@ -146,7 +146,7 @@ internal fun busApprovalSelectionKey(itemKey: String, questionId: String): Strin
 
 /**
  * 把任意来源的勾选清洗成该问题合法的 label 列表：
- * 丢掉不在选项里的、丢掉空串、按选项原序去重；单选最多留一个。
+ * 丢掉不在选项里的、丢掉空串、按选项原序去重；单选最多留一个
  */
 internal fun busApprovalNormalizeLabels(
     question: BusApprovalQuestion,
@@ -159,7 +159,7 @@ internal fun busApprovalNormalizeLabels(
 
 /**
  * 点一下选项：已选中就取消（多选可以清空到空），未选中则加入；
- * 单选直接互斥换成它。
+ * 单选直接互斥换成它
  */
 internal fun busApprovalToggleOption(
     question: BusApprovalQuestion,
@@ -184,10 +184,10 @@ internal fun busApprovalHasSelection(
 ): Boolean = busApprovalAnswers(item, selection).isNotEmpty()
 
 /**
- * 组装 `approve.answers`：`questionId` -> 选中的 label 列表。
+ * 组装 `approve.answers`：`questionId` -> 选中的 label 列表
  *
  * 一个都没选的问题整个省略（协议规定空答案要和旧客户端一致，不带 `answers` 键）；
- * 勾选里混进的脏 label / 别的问题的 label 也在这里被过滤掉。
+ * 勾选里混进的脏 label / 别的问题的 label 也在这里被过滤掉
  */
 internal fun busApprovalAnswers(
     item: BusApprovalItem,
@@ -205,10 +205,10 @@ internal fun busApprovalAnswers(
 }
 
 /**
- * 能不能点一下选项就直接发送。
+ * 能不能点一下选项就直接发送
  *
  * 只带一个单选问题的回复类卡片才是（HTML 的 `relay.log` / `tunnel.log` 两个按钮）；
- * 多选、带多个问题、或者需要表态的命令/权限卡都要先勾再点主操作。
+ * 多选、带多个问题、或者需要表态的命令/权限卡都要先勾再点主操作
  */
 internal fun busApprovalQuickSend(item: BusApprovalItem): Boolean {
     val question = item.questions.singleOrNull() ?: return false

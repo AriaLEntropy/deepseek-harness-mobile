@@ -108,6 +108,24 @@ class DshRelayModule : Module() {
             ?.takeIf { it.isNotBlank() }
     }
 
+    /** 读取某个技能上下文最近一次 `skillList` 的 JSON；没有收到过返回 null */
+    fun busSkillList(key: String): String? {
+        val params = JSONObject().apply { put("key", key) }
+        val raw = toNative(false, "busSkillList", params.toString(), null, true).toString()
+        return runCatching { JSONObject(raw).optString("json") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /** 读取某个技能最近一次 `skillContent` 的 JSON；没有收到过返回 null */
+    fun busSkillContent(skillId: String): String? {
+        val params = JSONObject().apply { put("skillId", skillId) }
+        val raw = toNative(false, "busSkillContent", params.toString(), null, true).toString()
+        return runCatching { JSONObject(raw).optString("json") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
     fun subscribe(onState: (DshRelayState) -> Unit) {
         toNative(true, "subscribe", null, { value -> onState(value.toRelayState()) }, false)
     }

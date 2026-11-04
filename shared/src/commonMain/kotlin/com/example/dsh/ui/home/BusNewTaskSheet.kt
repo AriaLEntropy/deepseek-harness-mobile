@@ -60,17 +60,17 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
     ) {
         View {
             attr {
-                height(42f)
+                height(busHomePx(42f))
                 flexDirectionRow()
                 alignItemsCenter()
-                paddingLeft(20f)
-                paddingRight(20f)
-                marginTop(6f)
+                paddingLeft(busHomePx(20f))
+                paddingRight(busHomePx(20f))
+                marginTop(busHomePx(6f))
             }
             Text {
                 attr {
                     text("新建任务")
-                    fontSize(17f)
+                    fontSize(busHomePx(17f))
                     fontWeightBold()
                     color(colors.labelPrimary)
                     flex(1f)
@@ -78,8 +78,8 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
             }
             View {
                 attr {
-                    size(30f, 30f)
-                    borderRadius(15f)
+                    size(busHomePx(30f), busHomePx(30f))
+                    borderRadius(busHomePx(15f))
                     backgroundColor(sheetSurface(colors))
                     alignItemsCenter()
                     justifyContentCenter()
@@ -88,7 +88,7 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
                 Image {
                     attr {
                         src(ImageUri.commonAssets("x.svg"))
-                        size(13f, 13f)
+                        size(busHomePx(13f), busHomePx(13f))
                         tintColor(colors.labelSecondary)
                     }
                 }
@@ -99,8 +99,8 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
             View {
                 attr {
                     flexDirectionColumn()
-                    paddingLeft(20f)
-                    paddingRight(20f)
+                    paddingLeft(busHomePx(20f))
+                    paddingRight(busHomePx(20f))
                 }
                 NewTaskLabel("Agent", colors)
                 View {
@@ -112,7 +112,7 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
                         Text {
                             attr {
                                 text("电脑上没有可启动的 Agent")
-                                fontSize(12f)
+                                fontSize(busHomePx(12f))
                                 color(colors.stateErrorPrimary)
                             }
                         }
@@ -171,34 +171,34 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
                         )
                     }
                 }
-                View { attr { height(12f) } }
+                View { attr { height(busHomePx(12f)) } }
             }
         }
         View {
             attr {
                 flexDirectionColumn()
-                paddingLeft(20f)
-                paddingRight(20f)
-                paddingBottom(12f)
+                paddingLeft(busHomePx(20f))
+                paddingRight(busHomePx(20f))
+                paddingBottom(busHomePx(12f))
                 backgroundColor(colors.bgBase)
             }
             Text {
                 attr {
                     text(error())
-                    fontSize(12f)
+                    fontSize(busHomePx(12f))
                     color(colors.stateErrorPrimary)
                     opacity(if (error().isEmpty()) 0f else 1f)
-                    marginBottom(8f)
+                    marginBottom(busHomePx(8f))
                 }
             }
             View {
                 attr {
-                    height(48f)
-                    marginBottom(12f)
+                    height(busHomePx(48f))
+                    marginBottom(busHomePx(12f))
                     flexDirectionRow()
                     alignItemsCenter()
                     justifyContentCenter()
-                    borderRadius(12f)
+                    borderRadius(busHomePx(12f))
                     backgroundColor(
                         if (canSubmit() && !busy() && agents.isNotEmpty()) primaryButtonColor(colors)
                         else colors.specificSelector,
@@ -208,7 +208,7 @@ internal fun ViewContainer<*, *>.BusNewTaskSheet(
                 Text {
                     attr {
                         text(if (busy()) "正在创建…" else "开始任务")
-                        fontSize(15f)
+                        fontSize(busHomePx(15f))
                         fontWeightBold()
                         color(
                             if (canSubmit() && !busy() && agents.isNotEmpty()) primaryButtonText(colors)
@@ -232,42 +232,42 @@ private fun ViewContainer<*, *>.NewTaskModelList(
 ) {
     View {
         attr {
-            marginTop(10f)
+            marginTop(busHomePx(10f))
             flexDirectionColumn()
-            padding(10f)
-            borderRadius(12f)
+            padding(busHomePx(10f))
+            borderRadius(busHomePx(12f))
             backgroundColor(colors.bgLayer1)
             border(Border(1f, BorderStyle.SOLID, colors.borderL1))
         }
         Text {
             attr {
                 text("${agentName.ifBlank { "Agent" }} 的模型")
-                fontSize(11f)
+                fontSize(busHomePx(11f))
                 fontWeightMedium()
                 color(colors.labelTertiary)
-                marginBottom(4f)
+                marginBottom(busHomePx(4f))
             }
         }
         if (models.isEmpty()) {
             Text {
                 attr {
                     text("这台 Agent 没有上报模型列表")
-                    fontSize(12f)
+                    fontSize(busHomePx(12f))
                     color(colors.labelTertiary)
-                    marginTop(6f)
-                    marginBottom(4f)
+                    marginTop(busHomePx(6f))
+                    marginBottom(busHomePx(4f))
                 }
             }
         } else {
             models.forEach { model ->
                 View {
                     attr {
-                        height(42f)
+                        height(busHomePx(42f))
                         flexDirectionRow()
                         alignItemsCenter()
-                        paddingLeft(8f)
-                        paddingRight(8f)
-                        borderRadius(8f)
+                        paddingLeft(busHomePx(8f))
+                        paddingRight(busHomePx(8f))
+                        borderRadius(busHomePx(8f))
                         backgroundColor(
                             if (model.id == selectedId) colors.specificSelector else Color(0x00000000),
                         )
@@ -277,7 +277,7 @@ private fun ViewContainer<*, *>.NewTaskModelList(
                         attr {
                             text(model.displayName.ifBlank { model.id })
                             flex(1f)
-                            fontSize(14f)
+                            fontSize(busHomePx(14f))
                             color(colors.labelPrimary)
                         }
                     }
@@ -285,7 +285,7 @@ private fun ViewContainer<*, *>.NewTaskModelList(
                         Image {
                             attr {
                                 src(ImageUri.commonAssets("check.svg"))
-                                size(16f, 16f)
+                                size(busHomePx(16f), busHomePx(16f))
                                 tintColor(colors.stateBusinessPrimary)
                             }
                         }
@@ -297,11 +297,11 @@ private fun ViewContainer<*, *>.NewTaskModelList(
                 Text {
                     attr {
                         text("强度")
-                        fontSize(11f)
+                        fontSize(busHomePx(11f))
                         fontWeightMedium()
                         color(colors.labelTertiary)
-                        marginTop(10f)
-                        marginBottom(6f)
+                        marginTop(busHomePx(10f))
+                        marginBottom(busHomePx(6f))
                     }
                 }
                 View {
@@ -312,12 +312,12 @@ private fun ViewContainer<*, *>.NewTaskModelList(
                     selected.efforts.forEach { effort ->
                         View {
                             attr {
-                                height(28f)
-                                marginRight(8f)
-                                marginBottom(6f)
-                                paddingLeft(10f)
-                                paddingRight(10f)
-                                borderRadius(14f)
+                                height(busHomePx(28f))
+                                marginRight(busHomePx(8f))
+                                marginBottom(busHomePx(6f))
+                                paddingLeft(busHomePx(10f))
+                                paddingRight(busHomePx(10f))
+                                borderRadius(busHomePx(14f))
                                 backgroundColor(
                                     if (effort == selectedEffort) primaryButtonColor(colors) else colors.specificSelector,
                                 )
@@ -328,7 +328,7 @@ private fun ViewContainer<*, *>.NewTaskModelList(
                             Text {
                                 attr {
                                     text(effortLabel(effort))
-                                    fontSize(11f)
+                                    fontSize(busHomePx(11f))
                                     fontWeightMedium()
                                     color(
                                         if (effort == selectedEffort) primaryButtonText(colors) else colors.labelSecondary,
@@ -351,11 +351,11 @@ private fun ViewContainer<*, *>.NewTaskLabel(
     Text {
         attr {
             this.text(text)
-            fontSize(12f)
+            fontSize(busHomePx(12f))
             fontWeightMedium()
             color(colors.labelSecondary)
             this.marginTop(marginTop)
-            marginBottom(8f)
+            marginBottom(busHomePx(8f))
         }
     }
 }
@@ -368,12 +368,12 @@ private fun ViewContainer<*, *>.NewTaskChip(
 ) {
     View {
         attr {
-            height(34f)
-            marginRight(8f)
-            marginBottom(8f)
-            paddingLeft(13f)
-            paddingRight(13f)
-            borderRadius(17f)
+            height(busHomePx(34f))
+            marginRight(busHomePx(8f))
+            marginBottom(busHomePx(8f))
+            paddingLeft(busHomePx(13f))
+            paddingRight(busHomePx(13f))
+            borderRadius(busHomePx(17f))
             backgroundColor(if (selected()) primaryButtonColor(colors) else colors.specificSelector)
             alignItemsCenter()
             justifyContentCenter()
@@ -382,7 +382,7 @@ private fun ViewContainer<*, *>.NewTaskChip(
         Text {
             attr {
                 text(label)
-                fontSize(12f)
+                fontSize(busHomePx(12f))
                 fontWeightMedium()
                 color(if (selected()) primaryButtonText(colors) else colors.labelSecondary)
             }

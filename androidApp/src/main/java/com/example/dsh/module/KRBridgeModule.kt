@@ -431,14 +431,16 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     private fun setNavigationBarColor(params: String?) {
         val json = JSONObject(params ?: "{}")
-        val color = json.optLong("color").toInt()
         val isDark = json.optBoolean("isDark")
         activity?.runOnUiThread {
             val window = activity?.window ?: return@runOnUiThread
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isNavigationBarContrastEnforced = false
             }
-            window.navigationBarColor = color
+            // 整屏沉浸之后这条导航栏必须是透明的：一旦涂成不透明色，系统就把这 24dp
+            // 画在内容上面，页面最后一项又被切掉。所以颜色参数不再使用，这里只按 isDark
+            // 翻图标的明暗（浅色底用深色图标、深色底用浅色图标）
+            window.navigationBarColor = Color.TRANSPARENT
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val flags = window.decorView.systemUiVisibility
                 window.decorView.systemUiVisibility = if (isDark) {
@@ -451,21 +453,32 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 
     private fun setSystemBarsDimmed(params: String?) {
-        val dimmed = JSONObject(params ?: "{}").optBoolean("dimmed")
+        val json = JSONObject(params ?: "{}")
+        val dimmed = json.optBoolean("dimmed")
+        val dimColor = if (json.has("color")) {
+            json.optLong("color").toInt()
+        } else {
+            Color.rgb(153, 153, 153)
+        }
         activity?.runOnUiThread {
             val window = activity?.window ?: return@runOnUiThread
-            if (dimmed) {
-                if (navigationBarColorBeforeDim == null) {
-                    navigationBarColorBeforeDim = window.navigationBarColor
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        navigationBarContrastBeforeDim = window.isNavigationBarContrastEnforced
-                    }
+            // 同 setNavigationBarColor：导航栏保持透明，浮层自己铺到物理底边即可，
+            // 这里只借它原有的开合时机翻图标明暗，不再涂底色
+            window.navigationBarColor = Color.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val lightBar = Color.red(dimColor) * 0.299f +
+                    Color.green(dimColor) * 0.587f +
+                    Color.blue(dimColor) * 0.114f >= 128f
+                val flags = window.decorView.systemUiVisibility
+                window.decorView.systemUiVisibility = if (dimmed && lightBar) {
+                    flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                } else if (dimmed) {
+                    flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+                } else {
+                    restoreNavigationBar()
+                    return@runOnUiThread
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    window.isNavigationBarContrastEnforced = false
-                }
-                window.navigationBarColor = Color.rgb(153, 153, 153)
-            } else {
+            } else if (!dimmed) {
                 restoreNavigationBar()
             }
         }

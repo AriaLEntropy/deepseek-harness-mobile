@@ -4,6 +4,8 @@ import com.example.dsh.base.BasePager
 import com.example.dsh.base.BridgeModule
 import com.example.dsh.bus.BUS_REMOVE_PROJECT_CONFIRM_MESSAGE
 import com.example.dsh.bus.BUS_REMOVE_PROJECT_CONFIRM_TITLE
+import com.example.dsh.bus.BUS_RESTART_CONNECTOR_CONFIRM_MESSAGE
+import com.example.dsh.bus.BUS_RESTART_CONNECTOR_CONFIRM_TITLE
 import com.example.dsh.bus.BusCache
 import com.example.dsh.bus.BusCacheScope
 import com.example.dsh.bus.BusCommand
@@ -14,6 +16,8 @@ import com.example.dsh.bus.BusCommands
 import com.example.dsh.bus.BusSendResult
 import com.example.dsh.bus.BusStore
 import com.example.dsh.bus.DshLocalBusSnapshotCache
+import com.example.dsh.bus.busConnectorTarget
+import com.example.dsh.bus.busCanRestartConnector
 import com.example.dsh.bus.busParse
 import com.example.dsh.connection.DshRelayModule
 import com.example.dsh.connection.supportsRelayBridge
@@ -26,6 +30,8 @@ import com.example.dsh.storage.createDshLocalStore
 import com.example.dsh.theme.DshColorTokens
 import com.example.dsh.theme.DshThemeManager
 import com.example.dsh.theme.DshThemeMode
+import com.example.dsh.ui.chat.BusChatLocalHidden
+import com.example.dsh.ui.dshTopInset
 import com.example.dsh.ui.rendering.DshBottomSheet
 import com.example.dsh.ui.rendering.DshSheetDetent
 import com.example.dsh.ui.session.DshSessionConfirmDialog
@@ -36,7 +42,6 @@ import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.base.attr.ImageUri
 import com.tencent.kuikly.core.directives.vbind
-import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.module.SharedPreferencesModule
@@ -44,25 +49,41 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.timer.setTimeout
-import com.tencent.kuikly.core.reactive.collection.ObservableList
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.List
-import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import kotlinx.serialization.json.JsonElement
 
 /**
- * 统一首页（静态版）。
+ * 统一首页（v86 定稿形态）
  *
- * 当前用本地 fixture 走 BusStore -> BusHomeView 的完整映射链路，
- * 仅用于校准布局与视觉；下一步把 AgentHostBus 收到的真实快照接进来。
- * 默认路由暂不指向本页，可用 adb 指定 pageName=bus_home 单独预览。
+ * 渲染层拆到 BusHomeSections / BusAgentSheet / BusDeviceSheet / BusApprovalBoard，
+ * 这里只留状态、轮询与命令：顶部设备入口与分段、Agent 头像栈、任务卡片列表、
+ * 底部胶囊（列表 / 待审批互斥切换）+ 新建 FAB，审批视图直接复用同一套顶部与底部栏
+ * 快照仍然 2 秒全量轮询，所以列表走 observableList + diffUpdate 增量更新，
+ * 高频状态一律用 lambda 绑到 attr 上，避免整页重建丢掉滚动位置
  */
 @Page("bus_home")
 internal class DshBusHomePage : BasePager() {
     private var homeView by observable(BusHomeView(device = null, agents = emptyList(), tasks = emptyList()))
+
+    /** 主区形态：没有电脑 / 没有可见任务 / 有内容 */
+    private var bodyState by observable(BusHomeBodyState.DisabledComputer)
+
+    /** 列表视图（最近 / 按项目）；[BUS_VIEW_APPROVAL] 是临时态，不写回偏好 */
+    private var viewMode by observable(BUS_VIEW_RECENT)
+    private var listViewMode by observable(BUS_VIEW_RECENT)
+
+    /** Agent 多选筛选：空集合 = 不过滤（等价「全部 Agent」，也是面板首次打开的全选态） */
+    private var selectedAgentKeys by observable(emptySet<String>())
     private var showAgentSheet by observable(false)
+    private var agentExpandedKey by observable("")
+    private var agentBusyKey by observable("")
+    private var agentErrorKey by observable("")
+    private var restartConfirmAgentKey by observable("")
+    private var restartBusy by observable(false)
+    private var restartError by observable("")
+
     private var showDeviceSheet by observable(false)
     private var showSettings by observable(false)
     private var showThemePicker by observable(false)
@@ -93,10 +114,25 @@ internal class DshBusHomePage : BasePager() {
     private var removeProjectError by observable("")
     private var removeProjectPath by observable("")
     private var localHostName by observable("")
-    private var selectedAgentKey by observable("")
-    private var viewMode by observable(VIEW_RECENT)
+
+    // ---------- 审批视图状态（渲染层只读，改由这里负责） ----------
+    private var approvalFilter by observable(BUS_APPROVAL_FILTER_ALL)
+    private var approvalAnswered by observable(emptyMap<String, Boolean>())
+    private var approvalSelection by observable(emptyMap<String, List<String>>())
+    private var approvalBusyKey by observable("")
+    private var approvalError by observable("")
+    private var approvalLoading by observable(true)
+    private var approvalScrolled by observable(false)
+
+    /** 任务列表滚出顶部后才亮起的 56 渐隐条 */
+    private var listScrolled by observable(false)
+
     private val collapsedProjects by observableList<String>()
     private val themeOptions by observableList<DshSettingsChoice>()
+
+    /** 任务区当前这一屏的行；快照变化用 diffUpdate 增量替换 */
+    private val taskRows by observableList<BusTaskAreaRow>()
+
     private var everLoaded by observable(false)
     private var waitingTooLong by observable(false)
     private var hasConnection = false
@@ -122,8 +158,93 @@ internal class DshBusHomePage : BasePager() {
     }
     private val retryCommands = mutableMapOf<String, BusCommand>()
 
+    // ---------- 派生数据 ----------
+
+    /** v86 基线只有浅色；深色按 B 号的面板配色桥接，保证不花掉 */
+    private fun palette(): BusHomePalette = busSheetPalette(themeColors)
+
+    private fun visibleTasks(): List<BusHomeTask> =
+        homeView.tasks.forAgents(selectedAgentKeys).filterNot { BusChatLocalHidden.isHidden(it.id) }
+
+    private fun visiblePendingCount(): Int = visibleTasks().count { it.pending }
+
+    private fun visibleRunningCount(): Int = visibleTasks().count { it.status == "running" }
+
+    private fun approvalItemsNow(): List<BusApprovalItem> = homeView.approvalItems(selectedAgentKeys)
+
+    private fun openApprovalCount(): Int = busHomeOpenApprovalCount(approvalItemsNow(), approvalAnswered)
+
+    private fun devicePlatformAsset(): String = homeView.device?.platformAsset ?: "computer.svg"
+
+    private fun deviceEntryDisabled(): Boolean = homeView.device == null && !hasConnection
+
+    private fun deviceTitleText(): String = when {
+        homeView.device != null -> localHostName.ifBlank { homeView.device?.name.orEmpty() }
+        deviceEntryDisabled() -> "没有电脑"
+        waitingTooLong -> "电脑未响应"
+        everLoaded -> "电脑已离线"
+        else -> "正在连接电脑…"
+    }
+
+    /**
+     * 头像栈空掉时右上角那句灰态文案
+     *
+     * 拿不到 Agent 列表有两种来路：还没配对 / 电脑端还没回快照，以及电脑端确实一个
+     * 连接器都没有。后者才说「没有可用 Agent」，前者直接复用顶部胶囊的状态词，
+     * 免得同一个屏幕对同一种连接状态给出两种说法
+     */
+    private fun agentEntryLabel(): String =
+        if (homeView.device != null) "没有可用 Agent" else deviceTitleText()
+
+    /**
+     * 审批区缺省页的两行文案
+     *
+     * 「暂无待处理的内容」只在电脑真的回了快照时才成立；电脑没配对或没响应时，
+     * 待处理数量是「不知道」而不是「零」，这里直接把顶部胶囊的状态词搬下来，
+     * 免得同一块屏幕对同一种连接状态给出两种说法
+     */
+    private fun approvalEmptyTitle(): String =
+        if (homeView.device != null) "暂无待处理的内容" else deviceTitleText()
+
+    private fun approvalEmptySub(): String =
+        if (homeView.device != null) "Agent 需要你时，会出现在这里" else "电脑连上后，待处理请求会出现在这里"
+
+    /** 审批卡片的结构指纹：卡片序列 + 当前筛选段；answered / selection 等不进这里，否则每点一次整列重建 */
+    private fun approvalBindKey(): String =
+        approvalItemsNow().joinToString("|") { it.key } + "#" + approvalFilter
+
+    private fun agentSheetBindKey(): String =
+        homeView.agents.joinToString("|") { "${it.key}:${it.status}:${it.taskCount}:${it.lastError}:${it.available}:${it.enabled}" } +
+            "#" + (homeView.device?.canRestartConnectors == true)
+
+    // ---------- 首页状态 ----------
+
     private fun openAgentSheet() {
+        agentErrorKey = ""
         showAgentSheet = true
+    }
+
+    private fun closeAgentSheet() {
+        showAgentSheet = false
+        agentErrorKey = ""
+    }
+
+    private fun toggleAgentSelection(key: String) {
+        // 至少保留一个可勾选的 Agent；取消最后一个时 busToggleAgentFilter 会原样返回
+        selectedAgentKeys = busToggleAgentFilter(selectedAgentKeys, key, busAgentSelectableKeys(homeView.agents))
+        // 勾选变了，可见任务与分组都得重算一遍
+        syncTaskRows()
+    }
+
+    /** 标题行快捷全选：回到「空集合 = 全部 Agent」的归一态 */
+    private fun selectAllAgents() {
+        if (selectedAgentKeys.isEmpty()) return
+        selectedAgentKeys = emptySet()
+        syncTaskRows()
+    }
+
+    private fun toggleAgentExpanded(key: String) {
+        agentExpandedKey = busToggleAgentExpanded(agentExpandedKey, key)
     }
 
     private fun openDeviceSheet() {
@@ -134,20 +255,39 @@ internal class DshBusHomePage : BasePager() {
         showSettings = true
     }
 
-    private fun selectViewMode(mode: String) {
-        if (viewMode == mode) return
+    /** 切列表视图（最近 / 按项目）；同时记住它是「下一次点列表分段要回到的那个视图」 */
+    private fun selectListViewMode(mode: String) {
+        if (viewMode == mode && listViewMode == mode) return
+        // 先换数据、后换结构：
+        // viewMode 在 vbind 绑定值里，赋值会同步重建列表子树；
+        // 若等重建完再 diffUpdate，新的 List 会先按旧行渲染一帧（表现为慢一拍）
+        listViewMode = mode
+        initProjectCollapseIfNeeded()
+        syncTaskRows()
         viewMode = mode
         runCatching {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .setString(BUS_VIEW_MODE_KEY, mode)
         }
-        initProjectCollapseIfNeeded()
+        listScrolled = false
+    }
+
+    /** 底部胶囊的终端分段：切进审批视图，列表区换成 BusApprovalBoard */
+    private fun selectApprovalView() {
+        if (viewMode == BUS_VIEW_APPROVAL) return
+        viewMode = BUS_VIEW_APPROVAL
+        approvalScrolled = false
+    }
+
+    /** 底部胶囊的列表分段：回到上一次用的列表视图 */
+    private fun selectListView() {
+        selectListViewMode(listViewMode)
     }
 
     /** 对齐原型：首次进入按项目时只展开第一组，其余折叠；用户手动操作后不再重置。 */
     private fun initProjectCollapseIfNeeded() {
-        if (projectsInitialized || viewMode != VIEW_PROJECTS) return
-        val groups = homeView.projectGroups(selectedAgentKey)
+        if (projectsInitialized || listViewMode != BUS_VIEW_PROJECTS) return
+        val groups = homeView.projectGroups(selectedAgentKeys)
         if (groups.isEmpty()) return
         groups.drop(1).forEach { group ->
             if (!collapsedProjects.contains(group.key)) collapsedProjects.add(group.key)
@@ -157,6 +297,31 @@ internal class DshBusHomePage : BasePager() {
 
     private fun toggleProject(key: String) {
         if (collapsedProjects.contains(key)) collapsedProjects.remove(key) else collapsedProjects.add(key)
+        syncTaskRows()
+    }
+
+    /**
+     * 把当前视图的行算出来交给 diffUpdate
+     *
+     * 默认用 data class 的 `==` 比较：内容没变的行保持原节点，
+     * 标题 / 时间 / 摘要变了的行才重建，滚动位置不动
+     */
+    private fun syncTaskRows() {
+        val nextRows = if (listViewMode == BUS_VIEW_PROJECTS) {
+            busTaskAreaProjectRows(homeView.projectGroups(selectedAgentKeys), collapsedProjects.toSet())
+        } else {
+            busTaskAreaRecentRows(visibleTasks())
+        }
+        taskRows.diffUpdate(nextRows)
+        applyBodyState()
+    }
+
+    private fun applyBodyState() {
+        val next = busHomeBodyState(
+            hasDevice = homeView.device != null,
+            visibleTaskCount = visibleTasks().size,
+        )
+        if (next != bodyState) bodyState = next
     }
 
     private fun currentComputerName(): String =
@@ -274,17 +439,14 @@ internal class DshBusHomePage : BasePager() {
         }
     }
 
-    private fun startableAgents(): List<BusHomeAgent> =
-        homeView.agents.filter {
-            it.available && it.enabled && (it.source == "acp" || it.source == "dsh")
-        }
+    private fun startableAgents(): List<BusHomeAgent> = homeView.agents.filter { it.canStartTask }
 
     private fun selectedNewTaskAgent(): BusHomeAgent? =
         startableAgents().firstOrNull { it.key == newTaskAgentKey }
 
     /**
      * 新建任务默认模型：优先取该 Agent 最近一次任务结尾的 model/effort；
-     * 没有历史任务再退回 ConnectorInfo.models 的第一个。
+     * 没有历史任务再退回 ConnectorInfo.models 的第一个
      */
     private fun defaultModelForAgent(agent: BusHomeAgent): Pair<String, String> {
         val last = homeView.tasks
@@ -294,7 +456,7 @@ internal class DshBusHomePage : BasePager() {
             val first = agent.models.firstOrNull()
             return first?.id.orEmpty() to first?.defaultEffort.orEmpty()
         }
-        // 电脑还可能保留着已经下线的模型；列表里没有就退回电脑当前默认。
+        // 电脑还可能保留着已经下线的模型；列表里没有就退回电脑当前默认
         if (agent.models.isEmpty() || agent.models.any { it.id == last.model }) {
             return last.model to last.effort
         }
@@ -345,7 +507,7 @@ internal class DshBusHomePage : BasePager() {
             model.defaultEffort.isNotBlank() -> model.defaultEffort
             else -> model.efforts.first()
         }
-        // 有强度可选时先让用户把强度定下来；没有就选完即收起。
+        // 有强度可选时先让用户把强度定下来；没有就选完即收起
         showNewTaskModels = model.efforts.size > 1
     }
 
@@ -357,12 +519,14 @@ internal class DshBusHomePage : BasePager() {
     /** 任务行 / 新任务共用的对话页；草稿态 taskId 为空。 */
     private fun openBusChat(task: BusHomeTask) {
         val device = homeView.device ?: return
+        val agent = homeView.agents.firstOrNull { it.key == task.agentKey }
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
             "bus_chat",
             JSONObject().apply {
                 put("pageName", "bus_chat")
                 put("taskId", task.id)
                 put("agentId", device.agentId)
+                put("hostName", device.name)
                 put("source", task.source)
                 put("connectorId", task.connectorId.orEmpty())
                 put("agentKey", task.agentKey)
@@ -373,18 +537,29 @@ internal class DshBusHomePage : BasePager() {
                 put("model", task.model)
                 put("effort", task.effort)
                 put("controllable", task.controllable)
+                put("autoApprove", task.autoApprove)
+                put("canAutoApprove", agent?.canAutoApprove == true)
             },
         )
     }
 
+    /** 审批卡点整卡 / 「自定义回复…」都进会话页，输入框在那里 */
+    private fun openApprovalTask(item: BusApprovalItem) {
+        val task = homeView.tasks.firstOrNull { it.id == item.taskId } ?: return
+        openBusChat(task)
+    }
+
     /**
-     * 外面筛选 Agent，进去直接聊：不再经过“新建任务”表单。
-     * 选“全部 Agent”时先用第一个可启动的 Agent；默认偏好后续再补。
+     * 外面筛选 Agent，进去直接聊：不再经过“新建任务”表单
+     * 勾了唯一一个 Agent 就用它，否则用第一个可启动的；默认偏好后续再补
      */
     private fun openDraftChat() {
         val device = homeView.device ?: return
         val agents = startableAgents()
-        val agent = agents.firstOrNull { it.key == selectedAgentKey } ?: agents.firstOrNull() ?: return
+        val agent = selectedAgentKeys.singleOrNull()
+            ?.let { key -> agents.firstOrNull { it.key == key } }
+            ?: agents.firstOrNull()
+            ?: return
         val project = homeView.projects.firstOrNull()
         val (model, effort) = defaultModelForAgent(agent)
         acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(
@@ -393,16 +568,19 @@ internal class DshBusHomePage : BasePager() {
                 put("pageName", "bus_chat")
                 put("taskId", "")
                 put("agentId", device.agentId)
+                put("hostName", device.name)
                 put("source", agent.source)
                 put("connectorId", agent.connectorId.orEmpty())
                 put("agentKey", agent.key)
                 put("agentName", agent.name)
                 put("projectPath", project?.path.orEmpty())
                 put("projectName", project?.name.orEmpty())
-                put("title", "新任务")
+                put("title", "新建任务")
                 put("model", model)
                 put("effort", effort)
                 put("controllable", true)
+                put("autoApprove", false)
+                put("canAutoApprove", agent.canAutoApprove)
             },
         )
     }
@@ -487,9 +665,148 @@ internal class DshBusHomePage : BasePager() {
         }
     }
 
+    // ---------- 审批 ----------
+
+    private fun toggleApprovalOption(item: BusApprovalItem, question: BusApprovalQuestion, label: String) {
+        val key = busApprovalSelectionKey(item.key, question.id)
+        val labels = busApprovalToggleOption(question, approvalSelection[key].orEmpty(), label)
+        approvalSelection = approvalSelection + (key to labels)
+    }
+
+    /**
+     * 发送 approve
+     *
+     * 快照不会把已经处理过的请求撤掉，所以「处理过没有」由这里本地记；
+     * 拒绝按协议不带 answers，批准把当前勾选项原样回给电脑
+     */
+    private fun answerApproval(item: BusApprovalItem, allow: Boolean, answers: Map<String, List<String>>) {
+        val device = homeView.device ?: run {
+            approvalError = "电脑未连接"
+            return
+        }
+        if (approvalBusyKey.isNotEmpty()) return
+        approvalBusyKey = item.key
+        approvalError = ""
+        sendCommand(
+            retryKey = listOf(
+                "approve",
+                device.agentId,
+                item.taskId,
+                item.requestId,
+                allow.toString(),
+                answers.entries.joinToString(";") { "${it.key}=${it.value.joinToString(",")}" },
+            ).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.approve(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = device.agentId,
+                    taskId = item.taskId,
+                    requestId = item.requestId,
+                    allow = allow,
+                    answers = answers,
+                )
+            },
+        ) { result ->
+            setTimeout(pagerId, 0) {
+                approvalBusyKey = ""
+                when (result) {
+                    is BusSendResult.Confirmed -> if (result.ok) {
+                        approvalAnswered = approvalAnswered + (item.key to allow)
+                        clearApprovalSelection(item.key)
+                        refreshBusHome()
+                        setTimeout(pagerId, 800) { refreshBusHome() }
+                    } else {
+                        approvalError = result.error.ifBlank { "发送失败" }
+                    }
+                    is BusSendResult.Failed -> approvalError = failedCommandMessage(result, "发送失败")
+                    else -> approvalError = result.message
+                }
+            }
+        }
+    }
+
+    private fun clearApprovalSelection(itemKey: String) {
+        val prefix = busApprovalSelectionKey(itemKey, "")
+        val next = approvalSelection.filterKeys { !it.startsWith(prefix) }
+        if (next != approvalSelection) approvalSelection = next
+    }
+
+    /**
+     * 快照是全量替换，这里把已经不存在的卡片裁掉
+     *
+     * 不裁的话桌面端重复投递同一个 requestId 时，那张卡会一直灰着
+     */
+    private fun pruneApprovalState() {
+        // 按「不过滤」的口径裁，免得切 Agent 筛选把别的卡片处理记录也清了
+        val keys = homeView.approvalItems(emptySet()).map { it.key }.toSet()
+        if (approvalAnswered.keys.any { it !in keys }) {
+            approvalAnswered = approvalAnswered.filterKeys { it in keys }
+        }
+        val prefixes = keys.map { it + "|" }
+        val nextSelection = approvalSelection.filterKeys { key -> prefixes.any { key.startsWith(it) } }
+        if (nextSelection != approvalSelection) approvalSelection = nextSelection
+    }
+
+    // ---------- Agent 重启（协议 3.9） ----------
+
+    /** 「重试启动」先确认：重启会中断在跑、等审批、等回答的会话 */
+    private fun requestRestartConnector(agentKey: String) {
+        if (agentKey.isBlank() || restartBusy) return
+        restartError = ""
+        restartConfirmAgentKey = agentKey
+    }
+
+    private fun confirmRestartConnector() {
+        val agentKey = restartConfirmAgentKey
+        val device = homeView.device
+        if (agentKey.isBlank()) return
+        if (device == null) {
+            restartError = "电脑未连接"
+            return
+        }
+        if (!busCanRestartConnector(device.canRestartConnectors)) {
+            restartError = "这台电脑的 Agent Host 还不支持重启"
+            return
+        }
+        val (connector, connectorId) = busConnectorTarget(agentKey)
+        restartBusy = true
+        restartError = ""
+        agentBusyKey = agentKey
+        sendCommand(
+            retryKey = listOf("restartConnector", device.agentId, connector, connectorId.orEmpty()).joinToString("|"),
+            build = { id, createdAt ->
+                BusCommands.restartConnector(
+                    commandId = id,
+                    createdAt = createdAt,
+                    agentId = device.agentId,
+                    connector = connector,
+                    connectorId = connectorId,
+                )
+            },
+        ) { result ->
+            setTimeout(pagerId, 0) {
+                restartBusy = false
+                agentBusyKey = ""
+                when (result) {
+                    is BusSendResult.Confirmed -> if (result.ok) {
+                        restartConfirmAgentKey = ""
+                        refreshBusHome()
+                        setTimeout(pagerId, 1_500) { refreshBusHome() }
+                        setTimeout(pagerId, 5_000) { refreshBusHome() }
+                    } else {
+                        restartError = result.error.ifBlank { "重启失败" }
+                    }
+                    is BusSendResult.Failed -> restartError = failedCommandMessage(result, "重启失败")
+                    else -> restartError = result.message
+                }
+            }
+        }
+    }
+
     private fun removeCurrentComputer() {
         if (removeBusy) return
-        // 先记下 hostId：配对档案清掉之后就查不到它了。
+        // 先记下 hostId：配对档案清掉之后就查不到它了
         val removedHostId = knownHostId()
         removeBusy = true
         removeError = ""
@@ -579,7 +896,7 @@ internal class DshBusHomePage : BasePager() {
                     is BusSendResult.Confirmed -> if (result.ok) {
                         showRemoveProject = false
                         removeProjectPath = ""
-                        // 先刷新一次，再等下一轮轮询收尾；重复移除已隐藏项目电脑回成功。
+                        // 先刷新一次，再等下一轮轮询收尾；重复移除已隐藏项目电脑回成功
                         refreshBusHome()
                         setTimeout(pagerId, 800) { refreshBusHome() }
                     } else {
@@ -593,7 +910,7 @@ internal class DshBusHomePage : BasePager() {
     }
 
     /**
-     * 统一发送入口：可重试的结果保留命令对象，下一次点击复用同一 id + createdAt。
+     * 统一发送入口：可重试的结果保留命令对象，下一次点击复用同一 id + createdAt
      */
     private fun sendCommand(
         retryKey: String,
@@ -615,12 +932,15 @@ internal class DshBusHomePage : BasePager() {
 
     override fun created() {
         super.created()
+        // 首页所有尺寸都按画布 375 等比换算；created 先设一次，避免首屏用到默认值 1
+        BusHomeTokens.updateHomeDesignScale(pagerData.pageViewWidth)
         getBackPressHandler().addCallback(object : BackPressCallback() {
             override fun handleOnBackPressed() {
                 when {
                     showThemePicker -> showThemePicker = false
                     showRemoveProject -> showRemoveProject = false
                     projectMenuPath.isNotEmpty() -> closeProjectMenu()
+                    restartConfirmAgentKey.isNotEmpty() -> restartConfirmAgentKey = ""
                     showRenameComputer -> showRenameComputer = false
                     showRemoveComputer -> showRemoveComputer = false
                     showNewTaskModels -> showNewTaskModels = false
@@ -628,7 +948,7 @@ internal class DshBusHomePage : BasePager() {
                     showAddComputer -> showAddComputer = false
                     showSettings -> showSettings = false
                     showDeviceSheet -> showDeviceSheet = false
-                    showAgentSheet -> showAgentSheet = false
+                    showAgentSheet -> closeAgentSheet()
                     else -> acquireModule<RouterModule>(RouterModule.MODULE_NAME).closePage()
                 }
             }
@@ -653,7 +973,8 @@ internal class DshBusHomePage : BasePager() {
             acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME)
                 .getItem(BUS_VIEW_MODE_KEY)
         }.getOrNull()
-        viewMode = if (savedView == VIEW_PROJECTS) VIEW_PROJECTS else VIEW_RECENT
+        listViewMode = if (savedView == BUS_VIEW_PROJECTS) BUS_VIEW_PROJECTS else BUS_VIEW_RECENT
+        viewMode = listViewMode
         themeOptions.clear()
         themeOptions.addAll(
             listOf(
@@ -664,15 +985,25 @@ internal class DshBusHomePage : BasePager() {
             ),
         )
         setTimeout(pagerId, 50) { syncNavigationBarColor() }
-        // 冷启动：先用本地缓存渲染，再等网络快照覆盖。
+        applyBodyState()
+        // 冷启动：先用本地缓存渲染，再等网络快照覆盖
         restoreCachedHome()
         refreshBusHome()
         pollBusHome()
         connectIfNeeded()
         if (hasConnection) {
             setTimeout(pagerId, 8_000) {
-                if (alive && homeView.device == null) waitingTooLong = true
+                if (alive && homeView.device == null) {
+                    waitingTooLong = true
+                    // 到点还是没拿到快照，审批区不能再挂在「正在同步」上转圈：
+                    // 这里放行，让它落到缺省页并说清是电脑没响应；
+                    // 之后电脑真回快照了，applyHomeView 会把内容填回来
+                    approvalLoading = false
+                }
             }
+        } else {
+            // 压根没有连接（没配对、也没本地宿主）：没有任何一轮同步会成功，直接结束等待
+            approvalLoading = false
         }
     }
 
@@ -705,11 +1036,19 @@ internal class DshBusHomePage : BasePager() {
     private fun applyHomeView(next: BusHomeView) {
         everLoaded = true
         waitingTooLong = false
-        if (selectedAgentKey.isNotEmpty() && next.agents.none { it.key == selectedAgentKey }) {
-            selectedAgentKey = ""
-        }
+        approvalLoading = false
         if (next != homeView) homeView = next
+        // 电脑上的 Agent 少掉了就把勾选项裁掉，免得筛选出一个空列表；
+        // 全部可勾选的 Agent 都在时归一成空集合（全选），与面板首次打开的语义一致
+        if (selectedAgentKeys.isNotEmpty()) {
+            val selectable = busAgentSelectableKeys(next.agents)
+            val kept = selectedAgentKeys.filterTo(mutableSetOf()) { it in selectable }
+            val normalized = if (kept.isEmpty() || kept.containsAll(selectable)) emptySet() else kept
+            if (normalized != selectedAgentKeys) selectedAgentKeys = normalized
+        }
+        pruneApprovalState()
         initProjectCollapseIfNeeded()
+        syncTaskRows()
     }
 
     /** 当前电脑的稳定 id：优先用配对档案，其次路由参数；都不行才退回快照 agentId。 */
@@ -760,7 +1099,9 @@ internal class DshBusHomePage : BasePager() {
     }
 
     private fun syncNavigationBarColor() {
-        val argb = if (themeColors.isDark) 0xFF151517 else 0xFFFFFFFF
+        // 导航栏本身保持透明（宿主已整屏沉浸），这里只按主题翻系统图标的明暗：
+        // 浅色底用深色图标，深色底用浅色图标
+        val argb = if (themeColors.isDark) 0xFF151517 else 0xFFF4F4F6
         runCatching {
             acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
                 .setNavigationBarColor(argb, themeColors.isDark)
@@ -782,498 +1123,229 @@ internal class DshBusHomePage : BasePager() {
 
     override fun body(): ViewBuilder {
         return {
-            // 绑定值必须是单个可比较对象：此前写成多条 `a to b` 语句，
-            // Kotlin 只返回最后一条，themeColors 变化时比较结果不变，整块内容不会重建。
+            // 绑定值必须是单个可比较对象：这里只放「会改变结构」的东西
+            // （视图模式、Agent 多选、配色、有没有电脑），
+            // 快照内容改的是 taskRows / 文案 lambda，不参与重建
             vbind({
                 BusHomeBindKey(
-                    homeView = this@DshBusHomePage.homeView,
-                    selectedAgentKey = this@DshBusHomePage.selectedAgentKey,
-                    everLoaded = this@DshBusHomePage.everLoaded,
-                    waitingTooLong = this@DshBusHomePage.waitingTooLong,
-                    themeColors = this@DshBusHomePage.themeColors,
+                    pageWidth = this@DshBusHomePage.pagerData.pageViewWidth,
                     viewMode = this@DshBusHomePage.viewMode,
-                    localHostName = this@DshBusHomePage.localHostName,
+                    selectedAgentKeys = this@DshBusHomePage.selectedAgentKeys,
+                    palette = this@DshBusHomePage.palette(),
+                    hasDevice = this@DshBusHomePage.homeView.device != null,
+                    hasConnection = this@DshBusHomePage.hasConnection,
                 )
             }) {
-                // 在 vbind 内读取，主题切换时整块内容会按新颜色重建。
-                val c = this@DshBusHomePage.themeColors
-                val home = this@DshBusHomePage.homeView
-                val selectedKey = this@DshBusHomePage.selectedAgentKey
-                val device = home.device
-                val visibleTasks = home.tasks.filter {
-                    selectedKey.isEmpty() || it.agentKey == selectedKey
-                }
-                val pendingCount = visibleTasks.count { it.pending }
-                val runningCount = visibleTasks.count { it.status == "running" }
-                val selectedAgentName = home.agents.firstOrNull { it.key == selectedKey }?.name
-                    ?: "全部 Agent"
-                // 真正没有配对电脑时才用禁用态卡片；连接中的状态仍保留。
-                val noComputer = device == null && !this@DshBusHomePage.hasConnection
-                val bodyState = busHomeBodyState(
-                    hasDevice = device != null,
-                    visibleTaskCount = visibleTasks.size,
-                )
-                val deviceTitle = when {
-                    device != null -> this@DshBusHomePage.localHostName.ifBlank { device.name }
-                    noComputer -> "没有电脑"
-                    this@DshBusHomePage.waitingTooLong -> "电脑未响应"
-                    this@DshBusHomePage.everLoaded -> "电脑已离线"
-                    else -> "正在连接电脑…"
-                }
-                val deviceSubtitle = when {
-                    device != null -> "待处理 $pendingCount · 运行中 $runningCount"
-                    !this@DshBusHomePage.hasConnection -> "在设置里添加电脑"
-                    this@DshBusHomePage.waitingTooLong -> "请确认电脑端 Agent Host 已启动"
-                    this@DshBusHomePage.everLoaded -> "请确认电脑端 Agent Host 仍在运行"
-                    else -> "正在同步电脑上的 Agent"
-                }
-            View {
-                attr {
-                    flex(1f)
-                    flexDirectionColumn()
-                    backgroundColor(c.bgBase)
-                    paddingTop(pagerData.statusBarHeight)
-                }
-
-                // 设备条
-                View {
-                    attr {
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        paddingLeft(20f)
-                        paddingRight(20f)
-                        paddingTop(8f)
-                    }
-                    View {
-                        attr {
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            paddingLeft(14f)
-                            paddingRight(14f)
-                            paddingTop(9f)
-                            paddingBottom(9f)
-                            borderRadius(16f)
-                            backgroundColor(if (noComputer) homeSurface(c) else c.bgLayer1)
-                            border(Border(1f, BorderStyle.SOLID, c.borderL1))
-                            if (noComputer) opacity(0.85f)
-                        }
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets(device?.platformAsset ?: "computer.svg"))
-                                size(24f, 24f)
-                                tintColor(if (noComputer) c.labelTertiary else c.labelSecondary)
-                            }
-                        }
-                        View {
-                            attr {
-                                flexDirectionColumn()
-                                marginLeft(10f)
-                            }
-                            View {
-                                attr {
-                                    flexDirectionRow()
-                                    alignItemsCenter()
-                                }
-                                View {
-                                    attr {
-                                        size(6f, 6f)
-                                        borderRadius(3f)
-                                        backgroundColor(
-                                            when {
-                                                noComputer -> c.labelCaption
-                                                device?.online == true -> c.stateSuccessPrimary
-                                                else -> c.labelTertiary
-                                            },
-                                        )
-                                    }
-                                }
-                                Text {
-                                    attr {
-                                        text(deviceTitle)
-                                        fontSize(13f)
-                                        fontWeightBold()
-                                        color(if (noComputer) c.labelTertiary else c.labelPrimary)
-                                        marginLeft(5f)
-                                    }
-                                }
-                            }
-                            Text {
-                                attr {
-                                    text(deviceSubtitle)
-                                    fontSize(11f)
-                                    color(if (noComputer) c.labelCaption else c.labelTertiary)
-                                    marginTop(3f)
-                                }
-                            }
-                        }
-                        if (!noComputer) {
-                            Image {
-                                attr {
-                                    src(ImageUri.commonAssets("chevron-down.svg"))
-                                    size(10f, 10f)
-                                    tintColor(c.labelTertiary)
-                                    marginLeft(8f)
-                                }
-                            }
-                            event { click { this@DshBusHomePage.openDeviceSheet() } }
-                        }
-                    }
-                    View { attr { flex(1f) } }
-                    View {
-                        attr {
-                            size(34f, 34f)
-                            marginLeft(10f)
-                            borderRadius(10f)
-                            backgroundColor(c.bgLayer1)
-                            border(Border(1f, BorderStyle.SOLID, c.borderL1))
-                            alignItemsCenter()
-                            justifyContentCenter()
-                        }
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets("settings-cube.svg"))
-                                size(17f, 17f)
-                                tintColor(c.labelSecondary)
-                            }
-                        }
-                        event { click { this@DshBusHomePage.openSettings() } }
-                    }
-                }
-
-                // 最近 / 按项目 + Agent 筛选
-                View {
-                    attr {
-                        height(50f)
-                        flexDirectionRow()
-                        alignItemsCenter()
-                        paddingLeft(20f)
-                        paddingRight(20f)
-                    }
-                    View {
-                        attr {
-                            flexDirectionRow()
-                            alignItemsCenter()
-                            backgroundColor(c.specificSelector)
-                            borderRadius(12f)
-                            padding(3f)
-                        }
-                        View {
-                            attr {
-                                backgroundColor(
-                                    if (this@DshBusHomePage.viewMode == VIEW_RECENT) c.bgBase
-                                    else Color(0x00000000),
-                                )
-                                borderRadius(9f)
-                                paddingLeft(16f)
-                                paddingRight(16f)
-                                paddingTop(6f)
-                                paddingBottom(6f)
-                            }
-                            event { click { this@DshBusHomePage.selectViewMode(VIEW_RECENT) } }
-                            Text {
-                                attr {
-                                    text("最近")
-                                    fontSize(13f)
-                                    if (this@DshBusHomePage.viewMode == VIEW_RECENT) {
-                                        fontWeightBold()
-                                        color(c.labelPrimary)
-                                    } else {
-                                        fontWeightMedium()
-                                        color(c.labelSecondary)
-                                    }
-                                }
-                            }
-                        }
-                        View {
-                            attr {
-                                backgroundColor(
-                                    if (this@DshBusHomePage.viewMode == VIEW_PROJECTS) c.bgBase
-                                    else Color(0x00000000),
-                                )
-                                borderRadius(9f)
-                                paddingLeft(16f)
-                                paddingRight(16f)
-                                paddingTop(6f)
-                                paddingBottom(6f)
-                            }
-                            event { click { this@DshBusHomePage.selectViewMode(VIEW_PROJECTS) } }
-                            Text {
-                                attr {
-                                    text("按项目")
-                                    fontSize(13f)
-                                    if (this@DshBusHomePage.viewMode == VIEW_PROJECTS) {
-                                        fontWeightBold()
-                                        color(c.labelPrimary)
-                                    } else {
-                                        fontWeightMedium()
-                                        color(c.labelSecondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    View { attr { flex(1f) } }
-                    View {
-                        attr {
-                            flexDirectionRow()
-                            alignItemsCenter()
-                        }
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets("menu.svg"))
-                                size(12f, 12f)
-                                tintColor(c.labelSecondary)
-                            }
-                        }
-                        Text {
-                            attr {
-                                text(selectedAgentName)
-                                fontSize(12f)
-                                fontWeightMedium()
-                                color(c.labelSecondary)
-                                marginLeft(5f)
-                            }
-                            event { click { this@DshBusHomePage.openAgentSheet() } }
-                        }
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets("chevron-down.svg"))
-                                size(10f, 10f)
-                                tintColor(c.labelTertiary)
-                                marginLeft(3f)
-                            }
-                            event { click { this@DshBusHomePage.openAgentSheet() } }
-                        }
-                        event { click { this@DshBusHomePage.openAgentSheet() } }
-                    }
-                }
-
-                // 任务列表（BusHomeView）
+                // 旋转/分屏改了页宽时重算系数，key 变了整棵子树才会按新系数重建
+                BusHomeTokens.updateHomeDesignScale(this@DshBusHomePage.pagerData.pageViewWidth)
+                val p = this@DshBusHomePage.palette()
+                val pageWidth = this@DshBusHomePage.pagerData.pageViewWidth
+                val pageHeight = this@DshBusHomePage.pagerData.pageViewHeight
+                val viewMode = this@DshBusHomePage.viewMode
                 View {
                     attr {
                         flex(1f)
                         flexDirectionColumn()
+                        backgroundColor(p.bgBase)
+                        paddingTop(
+                            dshTopInset(
+                                this@DshBusHomePage.pagerData.statusBarHeight,
+                                this@DshBusHomePage.pagerData.safeAreaInsets.top,
+                            ),
+                        )
                     }
-                    vif({ bodyState == BusHomeBodyState.NoTasks }) {
-                        View {
-                            attr {
-                                flex(1f)
-                                flexDirectionColumn()
-                                alignItemsCenter()
-                                justifyContentCenter()
-                                paddingBottom(70f)
-                            }
-                            Image {
-                                attr {
-                                    src(
-                                        ImageUri.commonAssets(
-                                            if (c.isDark) "empty-no-tasks-dark.svg" else "empty-no-tasks.svg",
-                                        ),
-                                    )
-                                    size(280f, 175f)
-                                }
-                            }
-                            Text {
-                                attr {
-                                    text("暂无任务")
-                                    fontSize(16f)
-                                    fontWeightBold()
-                                    color(c.labelSecondary)
-                                    marginTop(26f)
-                                    textAlignCenter()
-                                }
-                            }
-                            Text {
-                                attr {
-                                    text("任务完成后\n回到这里查看")
-                                    fontSize(13f)
-                                    color(c.labelTertiary)
-                                    lineHeight(21f)
-                                    marginTop(8f)
-                                    textAlignCenter()
-                                }
-                            }
-                        }
-                    }
-                    vif({
-                        bodyState == BusHomeBodyState.Content &&
-                            this@DshBusHomePage.viewMode == VIEW_RECENT
-                    }) {
-                        // 400 个任务只创建可见行；滚动时按需补行。
-                        val rows = ObservableList<BusHomeTask>().apply { addAll(visibleTasks) }
-                        List {
-                            attr {
-                                flex(1f)
-                                firstContentLoadMaxIndex(BUS_HOME_INITIAL_RENDER_ROWS)
-                                preloadViewDistance(pagerData.pageViewHeight)
-                            }
-                            vforLazy(
-                                { rows },
-                                maxLoadItem = BUS_HOME_MAX_RENDERED_ROWS,
-                            ) { task, index, count ->
-                                val next = rows.getOrNull(index + 1)
-                                BusTaskRow(
-                                    task = task,
-                                    c = c,
-                                    topRounded = index == 0,
-                                    showDivider = index < count - 1 &&
-                                        next != null &&
-                                        !(task.pending && next.pending),
-                                    onClick = { this@DshBusHomePage.openBusChat(task) },
-                                )
-                            }
-                        }
-                    }
-                    vif({
-                        bodyState == BusHomeBodyState.Content &&
-                            this@DshBusHomePage.viewMode == VIEW_PROJECTS
-                    }) {
-                        // 项目头 + 任务摊成一维行，交给同一个懒加载列表；
-                        // 折叠状态变化时 vbind 会重新生成行。
-                        vbind({ this@DshBusHomePage.collapsedProjects.toList() }) {
-                            val collapsed = this@DshBusHomePage.collapsedProjects.toSet()
-                            val rows = ObservableList<BusHomeProjectRow>().apply {
-                                addAll(
-                                    busHomeProjectRows(
-                                        home.projectGroups(selectedKey),
-                                        collapsed,
-                                    ),
-                                )
-                            }
-                            List {
-                                attr {
-                                    flex(1f)
-                                    firstContentLoadMaxIndex(BUS_HOME_INITIAL_RENDER_ROWS)
-                                    preloadViewDistance(pagerData.pageViewHeight)
-                                }
-                                vforLazy(
-                                    { rows },
-                                    maxLoadItem = BUS_HOME_MAX_RENDERED_ROWS,
-                                ) { row, _, _ ->
-                                    when (row) {
-                                        is BusHomeProjectRow.Header -> BusProjectHeader(
-                                            name = row.group.name,
-                                            expanded = row.group.key !in collapsed,
-                                            showMenu = home.device?.canRemoveProjects == true &&
-                                                row.group.path.isNotBlank(),
-                                            c = c,
-                                            onClick = {
-                                                this@DshBusHomePage.toggleProject(row.group.key)
-                                            },
-                                            onMenu = {
-                                                this@DshBusHomePage.openProjectMenu(
-                                                    row.group.name,
-                                                    row.group.path,
-                                                )
-                                            },
-                                        )
-                                        is BusHomeProjectRow.Task -> BusTaskRow(
-                                            task = row.task,
-                                            c = c,
-                                            topRounded = false,
-                                            showDivider = row.showDivider,
-                                            dense = true,
-                                            onClick = { this@DshBusHomePage.openBusChat(row.task) },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
 
-                // 新建任务 FAB（激活态，对齐 M2 首页 v8）。
-                // 注意：FAB 必须始终参与布局，只切换透明度；
-                // 若用 vif 整块移除，任务区 flex(1f) 会被拉高/压缩，
-                // Agent 弹窗开合时背后的空态图标就会上下位移。
-                View {
-                    attr {
-                        flexDirectionRow()
-                        justifyContentFlexEnd()
-                        paddingRight(20f)
-                        paddingBottom(20f)
-                        paddingTop(12f)
-                    }
+                    // ① 头部淡紫层（绝对定位、不吃触摸，压在其它内容下面）
+                    BusHomeHeaderGlow(pageWidth = pageWidth, isDark = p.isDark)
+
+                    // ② 顶部区：top-panel padding 6 20 12
                     View {
                         attr {
-                            size(52f, 52f)
-                            borderRadius(17f)
-                            if (device != null) {
-                                backgroundLinearGradient(
-                                    Direction.TO_BOTTOM_RIGHT,
-                                    ColorStop(Color(0xFF3B6BFF), 0f),
-                                    ColorStop(Color(0xFF9B5CFF), 1f),
-                                )
-                                boxShadow(BoxShadow(0f, 4f, 12f, Color(0x593B6BFF)))
-                            } else {
-                                // 没有电脑时新建入口禁用（对齐原型灰态），不制造可点错觉。
-                                backgroundColor(homeSurface(c))
+                            flexDirectionColumn()
+                            paddingLeft(BusHomeTokens.spacePage)
+                            paddingRight(BusHomeTokens.spacePage)
+                            paddingTop(BusHomeSectionTokens.topPanelPaddingTop)
+                            paddingBottom(BusHomeSectionTokens.topPanelPaddingBottom)
+                        }
+                        View {
+                            attr {
+                                width(busHomeCardWidth(pageWidth))
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                justifyContentSpaceBetween()
                             }
-                            alignItemsCenter()
-                            justifyContentCenter()
-                            opacity(
-                                if (
-                                    this@DshBusHomePage.showAgentSheet ||
-                                    this@DshBusHomePage.showDeviceSheet ||
-                                    this@DshBusHomePage.showSettings ||
-                                    this@DshBusHomePage.showThemePicker ||
-                                    this@DshBusHomePage.showRenameComputer ||
-                                    this@DshBusHomePage.showRemoveComputer ||
-                                    this@DshBusHomePage.showAddComputer ||
-                                    this@DshBusHomePage.showNewTaskSheet
-                                ) 0f else 1f,
+                            BusHomeDeviceEntry(
+                                palette = p,
+                                platformAsset = this@DshBusHomePage.devicePlatformAsset(),
+                                online = this@DshBusHomePage.homeView.device?.online == true,
+                                disabled = this@DshBusHomePage.deviceEntryDisabled(),
+                                // 胶囊最多长到设置按钮左边为止（335 - 40 - 10）
+                                maxWidth = busHomeCardWidth(pageWidth) -
+                                    BusHomeSectionTokens.settingsSize - BusHomeTokens.gapControl,
+                                title = { this@DshBusHomePage.deviceTitleText() },
+                                pendingCount = { this@DshBusHomePage.visiblePendingCount() },
+                                runningCount = { this@DshBusHomePage.visibleRunningCount() },
+                                onClick = { this@DshBusHomePage.openDeviceSheet() },
+                            )
+                            BusHomeSettingsEntry(
+                                palette = p,
+                                onClick = { this@DshBusHomePage.openSettings() },
                             )
                         }
-                        event {
-                            click {
-                                if (device != null) this@DshBusHomePage.openDraftChat()
-                            }
-                        }
-                        Image {
-                            attr {
-                                src(ImageUri.commonAssets("new-session.svg"))
-                                size(23f, 23f)
-                                tintColor(if (device != null) Color(0xFFFFFFFF) else c.labelTertiary)
-                            }
+                        BusHomeListControls(
+                            controlsWidth = busHomeCardWidth(pageWidth),
+                            viewMode = viewMode,
+                            palette = p,
+                            agents = this@DshBusHomePage.homeView.agents,
+                            selectedKeys = this@DshBusHomePage.selectedAgentKeys,
+                            approveCount = { this@DshBusHomePage.openApprovalCount() },
+                            agentsEmptyLabel = { this@DshBusHomePage.agentEntryLabel() },
+                            onSelectView = { this@DshBusHomePage.selectListViewMode(it) },
+                            onOpenAgentSheet = { this@DshBusHomePage.openAgentSheet() },
+                        )
+                    }
+
+                    // ③ 列表区 / 审批区（共用顶部导航与底部栏，不新开页面）
+                    vif({
+                        this@DshBusHomePage.viewMode != BUS_VIEW_APPROVAL &&
+                            this@DshBusHomePage.bodyState == BusHomeBodyState.Content
+                    }) {
+                        BusHomeTaskList(
+                            rows = this@DshBusHomePage.taskRows,
+                            cardWidth = busHomeCardWidth(pageWidth),
+                            rowWidth = busHomeRowWidth(pageWidth),
+                            palette = p,
+                            topFadeVisible = { this@DshBusHomePage.listScrolled },
+                            initialRenderRows = BUS_HOME_INITIAL_RENDER_ROWS,
+                            maxRenderedRows = BUS_HOME_MAX_RENDERED_ROWS,
+                            preloadHeight = pageHeight,
+                            onScrollY = {
+                                this@DshBusHomePage.listScrolled = it > 1f
+                            },
+                            onOpenTask = { this@DshBusHomePage.openBusChat(it) },
+                            onToggleGroup = { this@DshBusHomePage.toggleProject(it) },
+                            onGroupMenu = { this@DshBusHomePage.openProjectMenu(it.name, it.path) },
+                        )
+                    }
+                    vif({
+                        this@DshBusHomePage.viewMode != BUS_VIEW_APPROVAL &&
+                            this@DshBusHomePage.bodyState == BusHomeBodyState.DisabledComputer
+                    }) {
+                        // 没有电脑：保留改版前的「还没有连接电脑」空态与连接入口
+                        BusHomeNoComputer(
+                            palette = p,
+                            onGuide = { this@DshBusHomePage.openDeviceSheet() },
+                            onScan = { this@DshBusHomePage.openAddComputer() },
+                            onSsh = { this@DshBusHomePage.openSshSetup() },
+                        )
+                    }
+                    vif({
+                        this@DshBusHomePage.viewMode != BUS_VIEW_APPROVAL &&
+                            this@DshBusHomePage.bodyState == BusHomeBodyState.NoTasks
+                    }) {
+                        BusHomeEmptyTasks(palette = p, isDark = p.isDark)
+                    }
+                    vif({ this@DshBusHomePage.viewMode == BUS_VIEW_APPROVAL }) {
+                        // 卡片序列 + 筛选段变化才重建整块；作答状态一律走 lambda，
+                        // 否则每处理一张卡就整列重建、滚动位置丢失
+                        vbind({ this@DshBusHomePage.approvalBindKey() }) {
+                            BusApprovalBoard(
+                                items = this@DshBusHomePage.approvalItemsNow(),
+                                filter = this@DshBusHomePage.approvalFilter,
+                                answered = { this@DshBusHomePage.approvalAnswered },
+                                selection = { this@DshBusHomePage.approvalSelection },
+                                busyKey = { this@DshBusHomePage.approvalBusyKey },
+                                error = { this@DshBusHomePage.approvalError },
+                                loading = { this@DshBusHomePage.approvalLoading },
+                                emptyTitle = { this@DshBusHomePage.approvalEmptyTitle() },
+                                emptySub = { this@DshBusHomePage.approvalEmptySub() },
+                                topFadeVisible = { this@DshBusHomePage.approvalScrolled },
+                                palette = p,
+                                onFilter = { this@DshBusHomePage.approvalFilter = it },
+                                onToggleOption = { item, question, label ->
+                                    this@DshBusHomePage.toggleApprovalOption(item, question, label)
+                                },
+                                onAnswer = { item, allow, answers ->
+                                    this@DshBusHomePage.answerApproval(item, allow, answers)
+                                },
+                                onOpenTask = { this@DshBusHomePage.openApprovalTask(it) },
+                                onScrollY = { this@DshBusHomePage.approvalScrolled = it > 1f },
+                            )
                         }
                     }
-                }
 
+                    // ④ 底部 160 渐隐 + ⑤ 悬浮栏（胶囊 + FAB），都是绝对定位
+                    BusHomeBottomFade(isDark = p.isDark)
+                    BusHomeBottomBar(
+                        barWidth = busHomeCardWidth(pageWidth),
+                        palette = p,
+                        viewMode = { this@DshBusHomePage.viewMode },
+                        badgeCount = { this@DshBusHomePage.openApprovalCount() },
+                        hidden = { this@DshBusHomePage.showSettings },
+                        fabEnabled = this@DshBusHomePage.homeView.device != null,
+                        onSelectListView = { this@DshBusHomePage.selectListView() },
+                        onSelectApprovalView = { this@DshBusHomePage.selectApprovalView() },
+                        onNewTask = { this@DshBusHomePage.openDraftChat() },
+                    )
+                }
             }
-            }
+
+            // Agent 面板（多选 + 展开能力矩阵 + 报错行重试）
             vif({ this@DshBusHomePage.showAgentSheet }) {
-                AgentFilterSheet(
-                    agents = this@DshBusHomePage.homeView.agents,
-                    selectedKey = this@DshBusHomePage.selectedAgentKey,
-                    contentWidth = this@DshBusHomePage.pagerData.pageViewWidth - 40f,
-                    c = this@DshBusHomePage.themeColors,
-                    onSelect = { key ->
-                        this@DshBusHomePage.selectedAgentKey = key
-                        this@DshBusHomePage.showAgentSheet = false
-                    },
-                    onClose = { this@DshBusHomePage.showAgentSheet = false },
-                )
+                vbind({ this@DshBusHomePage.agentSheetBindKey() }) {
+                    BusAgentSheet(
+                        agents = this@DshBusHomePage.homeView.agents,
+                        palette = this@DshBusHomePage.palette(),
+                        pageWidth = this@DshBusHomePage.pagerData.pageViewWidth,
+                        pageHeight = this@DshBusHomePage.pagerData.pageViewHeight,
+                        canRestartConnectors = busCanRestartConnector(
+                            this@DshBusHomePage.homeView.device?.canRestartConnectors == true,
+                        ),
+                        selectedKeys = { this@DshBusHomePage.selectedAgentKeys },
+                        expandedKey = { this@DshBusHomePage.agentExpandedKey },
+                        busyKey = { this@DshBusHomePage.agentBusyKey },
+                        errorKey = { this@DshBusHomePage.agentErrorKey },
+                        onClose = { this@DshBusHomePage.closeAgentSheet() },
+                        onToggle = { this@DshBusHomePage.toggleAgentSelection(it) },
+                        onSelectAll = { this@DshBusHomePage.selectAllAgents() },
+                        onExpand = { this@DshBusHomePage.toggleAgentExpanded(it) },
+                        onRestart = { this@DshBusHomePage.requestRestartConnector(it) },
+                        // 「查看详情」就是长按浮层那一块：没有单独的 Agent 详情页
+                        onOpenDetail = { this@DshBusHomePage.agentErrorKey = it },
+                        onShowError = { this@DshBusHomePage.agentErrorKey = it },
+                        onHideError = { this@DshBusHomePage.agentErrorKey = "" },
+                    )
+                }
             }
+
+            // 电脑面板（当前设备行 + 添加电脑入口）
             vif({ this@DshBusHomePage.showDeviceSheet }) {
-                BusDeviceSheet(
-                    device = this@DshBusHomePage.homeView.device?.let { device ->
-                        device.copy(name = this@DshBusHomePage.currentComputerName())
-                    },
-                    pendingCount = this@DshBusHomePage.homeView.pendingCount,
-                    runningCount = this@DshBusHomePage.homeView.runningCount,
-                    contentWidth = this@DshBusHomePage.pagerData.pageViewWidth - 40f,
-                    colors = this@DshBusHomePage.themeColors,
-                    onClose = { this@DshBusHomePage.showDeviceSheet = false },
-                    onAddComputer = { this@DshBusHomePage.openAddComputer() },
-                )
+                vbind({ this@DshBusHomePage.homeView.device to this@DshBusHomePage.localHostName }) {
+                    BusDeviceSheet(
+                        device = this@DshBusHomePage.homeView.device?.let { device ->
+                            device.copy(name = this@DshBusHomePage.currentComputerName())
+                        },
+                        pendingCount = this@DshBusHomePage.visiblePendingCount(),
+                        runningCount = this@DshBusHomePage.visibleRunningCount(),
+                        palette = this@DshBusHomePage.palette(),
+                        pageWidth = this@DshBusHomePage.pagerData.pageViewWidth,
+                        pageHeight = this@DshBusHomePage.pagerData.pageViewHeight,
+                        onClose = { this@DshBusHomePage.showDeviceSheet = false },
+                        onAddComputer = { this@DshBusHomePage.openAddComputer() },
+                    )
+                }
             }
+
             vif({ this@DshBusHomePage.showSettings }) {
                 vbind({ this@DshBusHomePage.localHostName }) {
                 this.BusSettingsOverlay(
                     computers = this@DshBusHomePage.settingsComputers(),
                     agents = this@DshBusHomePage.homeView.agents,
                     themeModeLabel = { dshThemeModeLabel(this@DshBusHomePage.themeMode) },
-                    statusBarHeight = this@DshBusHomePage.pagerData.statusBarHeight,
+                    statusBarHeight = dshTopInset(
+                        this@DshBusHomePage.pagerData.statusBarHeight,
+                        this@DshBusHomePage.pagerData.safeAreaInsets.top,
+                    ),
                     pageWidth = this@DshBusHomePage.pagerData.pageViewWidth,
                     colors = { this@DshBusHomePage.themeColors },
                     onClose = { this@DshBusHomePage.showSettings = false },
@@ -1368,6 +1440,23 @@ internal class DshBusHomePage : BasePager() {
                 pageViewWidth = this@DshBusHomePage.pagerData.pageViewWidth,
                 colors = { this@DshBusHomePage.themeColors },
             )
+            DshSessionConfirmDialog(
+                visible = { this@DshBusHomePage.restartConfirmAgentKey.isNotEmpty() },
+                title = BUS_RESTART_CONNECTOR_CONFIRM_TITLE,
+                message = BUS_RESTART_CONNECTOR_CONFIRM_MESSAGE,
+                busyLabel = "重启中...",
+                confirmLabel = "重启",
+                confirmColor = { this@DshBusHomePage.themeColors.stateErrorPrimary },
+                busy = { this@DshBusHomePage.restartBusy },
+                error = { this@DshBusHomePage.restartError },
+                onCancel = {
+                    this@DshBusHomePage.restartConfirmAgentKey = ""
+                    this@DshBusHomePage.restartError = ""
+                },
+                onConfirm = { this@DshBusHomePage.confirmRestartConnector() },
+                pageViewWidth = this@DshBusHomePage.pagerData.pageViewWidth,
+                colors = { this@DshBusHomePage.themeColors },
+            )
             DshSessionRenameDialog(
                 visible = { this@DshBusHomePage.showRenameComputer },
                 draft = { this@DshBusHomePage.renameDraft },
@@ -1402,413 +1491,26 @@ internal class DshBusHomePage : BasePager() {
     }
 
     companion object {
-        private const val VIEW_RECENT = "recent"
-        private const val VIEW_PROJECTS = "projects"
         private const val BUS_VIEW_MODE_KEY = "bus_home_view_mode"
+
         /** 首屏最多先建多少行；400 个任务的其余行按滚动创建。 */
         private const val BUS_HOME_INITIAL_RENDER_ROWS = 20
+
         /** 列表里最多保留多少行节点。 */
         private const val BUS_HOME_MAX_RENDERED_ROWS = 60
     }
 }
 
-/** vbind 绑定值：任一字段变化（含主题色）都会重建主页内容。 */
+
+/** vbind 绑定值：只放会改变页面结构的字段，任一变化都会重建主页内容 */
 private data class BusHomeBindKey(
-    val homeView: BusHomeView,
-    val selectedAgentKey: String,
-    val everLoaded: Boolean,
-    val waitingTooLong: Boolean,
-    val themeColors: DshColorTokens,
+    val pageWidth: Float,
     val viewMode: String,
-    val localHostName: String,
+    val selectedAgentKeys: Set<String>,
+    val palette: BusHomePalette,
+    val hasDevice: Boolean,
+    val hasConnection: Boolean,
 )
-
-private fun ViewContainer<*, *>.BusProjectHeader(
-    name: String,
-    expanded: Boolean,
-    showMenu: Boolean,
-    c: DshColorTokens,
-    onClick: () -> Unit,
-    onMenu: () -> Unit,
-) {
-    View {
-        attr {
-            height(44f)
-            flexDirectionRow()
-            alignItemsCenter()
-            paddingLeft(20f)
-            paddingRight(20f)
-            backgroundColor(c.bgBase)
-            borderBottom(Border(1f, BorderStyle.SOLID, c.borderL1))
-        }
-        // 标题区单独可点，避免「⋯」菜单和折叠点击互相触发。
-        View {
-            attr {
-                flex(1f)
-                height(44f)
-                flexDirectionRow()
-                alignItemsCenter()
-            }
-            event { click { onClick() } }
-            Text {
-                attr {
-                    text(name)
-                    fontSize(14f)
-                    fontWeightBold()
-                    color(c.labelPrimary)
-                    flex(1f)
-                }
-            }
-            Image {
-                attr {
-                    src(ImageUri.commonAssets("chevron-down.svg"))
-                    size(12f, 12f)
-                    tintColor(c.labelTertiary)
-                    transform(Rotate(if (expanded) 180f else 0f))
-                }
-            }
-        }
-        if (showMenu) {
-            View {
-                attr {
-                    size(32f, 32f)
-                    marginLeft(4f)
-                    alignItemsCenter()
-                    justifyContentCenter()
-                }
-                event { click { onMenu() } }
-                Image {
-                    attr {
-                        src(ImageUri.commonAssets("menu.svg"))
-                        size(16f, 16f)
-                        tintColor(c.labelSecondary)
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun ViewContainer<*, *>.BusTaskRow(
-    task: BusHomeTask,
-    c: DshColorTokens,
-    topRounded: Boolean,
-    showDivider: Boolean,
-    dense: Boolean = false,
-    onClick: () -> Unit = {},
-) {
-    View {
-        attr {
-            flexDirectionRow()
-            paddingLeft(20f)
-            paddingRight(20f)
-            paddingTop(if (dense) 9f else 13f)
-            paddingBottom(if (dense) 9f else 13f)
-            backgroundColor(if (task.pending) homePinned(c) else c.bgBase)
-            if (topRounded) borderRadius(BorderRectRadius(14f, 14f, 0f, 0f))
-        }
-        event { click { onClick() } }
-        View {
-            attr {
-                if (dense) {
-                    size(36f, 36f)
-                    borderRadius(18f)
-                } else {
-                    size(40f, 40f)
-                    borderRadius(20f)
-                }
-                backgroundColor(homeSurface(c))
-                alignItemsCenter()
-                justifyContentCenter()
-            }
-            Image {
-                attr {
-                    src(ImageUri.commonAssets(TaskIconRegistry.iconFor(task.taskType)))
-                    size(if (dense) 20f else 22f, if (dense) 20f else 22f)
-                    tintColor(c.labelSecondary)
-                }
-            }
-        }
-        View {
-            attr {
-                flex(1f)
-                flexDirectionColumn()
-                marginLeft(if (dense) 12f else 13f)
-            }
-            View {
-                attr {
-                    flexDirectionRow()
-                    alignItemsCenter()
-                }
-                Text {
-                    attr {
-                        text(task.title)
-                        fontSize(15f)
-                        fontWeightBold()
-                        color(c.labelPrimary)
-                        flex(1f)
-                    }
-                }
-                Text {
-                    attr {
-                        text(task.time)
-                        fontSize(11f)
-                        color(c.labelTertiary)
-                    }
-                }
-            }
-            View {
-                attr {
-                    flexDirectionRow()
-                    alignItemsCenter()
-                    marginTop(5f)
-                }
-                StatusPill(task.statusLabel, c)
-                Text {
-                    attr {
-                        text(task.agent)
-                        fontSize(12f)
-                        fontWeightMedium()
-                        color(c.labelSecondary)
-                        marginLeft(7f)
-                    }
-                }
-                Text {
-                    attr {
-                        text("· ${task.project}")
-                        fontSize(12f)
-                        color(c.labelTertiary)
-                        marginLeft(4f)
-                        flex(1f)
-                    }
-                }
-            }
-        }
-    }
-    if (showDivider) {
-        View {
-            attr {
-                height(1f)
-                backgroundColor(c.borderL1)
-                marginLeft(if (dense) 68f else 73f)
-                marginRight(20f)
-            }
-        }
-    }
-}
-
-private fun ViewContainer<*, *>.AgentFilterSheet(
-    agents: List<BusHomeAgent>,
-    selectedKey: String,
-    contentWidth: Float,
-    c: DshColorTokens,
-    onSelect: (String) -> Unit,
-    onClose: () -> Unit,
-) {
-    DshBottomSheet(
-        colors = { c },
-        onClose = onClose,
-        initialDetent = DshSheetDetent.LARGE,
-        panelHeight = 380f,
-        panelBackground = { c.bgBase },
-    ) {
-        View {
-            attr {
-                height(42f)
-                flexDirectionRow()
-                alignItemsCenter()
-                paddingLeft(20f)
-                paddingRight(20f)
-                marginTop(6f)
-            }
-            Text {
-                attr {
-                    text("选择 Agent")
-                    fontSize(15f)
-                    fontWeightBold()
-                    color(c.labelPrimary)
-                    flex(1f)
-                }
-            }
-            View {
-                attr {
-                    size(30f, 30f)
-                    borderRadius(15f)
-                    backgroundColor(homeSurface(c))
-                    alignItemsCenter()
-                    justifyContentCenter()
-                }
-                event { click { onClose() } }
-                Image {
-                    attr {
-                        src(ImageUri.commonAssets("x.svg"))
-                        size(13f, 13f)
-                        tintColor(c.labelSecondary)
-                    }
-                }
-            }
-        }
-        if (busHomeAgentsEmpty(agents)) {
-            View {
-                attr {
-                    flex(1f)
-                    width(contentWidth)
-                    flexDirectionColumn()
-                    alignItemsCenter()
-                    justifyContentCenter()
-                    paddingBottom(28f)
-                }
-                Image {
-                    attr {
-                        src(
-                            ImageUri.commonAssets(
-                                if (c.isDark) "empty-no-agent-dark.svg" else "empty-no-agent.svg",
-                            ),
-                        )
-                        size(92f, 92f)
-                    }
-                }
-                Text {
-                    attr {
-                        text("还没有 Agent")
-                        fontSize(16f)
-                        fontWeightBold()
-                        color(c.labelSecondary)
-                        marginTop(24f)
-                        textAlignCenter()
-                    }
-                }
-                Text {
-                    attr {
-                        text("Agent 在电脑上运行\n连接后自动出现")
-                        fontSize(13f)
-                        color(c.labelTertiary)
-                        lineHeight(21f)
-                        marginTop(8f)
-                        textAlignCenter()
-                    }
-                }
-            }
-        } else {
-            Scroller {
-                attr {
-                    flex(1f)
-                    marginTop(6f)
-                    paddingLeft(20f)
-                    paddingRight(20f)
-                }
-                View {
-                    attr {
-                        width(contentWidth)
-                        flexDirectionColumn()
-                    }
-                    AgentFilterRow(
-                        name = "全部 Agent",
-                        selected = selectedKey.isEmpty(),
-                        badge = if (selectedKey.isEmpty()) "当前" else "",
-                        badgeKind = if (selectedKey.isEmpty()) "current" else "",
-                        c = c,
-                        onClick = { onSelect("") },
-                    )
-                    agents.forEach { agent ->
-                        val selected = selectedKey == agent.key
-                        val badge = when {
-                            selected -> "当前"
-                            !agent.available -> "未安装"
-                            !agent.enabled -> "已停用"
-                            agent.status == "degraded" -> "需确认"
-                            agent.status == "error" -> "异常"
-                            else -> ""
-                        }
-                        val kind = when {
-                            selected -> "current"
-                            !agent.available || !agent.enabled -> "muted"
-                            agent.status == "degraded" || agent.status == "error" -> "attention"
-                            else -> ""
-                        }
-                        AgentFilterRow(
-                            name = agent.name,
-                            selected = selected,
-                            badge = badge,
-                            badgeKind = kind,
-                            c = c,
-                            onClick = { onSelect(agent.key) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-private fun ViewContainer<*, *>.AgentFilterRow(
-    name: String,
-    selected: Boolean,
-    badge: String,
-    badgeKind: String,
-    c: DshColorTokens,
-    onClick: () -> Unit,
-) {
-    View {
-        attr {
-            height(64f)
-            flexDirectionRow()
-            alignItemsCenter()
-            justifyContentSpaceBetween()
-            paddingLeft(16f)
-            paddingRight(16f)
-            marginBottom(10f)
-            borderRadius(14f)
-            backgroundColor(if (selected) agentSelectedBg(c) else c.bgBase)
-            border(
-                Border(
-                    if (selected) 1.5f else 1f,
-                    BorderStyle.SOLID,
-                    if (selected) c.stateBusinessPrimary else c.borderL1,
-                ),
-            )
-        }
-        Text {
-            attr {
-                text(name)
-                fontSize(14f)
-                fontWeightBold()
-                color(if (badgeKind == "muted") c.labelTertiary else c.labelPrimary)
-                flex(1f)
-            }
-        }
-        if (badge.isNotEmpty()) {
-            val textColor = when (badgeKind) {
-                "attention" -> if (c.isDark) Color(0xFFF0A35E) else Color(0xFFB54708)
-                "current" -> c.labelPrimary
-                else -> c.labelTertiary
-            }
-            val bgColor = when (badgeKind) {
-                "attention" -> if (c.isDark) Color(0xFF3A2A18) else Color(0xFFFBF3E8)
-                "current" -> c.specificSelector
-                else -> homeSurface(c)
-            }
-            View {
-                attr {
-                    backgroundColor(bgColor)
-                    borderRadius(9f)
-                    paddingLeft(9f)
-                    paddingRight(9f)
-                    paddingTop(3f)
-                    paddingBottom(3f)
-                }
-                Text {
-                    attr {
-                        text(badge)
-                        fontSize(11f)
-                        fontWeightBold()
-                        color(textColor)
-                    }
-                }
-            }
-        }
-        event { click { onClick() } }
-    }
-}
 
 /** 「按项目」组标题菜单；目前只有协议 3.8 的移出列表一项。 */
 private fun ViewContainer<*, *>.BusProjectMenuSheet(
@@ -1826,17 +1528,17 @@ private fun ViewContainer<*, *>.BusProjectMenuSheet(
     ) {
         View {
             attr {
-                height(42f)
+                height(busHomePx(42f))
                 flexDirectionRow()
                 alignItemsCenter()
-                paddingLeft(20f)
-                paddingRight(20f)
-                marginTop(6f)
+                paddingLeft(busHomePx(20f))
+                paddingRight(busHomePx(20f))
+                marginTop(busHomePx(6f))
             }
             Text {
                 attr {
                     text(name.ifBlank { "项目" })
-                    fontSize(15f)
+                    fontSize(busHomePx(15f))
                     fontWeightBold()
                     color(c.labelPrimary)
                     flex(1f)
@@ -1845,8 +1547,8 @@ private fun ViewContainer<*, *>.BusProjectMenuSheet(
             }
             View {
                 attr {
-                    size(30f, 30f)
-                    borderRadius(15f)
+                    size(busHomePx(30f), busHomePx(30f))
+                    borderRadius(busHomePx(15f))
                     backgroundColor(homeSurface(c))
                     alignItemsCenter()
                     justifyContentCenter()
@@ -1855,7 +1557,7 @@ private fun ViewContainer<*, *>.BusProjectMenuSheet(
                 Image {
                     attr {
                         src(ImageUri.commonAssets("x.svg"))
-                        size(13f, 13f)
+                        size(busHomePx(13f), busHomePx(13f))
                         tintColor(c.labelSecondary)
                     }
                 }
@@ -1863,20 +1565,20 @@ private fun ViewContainer<*, *>.BusProjectMenuSheet(
         }
         View {
             attr {
-                marginTop(8f)
-                marginLeft(20f)
-                marginRight(20f)
-                height(52f)
-                borderRadius(14f)
+                marginTop(busHomePx(8f))
+                marginLeft(busHomePx(20f))
+                marginRight(busHomePx(20f))
+                height(busHomePx(52f))
+                borderRadius(busHomePx(14f))
                 backgroundColor(homeSurface(c))
                 alignItemsCenter()
-                paddingLeft(16f)
+                paddingLeft(busHomePx(16f))
             }
             event { click { onRemove() } }
             Text {
                 attr {
                     text("从列表移除项目")
-                    fontSize(15f)
+                    fontSize(busHomePx(15f))
                     fontWeightMedium()
                     color(c.stateErrorPrimary)
                 }
@@ -1885,63 +1587,8 @@ private fun ViewContainer<*, *>.BusProjectMenuSheet(
     }
 }
 
-private fun ViewContainer<*, *>.StatusPill(status: String, c: DshColorTokens) {
-    val textColor: Color
-    val bgColor: Color
-    when (status) {
-        "待审批", "等待输入" -> {
-            textColor = if (c.isDark) Color(0xFFF0A35E) else Color(0xFFB54708)
-            bgColor = if (c.isDark) Color(0xFF3A2A18) else Color(0xFFFBF3E8)
-        }
-        "运行中" -> {
-            textColor = if (c.isDark) Color(0xFF9AA7E0) else Color(0xFF6673AF)
-            bgColor = homeSurface(c)
-        }
-        else -> {
-            textColor = c.labelTertiary
-            bgColor = homeSurface(c)
-        }
-    }
-    View {
-        attr {
-            flexDirectionRow()
-            alignItemsCenter()
-            backgroundColor(bgColor)
-            borderRadius(9f)
-            paddingLeft(8f)
-            paddingRight(8f)
-            paddingTop(3f)
-            paddingBottom(3f)
-        }
-        View {
-            attr {
-                size(5f, 5f)
-                borderRadius(2.5f)
-                backgroundColor(textColor)
-            }
-        }
-        Text {
-            attr {
-                text(status)
-                fontSize(11f)
-                fontWeightBold()
-                color(textColor)
-                marginLeft(4f)
-            }
-        }
-    }
-}
-
 private fun homeSurface(c: DshColorTokens): Color =
     if (c.isDark) Color(0xFF2A2A31) else Color(0xFFF5F5F5)
-
-private fun agentSelectedBg(c: DshColorTokens): Color =
-    if (c.isDark) Color(0xFF24242B) else Color(0xFFFBFAFF)
-
-private fun homePinned(c: DshColorTokens): Color =
-    if (c.isDark) Color(0xFF2A2A31) else Color(0xFFECECEC)
-
-
 
 /** 把 Kuikly relay / timer 适配成 BusCommandSender 的平台无关边界。 */
 private class HomeRelayCommandTransport(

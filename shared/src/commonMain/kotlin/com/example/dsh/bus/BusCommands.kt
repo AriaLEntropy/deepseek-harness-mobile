@@ -22,6 +22,7 @@ object BusCommands {
         prompt: String,
         model: String? = null,
         effort: String? = null,
+        autoApprove: Boolean? = null,
     ): String = buildJsonObject {
         put("id", JsonPrimitive(commandId))
         put("createdAt", JsonPrimitive(createdAt))
@@ -34,6 +35,7 @@ object BusCommands {
             put("prompt", JsonPrimitive(prompt))
             if (!model.isNullOrBlank()) put("model", JsonPrimitive(model))
             if (!effort.isNullOrBlank()) put("effort", JsonPrimitive(effort))
+            if (autoApprove != null) put("autoApprove", JsonPrimitive(autoApprove))
         })
     }.toString()
 
@@ -45,6 +47,7 @@ object BusCommands {
         prompt: String,
         model: String? = null,
         effort: String? = null,
+        autoApprove: Boolean? = null,
     ): String = buildJsonObject {
         put("id", JsonPrimitive(commandId))
         put("createdAt", JsonPrimitive(createdAt))
@@ -55,6 +58,7 @@ object BusCommands {
             put("prompt", JsonPrimitive(prompt))
             if (!model.isNullOrBlank()) put("model", JsonPrimitive(model))
             if (!effort.isNullOrBlank()) put("effort", JsonPrimitive(effort))
+            if (autoApprove != null) put("autoApprove", JsonPrimitive(autoApprove))
         })
     }.toString()
 
@@ -202,6 +206,52 @@ object BusCommands {
         put("fetchMessages", buildJsonObject {
             put("taskId", JsonPrimitive(taskId))
             put("limit", JsonPrimitive(limit))
+        })
+    }.toString()
+
+    /** 协议 3.10：按连接器 / 项目查技能目录；任务态再带 taskId */
+    fun fetchSkills(
+        commandId: String,
+        createdAt: String,
+        agentId: String,
+        connector: String,
+        connectorId: String?,
+        projectPath: String,
+        taskId: String,
+    ): String = buildJsonObject {
+        put("id", JsonPrimitive(commandId))
+        put("createdAt", JsonPrimitive(createdAt))
+        put("agentId", JsonPrimitive(agentId))
+        put("kind", JsonPrimitive("fetchSkills"))
+        put("fetchSkills", buildJsonObject {
+            put("connector", JsonPrimitive(connector))
+            if (!connectorId.isNullOrBlank()) put("connectorId", JsonPrimitive(connectorId))
+            put("projectPath", JsonPrimitive(projectPath))
+            if (taskId.isNotBlank()) put("taskId", JsonPrimitive(taskId))
+        })
+    }.toString()
+
+    /** 协议 3.10：按 skillId 取正文；上下文和 fetchSkills 一致，电脑端会重新校验 */
+    fun readSkill(
+        commandId: String,
+        createdAt: String,
+        agentId: String,
+        connector: String,
+        connectorId: String?,
+        projectPath: String,
+        taskId: String,
+        skillId: String,
+    ): String = buildJsonObject {
+        put("id", JsonPrimitive(commandId))
+        put("createdAt", JsonPrimitive(createdAt))
+        put("agentId", JsonPrimitive(agentId))
+        put("kind", JsonPrimitive("readSkill"))
+        put("readSkill", buildJsonObject {
+            put("connector", JsonPrimitive(connector))
+            if (!connectorId.isNullOrBlank()) put("connectorId", JsonPrimitive(connectorId))
+            put("projectPath", JsonPrimitive(projectPath))
+            if (taskId.isNotBlank()) put("taskId", JsonPrimitive(taskId))
+            put("skillId", JsonPrimitive(skillId))
         })
     }.toString()
 }

@@ -308,6 +308,9 @@ internal fun ViewContainer<*, *>.DshDrawerEdgeShadow() {
                 right(0f)
                 bottom(0f)
                 width(width)
+                // 五层纯装饰阴影压在列表右缘 72 宽的全高上，不吃触摸，
+                // 否则从右缘起手的滚动/点击会落在这几层上
+                touchEnable(false)
                 backgroundLinearGradient(
                     Direction.TO_RIGHT,
                     ColorStop(Color.TRANSPARENT, 0f),

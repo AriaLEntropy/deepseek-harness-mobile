@@ -1548,6 +1548,7 @@ internal class DshLogPage : BasePager() {
             attr {
                 absolutePosition(top = 0f, left = 0f, right = 0f)
                 height(40f)
+                touchEnable(false)
                 backgroundLinearGradient(Direction.TO_BOTTOM, ColorStop(this@DshLogPage.themeColors.bgLayer1, 0f), ColorStop(Color.TRANSPARENT, 1f))
             }
         }
@@ -1555,6 +1556,7 @@ internal class DshLogPage : BasePager() {
             attr {
                 absolutePosition(bottom = 0f, left = 0f, right = 0f)
                 height(40f)
+                touchEnable(false)
                 backgroundLinearGradient(Direction.TO_TOP, ColorStop(this@DshLogPage.themeColors.bgLayer1, 0f), ColorStop(Color.TRANSPARENT, 1f))
             }
         }
@@ -1562,6 +1564,7 @@ internal class DshLogPage : BasePager() {
             attr {
                 absolutePosition(top = 40f, left = 0f, right = 0f)
                 height(38f)
+                touchEnable(false)
                 borderTop(Border(1f, BorderStyle.SOLID, this@DshLogPage.themeColors.borderL1))
                 borderBottom(Border(1f, BorderStyle.SOLID, this@DshLogPage.themeColors.borderL1))
             }

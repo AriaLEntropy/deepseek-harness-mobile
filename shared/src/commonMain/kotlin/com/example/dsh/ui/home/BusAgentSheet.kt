@@ -14,19 +14,22 @@ import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
 /**
- * Agent 选择面板（多选 + 可展开详情）。
+ * Agent 选择面板（多选 + 可展开详情）
  *
  * 只负责渲染：多选集合、展开行、重启中的行、长按 lastError 浮层这些状态都由调用方
  * 以 lambda 传进来（attr 内读页面 observable 才能局部刷新），面板自己不发任何命令；
- * 勾选语义走 `busToggleAgentFilter`（空集合 = 不过滤 = 全部 Agent）。
+ * 勾选语义走 `busToggleAgentFilter`（空集合 = 不过滤 = 全部 Agent）
+ *
+ * 移动端约束：面板第一次打开等于全选；勾选至少保留一个，取消最后一个时不响应；
+ * 标题行右侧提供双勾图标做快捷全选
  *
  * 视觉全部对齐 `BusSheetPanel` 外壳 + 视觉规范 16.8：行卡白底 radius 14、
  * padding 8/14、行间距 5、未选中描边 #EFEFF2、报错行 1.5px #E5484D、
- * 停用行 opacity .55 且 padding 收为 4/12；勾选框 22 圆，选中 #1D1B20 + 白勾。
+ * 停用行 opacity .55 且 padding 收为 4/12；勾选框 22 圆，选中 #1D1B20 + 白勾
  */
 internal fun ViewContainer<*, *>.BusAgentSheet(
     agents: List<BusHomeAgent>,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     pageWidth: Float,
     pageHeight: Float,
     canRestartConnectors: Boolean,
@@ -36,6 +39,7 @@ internal fun ViewContainer<*, *>.BusAgentSheet(
     errorKey: () -> String,
     onClose: () -> Unit,
     onToggle: (String) -> Unit,
+    onSelectAll: () -> Unit,
     onExpand: (String) -> Unit,
     onRestart: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
@@ -48,8 +52,18 @@ internal fun ViewContainer<*, *>.BusAgentSheet(
         pageWidth = pageWidth,
         pageHeight = pageHeight,
         onClose = { onHideError(); onClose() },
+        headerAction = {
+            BusAgentSelectAllButton(
+                palette = palette,
+                allSelected = { busAgentSelectionIsAll(selectedKeys(), busAgentSelectableKeys(agents)) },
+                onClick = {
+                    onHideError()
+                    onSelectAll()
+                },
+            )
+        },
         floating = {
-            // 长按浮层：盖在面板上，绝对定位；点它本身也关闭。
+            // 长按浮层：盖在面板上，绝对定位；点它本身也关闭
             vif({ errorKey().isNotEmpty() }) {
                 BusAgentErrorPopup(
                     agent = agents.firstOrNull { it.key == errorKey() },
@@ -69,7 +83,7 @@ internal fun ViewContainer<*, *>.BusAgentSheet(
                     rowWidth = busSheetRowWidth(pageWidth),
                     palette = palette,
                     canRestartConnectors = canRestartConnectors,
-                    selected = { agent.key in selectedKeys() },
+                    selected = { busAgentRowSelected(selectedKeys(), agent) },
                     expanded = { busAgentRowIsExpanded(expandedKey(), agent.key) },
                     busy = { busyKey() == agent.key },
                     onToggle = {
@@ -107,10 +121,10 @@ internal enum class BusAgentBadgeKind {
 internal data class BusAgentBadge(val label: String, val kind: BusAgentBadgeKind)
 
 /**
- * 状态标签映射。
+ * 状态标签映射
  *
  * 顺序按信息价值排：有 `lastError` 先说"启动失败"（红），其次不可用/停用（灰），
- * 再看连接器状态 error/degraded。全绿时不显示标签。
+ * 再看连接器状态 error/degraded。全绿时不显示标签
  */
 internal fun busAgentRowBadge(agent: BusHomeAgent): BusAgentBadge? = when {
     agent.lastError.isNotBlank() -> BusAgentBadge("启动失败", BusAgentBadgeKind.Error)
@@ -131,13 +145,24 @@ internal fun busAgentRowIsDisabled(agent: BusHomeAgent): Boolean = !agent.availa
 /** 停用/未安装的 Agent 不可勾选（验收级 16.10 第 7 条）。 */
 internal fun busAgentRowIsCheckable(agent: BusHomeAgent): Boolean = !busAgentRowIsDisabled(agent)
 
+/** 面板里所有可勾选的 Agent key；快捷全选与「至少保留一个」都以它为准。 */
+internal fun busAgentSelectableKeys(agents: List<BusHomeAgent>): Set<String> =
+    agents.filterTo(mutableSetOf()) { busAgentRowIsCheckable(it) }.mapTo(mutableSetOf()) { it.key }
+
+/**
+ * 行是否勾选：空集合 = 全选，但不能勾的停用行保持未选，
+ * 与勾选框「停用行不给勾」的渲染一致
+ */
+internal fun busAgentRowSelected(selected: Set<String>, agent: BusHomeAgent): Boolean =
+    if (selected.isEmpty()) busAgentRowIsCheckable(agent) else agent.key in selected
+
 /** 展开态：面板同时只展开一行，空 key = 全部收起。 */
 internal fun busAgentRowIsExpanded(expandedKey: String, agentKey: String): Boolean =
     expandedKey.isNotEmpty() && expandedKey == agentKey
 
 /**
  * 点 chevron 的纯函数版：再点同一个 key 收起。调用方用它算新的 `expandedKey`，
- * 面板自己不改状态。
+ * 面板自己不改状态
  */
 internal fun busToggleAgentExpanded(expandedKey: String, agentKey: String): String =
     if (expandedKey == agentKey) "" else agentKey
@@ -157,9 +182,9 @@ internal fun busAgentTaskCountLabel(taskCount: Int): String = "$taskCount 个任
 internal fun busAgentRetryLabel(isBusy: Boolean): String = if (isBusy) "重启中…" else "重试启动"
 
 /**
- * 官方图标是不是照片类（jpg/png）。
+ * 官方图标是不是照片类（jpg/png）
  *
- * 照片类铺满 36 圆（cover + 白底），线性类 contain 在 36 圆内（#F5F5F7 底）。
+ * 照片类铺满 36 圆（cover + 白底），线性类 contain 在 36 圆内（#F5F5F7 底）
  */
 internal fun busAgentIconIsPhoto(asset: String): Boolean = when (asset.substringAfterLast('.', "").lowercase()) {
     "jpg", "jpeg", "png", "webp" -> true
@@ -175,10 +200,10 @@ internal data class BusAgentCapabilityRow(
 
 /**
  * 能力矩阵内容（对齐设计稿展开区）：任务数、可用模型、可新建任务、
- * 支持自动批准、可删除会话、重启连接器（电脑级）。
+ * 支持自动批准、可删除会话、重启连接器（电脑级）
  *
  * 「可新建任务」直接用模型层的 [BusHomeAgent.canStartTask]，
- * 「重启连接器」看这台电脑有没有报 `canRestartConnectors`。
+ * 「重启连接器」看这台电脑有没有报 `canRestartConnectors`
  */
 internal fun busAgentCapabilityRows(
     agent: BusHomeAgent,
@@ -198,7 +223,7 @@ internal const val BUS_AGENT_EMPTY_VALUE = "—"
 // ---------- 面板级尺寸（只在这里用，不进共用 token） ----------
 
 private object AgentSheetTokens {
-    /** 行名 14/600（[BusV86Tokens] 只有 13 与 15） */
+    /** 行名 14/600（[BusHomeTokens] 只有 13 与 15） */
     const val fontSizeRowName: Float = 14f
 
     /** 勾选框 22 圆，内部白勾 12 */
@@ -210,6 +235,9 @@ private object AgentSheetTokens {
 
     /** 展开箭头 12 */
     const val chevronSize: Float = 12f
+
+    /** 标题行快捷全选：与关闭按钮间距 4 */
+    const val selectAllGap: Float = 4f
 
     /** 状态标签：radius 9、padding 2/8、11 号 */
     const val tagRadius: Float = 9f
@@ -242,10 +270,55 @@ private object AgentSheetTokens {
 
 // ---------- 渲染 ----------
 
+/**
+ * 标题行快捷全选：与行内一致的 22 圆形复选框，28 热区与 ✕ 同高
+ *
+ * 已经全选时不再回调，避免给出一个永远没有变化的动作
+ */
+private fun ViewContainer<*, *>.BusAgentSelectAllButton(
+    palette: BusHomePalette,
+    allSelected: () -> Boolean,
+    onClick: () -> Unit,
+) {
+    View {
+        attr {
+            size(BusSheetTokens.closeSize, BusSheetTokens.closeSize)
+            marginRight(AgentSheetTokens.selectAllGap)
+            alignItemsCenter()
+            justifyContentCenter()
+        }
+        event { click { if (!allSelected()) onClick() } }
+        View {
+            attr {
+                size(AgentSheetTokens.checkboxSize, AgentSheetTokens.checkboxSize)
+                borderRadius(AgentSheetTokens.checkboxSize / 2f)
+                alignItemsCenter()
+                justifyContentCenter()
+                backgroundColor(if (allSelected()) palette.selectedFill else busSheetRowFill(palette))
+                border(
+                    Border(
+                        AgentSheetTokens.checkboxBorderWidth,
+                        BorderStyle.SOLID,
+                        if (allSelected()) palette.selectedFill else BusHomeTokens.lineDashed,
+                    ),
+                )
+            }
+            Image {
+                attr {
+                    src(ImageUri.commonAssets("check.svg"))
+                    size(AgentSheetTokens.checkboxIconSize, AgentSheetTokens.checkboxIconSize)
+                    tintColor(palette.onSelected)
+                    opacity(if (allSelected()) 1f else 0f)
+                }
+            }
+        }
+    }
+}
+
 private fun ViewContainer<*, *>.BusAgentRow(
     agent: BusHomeAgent,
     rowWidth: Float,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     canRestartConnectors: Boolean,
     selected: () -> Boolean,
     expanded: () -> Boolean,
@@ -282,7 +355,7 @@ private fun ViewContainer<*, *>.BusAgentRow(
             opacity(if (disabled) BusSheetTokens.rowDisabledOpacity else 1f)
         }
         // 长按报错行弹 lastError 浮层（设计稿 500ms，交给系统长按阈值）；
-        // 只有真的带 lastError 的行才响应。
+        // 只有真的带 lastError 的行才响应
         event {
             longPress { params ->
                 if (params.isStart && agent.lastError.isNotBlank()) onLongPressError()
@@ -333,14 +406,14 @@ private fun ViewContainer<*, *>.BusAgentRow(
                     Text {
                         attr {
                             text(busAgentTaskCountLabel(agent.taskCount))
-                            fontSize(BusV86Tokens.fontSizeCaption)
-                            color(if (disabled) BusV86Tokens.textQuiet else palette.textTertiary)
+                            fontSize(BusHomeTokens.fontSizeCaption)
+                            color(if (disabled) BusHomeTokens.textQuiet else palette.textTertiary)
                         }
                     }
                     View {
                         attr {
                             size(AgentSheetTokens.chevronSize, AgentSheetTokens.chevronSize)
-                            marginLeft(6f)
+                            marginLeft(busHomePx(6f))
                             alignItemsCenter()
                             justifyContentCenter()
                         }
@@ -349,7 +422,7 @@ private fun ViewContainer<*, *>.BusAgentRow(
                             attr {
                                 src(ImageUri.commonAssets("chevron-down.svg"))
                                 size(AgentSheetTokens.chevronSize, AgentSheetTokens.chevronSize)
-                                tintColor(if (disabled) BusV86Tokens.textQuiet else palette.textTertiary)
+                                tintColor(if (disabled) BusHomeTokens.textQuiet else palette.textTertiary)
                                 // 展开时箭头转 180°（设计稿 transition transform .2s）
                                 transform(Rotate(if (expanded()) 180f else 0f))
                             }
@@ -361,7 +434,7 @@ private fun ViewContainer<*, *>.BusAgentRow(
                     Text {
                         attr {
                             text(agent.lastError)
-                            fontSize(BusV86Tokens.fontSizeCaption)
+                            fontSize(BusHomeTokens.fontSizeCaption)
                             color(palette.error)
                             marginTop(2f)
                             lines(1)
@@ -374,12 +447,12 @@ private fun ViewContainer<*, *>.BusAgentRow(
                         attr {
                             flexDirectionRow()
                             alignItemsCenter()
-                            marginTop(6f)
+                            marginTop(busHomePx(6f))
                         }
                         BusAgentTextButton(
                             label = { busAgentRetryLabel(busy()) },
                             foreground = palette.textPrimary,
-                            background = BusV86Tokens.tagFill,
+                            background = BusHomeTokens.tagFill,
                             borderless = true,
                             enabled = { !busy() },
                             onClick = onRestart,
@@ -411,7 +484,7 @@ private fun ViewContainer<*, *>.BusAgentRow(
                             Border(
                                 AgentSheetTokens.checkboxBorderWidth,
                                 BorderStyle.SOLID,
-                                if (selected()) palette.selectedFill else BusV86Tokens.lineDashed,
+                                if (selected()) palette.selectedFill else BusHomeTokens.lineDashed,
                             ),
                         )
                     }
@@ -420,7 +493,7 @@ private fun ViewContainer<*, *>.BusAgentRow(
                         attr {
                             src(ImageUri.commonAssets("check.svg"))
                             size(AgentSheetTokens.checkboxIconSize, AgentSheetTokens.checkboxIconSize)
-                            tintColor(BusV86Tokens.selectedForeground)
+                            tintColor(palette.onSelected)
                             opacity(if (selected()) 1f else 0f)
                         }
                     }
@@ -456,9 +529,9 @@ private fun ViewContainer<*, *>.BusAgentRow(
 
 /** 图标资产名（官方图标统一走 [BusAgentVisuals]）。 */
 private fun busAgentAssetName(agent: BusHomeAgent): String =
-    BusAgentVisuals.assetFor(agent.source, agent.connectorId)
+    BusAgentVisuals.assetFor(agent.source, agent.connectorId, agent.key, agent.name)
 
-private fun ViewContainer<*, *>.BusAgentIconDisc(agent: BusHomeAgent, isPhoto: Boolean, palette: BusV86Palette) {
+private fun ViewContainer<*, *>.BusAgentIconDisc(agent: BusHomeAgent, isPhoto: Boolean, palette: BusHomePalette) {
     View {
         attr {
             size(BusSheetTokens.rowIconSize, BusSheetTokens.rowIconSize)
@@ -484,13 +557,13 @@ private fun ViewContainer<*, *>.BusAgentIconDisc(agent: BusHomeAgent, isPhoto: B
 }
 
 /** 状态标签：Error=红字红底、Pending=琥珀、Muted=灰。 */
-private fun ViewContainer<*, *>.BusAgentBadgeView(badge: BusAgentBadge?, palette: BusV86Palette) {
+private fun ViewContainer<*, *>.BusAgentBadgeView(badge: BusAgentBadge?, palette: BusHomePalette) {
     if (badge == null) return
     val colors = when (badge.kind) {
         // 设计稿：报错标签 11/500 #D92D20 on #FEE4E4
         BusAgentBadgeKind.Error -> palette.error to palette.errorFill
         // 「需确认」标签底色固定 #FBF1DF，文字 #9A6A1F
-        BusAgentBadgeKind.Pending -> BusV86Tokens.pendingText to BusV86Tokens.pendingFill
+        BusAgentBadgeKind.Pending -> BusHomeTokens.pendingText to BusHomeTokens.pendingFill
         // 停用/未安装：11/500 #8E8E93 on #EFEFF2
         BusAgentBadgeKind.Muted -> palette.textTertiary to palette.chipFill
     }
@@ -502,12 +575,12 @@ private fun ViewContainer<*, *>.BusAgentBadgeView(badge: BusAgentBadge?, palette
             paddingRight(AgentSheetTokens.tagPaddingHorizontal)
             paddingTop(AgentSheetTokens.tagPaddingVertical)
             paddingBottom(AgentSheetTokens.tagPaddingVertical)
-            marginLeft(8f)
+            marginLeft(busHomePx(8f))
         }
         Text {
             attr {
                 text(badge.label)
-                fontSize(BusV86Tokens.fontSizeCaption)
+                fontSize(BusHomeTokens.fontSizeCaption)
                 fontWeightMedium()
                 color(colors.first)
             }
@@ -515,7 +588,7 @@ private fun ViewContainer<*, *>.BusAgentBadgeView(badge: BusAgentBadge?, palette
     }
 }
 
-private fun ViewContainer<*, *>.BusAgentCapabilityRowView(row: BusAgentCapabilityRow, palette: BusV86Palette) {
+private fun ViewContainer<*, *>.BusAgentCapabilityRowView(row: BusAgentCapabilityRow, palette: BusHomePalette) {
     View {
         attr {
             height(BusSheetTokens.capabilityRowHeight)
@@ -525,7 +598,7 @@ private fun ViewContainer<*, *>.BusAgentCapabilityRowView(row: BusAgentCapabilit
         Text {
             attr {
                 text(row.label)
-                fontSize(BusV86Tokens.fontSizeMeta)
+                fontSize(BusHomeTokens.fontSizeMeta)
                 color(palette.textTertiary)
             }
         }
@@ -534,15 +607,15 @@ private fun ViewContainer<*, *>.BusAgentCapabilityRowView(row: BusAgentCapabilit
                 flex(1f)
                 flexDirectionRow()
                 justifyContentFlexEnd()
-                marginLeft(8f)
+                marginLeft(busHomePx(8f))
             }
             if (row.supported == null) {
                 Text {
                     attr {
                         text(row.text)
-                        fontSize(BusV86Tokens.fontSizeMeta)
+                        fontSize(BusHomeTokens.fontSizeMeta)
                         fontWeightBold()
-                        color(if (row.text == BUS_AGENT_EMPTY_VALUE) BusV86Tokens.textQuiet else palette.textPrimary)
+                        color(if (row.text == BUS_AGENT_EMPTY_VALUE) BusHomeTokens.textQuiet else palette.textPrimary)
                         lines(1)
                         textOverFlowTail()
                     }
@@ -555,7 +628,7 @@ private fun ViewContainer<*, *>.BusAgentCapabilityRowView(row: BusAgentCapabilit
 }
 
 /** ✓ 用黑色短勾，✗ 用一条 #C4C4CC 短横（设计稿 .cap-empty）。 */
-private fun ViewContainer<*, *>.BusAgentCapabilityMark(supported: Boolean, palette: BusV86Palette) {
+private fun ViewContainer<*, *>.BusAgentCapabilityMark(supported: Boolean, palette: BusHomePalette) {
     View {
         attr {
             size(AgentSheetTokens.markBoxSize, AgentSheetTokens.markBoxSize)
@@ -576,7 +649,7 @@ private fun ViewContainer<*, *>.BusAgentCapabilityMark(supported: Boolean, palet
                     width(AgentSheetTokens.markDashWidth)
                     height(AgentSheetTokens.markDashHeight)
                     borderRadius(AgentSheetTokens.markDashHeight / 2f)
-                    backgroundColor(BusV86Tokens.textQuiet)
+                    backgroundColor(BusHomeTokens.textQuiet)
                 }
             }
         }
@@ -584,9 +657,9 @@ private fun ViewContainer<*, *>.BusAgentCapabilityMark(supported: Boolean, palet
 }
 
 /**
- * 面板内小按钮。
+ * 面板内小按钮
  *
- * 文案 / 可用性都用 lambda，好让「重启中…」这种状态能局部刷新。
+ * 文案 / 可用性都用 lambda，好让「重启中…」这种状态能局部刷新
  */
 private fun ViewContainer<*, *>.BusAgentTextButton(
     label: () -> String,
@@ -611,7 +684,7 @@ private fun ViewContainer<*, *>.BusAgentTextButton(
                 Border(
                     BusSheetTokens.rowBorderWidth,
                     BorderStyle.SOLID,
-                    if (borderless) background else BusV86Tokens.lineCard,
+                    if (borderless) background else BusHomeTokens.lineCard,
                 ),
             )
             if (marginLeft > 0f) this.marginLeft(marginLeft)
@@ -620,7 +693,7 @@ private fun ViewContainer<*, *>.BusAgentTextButton(
         Text {
             attr {
                 text(label())
-                fontSize(BusV86Tokens.fontSizeCaption)
+                fontSize(BusHomeTokens.fontSizeCaption)
                 fontWeightBold()
                 color(foreground)
             }
@@ -632,7 +705,7 @@ private fun ViewContainer<*, *>.BusAgentTextButton(
 private fun ViewContainer<*, *>.BusAgentErrorPopup(
     agent: BusHomeAgent?,
     rowWidth: Float,
-    palette: BusV86Palette,
+    palette: BusHomePalette,
     onTap: () -> Unit,
 ) {
     View {
@@ -673,20 +746,20 @@ private fun ViewContainer<*, *>.BusAgentErrorPopup(
             Text {
                 attr {
                     text("lastError")
-                    fontSize(BusV86Tokens.fontSizeBody)
+                    fontSize(BusHomeTokens.fontSizeBody)
                     fontWeightBold()
                     color(BusSheetTokens.errorBorder)
-                    marginLeft(6f)
+                    marginLeft(busHomePx(6f))
                 }
             }
         }
         Text {
             attr {
                 text(agent?.lastError.orEmpty().ifBlank { BUS_AGENT_EMPTY_VALUE })
-                fontSize(BusV86Tokens.fontSizeMeta)
+                fontSize(BusHomeTokens.fontSizeMeta)
                 lineHeight(AgentSheetTokens.popupLineHeight)
                 color(palette.textPrimary)
-                marginTop(8f)
+                marginTop(busHomePx(8f))
                 lines(6)
                 textOverFlowTail()
             }
@@ -694,22 +767,22 @@ private fun ViewContainer<*, *>.BusAgentErrorPopup(
         Text {
             attr {
                 text("点击其他区域关闭")
-                fontSize(BusV86Tokens.fontSizeCaption)
+                fontSize(BusHomeTokens.fontSizeCaption)
                 color(palette.textTertiary)
-                marginTop(8f)
+                marginTop(busHomePx(8f))
             }
         }
     }
 }
 
 /** 面板空态：电脑上还没有 Agent。 */
-private fun ViewContainer<*, *>.BusAgentSheetEmptyState(palette: BusV86Palette) {
+private fun ViewContainer<*, *>.BusAgentSheetEmptyState(palette: BusHomePalette) {
     View {
         attr {
             flexDirectionColumn()
             alignItemsCenter()
-            paddingTop(28f)
-            paddingBottom(28f)
+            paddingTop(busHomePx(28f))
+            paddingBottom(busHomePx(28f))
         }
         Image {
             attr {
@@ -724,20 +797,20 @@ private fun ViewContainer<*, *>.BusAgentSheetEmptyState(palette: BusV86Palette) 
         Text {
             attr {
                 text("还没有 Agent")
-                fontSize(16f)
+                fontSize(busHomePx(16f))
                 fontWeightBold()
                 color(palette.textSecondary)
-                marginTop(20f)
+                marginTop(busHomePx(20f))
                 textAlignCenter()
             }
         }
         Text {
             attr {
                 text("Agent 在电脑上运行\n连接后自动出现")
-                fontSize(BusV86Tokens.fontSizeBody)
+                fontSize(BusHomeTokens.fontSizeBody)
                 color(palette.textTertiary)
-                lineHeight(21f)
-                marginTop(8f)
+                lineHeight(busHomePx(21f))
+                marginTop(busHomePx(8f))
                 textAlignCenter()
             }
         }
